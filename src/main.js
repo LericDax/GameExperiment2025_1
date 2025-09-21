@@ -464,21 +464,33 @@ const collisionOffsets = [
   [-playerRadius, -playerRadius],
 ];
 
+const COLLISION_EPSILON = 1e-4;
+
 function collidesAt(position) {
-  const playerFeet = position.y - playerEyeHeight;
-  const minY = Math.floor(playerFeet + 0.6);
-  const maxY = Math.floor(playerFeet + playerHeight);
-  if (minY > maxY) {
-    return false;
-  }
+  const playerFeet = position.y - playerEyeHeight + 0.5;
+  const playerBottom = playerFeet - COLLISION_EPSILON;
+  const playerTop = playerBottom + playerHeight;
+  const minY = Math.floor(playerBottom - 0.5);
+  const maxY = Math.ceil(playerTop + 0.5);
 
   for (const [dx, dz] of collisionOffsets) {
     const sampleX = position.x + dx;
     const sampleZ = position.z + dz;
     const blockX = Math.round(sampleX);
     const blockZ = Math.round(sampleZ);
+
     for (let y = minY; y <= maxY; y++) {
-      if (solidBlocks.has(blockKey(blockX, y, blockZ))) {
+      if (!solidBlocks.has(blockKey(blockX, y, blockZ))) {
+        continue;
+      }
+
+      const blockMinY = y - 0.5;
+      const blockMaxY = y + 0.5;
+      const overlapsVertically =
+        playerTop > blockMinY + COLLISION_EPSILON &&
+        playerBottom < blockMaxY - COLLISION_EPSILON;
+
+      if (overlapsVertically) {
         return true;
       }
     }
