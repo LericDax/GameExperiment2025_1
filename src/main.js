@@ -163,7 +163,7 @@ function createProceduralTexture({
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestMipmapLinearFilter;
+  texture.minFilter = THREE.NearestFilter;
   return texture;
 }
 
