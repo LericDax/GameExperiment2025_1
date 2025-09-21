@@ -309,6 +309,7 @@ const instancedData = {
 
 const solidTypes = new Set(['grass', 'dirt', 'stone', 'sand', 'leaf', 'log']);
 const solidBlocks = new Set();
+const waterColumns = new Set();
 
 function blockKey(x, y, z) {
   return `${x}|${y}|${z}`;
@@ -321,6 +322,9 @@ function addBlock(type, x, y, z) {
   instancedData[type].push(matrix.clone());
   if (solidTypes.has(type)) {
     solidBlocks.add(blockKey(x, y, z));
+  }
+  if (type === 'water') {
+    waterColumns.add(`${x}|${z}`);
   }
 }
 
@@ -531,6 +535,11 @@ function animate() {
 
   const position = controls.getObject().position;
   const terrainY = sampleHeight(position.x, position.z);
+  let targetY = terrainY + playerEyeHeight;
+  const columnKey = `${Math.round(position.x)}|${Math.round(position.z)}`;
+  if (waterColumns.has(columnKey)) {
+    targetY = Math.max(targetY, worldConfig.waterLevel + playerEyeHeight);
+  }
   if (jumpRequested && isGrounded) {
     verticalVelocity = jumpVelocity;
     isGrounded = false;
@@ -546,13 +555,8 @@ function animate() {
     verticalVelocity = 0;
   }
 
-  let groundClamp = terrainY + playerEyeHeight;
-  if (terrainY < worldConfig.waterLevel) {
-    groundClamp = Math.max(groundClamp, worldConfig.waterLevel + playerEyeHeight);
-  }
-
-  if (position.y <= groundClamp) {
-    position.y = groundClamp;
+  if (position.y <= targetY) {
+    position.y = targetY;
     verticalVelocity = 0;
     isGrounded = true;
   } else {
