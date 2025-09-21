@@ -16,6 +16,12 @@
         color: #fff;
       }
 
+      #app {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+
       #overlay {
         position: absolute;
         top: 0;
@@ -48,13 +54,15 @@
     </style>
   </head>
   <body>
-    <div id="overlay">
-      <div id="instructions">
-        <h1>Procedural Block World</h1>
-        <p>
-          Click anywhere to lock the pointer, then use WASD to move and Space to
-          hop up ledges. Move the mouse to look around.
-        </p>
+    <div id="app">
+      <div id="overlay">
+        <div id="instructions">
+          <h1>Procedural Block World</h1>
+          <p>
+            Click anywhere to lock the pointer, then use WASD to move and Space
+            to hop up ledges. Move the mouse to look around.
+          </p>
+        </div>
       </div>
     </div>
     <script type="module" src="./src/main.js"></script>

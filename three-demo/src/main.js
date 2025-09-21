@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 
+const app = document.getElementById('app');
+if (!app) {
+  throw new Error('App container not found');
+}
+
 const overlay = document.getElementById('overlay');
 
 const scene = new THREE.Scene();
@@ -20,7 +25,7 @@ renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.domElement.id = 'game-canvas';
-document.body.appendChild(renderer.domElement);
+app.appendChild(renderer.domElement);
 
 const controls = new PointerLockControls(camera, renderer.domElement);
 scene.add(controls.getObject());
