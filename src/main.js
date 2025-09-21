@@ -53,11 +53,6 @@ scene.add(sun);
 const waterMaterial = blockMaterials.water;
 let waveTime = 0;
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
 
 function animate() {
   requestAnimationFrame(animate);
