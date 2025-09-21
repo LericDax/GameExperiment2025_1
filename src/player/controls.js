@@ -110,9 +110,13 @@ export function createPlayerControls({
     }
   };
 
-  overlay.addEventListener('click', () => controls.lock());
-  controls.addEventListener('lock', () => overlay.classList.add('hidden'));
-  controls.addEventListener('unlock', () => overlay.classList.remove('hidden'));
+  const handleOverlayClick = () => controls.lock();
+  const handleLock = () => overlay.classList.add('hidden');
+  const handleUnlock = () => overlay.classList.remove('hidden');
+
+  overlay.addEventListener('click', handleOverlayClick);
+  controls.addEventListener('lock', handleLock);
+  controls.addEventListener('unlock', handleUnlock);
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('keyup', onKeyUp);
 
@@ -224,5 +228,14 @@ export function createPlayerControls({
     }
   }
 
-  return { controls, moveState, collidesAt, update };
+  function dispose() {
+    scene.remove(controls.getObject());
+    overlay.removeEventListener('click', handleOverlayClick);
+    controls.removeEventListener('lock', handleLock);
+    controls.removeEventListener('unlock', handleUnlock);
+    document.removeEventListener('keydown', onKeyDown);
+    document.removeEventListener('keyup', onKeyUp);
+  }
+
+  return { controls, moveState, collidesAt, update, dispose };
 }

@@ -27,7 +27,8 @@ document.body.appendChild(renderer.domElement);
 const clock = new THREE.Clock();
 
 const blockMaterials = createBlockMaterials();
-const { solidBlocks, waterColumns } = generateWorld(scene, blockMaterials);
+const { meshes, solidBlocks, waterColumns } = generateWorld(blockMaterials);
+meshes.forEach((mesh) => scene.add(mesh));
 
 const playerControls = createPlayerControls({
   scene,

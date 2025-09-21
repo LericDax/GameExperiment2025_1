@@ -102,7 +102,7 @@ function addCloud(addBlock, x, y, z) {
   blocks.forEach(([dx, dy, dz]) => addBlock('cloud', x + dx, y + dy, z + dz));
 }
 
-export function generateWorld(scene, blockMaterials) {
+export function generateWorld(blockMaterials) {
   const instancedData = {
     grass: [],
     dirt: [],
@@ -169,15 +169,20 @@ export function generateWorld(scene, blockMaterials) {
     addCloud(addBlock, Math.round(cx), Math.round(cy), Math.round(cz));
   }
 
+  const meshes = [];
   Object.entries(instancedData).forEach(([type, matrices]) => {
     if (matrices.length === 0) return;
-    const mesh = new THREE.InstancedMesh(blockGeometry, blockMaterials[type], matrices.length);
+    const mesh = new THREE.InstancedMesh(
+      blockGeometry,
+      blockMaterials[type],
+      matrices.length
+    );
     matrices.forEach((m, index) => mesh.setMatrixAt(index, m));
     mesh.instanceMatrix.needsUpdate = true;
     mesh.castShadow = ['cloud', 'water'].includes(type) ? false : true;
     mesh.receiveShadow = type !== 'cloud';
-    scene.add(mesh);
+    meshes.push(mesh);
   });
 
-  return { solidBlocks, waterColumns };
+  return { meshes, solidBlocks, waterColumns };
 }
