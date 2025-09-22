@@ -1,0 +1,43 @@
+{
+  "id": "pseudo_borgesian_librarium",
+  "label": "Pseudo-Borgesian Infinite Librarium",
+  "tags": ["arcane", "structured", "dry"],
+  "climate": {
+    "temperature": 0.45,
+    "moisture": 0.35
+  },
+  "terrain": {
+    "surfaceBlock": "stone",
+    "shoreBlock": "stone",
+    "subSurfaceBlock": "stone",
+    "subSurfaceDepth": 6,
+    "deepBlock": "stone",
+    "treeDensity": 0.02,
+    "shrubChance": 0.04,
+    "flowerChance": 0.12,
+    "rockChance": 0.06,
+    "fungiChance": 0.0,
+    "waterPlantChance": 0.0,
+    "structureChance": 0.2,
+    "treeHeight": {
+      "min": 2,
+      "max": 4
+    },
+    "heightOffset": 3
+  },
+  "palette": {
+    "grass": "#6d6a83",
+    "dirt": "#4e4457",
+    "stone": "#7a6c8c",
+    "sand": "#8a7b97",
+    "leaf": "#9dc5ff",
+    "log": "#bfa176",
+    "water": "#3b4f7e",
+    "cloud": "#d8d4e8"
+  },
+  "shader": {
+    "fogColor": "#5b4a6f",
+    "tintColor": "#d7c9ff",
+    "tintStrength": 0.5
+  }
+}

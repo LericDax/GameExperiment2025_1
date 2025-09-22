@@ -78,10 +78,16 @@ function selectObject(category, biome, randomSource, randomOffset) {
 export function populateColumnWithVoxelObjects({
   addBlock,
   biome,
+  columnSample,
   groundHeight,
   randomSource,
+  slope = 0,
   worldX,
   worldZ,
+  isUnderwater = false,
+  isShore = false,
+  waterLevel = 0,
+  distanceToWater = Infinity,
 }) {
   if (!biome) {
     return;
@@ -89,62 +95,172 @@ export function populateColumnWithVoxelObjects({
   const random = ensureRandomSource(randomSource);
   const terrain = biome.terrain ?? {};
 
-  const placeObject = (object) => {
+  const climate = columnSample?.climate ?? biome?.climate ?? {};
+
+  const canPlaceObject = (object) => {
     if (!object) {
       return false;
     }
-    const origin = {
-      x: worldX,
-      y: groundHeight + (object.attachment?.groundOffset ?? object.voxelScale),
-      z: worldZ,
-    };
-    placeVoxelObject(addBlock, object, { origin, biome });
+    const placement = object.placement ?? {};
+    if (placement.minSlope !== null && slope < placement.minSlope) {
+      return false;
+    }
+    if (placement.maxSlope !== null && slope > placement.maxSlope) {
+      return false;
+    }
+    if (placement.requiresUnderwater && !isUnderwater) {
+      return false;
+    }
+    if (placement.forbidUnderwater && isUnderwater) {
+      return false;
+    }
+    if (placement.onlyOnShore && !isShore) {
+      return false;
+    }
+    if (placement.forbidShore && isShore) {
+      return false;
+    }
+    if (
+      typeof placement.minHeight === 'number' &&
+      groundHeight < placement.minHeight
+    ) {
+      return false;
+    }
+    if (
+      typeof placement.maxHeight === 'number' &&
+      groundHeight > placement.maxHeight
+    ) {
+      return false;
+    }
+    if (
+      typeof placement.minMoisture === 'number' &&
+      climate.moisture < placement.minMoisture
+    ) {
+      return false;
+    }
+    if (
+      typeof placement.maxMoisture === 'number' &&
+      climate.moisture > placement.maxMoisture
+    ) {
+      return false;
+    }
+    if (
+      typeof placement.minTemperature === 'number' &&
+      climate.temperature < placement.minTemperature
+    ) {
+      return false;
+    }
+    if (
+      typeof placement.maxTemperature === 'number' &&
+      climate.temperature > placement.maxTemperature
+    ) {
+      return false;
+    }
+    if (placement.requiresWaterProximity) {
+      const radius =
+        typeof placement.waterProximityRadius === 'number'
+          ? placement.waterProximityRadius
+          : 1;
+      if (distanceToWater > radius) {
+        return false;
+      }
+    }
     return true;
   };
 
+  const placeObject = (object, seedOffset = 0) => {
+    if (!canPlaceObject(object)) {
+      return false;
+    }
+    const placement = object.placement ?? {};
+    const instances = Math.max(1, placement.maxInstancesPerColumn || 1);
+    const jitterRadius =
+      placement.jitterRadius !== null && placement.jitterRadius !== undefined
+        ? placement.jitterRadius
+        : object.voxelScale < 1
+        ? 0.35
+        : 0;
+    for (let i = 0; i < instances; i++) {
+      const angle = random(120 + seedOffset * 13 + i) * Math.PI * 2;
+      const radius = jitterRadius > 0 ? random(220 + seedOffset * 17 + i) * jitterRadius : 0;
+      const origin = {
+        x: worldX + Math.cos(angle) * radius,
+        y: groundHeight + (object.attachment?.groundOffset ?? object.voxelScale),
+        z: worldZ + Math.sin(angle) * radius,
+      };
+      placeVoxelObject(addBlock, object, { origin, biome });
+    }
+    return true;
+  };
+
+  const attemptCategory = (
+    category,
+    chance,
+    randomOffset,
+    { allowUnderwater = false, requireUnderwater = false } = {},
+  ) => {
+    if (chance <= 0) {
+      return false;
+    }
+    if (requireUnderwater && !isUnderwater) {
+      return false;
+    }
+    if (!allowUnderwater && isUnderwater) {
+      return false;
+    }
+    const roll = random(randomOffset);
+    if (roll <= 1 - chance) {
+      return false;
+    }
+    const object = selectObject(category, biome, random, randomOffset + 11);
+    return placeObject(object, randomOffset);
+  };
+
   const treeDensity = Math.max(0, terrain.treeDensity ?? 0);
-  if (treeDensity > 0) {
+  if (treeDensity > 0 && !isUnderwater) {
     const roll = random(31);
     if (roll > 1 - treeDensity) {
       const tree = selectObject('large-plants', biome, random, 41);
-      placeObject(tree);
+      placeObject(tree, 31);
     }
   }
 
   const shrubChance = Math.max(0, terrain.shrubChance ?? 0);
-  if (shrubChance > 0) {
+  if (shrubChance > 0 && !isUnderwater) {
     const roll = random(51);
     if (roll > 1 - shrubChance) {
       const shrub = selectObject('small-plants', biome, random, 61);
-      placeObject(shrub);
+      placeObject(shrub, 51);
     }
   }
 
   const flowerChanceRaw = terrain.flowerChance ?? shrubChance * 0.65;
   const flowerChance = Math.max(0, Math.min(1, flowerChanceRaw || 0));
-  if (flowerChance > 0) {
+  if (flowerChance > 0 && !isUnderwater) {
     const roll = random(71);
     if (roll > 1 - flowerChance) {
       const flower = selectObject('flowers', biome, random, 81);
-      if (flower) {
-        const maxInstances = Math.max(1, flower.placement.maxInstancesPerColumn || 1);
-        for (let i = 0; i < maxInstances; i++) {
-          const offsetAngle = random(82 + i) * Math.PI * 2;
-          const radialDistance = flower.voxelScale < 1 ? random(83 + i) * 0.35 : 0;
-          const origin = {
-            x:
-              worldX +
-              Math.cos(offsetAngle) * radialDistance,
-            y:
-              groundHeight + (flower.attachment?.groundOffset ?? flower.voxelScale),
-            z:
-              worldZ +
-              Math.sin(offsetAngle) * radialDistance,
-          };
-          placeVoxelObject(addBlock, flower, { origin, biome });
-        }
-      }
+      placeObject(flower, 71);
     }
   }
+
+  attemptCategory('rocks', Math.max(0, terrain.rockChance ?? 0), 91, {
+    allowUnderwater: false,
+  });
+
+  attemptCategory('fungi', Math.max(0, terrain.fungiChance ?? 0), 111, {
+    allowUnderwater: false,
+  });
+
+  attemptCategory(
+    'water-plants',
+    Math.max(0, terrain.waterPlantChance ?? 0),
+    131,
+    { allowUnderwater: true, requireUnderwater: true },
+  );
+
+  attemptCategory('structures', Math.max(0, terrain.structureChance ?? 0), 151, {
+    allowUnderwater: true,
+  });
 }
 

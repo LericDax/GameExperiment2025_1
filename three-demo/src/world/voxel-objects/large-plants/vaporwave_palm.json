@@ -1,0 +1,30 @@
+{
+  "id": "vaporwave_palm",
+  "label": "Chromatic Palm",
+  "category": "large-plants",
+  "author": "system",
+  "description": "Retro palm with gradients that fade into oblivion.",
+  "collision": "soft",
+  "voxelScale": 0.4,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["fading_vaporwave_dimension"],
+    "weight": 2.4,
+    "maxSlope": 0.5,
+    "forbidUnderwater": false,
+    "jitterRadius": 0.8
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "size": [1.0, 3.6, 1.0], "tint": "#f8a7ff" },
+    { "type": "log", "position": [0, 3.8, 0], "size": [0.9, 1.2, 0.9], "tint": "#ffbffb" },
+    { "type": "leaf", "position": [0, 4.2, 0], "size": [3.2, 0.6, 1.1], "tint": "#6dffd2", "isSolid": false },
+    { "type": "leaf", "position": [0, 4.2, 0], "size": [1.1, 0.6, 3.2], "tint": "#7affff", "isSolid": false },
+    { "type": "leaf", "position": [1.8, 4.4, 1.8], "size": [2.4, 0.5, 1.0], "tint": "#9dffe0", "isSolid": false },
+    { "type": "leaf", "position": [-1.8, 4.4, -1.8], "size": [1.0, 0.5, 2.4], "tint": "#8bfff0", "isSolid": false },
+    { "type": "leaf", "position": [1.8, 4.4, -1.8], "size": [2.4, 0.5, 1.0], "tint": "#7bf2ff", "isSolid": false },
+    { "type": "leaf", "position": [-1.8, 4.4, 1.8], "size": [1.0, 0.5, 2.4], "tint": "#72ffe2", "isSolid": false },
+    { "type": "leaf", "position": [0, 5.2, 0], "size": [1.4, 0.4, 1.4], "tint": "#ffe4fd", "isSolid": false }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "noctilucent_algae",
+  "label": "Noctilucent Algae",
+  "category": "water-plants",
+  "author": "system",
+  "description": "Glowing threads drifting in subterranean pools.",
+  "collision": "soft",
+  "voxelScale": 0.24,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["noctilucent_fungus_glade"],
+    "weight": 1.7,
+    "requiresUnderwater": true,
+    "maxSlope": 0.6,
+    "jitterRadius": 0.5,
+    "maxInstancesPerColumn": 3
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [0.5, 1.8, 0.5], "tint": "#68f2ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.4, 0], "size": [0.5, 1.6, 0.5], "tint": "#9dfffb", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.6, 0], "size": [0.5, 1.4, 0.5], "tint": "#c9fffb", "isSolid": false }
+  ]
+}

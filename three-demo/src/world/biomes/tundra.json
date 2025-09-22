@@ -1,6 +1,7 @@
 {
   "id": "frostbound_steppe",
   "label": "Frostbound Steppe",
+  "tags": ["cold", "windswept", "glacial"],
   "climate": {
     "temperature": 0.18,
     "moisture": 0.58
@@ -11,8 +12,13 @@
     "subSurfaceBlock": "dirt",
     "subSurfaceDepth": 3,
     "deepBlock": "stone",
-    "treeDensity": 0.02,
-    "shrubChance": 0.015,
+    "treeDensity": 0.03,
+    "shrubChance": 0.02,
+    "flowerChance": 0.015,
+    "rockChance": 0.07,
+    "structureChance": 0.05,
+    "fungiChance": 0.01,
+    "waterPlantChance": 0.0,
     "treeHeight": {
       "min": 2,
       "max": 4

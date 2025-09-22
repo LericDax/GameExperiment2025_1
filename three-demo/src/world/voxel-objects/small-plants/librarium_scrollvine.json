@@ -1,0 +1,27 @@
+{
+  "id": "librarium_scrollvine",
+  "label": "Scrollvine",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Delicate vine of bookmark leaves winding along aisles.",
+  "collision": "soft",
+  "voxelScale": 0.25,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["pseudo_borgesian_librarium"],
+    "weight": 2.3,
+    "maxSlope": 0.4,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.7,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.6, 0.5, 0.6], "tint": "#c7a8ff" },
+    { "type": "leaf", "position": [0, 0, 0], "size": [0.6, 0.5, 1.6], "tint": "#b893ff" },
+    { "type": "leaf", "position": [0.8, 0.3, 0.8], "size": [0.8, 0.4, 0.4], "tint": "#d7baff" },
+    { "type": "leaf", "position": [-0.8, 0.3, -0.8], "size": [0.4, 0.4, 0.8], "tint": "#a784ea" },
+    { "type": "leaf", "position": [0, 0.6, 0], "size": [0.6, 0.6, 0.6], "tint": "#f4e8ff", "isSolid": false }
+  ]
+}

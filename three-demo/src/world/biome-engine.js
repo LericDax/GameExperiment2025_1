@@ -3,9 +3,27 @@ import { ValueNoise2D } from './noise.js';
 import temperate from './biomes/temperate.json' with { type: 'json' };
 import desert from './biomes/desert.json' with { type: 'json' };
 import tundra from './biomes/tundra.json' with { type: 'json' };
+import librarium from './biomes/pseudo_borgesian_librarium.json' with {
+  type: 'json',
+};
+import vaporwave from './biomes/fading_vaporwave_dimension.json' with {
+  type: 'json',
+};
+import auroral from './biomes/auroral_glass_reef.json' with { type: 'json' };
+import noctilucent from './biomes/noctilucent_fungus_glade.json' with {
+  type: 'json',
+};
 
 
-const rawBiomeDefinitions = [temperate, desert, tundra];
+const rawBiomeDefinitions = [
+  temperate,
+  desert,
+  tundra,
+  librarium,
+  vaporwave,
+  auroral,
+  noctilucent,
+];
 
 const NEUTRAL_BASE_PALETTE = {
   grass: '#4a9c47',
@@ -72,6 +90,9 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
     return {
       id: definition.id ?? `biome_${index}`,
       label: definition.label ?? definition.id ?? `Biome ${index + 1}`,
+      tags: Array.isArray(definition.tags)
+        ? definition.tags.filter((tag) => typeof tag === 'string')
+        : [],
       climate: {
         temperature: clamp01(definition.climate?.temperature ?? 0.5),
         moisture: clamp01(definition.climate?.moisture ?? 0.5),
@@ -87,6 +108,11 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
         deepBlock: terrainDefinition.deepBlock ?? 'stone',
         treeDensity: clamp01(terrainDefinition.treeDensity ?? 0.08),
         shrubChance: clamp01(terrainDefinition.shrubChance ?? 0.02),
+        flowerChance: clamp01(terrainDefinition.flowerChance ?? 0.01),
+        rockChance: clamp01(terrainDefinition.rockChance ?? 0),
+        fungiChance: clamp01(terrainDefinition.fungiChance ?? 0),
+        waterPlantChance: clamp01(terrainDefinition.waterPlantChance ?? 0),
+        structureChance: clamp01(terrainDefinition.structureChance ?? 0),
         treeHeight: {
           min: Math.max(1, Math.floor(treeHeight.min ?? 3)),
           max: Math.max(Math.floor(treeHeight.max ?? 6), Math.floor(treeHeight.min ?? 3)),

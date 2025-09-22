@@ -1,0 +1,26 @@
+{
+  "id": "desert_rock_cluster",
+  "label": "Desert Ventifact Cluster",
+  "category": "rocks",
+  "author": "system",
+  "description": "Wind-polished stones leaning with the prevailing dune gusts.",
+  "collision": "solid",
+  "voxelScale": 0.4,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["sunset_dunes"],
+    "weight": 1.1,
+    "maxSlope": 0.6,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.8,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [1.4, 0.9, 1.2], "tint": "#d4b68c" },
+    { "type": "stone", "position": [1.1, 0.3, -0.6], "size": [1.0, 0.8, 0.9], "tint": "#c7a178" },
+    { "type": "stone", "position": [-1.2, 0.4, 0.5], "size": [0.9, 0.7, 1.1], "tint": "#e3c49b" },
+    { "type": "stone", "position": [0.5, 0.9, 0.3], "size": [0.6, 1.1, 0.6], "tint": "#f0d3a6" }
+  ]
+}

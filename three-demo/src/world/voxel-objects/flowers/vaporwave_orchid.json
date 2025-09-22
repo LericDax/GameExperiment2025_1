@@ -1,0 +1,29 @@
+{
+  "id": "vaporwave_orchid",
+  "label": "Neon Vapor Orchid",
+  "category": "flowers",
+  "author": "system",
+  "description": "Glowing petals shimmering with synthwave gradients.",
+  "collision": "soft",
+  "voxelScale": 0.24,
+  "attachment": {
+    "groundOffset": 0.12
+  },
+  "placement": {
+    "biomes": ["fading_vaporwave_dimension"],
+    "weight": 2.4,
+    "maxSlope": 0.6,
+    "forbidUnderwater": false,
+    "requiresWaterProximity": true,
+    "waterProximityRadius": 2,
+    "jitterRadius": 0.9,
+    "maxInstancesPerColumn": 3
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "size": [0.6, 1.2, 0.6], "tint": "#f48fe3" },
+    { "type": "leaf", "position": [0, 0.6, 0], "size": [2.0, 0.5, 0.8], "tint": "#7affff", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.6, 0], "size": [0.8, 0.5, 2.0], "tint": "#8dffd8", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.4, 0], "size": [1.6, 0.7, 1.6], "tint": "#ffd8ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.9, 0], "size": [1.0, 0.4, 1.0], "tint": "#fff2ff", "isSolid": false }
+  ]
+}

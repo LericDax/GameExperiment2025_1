@@ -1,0 +1,25 @@
+{
+  "id": "vaporwave_seaweed",
+  "label": "Pastel Seaweed",
+  "category": "water-plants",
+  "author": "system",
+  "description": "Soft neon fronds drifting through warm synth tides.",
+  "collision": "soft",
+  "voxelScale": 0.26,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["fading_vaporwave_dimension"],
+    "weight": 2.0,
+    "requiresUnderwater": true,
+    "maxSlope": 0.6,
+    "jitterRadius": 0.5,
+    "maxInstancesPerColumn": 3
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [0.6, 2.0, 0.6], "tint": "#8dfff8", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.5, 0], "size": [0.6, 1.8, 0.6], "tint": "#affffc", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.8, 0], "size": [0.6, 1.6, 0.6], "tint": "#ffe0ff", "isSolid": false }
+  ]
+}

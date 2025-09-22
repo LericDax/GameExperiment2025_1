@@ -1,6 +1,7 @@
 {
   "id": "sunset_dunes",
   "label": "Sunset Dunes",
+  "tags": ["arid", "sandy", "wind-carved"],
   "climate": {
     "temperature": 0.92,
     "moisture": 0.12
@@ -11,8 +12,13 @@
     "subSurfaceBlock": "sand",
     "subSurfaceDepth": 5,
     "deepBlock": "stone",
-    "treeDensity": 0.0,
-    "shrubChance": 0.01,
+    "treeDensity": 0.02,
+    "shrubChance": 0.04,
+    "flowerChance": 0.01,
+    "rockChance": 0.06,
+    "structureChance": 0.0,
+    "fungiChance": 0.0,
+    "waterPlantChance": 0.0,
     "treeHeight": {
       "min": 2,
       "max": 3
@@ -20,12 +26,12 @@
     "heightOffset": -1
   },
   "palette": {
-    "sand": "#f4dc94",
-    "dirt": "#e2b978",
+    "sand": "#f2d48b",
+    "dirt": "#c99863",
     "stone": "#d0b48d",
     "grass": "#e6d19b",
-    "leaf": "#d0c46d",
-    "log": "#c49a63",
+    "leaf": "#c4d87a",
+    "log": "#a76f3f",
     "water": "#3f9dac"
   },
   "shader": {

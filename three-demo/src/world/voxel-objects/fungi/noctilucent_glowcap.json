@@ -1,0 +1,26 @@
+{
+  "id": "noctilucent_glowcap",
+  "label": "Noctilucent Glowcap",
+  "category": "fungi",
+  "author": "system",
+  "description": "Bioluminescent mushroom casting cyan ambience.",
+  "collision": "soft",
+  "voxelScale": 0.28,
+  "attachment": {
+    "groundOffset": 0.12
+  },
+  "placement": {
+    "biomes": ["noctilucent_fungus_glade"],
+    "weight": 3.2,
+    "maxSlope": 0.55,
+    "forbidUnderwater": false,
+    "jitterRadius": 0.6,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "size": [0.8, 1.6, 0.8], "tint": "#5b3f7a" },
+    { "type": "leaf", "position": [0, 1.2, 0], "size": [2.2, 0.6, 2.2], "tint": "#6ff0ef", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.6, 0], "size": [1.4, 0.4, 1.4], "tint": "#a4fff7", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.4, 0], "size": [1.0, 0.4, 1.0], "tint": "#48c2c0", "isSolid": false }
+  ]
+}

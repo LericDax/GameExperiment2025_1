@@ -1,0 +1,43 @@
+{
+  "id": "noctilucent_fungus_glade",
+  "label": "Noctilucent Fungus Glade",
+  "tags": ["fungal", "bioluminescent", "humid"],
+  "climate": {
+    "temperature": 0.42,
+    "moisture": 0.78
+  },
+  "terrain": {
+    "surfaceBlock": "grass",
+    "shoreBlock": "sand",
+    "subSurfaceBlock": "dirt",
+    "subSurfaceDepth": 5,
+    "deepBlock": "stone",
+    "treeDensity": 0.03,
+    "shrubChance": 0.05,
+    "flowerChance": 0.1,
+    "rockChance": 0.02,
+    "fungiChance": 0.25,
+    "waterPlantChance": 0.04,
+    "structureChance": 0.0,
+    "treeHeight": {
+      "min": 2,
+      "max": 5
+    },
+    "heightOffset": 0
+  },
+  "palette": {
+    "grass": "#2f4a4d",
+    "dirt": "#45393f",
+    "stone": "#50576b",
+    "sand": "#3f4554",
+    "leaf": "#5bded9",
+    "log": "#6b4f78",
+    "water": "#2e6a88",
+    "cloud": "#9dd8ff"
+  },
+  "shader": {
+    "fogColor": "#2a3945",
+    "tintColor": "#3de0f0",
+    "tintStrength": 0.55
+  }
+}
