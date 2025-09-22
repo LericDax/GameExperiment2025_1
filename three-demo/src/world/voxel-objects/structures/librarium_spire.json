@@ -1,0 +1,26 @@
+{
+  "id": "librarium_spire",
+  "label": "Archivist Lightspire",
+  "category": "structures",
+  "author": "system",
+  "description": "Floating indexing node emitting quiet lavender rays.",
+  "collision": "soft",
+  "voxelScale": 0.35,
+  "attachment": {
+    "groundOffset": 0.3
+  },
+  "placement": {
+    "biomes": ["pseudo_borgesian_librarium"],
+    "weight": 1.1,
+    "maxSlope": 0.45,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.8
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [1.2, 3.6, 1.2], "tint": "#7a6c8c" },
+    { "type": "stone", "position": [0, 3.8, 0], "size": [1.0, 1.2, 1.0], "tint": "#8977a1" },
+    { "type": "leaf", "position": [0, 4.6, 0], "size": [2.0, 0.6, 2.0], "tint": "#d8c6ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 5.2, 0], "size": [1.4, 0.4, 1.4], "tint": "#f2eaff", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.6, 0], "size": [1.6, 0.4, 1.6], "tint": "#b99ce5", "isSolid": false }
+  ]
+}

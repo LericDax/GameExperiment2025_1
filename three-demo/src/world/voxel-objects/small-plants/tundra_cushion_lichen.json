@@ -1,0 +1,27 @@
+{
+  "id": "tundra_cushion_lichen",
+  "label": "Cushion Lichen",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Low mats of hardy lichens hugging permafrost.",
+  "collision": "soft",
+  "voxelScale": 0.2,
+  "attachment": {
+    "groundOffset": 0.05
+  },
+  "placement": {
+    "biomes": ["frostbound_steppe"],
+    "weight": 2.8,
+    "maxSlope": 0.7,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.8,
+    "maxInstancesPerColumn": 3
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.6, 0.4, 1.6], "tint": "#cde4d9" },
+    { "type": "leaf", "position": [0.6, 0.2, 0.6], "size": [1.0, 0.3, 1.0], "tint": "#d8f0e4" },
+    { "type": "leaf", "position": [-0.6, 0.2, -0.6], "size": [1.0, 0.3, 1.0], "tint": "#bcd9cc" },
+    { "type": "leaf", "position": [-0.6, 0.2, 0.6], "size": [1.0, 0.3, 1.0], "tint": "#e5f7ec" },
+    { "type": "leaf", "position": [0.6, 0.2, -0.6], "size": [1.0, 0.3, 1.0], "tint": "#c2dfd2" }
+  ]
+}

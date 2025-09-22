@@ -166,16 +166,55 @@ function normalizeDefinition(path, raw) {
       : null,
     minSlope:
       typeof definition?.placement?.minSlope === 'number'
-        ? definition.placement.minSlope
+        ? Math.max(0, Math.min(1, definition.placement.minSlope))
         : 0,
     maxSlope:
       typeof definition?.placement?.maxSlope === 'number'
-        ? definition.placement.maxSlope
+        ? Math.max(0, Math.min(1, definition.placement.maxSlope))
         : 1,
     maxInstancesPerColumn:
       typeof definition?.placement?.maxInstancesPerColumn === 'number'
         ? Math.max(1, Math.floor(definition.placement.maxInstancesPerColumn))
         : 1,
+    jitterRadius:
+      typeof definition?.placement?.jitterRadius === 'number'
+        ? Math.max(0, definition.placement.jitterRadius)
+        : null,
+    minHeight:
+      typeof definition?.placement?.minHeight === 'number'
+        ? definition.placement.minHeight
+        : null,
+    maxHeight:
+      typeof definition?.placement?.maxHeight === 'number'
+        ? definition.placement.maxHeight
+        : null,
+    minMoisture:
+      typeof definition?.placement?.minMoisture === 'number'
+        ? definition.placement.minMoisture
+        : null,
+    maxMoisture:
+      typeof definition?.placement?.maxMoisture === 'number'
+        ? definition.placement.maxMoisture
+        : null,
+    minTemperature:
+      typeof definition?.placement?.minTemperature === 'number'
+        ? definition.placement.minTemperature
+        : null,
+    maxTemperature:
+      typeof definition?.placement?.maxTemperature === 'number'
+        ? definition.placement.maxTemperature
+        : null,
+    requiresUnderwater: Boolean(definition?.placement?.requiresUnderwater),
+    forbidUnderwater: Boolean(definition?.placement?.forbidUnderwater),
+    requiresWaterProximity: Boolean(
+      definition?.placement?.requiresWaterProximity,
+    ),
+    waterProximityRadius:
+      typeof definition?.placement?.waterProximityRadius === 'number'
+        ? Math.max(0, definition.placement.waterProximityRadius)
+        : null,
+    onlyOnShore: Boolean(definition?.placement?.onlyOnShore),
+    forbidShore: Boolean(definition?.placement?.forbidShore),
   };
 
 

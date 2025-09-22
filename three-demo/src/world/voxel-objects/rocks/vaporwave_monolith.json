@@ -1,0 +1,25 @@
+{
+  "id": "vaporwave_monolith",
+  "label": "Holographic Monolith",
+  "category": "rocks",
+  "author": "system",
+  "description": "Translucent obelisk refracting pastel horizons.",
+  "collision": "solid",
+  "voxelScale": 0.5,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["fading_vaporwave_dimension"],
+    "weight": 0.9,
+    "maxSlope": 0.45,
+    "forbidUnderwater": false,
+    "jitterRadius": 0.7
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [1.2, 4.5, 1.2], "tint": "#a78aff" },
+    { "type": "stone", "position": [0.6, 2.2, 0.6], "size": [0.6, 2.2, 0.6], "tint": "#90e7ff" },
+    { "type": "stone", "position": [-0.6, 2.2, -0.6], "size": [0.6, 2.2, 0.6], "tint": "#ffb9f4" },
+    { "type": "leaf", "position": [0, 4.6, 0], "size": [1.4, 0.6, 1.4], "tint": "#fff0ff", "isSolid": false }
+  ]
+}

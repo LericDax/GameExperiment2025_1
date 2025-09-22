@@ -1,0 +1,24 @@
+{
+  "id": "auroral_lightspire",
+  "label": "Auroral Lightspire",
+  "category": "structures",
+  "author": "system",
+  "description": "Crystal spire resonating with underwater auroras.",
+  "collision": "soft",
+  "voxelScale": 0.34,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["auroral_glass_reef"],
+    "weight": 1.2,
+    "requiresUnderwater": true,
+    "maxSlope": 0.6,
+    "jitterRadius": 0.7
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [1.2, 3.0, 1.2], "tint": "#68e7f9" },
+    { "type": "leaf", "position": [0, 2.6, 0], "size": [2.4, 0.8, 2.4], "tint": "#9fffff", "isSolid": false },
+    { "type": "leaf", "position": [0, 3.4, 0], "size": [1.6, 0.6, 1.6], "tint": "#cbffff", "isSolid": false }
+  ]
+}

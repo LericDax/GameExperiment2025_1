@@ -1,0 +1,30 @@
+{
+  "id": "sunset_cactus",
+  "label": "Sunset Column Cactus",
+  "category": "large-plants",
+  "author": "system",
+  "description": "Tall segmented cactus rendered with mini-voxels and warm dusk tints.",
+  "collision": "soft",
+  "voxelScale": 0.35,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["sunset_dunes"],
+    "weight": 1.4,
+    "maxSlope": 0.4,
+    "minHeight": 3,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.7
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "size": [1.2, 3.4, 1.2], "tint": "#2f9f6f" },
+    { "type": "log", "position": [0, 3.6, 0], "size": [1.1, 2.8, 1.1], "tint": "#37b47a" },
+    { "type": "log", "position": [0, 6.2, 0], "size": [1.0, 2.4, 1.0], "tint": "#3fc488" },
+    { "type": "leaf", "position": [1.4, 2.6, 0], "size": [1.1, 2.4, 1.1], "tint": "#3fb98a" },
+    { "type": "leaf", "position": [-1.4, 4.2, 0], "size": [0.9, 2.2, 0.9], "tint": "#42c996" },
+    { "type": "leaf", "position": [0, 4.6, 1.4], "size": [1.0, 2.1, 1.0], "tint": "#3fb98a" },
+    { "type": "leaf", "position": [0, 2.8, -1.4], "size": [0.9, 2.0, 0.9], "tint": "#44d09c" },
+    { "type": "leaf", "position": [0, 7.4, 0], "size": [1.2, 0.8, 1.2], "tint": "#f9c27a", "isSolid": false }
+  ]
+}

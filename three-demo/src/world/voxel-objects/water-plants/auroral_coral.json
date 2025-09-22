@@ -1,0 +1,28 @@
+{
+  "id": "auroral_coral",
+  "label": "Glassreef Coral",
+  "category": "water-plants",
+  "author": "system",
+  "description": "Crystalline coral lattice radiating aurora light.",
+  "collision": "soft",
+  "voxelScale": 0.32,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["auroral_glass_reef"],
+    "weight": 1.8,
+    "requiresUnderwater": true,
+    "maxSlope": 0.55,
+    "jitterRadius": 0.9,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [1.4, 1.0, 1.4], "tint": "#5ad9e4" },
+    { "type": "leaf", "position": [0.9, 0.6, 0], "size": [1.6, 0.8, 0.6], "tint": "#78f7ff", "isSolid": false },
+    { "type": "leaf", "position": [-0.9, 0.6, 0], "size": [1.6, 0.8, 0.6], "tint": "#8dfffb", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.6, 0.9], "size": [0.6, 0.8, 1.6], "tint": "#6cf5ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.6, -0.9], "size": [0.6, 0.8, 1.6], "tint": "#a3fff9", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.6, 0], "size": [1.2, 1.0, 1.2], "tint": "#c8fff8", "isSolid": false }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "id": "librarium_glowglyph",
+  "label": "Glowglyph",
+  "category": "flowers",
+  "author": "system",
+  "description": "Hovering glyph that whispers page numbers.",
+  "collision": "soft",
+  "voxelScale": 0.24,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["pseudo_borgesian_librarium"],
+    "weight": 2.0,
+    "maxSlope": 0.4,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.6,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "size": [0.6, 1.2, 0.6], "tint": "#8b6fb1" },
+    { "type": "leaf", "position": [0, 1.0, 0], "size": [1.6, 0.6, 1.6], "tint": "#cdb3ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.6, 0], "size": [1.2, 0.6, 1.2], "tint": "#f3e7ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.0, 0], "size": [0.8, 0.4, 0.8], "tint": "#ffffff", "isSolid": false }
+  ]
+}
