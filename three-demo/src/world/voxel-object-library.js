@@ -51,16 +51,19 @@ function computeBoundingBox(voxels, voxelScale) {
 
   voxels.forEach((voxel) => {
     const { position, size } = voxel;
-    const halfX = (size.x ?? 1) / 2;
-    const halfY = (size.y ?? 1) / 2;
-    const halfZ = (size.z ?? 1) / 2;
+    const sizeX = size.x ?? 1;
+    const sizeY = size.y ?? 1;
+    const sizeZ = size.z ?? 1;
+    const halfX = sizeX / 2;
+    const halfZ = sizeZ / 2;
 
     const minLocalX = (position.x - halfX) * voxelScale;
-    const minLocalY = (position.y - halfY) * voxelScale;
-    const minLocalZ = (position.z - halfZ) * voxelScale;
     const maxLocalX = (position.x + halfX) * voxelScale;
-    const maxLocalY = (position.y + halfY) * voxelScale;
+    const minLocalZ = (position.z - halfZ) * voxelScale;
     const maxLocalZ = (position.z + halfZ) * voxelScale;
+
+    const minLocalY = position.y * voxelScale;
+    const maxLocalY = (position.y + sizeY) * voxelScale;
 
     minX = Math.min(minX, minLocalX);
     minY = Math.min(minY, minLocalY);
