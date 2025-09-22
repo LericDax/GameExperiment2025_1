@@ -20,10 +20,14 @@
     "heightOffset": 0
   },
   "palette": {
-    "grass": "#ffffff",
-    "leaf": "#ffffff",
-    "log": "#ffffff",
-    "water": "#ffffff"
+    "grass": "#5aa34f",
+    "dirt": "#7a5436",
+    "stone": "#8f949e",
+    "sand": "#d9c88d",
+    "leaf": "#66b756",
+    "log": "#7f5839",
+    "water": "#3a79c5",
+    "cloud": "#f7f8fb"
   },
   "shader": {
     "fogColor": "#a9d6ff",

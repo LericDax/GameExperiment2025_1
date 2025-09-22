@@ -8,14 +8,14 @@ import tundra from './biomes/tundra.json' with { type: 'json' };
 const rawBiomeDefinitions = [temperate, desert, tundra];
 
 const DEFAULT_PALETTE = {
-  grass: '#ffffff',
-  dirt: '#ffffff',
-  stone: '#ffffff',
-  sand: '#ffffff',
-  water: '#ffffff',
-  leaf: '#ffffff',
-  log: '#ffffff',
-  cloud: '#ffffff',
+  grass: '#4a9c47',
+  dirt: '#6b4a2f',
+  stone: '#8c8c8c',
+  sand: '#d7c27a',
+  water: '#1f4d8f',
+  leaf: '#3f7c35',
+  log: '#725032',
+  cloud: '#f7f8fb',
 };
 
 function clamp01(value) {
