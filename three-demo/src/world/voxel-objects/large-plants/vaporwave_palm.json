@@ -16,9 +16,42 @@
     "forbidUnderwater": false,
     "jitterRadius": 0.8
   },
+  "procedural": {
+    "nodeGrowth": {
+      "step": 0.42,
+      "defaultVoxel": { "type": "log", "isSolid": true, "tint": "#f8a7ff" },
+      "nodes": [
+        {
+          "id": "base",
+          "position": [0, 0, 0],
+          "voxel": { "type": "log", "size": [1.15, 0.6, 1.15], "tint": "#f38ff9", "isSolid": true }
+        },
+        { "id": "mid", "position": [0.25, 2.4, -0.15] },
+        {
+          "id": "crown",
+          "position": [0.05, 4.5, 0.2],
+          "voxel": { "type": "log", "size": [0.8, 0.6, 0.8], "tint": "#ffbffb", "isSolid": true }
+        }
+      ],
+      "segments": [
+        {
+          "from": "base",
+          "to": "mid",
+          "voxel": { "type": "log", "tint": "#f8a7ff", "isSolid": true },
+          "startSize": [1.05, 0.9, 1.05],
+          "endSize": [0.9, 0.85, 0.9]
+        },
+        {
+          "from": "mid",
+          "to": "crown",
+          "voxel": { "type": "log", "tint": "#ffbdfc", "isSolid": true },
+          "startSize": [0.9, 0.8, 0.9],
+          "endSize": [0.7, 0.7, 0.7]
+        }
+      ]
+    }
+  },
   "voxels": [
-    { "type": "log", "position": [0, 0, 0], "size": [1.0, 3.6, 1.0], "tint": "#f8a7ff" },
-    { "type": "log", "position": [0, 3.8, 0], "size": [0.9, 1.2, 0.9], "tint": "#ffbffb" },
     { "type": "leaf", "position": [0, 4.2, 0], "size": [3.2, 0.6, 1.1], "tint": "#6dffd2", "isSolid": false },
     { "type": "leaf", "position": [0, 4.2, 0], "size": [1.1, 0.6, 3.2], "tint": "#7affff", "isSolid": false },
     { "type": "leaf", "position": [1.8, 4.4, 1.8], "size": [2.4, 0.5, 1.0], "tint": "#9dffe0", "isSolid": false },

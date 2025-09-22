@@ -1,4 +1,8 @@
-import { getWeightedVoxelObject, isVoxelObjectAllowedInBiome } from './voxel-object-library.js';
+import {
+  getWeightedVoxelObject,
+  isVoxelObjectAllowedInBiome,
+} from './voxel-object-library.js';
+import { resolveVoxelObjectVoxels } from './voxel-object-processor.js';
 
 function ensureRandomSource(randomSource) {
   if (typeof randomSource === 'function') {
@@ -46,7 +50,9 @@ export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
   const defaultSolidOverride = object.voxelScale < 1;
 
 
-  object.voxels.forEach((voxel) => {
+  const voxels = resolveVoxelObjectVoxels(object);
+
+  voxels.forEach((voxel) => {
     const scale = resolveScaleVector(voxel, object.voxelScale);
     const worldX = anchor.x + voxel.position.x * object.voxelScale;
     const worldY = anchor.y + voxel.position.y * object.voxelScale + scale.y / 2;

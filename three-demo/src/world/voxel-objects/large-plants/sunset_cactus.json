@@ -17,10 +17,42 @@
     "forbidUnderwater": true,
     "jitterRadius": 0.7
   },
+  "procedural": {
+    "nodeGrowth": {
+      "step": 0.38,
+      "defaultVoxel": { "type": "log", "isSolid": true, "tint": "#37b47a" },
+      "nodes": [
+        {
+          "id": "base",
+          "position": [0, 0, 0],
+          "voxel": { "type": "log", "size": [1.25, 0.6, 1.25], "tint": "#2f9f6f", "isSolid": true }
+        },
+        { "id": "mid", "position": [0, 3.2, 0] },
+        {
+          "id": "upper",
+          "position": [0, 6.4, 0],
+          "voxel": { "type": "log", "size": [0.9, 0.6, 0.9], "tint": "#3fc488", "isSolid": true }
+        }
+      ],
+      "segments": [
+        {
+          "from": "base",
+          "to": "mid",
+          "voxel": { "type": "log", "tint": "#37b47a", "isSolid": true },
+          "startSize": [1.2, 1.1, 1.2],
+          "endSize": [1.05, 1.05, 1.05]
+        },
+        {
+          "from": "mid",
+          "to": "upper",
+          "voxel": { "type": "log", "tint": "#3fc488", "isSolid": true },
+          "startSize": [1.05, 1.0, 1.05],
+          "endSize": [0.9, 0.9, 0.9]
+        }
+      ]
+    }
+  },
   "voxels": [
-    { "type": "log", "position": [0, 0, 0], "size": [1.2, 3.4, 1.2], "tint": "#2f9f6f" },
-    { "type": "log", "position": [0, 3.6, 0], "size": [1.1, 2.8, 1.1], "tint": "#37b47a" },
-    { "type": "log", "position": [0, 6.2, 0], "size": [1.0, 2.4, 1.0], "tint": "#3fc488" },
     { "type": "leaf", "position": [1.4, 2.6, 0], "size": [1.1, 2.4, 1.1], "tint": "#3fb98a" },
     { "type": "leaf", "position": [-1.4, 4.2, 0], "size": [0.9, 2.2, 0.9], "tint": "#42c996" },
     { "type": "leaf", "position": [0, 4.6, 1.4], "size": [1.0, 2.1, 1.0], "tint": "#3fb98a" },
