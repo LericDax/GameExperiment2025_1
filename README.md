@@ -1,6 +1,6 @@
 # Procedural Block World
 
-This project hosts a browser-based sandbox inspired by classic block-building games. It ships with a static HTML bootstrap (`index.html`) for lightweight deployment and a Vite workspace (`three-demo/`) that provides a modern development loop while reusing the shared `src/` modules.
+This project hosts a browser-based sandbox inspired by classic block-building games. The entire runtime now lives inside the Vite workspace (`three-demo/`), which provides both the development server and production build pipeline. The root `index.html` simply documents how to launch those workflows.
 
 ## Features
 
@@ -24,9 +24,7 @@ The Vite demo is the recommended way to iterate on the experience:
    ```bash
    npm run dev
    ```
-3. Open the provided local URL in a modern browser. The Vite entry point reuses the root `src/` modules, so all changes in `src/` are reflected instantly.
-
-For quick previews without tooling, you can still open `index.html` directly in a browser or serve the root directory with any static file server (for example, `npx serve .`).
+3. Open the provided local URL in a modern browser. The Vite entry point serves the modules from `three-demo/src/`, so changes are reflected instantly.
 
 ## Controls
 - `WASD` / arrow keys – movement

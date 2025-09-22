@@ -5,145 +5,80 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Procedural Block World</title>
     <style>
-      html,
+      :root {
+        color-scheme: dark;
+      }
+
       body {
         margin: 0;
-        padding: 0;
-        overflow: hidden;
-        height: 100%;
-        background: #000;
-        font-family: "Segoe UI", sans-serif;
-        color: #fff;
-      }
-
-      #overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+        padding: 48px 24px;
+        font-family: 'Segoe UI', sans-serif;
+        background: radial-gradient(circle at top, #1b2735, #090a0f);
+        color: #f1f5f9;
         display: flex;
-        align-items: center;
         justify-content: center;
-        flex-direction: column;
-        background: rgba(0, 0, 0, 0.6);
-        cursor: pointer;
-        transition: opacity 0.3s ease;
       }
 
-      #overlay.hidden {
-        opacity: 0;
-        pointer-events: none;
-      }
-
-      #instructions {
-        text-align: center;
-        max-width: 420px;
-        line-height: 1.6;
-      }
-
-      #overlay-status {
-        margin-top: 18px;
-        font-size: 13px;
-        color: rgba(255, 255, 255, 0.85);
-        line-height: 1.5;
-        opacity: 0;
-        transition: opacity 0.3s ease;
-      }
-
-      #overlay-status.visible {
-        opacity: 1;
-      }
-
-      #overlay-status.error {
-        color: #ffb4a2;
-      }
-
-      #hud {
-        position: absolute;
-        left: 24px;
-        bottom: 24px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        pointer-events: none;
-        min-width: 220px;
-        font-size: 14px;
-      }
-
-      .hud-bar {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .hud-label {
-        text-transform: uppercase;
-        font-size: 11px;
-        letter-spacing: 0.08em;
-        color: rgba(255, 255, 255, 0.8);
-      }
-
-      .hud-track {
-        flex: 1;
-        height: 6px;
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 6px;
-        overflow: hidden;
-      }
-
-      .hud-fill {
-        height: 100%;
+      main {
+        max-width: 640px;
         width: 100%;
-        background: linear-gradient(90deg, #6bff8f, #2ec4a0);
-        transition: width 0.2s ease;
+        background: rgba(15, 23, 42, 0.78);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        border-radius: 18px;
+        padding: 32px 28px;
+        box-shadow: 0 20px 48px rgba(15, 23, 42, 0.35);
       }
 
-      #hud-oxygen-fill {
-        background: linear-gradient(90deg, #7ecbff, #3a8dff);
+      h1 {
+        margin: 0 0 16px;
+        font-size: 1.75rem;
+        letter-spacing: 0.02em;
       }
 
-      .hud-value {
-        font-variant-numeric: tabular-nums;
-        font-size: 12px;
-        color: rgba(255, 255, 255, 0.9);
-        min-width: 32px;
-        text-align: right;
+      p {
+        margin: 0 0 18px;
+        line-height: 1.6;
+        color: rgba(226, 232, 240, 0.88);
       }
 
-      #hud-status {
-        min-height: 18px;
-        font-size: 13px;
-        color: #ffe28a;
-        opacity: 0;
-        transition: opacity 0.3s ease;
+      ol {
+        margin: 0;
+        padding-left: 20px;
+        line-height: 1.6;
+        color: rgba(226, 232, 240, 0.88);
       }
 
-      #hud-status.visible {
-        opacity: 1;
+      a {
+        color: #7dd3fc;
       }
 
-      #hud.in-water .hud-fill {
-        background: linear-gradient(90deg, #45d0ff, #1b7bff);
-      }
-
-      canvas {
-        display: block;
+      a:hover {
+        color: #38bdf8;
       }
     </style>
   </head>
   <body>
-    <div id="overlay">
-      <div id="instructions">
-        <h1>Procedural Block World</h1>
-        <p>
-          Click anywhere to lock the pointer, then use WASD to move, Space to
-          jump, and Shift to sprint (or dive while swimming). Keep an eye on
-          your health and oxygen in the HUD.
-        </p>
-        <p id="overlay-status" role="alert" aria-live="assertive"></p>
-      </div>
-    </div>
-    <script type="module" src="./src/main.js"></script>
+    <main>
+      <h1>Procedural Block World</h1>
+      <p>
+        The game now lives entirely inside the Vite workspace under
+        <code>three-demo/</code>. Use one of the workflows below to launch it.
+      </p>
+      <ol>
+        <li>
+          <strong>Development:</strong> <code>cd three-demo &amp;&amp; npm install &amp;&amp; npm run dev</code>,
+          then open the URL Vite prints in your terminal (typically
+          <code>http://localhost:5173/</code>).
+        </li>
+        <li>
+          <strong>Production build:</strong> <code>npm run build</code> and serve the generated files in
+          <code>three-demo/dist/</code> with your preferred static server.
+        </li>
+      </ol>
+      <p>
+        This landing page replaces the old CDN-driven build so that the codebase
+        has a single authoritative entry point.
+      </p>
+    </main>
   </body>
 </html>
