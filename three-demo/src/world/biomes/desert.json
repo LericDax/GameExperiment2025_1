@@ -1,0 +1,36 @@
+{
+  "id": "sunset_dunes",
+  "label": "Sunset Dunes",
+  "climate": {
+    "temperature": 0.92,
+    "moisture": 0.12
+  },
+  "terrain": {
+    "surfaceBlock": "sand",
+    "shoreBlock": "sand",
+    "subSurfaceBlock": "sand",
+    "subSurfaceDepth": 5,
+    "deepBlock": "stone",
+    "treeDensity": 0.0,
+    "shrubChance": 0.01,
+    "treeHeight": {
+      "min": 2,
+      "max": 3
+    },
+    "heightOffset": -1
+  },
+  "palette": {
+    "sand": "#f4dc94",
+    "dirt": "#e2b978",
+    "stone": "#d0b48d",
+    "grass": "#e6d19b",
+    "leaf": "#d0c46d",
+    "log": "#c49a63",
+    "water": "#3f9dac"
+  },
+  "shader": {
+    "fogColor": "#f3d8a6",
+    "tintColor": "#ffe3b0",
+    "tintStrength": 0.45
+  }
+}
