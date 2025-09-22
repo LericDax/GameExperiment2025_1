@@ -68,6 +68,18 @@ export function createPlayerControls({
     sprint: false,
   };
 
+  const flyState = {
+    ascend: false,
+    descend: false,
+  };
+
+  let inputEnabled = true;
+
+  const cheatState = {
+    godMode: false,
+    flightEnabled: false,
+  };
+
   const cameraForward = new THREE.Vector3();
   const cameraRight = new THREE.Vector3();
   const cameraUp = new THREE.Vector3(0, 1, 0);
@@ -197,6 +209,9 @@ export function createPlayerControls({
   }
 
   function applyDamage(amount, message) {
+    if (cheatState.godMode) {
+      return;
+    }
     if (amount <= 0) {
       return;
     }
@@ -389,6 +404,9 @@ export function createPlayerControls({
   initializeSpawn();
 
   const onKeyDown = (event) => {
+    if (!inputEnabled) {
+      return;
+    }
     switch (event.code) {
       case 'KeyW':
       case 'ArrowUp':
@@ -407,11 +425,25 @@ export function createPlayerControls({
         moveState.right = true;
         break;
       case 'Space':
-        jumpRequested = true;
+        if (cheatState.flightEnabled) {
+          flyState.ascend = true;
+        } else {
+          jumpRequested = true;
+        }
         break;
       case 'ShiftLeft':
       case 'ShiftRight':
-        moveState.sprint = true;
+        if (cheatState.flightEnabled) {
+          flyState.descend = true;
+        } else {
+          moveState.sprint = true;
+        }
+        break;
+      case 'ControlLeft':
+      case 'ControlRight':
+        if (cheatState.flightEnabled) {
+          flyState.descend = true;
+        }
         break;
       default:
         break;
@@ -419,6 +451,9 @@ export function createPlayerControls({
   };
 
   const onKeyUp = (event) => {
+    if (!inputEnabled) {
+      return;
+    }
     switch (event.code) {
       case 'KeyW':
       case 'ArrowUp':
@@ -436,9 +471,24 @@ export function createPlayerControls({
       case 'ArrowRight':
         moveState.right = false;
         break;
+      case 'Space':
+        if (cheatState.flightEnabled) {
+          flyState.ascend = false;
+        }
+        break;
       case 'ShiftLeft':
       case 'ShiftRight':
-        moveState.sprint = false;
+        if (cheatState.flightEnabled) {
+          flyState.descend = false;
+        } else {
+          moveState.sprint = false;
+        }
+        break;
+      case 'ControlLeft':
+      case 'ControlRight':
+        if (cheatState.flightEnabled) {
+          flyState.descend = false;
+        }
         break;
       default:
         break;
@@ -508,6 +558,9 @@ export function createPlayerControls({
   }
 
   function handlePointerDown(event) {
+    if (!inputEnabled) {
+      return;
+    }
     if (controls.isLocked) {
       if (event.button === 0) {
         attackState.swinging = true;
@@ -828,9 +881,17 @@ export function createPlayerControls({
         movementStep.normalize();
       }
 
-      const baseSpeed = 5.2;
-      const sprintBonus = sprint && forward && !feetInWater ? 3.2 : 0;
-      const mediumPenalty = feetInWater ? 0.42 : inSoftMedium ? 0.7 : 1;
+      const flightActive = cheatState.flightEnabled;
+      const baseSpeed = flightActive ? 7 : 5.2;
+      const sprintBonus =
+        !flightActive && sprint && forward && !feetInWater ? 3.2 : 0;
+      const mediumPenalty = flightActive
+        ? 1
+        : feetInWater
+        ? 0.42
+        : inSoftMedium
+        ? 0.7
+        : 1;
       const moveSpeed = (baseSpeed + sprintBonus) * mediumPenalty;
       movementStep.multiplyScalar(moveSpeed * delta);
 
@@ -859,74 +920,89 @@ export function createPlayerControls({
       }
     }
 
-    const standingSurface = findStandingSurface(position);
-    const supportTargetY = standingSurface
-      ? standingSurface.height + playerEyeHeight
-      : Number.NEGATIVE_INFINITY;
-    const waterTarget =
-      worldConfig.waterLevel + 0.5 + playerEyeHeight - 0.2;
-    let targetY = supportTargetY;
-    if (!feetInWater && inWaterColumn) {
-      targetY = Math.max(targetY, waterTarget);
-    }
-
-    if (jumpRequested) {
-
-      const nearGround =
-        Number.isFinite(supportTargetY) &&
-        position.y <= supportTargetY + nearGroundThreshold;
-
-      if (isGrounded || nearGround) {
-        verticalVelocity = jumpVelocity;
-        isGrounded = false;
-      } else if (feetInWater) {
-        verticalVelocity = Math.max(verticalVelocity, 4.6);
+    if (cheatState.flightEnabled) {
+      const verticalDirection =
+        Number(flyState.ascend) - Number(flyState.descend);
+      if (verticalDirection !== 0) {
+        attemptPosition.copy(position);
+        attemptPosition.y += verticalDirection * 9 * delta;
+        if (!collidesAt(attemptPosition)) {
+          position.copy(attemptPosition);
+        }
       }
-    }
-    jumpRequested = false;
-
-    const effectiveGravity = feetInWater ? gravity * 0.35 : gravity;
-    verticalVelocity -= effectiveGravity * delta;
-    if (feetInWater) {
-      const submersion = THREE.MathUtils.clamp(waterSurface - feetY, 0, 6);
-      const buoyancy = submersion * 2.4;
-      verticalVelocity += buoyancy * delta;
-      verticalVelocity *= 0.82;
-      if (sprint && !isGrounded) {
-        verticalVelocity -= 4.2 * delta;
-      }
-    }
-
-    const previousY = position.y;
-    position.y += verticalVelocity * delta;
-
-    if (collidesAt(position) && verticalVelocity > 0) {
-      position.y = previousY;
       verticalVelocity = 0;
-    }
-
-    if (verticalVelocity < maxDownwardSpeed) {
-      maxDownwardSpeed = verticalVelocity;
-    }
-
-    if (Number.isFinite(targetY) && position.y <= targetY) {
-      const landedOnSupport =
-        Number.isFinite(supportTargetY) &&
-        position.y <= supportTargetY + 1e-3;
-      if (
-        landedOnSupport &&
-        !feetInWater &&
-        maxDownwardSpeed < -12
-      ) {
-        const impact = Math.abs(maxDownwardSpeed) - 10;
-        applyDamage(impact * 4.5, 'You hit the ground hard.');
-      }
-      position.y = landedOnSupport ? supportTargetY : targetY;
-      verticalVelocity = 0;
-      maxDownwardSpeed = 0;
-      isGrounded = landedOnSupport;
-    } else {
+      maxDownwardSpeed = Math.min(maxDownwardSpeed, 0);
       isGrounded = false;
+      jumpRequested = false;
+    } else {
+      const standingSurface = findStandingSurface(position);
+      const supportTargetY = standingSurface
+        ? standingSurface.height + playerEyeHeight
+        : Number.NEGATIVE_INFINITY;
+      const waterTarget =
+        worldConfig.waterLevel + 0.5 + playerEyeHeight - 0.2;
+      let targetY = supportTargetY;
+      if (!feetInWater && inWaterColumn) {
+        targetY = Math.max(targetY, waterTarget);
+      }
+
+      if (jumpRequested) {
+        const nearGround =
+          Number.isFinite(supportTargetY) &&
+          position.y <= supportTargetY + nearGroundThreshold;
+
+        if (isGrounded || nearGround) {
+          verticalVelocity = jumpVelocity;
+          isGrounded = false;
+        } else if (feetInWater) {
+          verticalVelocity = Math.max(verticalVelocity, 4.6);
+        }
+      }
+      jumpRequested = false;
+
+      const effectiveGravity = feetInWater ? gravity * 0.35 : gravity;
+      verticalVelocity -= effectiveGravity * delta;
+      if (feetInWater) {
+        const submersion = THREE.MathUtils.clamp(waterSurface - feetY, 0, 6);
+        const buoyancy = submersion * 2.4;
+        verticalVelocity += buoyancy * delta;
+        verticalVelocity *= 0.82;
+        if (sprint && !isGrounded) {
+          verticalVelocity -= 4.2 * delta;
+        }
+      }
+
+      const previousY = position.y;
+      position.y += verticalVelocity * delta;
+
+      if (collidesAt(position) && verticalVelocity > 0) {
+        position.y = previousY;
+        verticalVelocity = 0;
+      }
+
+      if (verticalVelocity < maxDownwardSpeed) {
+        maxDownwardSpeed = verticalVelocity;
+      }
+
+      if (Number.isFinite(targetY) && position.y <= targetY) {
+        const landedOnSupport =
+          Number.isFinite(supportTargetY) &&
+          position.y <= supportTargetY + 1e-3;
+        if (
+          landedOnSupport &&
+          !feetInWater &&
+          maxDownwardSpeed < -12
+        ) {
+          const impact = Math.abs(maxDownwardSpeed) - 10;
+          applyDamage(impact * 4.5, 'You hit the ground hard.');
+        }
+        position.y = landedOnSupport ? supportTargetY : targetY;
+        verticalVelocity = 0;
+        maxDownwardSpeed = 0;
+        isGrounded = landedOnSupport;
+      } else {
+        isGrounded = false;
+      }
     }
 
     if (statusTimer > 0) {
@@ -1037,6 +1113,100 @@ export function createPlayerControls({
     }
   }
 
+  function setInputEnabled(enabled) {
+    const next = Boolean(enabled);
+    if (inputEnabled === next) {
+      return;
+    }
+    inputEnabled = next;
+    if (!inputEnabled) {
+      moveState.forward = false;
+      moveState.backward = false;
+      moveState.left = false;
+      moveState.right = false;
+      moveState.sprint = false;
+      flyState.ascend = false;
+      flyState.descend = false;
+      jumpRequested = false;
+      stopAttack();
+    }
+  }
+
+  function setGodModeEnabled(enabled) {
+    cheatState.godMode = Boolean(enabled);
+    return cheatState.godMode;
+  }
+
+  function isGodModeEnabled() {
+    return cheatState.godMode;
+  }
+
+  function setFlightEnabled(enabled) {
+    const next = Boolean(enabled);
+    if (cheatState.flightEnabled === next) {
+      return cheatState.flightEnabled;
+    }
+    cheatState.flightEnabled = next;
+    if (next) {
+      jumpRequested = false;
+      moveState.sprint = false;
+      verticalVelocity = 0;
+      maxDownwardSpeed = Math.min(maxDownwardSpeed, 0);
+    } else {
+      flyState.ascend = false;
+      flyState.descend = false;
+    }
+    return cheatState.flightEnabled;
+  }
+
+  function isFlightEnabled() {
+    return cheatState.flightEnabled;
+  }
+
+  function unstuck() {
+    return attemptCollisionRescue('command');
+  }
+
+  function setHealth(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      throw new Error('Health value must be a finite number.');
+    }
+    const clamped = THREE.MathUtils.clamp(numeric, 0, 100);
+    if (playerState.health !== clamped) {
+      playerState.health = clamped;
+      markStateDirty();
+      pushState();
+    }
+    return playerState.health;
+  }
+
+  function setOxygen(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      throw new Error('Oxygen value must be a finite number.');
+    }
+    const clamped = THREE.MathUtils.clamp(numeric, 0, playerState.maxOxygen);
+    if (playerState.oxygen !== clamped) {
+      playerState.oxygen = clamped;
+      markStateDirty();
+      pushState();
+    }
+    return playerState.oxygen;
+  }
+
+  function getMaxOxygen() {
+    return playerState.maxOxygen;
+  }
+
+  function setStatusMessage(message, duration = 2.2) {
+    setStatus(message, duration);
+  }
+
+  function clearStatusMessage() {
+    clearStatus();
+  }
+
   function dispose() {
     scene.remove(controlObject);
     overlay?.removeEventListener('click', handleOverlayClick);
@@ -1063,5 +1233,24 @@ export function createPlayerControls({
     return { ...playerState };
   }
 
-  return { controls, moveState, collidesAt, update, dispose, getPosition, getState };
+  return {
+    controls,
+    moveState,
+    collidesAt,
+    update,
+    dispose,
+    getPosition,
+    getState,
+    setInputEnabled,
+    setGodModeEnabled,
+    isGodModeEnabled,
+    setFlightEnabled,
+    isFlightEnabled,
+    unstuck,
+    setHealth,
+    setOxygen,
+    getMaxOxygen,
+    setStatusMessage,
+    clearStatusMessage,
+  };
 }

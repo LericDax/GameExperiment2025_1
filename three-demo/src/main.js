@@ -9,6 +9,8 @@ import {
 } from './world/generation.js'
 import { createChunkManager } from './world/chunk-manager.js'
 import { createPlayerControls } from './player/controls.js'
+import { createCommandConsole } from './ui/command-console.js'
+import { registerDeveloperCommands } from './player/dev-commands.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -158,6 +160,31 @@ try {
 
   chunkManager.update(playerControls.getPosition())
   updateHud(playerControls.getState())
+
+  const commandConsole = createCommandConsole({
+    onToggle: (isOpen) => {
+      if (playerControls) {
+        playerControls.setInputEnabled(!isOpen)
+        if (isOpen && playerControls.controls?.isLocked) {
+          try {
+            playerControls.controls.unlock()
+          } catch (error) {
+            console.warn('Failed to release pointer lock for console toggle.', error)
+          }
+        }
+      }
+      if (!isOpen) {
+        renderer.domElement.focus?.()
+      }
+    },
+  })
+
+  registerDeveloperCommands({
+    commandConsole,
+    playerControls,
+  })
+
+  commandConsole.log('Developer console ready. Press ` to toggle. Type /help for commands.')
 } catch (error) {
   initializationError = error instanceof Error ? error : new Error(String(error))
   console.error('Failed to initialize world:', initializationError)
