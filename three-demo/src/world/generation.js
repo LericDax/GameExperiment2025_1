@@ -231,11 +231,20 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       entries.length,
     );
     mesh.userData.defaultColor = engine.getDefaultBlockColor();
+
+    if (!mesh.instanceColor) {
+      const colorArray = new Float32Array(entries.length * 3);
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
+    }
     entries.forEach((entry, index) => {
       mesh.setMatrixAt(index, entry.matrix);
       entry.index = index;
+      const color = entry.color ?? engine.getDefaultBlockColor();
       if (typeof mesh.setColorAt === 'function') {
-        mesh.setColorAt(index, entry.color ?? engine.getDefaultBlockColor());
+        mesh.setColorAt(index, color);
+      } else if (mesh.instanceColor) {
+        mesh.instanceColor.setXYZ(index, color.r, color.g, color.b);
+
       }
     });
     mesh.instanceMatrix.needsUpdate = true;
