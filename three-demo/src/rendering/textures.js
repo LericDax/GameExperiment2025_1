@@ -269,23 +269,25 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
   });
 
   return {
-    grass: new THREE.MeshStandardMaterial({ map: textures.grass }),
-    dirt: new THREE.MeshStandardMaterial({ map: textures.dirt }),
-    stone: new THREE.MeshStandardMaterial({ map: textures.stone }),
-    sand: new THREE.MeshStandardMaterial({ map: textures.sand }),
+    grass: new THREE.MeshStandardMaterial({ map: textures.grass, vertexColors: true }),
+    dirt: new THREE.MeshStandardMaterial({ map: textures.dirt, vertexColors: true }),
+    stone: new THREE.MeshStandardMaterial({ map: textures.stone, vertexColors: true }),
+    sand: new THREE.MeshStandardMaterial({ map: textures.sand, vertexColors: true }),
     water: new THREE.MeshStandardMaterial({
       map: textures.water,
       transparent: true,
       opacity: 0.75,
       depthWrite: false,
+      vertexColors: true,
     }),
-    leaf: new THREE.MeshStandardMaterial({ map: textures.leaf }),
-    log: new THREE.MeshStandardMaterial({ map: textures.log }),
+    leaf: new THREE.MeshStandardMaterial({ map: textures.leaf, vertexColors: true }),
+    log: new THREE.MeshStandardMaterial({ map: textures.log, vertexColors: true }),
     cloud: new THREE.MeshStandardMaterial({
       map: textures.cloud,
       transparent: true,
       opacity: 0.85,
       depthWrite: false,
+      vertexColors: true,
     }),
     damageStages,
   };

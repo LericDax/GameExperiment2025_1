@@ -1,41 +1,4 @@
-class ValueNoise2D {
-  constructor(seed = 1) {
-    this.seed = seed;
-  }
-
-  hash(x, y) {
-    const s = Math.sin(x * 374761393 + y * 668265263 + this.seed * 951.1357);
-    return s - Math.floor(s);
-  }
-
-  smoothstep(t) {
-    return t * t * (3 - 2 * t);
-  }
-
-  noise(x, y) {
-    const x0 = Math.floor(x);
-    const y0 = Math.floor(y);
-    const x1 = x0 + 1;
-    const y1 = y0 + 1;
-
-    const sx = this.smoothstep(x - x0);
-    const sy = this.smoothstep(y - y0);
-
-    const n0 = this.hash(x0, y0);
-    const n1 = this.hash(x1, y0);
-    const ix0 = lerp(n0, n1, sx);
-
-    const n2 = this.hash(x0, y1);
-    const n3 = this.hash(x1, y1);
-    const ix1 = lerp(n2, n3, sx);
-
-    return lerp(ix0, ix1, sy);
-  }
-}
-
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
+import { createTerrainEngine } from './terrain-engine.js';
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -43,6 +6,7 @@ function clamp(value, min, max) {
 
 let THREERef = null;
 let blockGeometry = null;
+let terrainEngine = null;
 
 function ensureThree() {
   if (!THREERef) {
@@ -51,15 +15,21 @@ function ensureThree() {
   return THREERef;
 }
 
+function ensureTerrainEngine() {
+  if (!terrainEngine) {
+    throw new Error('World generation requires the terrain engine to be initialized');
+  }
+  return terrainEngine;
+}
+
 export function initializeWorldGeneration({ THREE }) {
   if (!THREE) {
     throw new Error('initializeWorldGeneration requires a THREE instance');
   }
   THREERef = THREE;
   blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+  terrainEngine = createTerrainEngine({ THREE, seed: 1337, worldConfig });
 }
-
-const noiseGenerator = new ValueNoise2D(1337);
 
 export const worldConfig = {
   chunkSize: 48,
@@ -69,16 +39,14 @@ export const worldConfig = {
 };
 
 export function terrainHeight(x, z) {
-  const frequency1 = 0.06;
-  const frequency2 = 0.12;
-  const amplitude1 = 8;
-  const amplitude2 = 3;
+  const engine = ensureTerrainEngine();
+  const sample = engine.sampleColumn(x, z);
+  return Math.floor(clamp(sample.height, 2, worldConfig.maxHeight));
+}
 
-  const n1 = noiseGenerator.noise(x * frequency1, z * frequency1);
-  const n2 = noiseGenerator.noise(x * frequency2 + 100, z * frequency2 + 100);
-  const combined = n1 * amplitude1 + n2 * amplitude2;
-  const height = worldConfig.baseHeight + combined;
-  return Math.floor(clamp(height, 2, worldConfig.maxHeight));
+export function sampleBiomeAt(x, z) {
+  const engine = ensureTerrainEngine();
+  return engine.getBiomeAt(x, z);
 }
 
 export function randomAt(x, z, offset = 0) {
@@ -92,20 +60,24 @@ function blockKey(x, y, z) {
   return `${x}|${y}|${z}`;
 }
 
-function addTree(addBlock, x, z, groundHeight) {
-  const treeHeight = 3 + Math.floor(randomAt(x, z, 2) * 3);
+function addTree(addBlock, x, z, groundHeight, biome) {
+  const treeRange = biome?.terrain?.treeHeight ?? { min: 3, max: 6 };
+  const minHeight = Math.max(1, treeRange.min ?? 3);
+  const maxHeight = Math.max(minHeight, treeRange.max ?? minHeight);
+  const randomValue = randomAt(x, z, 2);
+  const treeHeight = minHeight + Math.floor(randomValue * (maxHeight - minHeight + 1));
   for (let y = 1; y <= treeHeight; y++) {
-    addBlock('log', x, groundHeight + y, z);
+    addBlock('log', x, groundHeight + y, z, biome);
   }
 
-  const canopyRadius = 2;
+  const canopyRadius = Math.max(1, Math.round(treeHeight / 2));
   const canopyCenter = groundHeight + treeHeight;
   for (let dx = -canopyRadius; dx <= canopyRadius; dx++) {
     for (let dy = -canopyRadius; dy <= canopyRadius; dy++) {
       for (let dz = -canopyRadius; dz <= canopyRadius; dz++) {
         const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (distance <= canopyRadius + (dy === canopyRadius ? 0 : -0.3)) {
-          addBlock('leaf', x + dx, canopyCenter + dy, z + dz);
+          addBlock('leaf', x + dx, canopyCenter + dy, z + dz, biome);
         }
       }
     }
@@ -122,7 +94,7 @@ function addCloud(addBlock, x, y, z) {
     [1, 0, 1],
     [-1, 0, -1],
   ];
-  blocks.forEach(([dx, dy, dz]) => addBlock('cloud', x + dx, y + dy, z + dz));
+  blocks.forEach(([dx, dy, dz]) => addBlock('cloud', x + dx, y + dy, z + dz, null));
 }
 
 function chunkWorldBounds(chunkX, chunkZ) {
@@ -136,6 +108,7 @@ function chunkWorldBounds(chunkX, chunkZ) {
 
 export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const THREE = ensureThree();
+  const engine = ensureTerrainEngine();
   if (!blockGeometry) {
     blockGeometry = new THREE.BoxGeometry(1, 1, 1);
   }
@@ -145,21 +118,25 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const matrix = new THREE.Matrix4();
   const blockLookup = new Map();
   const typeData = new Map();
+  const biomePresence = new Map();
 
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
   const { chunkSize, waterLevel } = worldConfig;
 
-  const addBlock = (type, x, y, z) => {
+  const addBlock = (type, x, y, z, biome) => {
     matrix.setPosition(x, y, z);
     if (!instancedData.has(type)) {
       instancedData.set(type, []);
     }
     const key = blockKey(x, y, z);
+    const color = engine.getBlockColor(biome, type);
     const entry = {
       key,
       matrix: matrix.clone(),
       position: new THREE.Vector3(x, y, z),
       type,
+      biomeId: biome?.id ?? null,
+      color,
       isSolid: solidTypes.has(type),
       isWater: type === 'water',
       destructible: type !== 'water' && type !== 'cloud',
@@ -178,32 +155,56 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     const worldX = minX + lx;
     for (let lz = 0; lz < chunkSize; lz++) {
       const worldZ = minZ + lz;
-      const height = terrainHeight(worldX, worldZ);
-      const surfaceType = height <= waterLevel + 1 ? 'sand' : 'grass';
+      const columnSample = engine.sampleColumn(worldX, worldZ);
+      const biome = columnSample.biome;
+      const height = Math.floor(clamp(columnSample.height, 2, worldConfig.maxHeight));
+      const isShore = height <= waterLevel + 1;
+      const isUnderwater = height < waterLevel;
+
+      if (biome) {
+        const stats = biomePresence.get(biome.id) ?? { biome, samples: 0 };
+        stats.samples += 1;
+        biomePresence.set(biome.id, stats);
+      }
+
+      const surfaceBlock = isUnderwater
+        ? biome?.terrain?.shoreBlock ?? 'sand'
+        : isShore
+        ? biome?.terrain?.shoreBlock ?? 'sand'
+        : biome?.terrain?.surfaceBlock ?? 'grass';
+      const subSurfaceBlock = isUnderwater
+        ? biome?.terrain?.shoreBlock ?? 'sand'
+        : biome?.terrain?.subSurfaceBlock ?? 'dirt';
+      const deepBlock = biome?.terrain?.deepBlock ?? 'stone';
+      const subSurfaceDepth = Math.max(1, biome?.terrain?.subSurfaceDepth ?? 4);
 
       for (let y = 0; y <= height; y++) {
         if (y === height) {
-          addBlock(surfaceType, worldX, y, worldZ);
-        } else if (y < height - 4) {
-          addBlock('stone', worldX, y, worldZ);
+          addBlock(surfaceBlock, worldX, y, worldZ, biome);
+        } else if (y >= height - subSurfaceDepth) {
+          addBlock(subSurfaceBlock, worldX, y, worldZ, biome);
         } else {
-          addBlock('dirt', worldX, y, worldZ);
+          addBlock(deepBlock, worldX, y, worldZ, biome);
         }
       }
 
       if (height < waterLevel) {
         for (let y = height + 1; y <= waterLevel; y++) {
-          addBlock('water', worldX, y, worldZ);
+          addBlock('water', worldX, y, worldZ, biome);
         }
-      } else if (surfaceType === 'grass' && randomAt(worldX, worldZ, 1) > 0.92) {
-        addTree(addBlock, worldX, worldZ, height);
-      }
+      } else {
+        const treeDensity = biome?.terrain?.treeDensity ?? 0;
+        if (treeDensity > 0 && randomAt(worldX, worldZ, 1) > 1 - treeDensity) {
+          addTree(addBlock, worldX, worldZ, height, biome);
+        }
 
-      if (randomAt(worldX, worldZ, 5) > 0.98 && height > waterLevel + 4) {
-        const shrubHeight = height + 1;
-        addBlock('leaf', worldX, shrubHeight, worldZ);
-        if (randomAt(worldX + 10, worldZ + 10, 6) > 0.6) {
-          addBlock('leaf', worldX, shrubHeight + 1, worldZ);
+        const shrubChance = biome?.terrain?.shrubChance ?? 0;
+        if (shrubChance > 0 && randomAt(worldX, worldZ, 5) > 1 - shrubChance) {
+          const shrubHeight = height + 1;
+          addBlock('leaf', worldX, shrubHeight, worldZ, biome);
+          if (randomAt(worldX + 10, worldZ + 10, 6) > 0.6) {
+            addBlock('leaf', worldX, shrubHeight + 1, worldZ, biome);
+          }
         }
       }
     }
@@ -227,22 +228,50 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     const mesh = new THREE.InstancedMesh(
       blockGeometry,
       blockMaterials[type],
-      entries.length
+      entries.length,
     );
+    mesh.userData.defaultColor = engine.getDefaultBlockColor();
+    if (!mesh.instanceColor) {
+      const colorArray = new Float32Array(entries.length * 3);
+      mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
+    }
     entries.forEach((entry, index) => {
       mesh.setMatrixAt(index, entry.matrix);
       entry.index = index;
+      const color = entry.color ?? engine.getDefaultBlockColor();
+      if (typeof mesh.setColorAt === 'function') {
+        mesh.setColorAt(index, color);
+      } else if (mesh.instanceColor) {
+        mesh.instanceColor.setXYZ(index, color.r, color.g, color.b);
+      }
     });
     mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) {
+      mesh.instanceColor.needsUpdate = true;
+    }
     mesh.castShadow = ['cloud', 'water'].includes(type) ? false : true;
     mesh.receiveShadow = type !== 'cloud';
     mesh.frustumCulled = false;
     mesh.userData.type = type;
+    mesh.userData.biomePalette = true;
     typeData.set(type, { entries, mesh });
     group.add(mesh);
   });
 
   group.name = `chunk_${chunkX}_${chunkZ}`;
+  const totalSamples = chunkSize * chunkSize;
+  const biomes = Array.from(biomePresence.values()).map(({ biome, samples }) => ({
+    id: biome.id,
+    label: biome.label,
+    weight: samples / totalSamples,
+    shader: {
+      fogColor: `#${biome.shader.fogColor.getHexString()}`,
+      tintColor: `#${biome.shader.tintColor.getHexString()}`,
+      tintStrength: biome.shader.tintStrength,
+    },
+  }));
+
+  group.userData.biomes = biomes;
 
   return {
     chunkX,
@@ -252,6 +281,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     waterColumnKeys,
     blockLookup,
     typeData,
+    biomes,
   };
 }
 
@@ -261,5 +291,6 @@ export function generateWorld(blockMaterials) {
     meshes: [...chunk.group.children],
     solidBlocks: new Set(chunk.solidBlockKeys),
     waterColumns: new Set(chunk.waterColumnKeys),
+    biomes: chunk.biomes,
   };
 }

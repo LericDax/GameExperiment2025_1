@@ -1,0 +1,33 @@
+{
+  "id": "temperate_forest",
+  "label": "Temperate Forest",
+  "climate": {
+    "temperature": 0.58,
+    "moisture": 0.72
+  },
+  "terrain": {
+    "surfaceBlock": "grass",
+    "shoreBlock": "sand",
+    "subSurfaceBlock": "dirt",
+    "subSurfaceDepth": 4,
+    "deepBlock": "stone",
+    "treeDensity": 0.08,
+    "shrubChance": 0.025,
+    "treeHeight": {
+      "min": 3,
+      "max": 6
+    },
+    "heightOffset": 0
+  },
+  "palette": {
+    "grass": "#ffffff",
+    "leaf": "#ffffff",
+    "log": "#ffffff",
+    "water": "#ffffff"
+  },
+  "shader": {
+    "fogColor": "#a9d6ff",
+    "tintColor": "#ffffff",
+    "tintStrength": 0.0
+  }
+}
