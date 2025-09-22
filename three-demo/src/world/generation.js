@@ -103,6 +103,65 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
   const { chunkSize, waterLevel } = worldConfig;
 
+  const columnSampleCache = new Map();
+
+  const cacheKey = (x, z) => `${x}|${z}`;
+
+  const sampleColumnCached = (x, z) => {
+    const key = cacheKey(x, z);
+    if (columnSampleCache.has(key)) {
+      return columnSampleCache.get(key);
+    }
+    const sample = engine.sampleColumn(x, z);
+    columnSampleCache.set(key, sample);
+    return sample;
+  };
+
+  const getColumnHeight = (x, z) => {
+    const sample = sampleColumnCached(x, z);
+    return Math.floor(clamp(sample.height, 2, worldConfig.maxHeight));
+  };
+
+  const computeSlope = (x, z, baseHeight) => {
+    const offsets = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+      [1, 1],
+      [-1, -1],
+      [1, -1],
+      [-1, 1],
+    ];
+    let maxDifference = 0;
+    for (const [dx, dz] of offsets) {
+      const neighborHeight = getColumnHeight(x + dx, z + dz);
+      const difference = Math.abs(baseHeight - neighborHeight);
+      if (difference > maxDifference) {
+        maxDifference = difference;
+      }
+    }
+    return clamp(maxDifference / 6, 0, 1);
+  };
+
+  const computeWaterDistance = (x, z, baseHeight, searchRadius = 4) => {
+    if (baseHeight < waterLevel) {
+      return 0;
+    }
+    for (let radius = 1; radius <= searchRadius; radius++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const dzRange = radius - Math.abs(dx);
+        for (let dz = -dzRange; dz <= dzRange; dz++) {
+          const neighborHeight = getColumnHeight(x + dx, z + dz);
+          if (neighborHeight < waterLevel) {
+            return radius;
+          }
+        }
+      }
+    }
+    return searchRadius + 1;
+  };
+
   const resolveScaleVector = (scaleOption) => {
     if (!scaleOption && scaleOption !== 0) {
       return new THREE.Vector3(1, 1, 1);
@@ -262,11 +321,13 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     const worldX = minX + lx;
     for (let lz = 0; lz < chunkSize; lz++) {
       const worldZ = minZ + lz;
-      const columnSample = engine.sampleColumn(worldX, worldZ);
+      const columnSample = sampleColumnCached(worldX, worldZ);
       const biome = columnSample.biome;
-      const height = Math.floor(clamp(columnSample.height, 2, worldConfig.maxHeight));
-      const isShore = height <= waterLevel + 1;
+      const height = getColumnHeight(worldX, worldZ);
+      const slope = computeSlope(worldX, worldZ, height);
+      const distanceToWater = computeWaterDistance(worldX, worldZ, height);
       const isUnderwater = height < waterLevel;
+      const isShore = !isUnderwater && distanceToWater <= 1;
 
       if (biome) {
         const stats = biomePresence.get(biome.id) ?? { biome, samples: 0 };
@@ -299,16 +360,22 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         for (let y = height + 1; y <= waterLevel; y++) {
           addBlock('water', worldX, y, worldZ, biome);
         }
-      } else {
-        populateColumnWithVoxelObjects({
-          addBlock,
-          biome,
-          groundHeight: height,
-          worldX,
-          worldZ,
-          randomSource: (offset) => randomAt(worldX, worldZ, offset),
-        });
       }
+
+      populateColumnWithVoxelObjects({
+        addBlock,
+        biome,
+        columnSample,
+        groundHeight: height,
+        slope,
+        worldX,
+        worldZ,
+        isUnderwater,
+        isShore,
+        waterLevel,
+        distanceToWater,
+        randomSource: (offset) => randomAt(worldX, worldZ, offset),
+      });
     }
   }
 

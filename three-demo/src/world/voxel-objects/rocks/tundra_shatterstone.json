@@ -1,0 +1,26 @@
+{
+  "id": "tundra_shatterstone",
+  "label": "Shatterstone Outcrop",
+  "category": "rocks",
+  "author": "system",
+  "description": "Frost-split stones protruding through permafrost.",
+  "collision": "solid",
+  "voxelScale": 0.4,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["frostbound_steppe"],
+    "weight": 1.5,
+    "maxSlope": 0.6,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.7,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [1.6, 0.9, 1.2], "tint": "#c3d5dd" },
+    { "type": "stone", "position": [1.2, 0.3, -0.4], "size": [1.1, 0.8, 0.9], "tint": "#b7cad2" },
+    { "type": "stone", "position": [-1.3, 0.4, 0.6], "size": [0.8, 0.7, 1.1], "tint": "#d5e8f1" },
+    { "type": "stone", "position": [0.4, 1.0, 0.2], "size": [0.6, 1.1, 0.6], "tint": "#edf7ff" }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "desert_agave",
+  "label": "Desert Agave Cluster",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Low rosette of waxy leaves hugging the dune surface.",
+  "collision": "soft",
+  "voxelScale": 0.25,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["sunset_dunes"],
+    "weight": 2.2,
+    "maxSlope": 0.55,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.6,
+    "maxInstancesPerColumn": 3
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.6, 0.6, 0.5], "tint": "#3fb98a" },
+    { "type": "leaf", "position": [0, 0, 0], "size": [0.5, 0.6, 1.6], "tint": "#4ccb92" },
+    { "type": "leaf", "position": [0.8, 0.3, 0.8], "size": [1.2, 0.4, 0.4], "tint": "#45d39c" },
+    { "type": "leaf", "position": [-0.8, 0.3, -0.8], "size": [0.4, 0.4, 1.2], "tint": "#39a877" },
+    { "type": "leaf", "position": [-0.9, 0.4, 0.9], "size": [0.4, 0.4, 1.1], "tint": "#46c38b" },
+    { "type": "leaf", "position": [0.9, 0.4, -0.9], "size": [1.1, 0.4, 0.4], "tint": "#3fad81" },
+    { "type": "leaf", "position": [0, 0.5, 0], "size": [0.4, 0.8, 0.4], "tint": "#ffe29d", "isSolid": false }
+  ]
+}

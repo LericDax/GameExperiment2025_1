@@ -1,0 +1,43 @@
+{
+  "id": "fading_vaporwave_dimension",
+  "label": "Fading into Oblivion Vaporwave Dimension",
+  "tags": ["dreamlike", "neon", "warm"],
+  "climate": {
+    "temperature": 0.68,
+    "moisture": 0.46
+  },
+  "terrain": {
+    "surfaceBlock": "sand",
+    "shoreBlock": "sand",
+    "subSurfaceBlock": "sand",
+    "subSurfaceDepth": 4,
+    "deepBlock": "stone",
+    "treeDensity": 0.05,
+    "shrubChance": 0.06,
+    "flowerChance": 0.12,
+    "rockChance": 0.05,
+    "fungiChance": 0.02,
+    "waterPlantChance": 0.04,
+    "structureChance": 0.04,
+    "treeHeight": {
+      "min": 3,
+      "max": 5
+    },
+    "heightOffset": 1
+  },
+  "palette": {
+    "sand": "#f1b4d5",
+    "grass": "#f0d6ff",
+    "dirt": "#d39ac3",
+    "stone": "#8b7fae",
+    "leaf": "#6cffc3",
+    "log": "#f2a8ff",
+    "water": "#7af0ff",
+    "cloud": "#fbe7ff"
+  },
+  "shader": {
+    "fogColor": "#fbd9ff",
+    "tintColor": "#ffdff5",
+    "tintStrength": 0.55
+  }
+}

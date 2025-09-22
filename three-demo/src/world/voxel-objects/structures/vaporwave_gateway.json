@@ -1,0 +1,25 @@
+{
+  "id": "vaporwave_gateway",
+  "label": "Vaporwave Gateway",
+  "category": "structures",
+  "author": "system",
+  "description": "Floating archway humming with nostalgic chords.",
+  "collision": "soft",
+  "voxelScale": 0.38,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["fading_vaporwave_dimension"],
+    "weight": 0.8,
+    "maxSlope": 0.4,
+    "forbidUnderwater": false,
+    "jitterRadius": 0.9
+  },
+  "voxels": [
+    { "type": "stone", "position": [-1.4, 0, 0], "size": [0.8, 3.6, 0.8], "tint": "#f3b9ff" },
+    { "type": "stone", "position": [1.4, 0, 0], "size": [0.8, 3.6, 0.8], "tint": "#b8f6ff" },
+    { "type": "leaf", "position": [0, 3.4, 0], "size": [3.2, 0.6, 0.8], "tint": "#ffe6ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.2, 0], "size": [3.2, 0.4, 0.6], "tint": "#c6fff2", "isSolid": false }
+  ]
+}

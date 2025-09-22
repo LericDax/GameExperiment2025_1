@@ -1,0 +1,26 @@
+{
+  "id": "frostbound_ice_spike",
+  "label": "Frostbound Ice Spike",
+  "category": "structures",
+  "author": "system",
+  "description": "Jagged ice pillar forming along windswept ridges.",
+  "collision": "solid",
+  "voxelScale": 0.45,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["frostbound_steppe"],
+    "weight": 1.8,
+    "maxSlope": 0.7,
+    "minHeight": 8,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.6
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [1.2, 2.2, 1.2], "tint": "#cfe2f4" },
+    { "type": "stone", "position": [0, 2.2, 0], "size": [0.9, 1.8, 0.9], "tint": "#dff2ff" },
+    { "type": "stone", "position": [0, 3.6, 0], "size": [0.7, 1.8, 0.7], "tint": "#e8f7ff" },
+    { "type": "leaf", "position": [0, 4.6, 0], "size": [1.0, 0.5, 1.0], "tint": "#ffffff", "isSolid": false }
+  ]
+}
