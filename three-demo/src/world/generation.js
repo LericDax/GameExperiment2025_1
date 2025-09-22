@@ -129,14 +129,46 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       instancedData.set(type, []);
     }
     const key = blockKey(x, y, z);
-    const color = engine.getBlockColor(biome, type);
+    const paletteColor = engine.getBlockColor(biome, type);
+    const tintStrength = clamp(biome?.shader?.tintStrength ?? 1, 0, 1);
+
+    const paletteBlend = new THREE.Color(1, 1, 1);
+    if (paletteColor) {
+      paletteBlend.lerp(paletteColor, tintStrength);
+    }
+
+    if (biome?.shader?.tintColor) {
+      const biomeTintBlend = new THREE.Color(1, 1, 1);
+      biomeTintBlend.lerp(biome.shader.tintColor, tintStrength * 0.65);
+      paletteBlend.multiply(biomeTintBlend);
+    }
+
+    if (biome?.climate) {
+      const dryness = clamp(1 - biome.climate.moisture, 0, 1);
+      const climateBlend = new THREE.Color(1, 1, 1);
+      climateBlend.lerp(new THREE.Color(1.02, 0.98, 0.92), dryness * 0.35);
+      paletteBlend.multiply(climateBlend);
+    }
+
+    const altitudeRange = Math.max(1, worldConfig.maxHeight - waterLevel + 6);
+    const altitude = clamp((y - waterLevel + 2) / altitudeRange, -0.25, 1);
+    const altitudeBlend = new THREE.Color(1, 1, 1);
+    if (altitude > 0) {
+      altitudeBlend.lerp(new THREE.Color(0.95, 0.98, 1.04), altitude * 0.3);
+    } else if (altitude < 0) {
+      altitudeBlend.lerp(new THREE.Color(1.04, 1.01, 0.94), Math.abs(altitude) * 0.25);
+    }
+    paletteBlend.multiply(altitudeBlend);
+
+    const tintColor = paletteBlend;
     const entry = {
       key,
       matrix: matrix.clone(),
       position: new THREE.Vector3(x, y, z),
       type,
       biomeId: biome?.id ?? null,
-      color,
+      paletteColor,
+      tintColor,
       isSolid: solidTypes.has(type),
       isWater: type === 'water',
       destructible: type !== 'water' && type !== 'cloud',
@@ -231,37 +263,32 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       blockMaterials[type],
       entries.length,
     );
-    mesh.userData.defaultColor = engine.getDefaultBlockColor();
+    mesh.userData.defaultTint = new THREE.Color(1, 1, 1);
 
-    const needsNewInstanceColor =
-      !mesh.instanceColor || mesh.instanceColor.count < entries.length;
-    if (needsNewInstanceColor) {
-      const colorArray = new Float32Array(entries.length * 3);
-      mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
-    }
-    mesh.geometry.setAttribute('instanceColor', mesh.instanceColor);
+    const tintArray = new Float32Array(entries.length * 3);
+    const tintAttribute = new THREE.InstancedBufferAttribute(tintArray, 3);
+    tintAttribute.setUsage(THREE.DynamicDrawUsage);
+    mesh.geometry.setAttribute('biomeTint', tintAttribute);
 
     entries.forEach((entry, index) => {
       mesh.setMatrixAt(index, entry.matrix);
       entry.index = index;
-      const color = entry.color ?? engine.getDefaultBlockColor();
-      if (typeof mesh.setColorAt === 'function') {
-        mesh.setColorAt(index, color);
-      } else if (mesh.instanceColor) {
-        mesh.instanceColor.setXYZ(index, color.r, color.g, color.b);
-
-      }
+      const tint = entry.tintColor ?? mesh.userData.defaultTint;
+      const offset = index * 3;
+      tintAttribute.array[offset] = tint.r;
+      tintAttribute.array[offset + 1] = tint.g;
+      tintAttribute.array[offset + 2] = tint.b;
     });
+    mesh.count = entries.length;
     mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) {
-      mesh.instanceColor.needsUpdate = true;
-    }
+    tintAttribute.needsUpdate = true;
     mesh.castShadow = ['cloud', 'water'].includes(type) ? false : true;
     mesh.receiveShadow = type !== 'cloud';
     mesh.frustumCulled = false;
     mesh.userData.type = type;
     mesh.userData.biomePalette = true;
-    typeData.set(type, { entries, mesh });
+    mesh.userData.biomeTintAttribute = tintAttribute;
+    typeData.set(type, { entries, mesh, tintAttribute });
     group.add(mesh);
   });
 

@@ -1,4 +1,5 @@
 import { TextureEngine } from './texture-engine.js';
+import { createBiomeTintMaterial } from './biome-tint-material.js';
 
 export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
   if (!THREE) {
@@ -268,39 +269,75 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
     return material;
   });
 
-  const createStandardBlockMaterial = (texture, overrides = {}) =>
-    new THREE.MeshStandardMaterial({
-      map: texture,
-      flatShading: true,
-      vertexColors: true,
-      roughness: 0.85,
-      metalness: 0,
-      ...overrides,
+  const createStandardBlockMaterial = (
+    texture,
+    overrides = {},
+    { tintStrength = 1, name } = {},
+  ) =>
+    createBiomeTintMaterial({
+      THREE,
+      texture,
+      tintStrength,
+      name,
+      materialOptions: {
+        flatShading: true,
+        roughness: 0.85,
+        metalness: 0,
+        ...overrides,
+      },
     });
 
   return {
-    grass: createStandardBlockMaterial(textures.grass, { roughness: 0.9 }),
-    dirt: createStandardBlockMaterial(textures.dirt, { roughness: 0.92 }),
-    stone: createStandardBlockMaterial(textures.stone, { roughness: 0.75 }),
-    sand: createStandardBlockMaterial(textures.sand, { roughness: 0.8 }),
-    water: createStandardBlockMaterial(textures.water, {
-      flatShading: false,
-      transparent: true,
-      opacity: 0.78,
-      roughness: 0.35,
-      metalness: 0.02,
-      depthWrite: false,
+    grass: createStandardBlockMaterial(textures.grass, { roughness: 0.9 }, {
+      name: 'GrassBiomeMaterial',
     }),
-    leaf: createStandardBlockMaterial(textures.leaf, { roughness: 0.65 }),
-    log: createStandardBlockMaterial(textures.log, { roughness: 0.7 }),
-    cloud: createStandardBlockMaterial(textures.cloud, {
-      flatShading: false,
-      transparent: true,
-      opacity: 0.9,
-      roughness: 0.6,
-      metalness: 0,
-      depthWrite: false,
+    dirt: createStandardBlockMaterial(textures.dirt, { roughness: 0.92 }, {
+      name: 'DirtBiomeMaterial',
     }),
+    stone: createStandardBlockMaterial(textures.stone, { roughness: 0.75 }, {
+      name: 'StoneBiomeMaterial',
+    }),
+    sand: createStandardBlockMaterial(textures.sand, { roughness: 0.8 }, {
+      name: 'SandBiomeMaterial',
+    }),
+    water: createStandardBlockMaterial(
+      textures.water,
+      {
+        flatShading: false,
+        transparent: true,
+        opacity: 0.78,
+        roughness: 0.35,
+        metalness: 0.02,
+        depthWrite: false,
+      },
+      {
+        tintStrength: 0.65,
+        name: 'WaterBiomeMaterial',
+      },
+    ),
+    leaf: createStandardBlockMaterial(textures.leaf, { roughness: 0.65 }, {
+      tintStrength: 0.85,
+      name: 'LeafBiomeMaterial',
+    }),
+    log: createStandardBlockMaterial(textures.log, { roughness: 0.7 }, {
+      tintStrength: 0.75,
+      name: 'LogBiomeMaterial',
+    }),
+    cloud: createStandardBlockMaterial(
+      textures.cloud,
+      {
+        flatShading: false,
+        transparent: true,
+        opacity: 0.9,
+        roughness: 0.6,
+        metalness: 0,
+        depthWrite: false,
+      },
+      {
+        tintStrength: 0.4,
+        name: 'CloudBiomeMaterial',
+      },
+    ),
     damageStages,
   };
 }
