@@ -184,7 +184,11 @@ try {
     playerControls,
   })
 
-  commandConsole.log('Developer console ready. Press ` to toggle. Type /help for commands.')
+
+  commandConsole.log(
+    'Developer console ready. Press ` to open and Esc to close. Type /help for commands.',
+  )
+
 } catch (error) {
   initializationError = error instanceof Error ? error : new Error(String(error))
   console.error('Failed to initialize world:', initializationError)

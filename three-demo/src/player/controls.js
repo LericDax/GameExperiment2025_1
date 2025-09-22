@@ -882,7 +882,9 @@ export function createPlayerControls({
       }
 
       const flightActive = cheatState.flightEnabled;
-      const baseSpeed = flightActive ? 7 : 5.2;
+
+      const baseSpeed = flightActive ? 14 : 5.2;
+
       const sprintBonus =
         !flightActive && sprint && forward && !feetInWater ? 3.2 : 0;
       const mediumPenalty = flightActive
@@ -925,7 +927,9 @@ export function createPlayerControls({
         Number(flyState.ascend) - Number(flyState.descend);
       if (verticalDirection !== 0) {
         attemptPosition.copy(position);
-        attemptPosition.y += verticalDirection * 9 * delta;
+
+        attemptPosition.y += verticalDirection * 18 * delta;
+
         if (!collidesAt(attemptPosition)) {
           position.copy(attemptPosition);
         }

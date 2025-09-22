@@ -265,7 +265,14 @@ export function createCommandConsole(options = {}) {
   function handleDocumentKeydown(event) {
     if (event.code === settings.openKey && !event.repeat) {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
-        // Allow typing the character in other fields.
+
+        if (!isOpen) {
+          // Allow typing the character in other fields when the console is closed.
+          return;
+        }
+        // When the console is focused, let the key press type normally without
+        // toggling the overlay.
+
         return;
       }
       event.preventDefault();
@@ -293,11 +300,13 @@ export function createCommandConsole(options = {}) {
   }
 
   function handleInputKeydown(event) {
+
     if (event.code === settings.openKey && !event.repeat) {
       event.preventDefault();
       setOpen(false);
       return;
     }
+
     if (event.code === 'Escape') {
       event.preventDefault();
       setOpen(false);
