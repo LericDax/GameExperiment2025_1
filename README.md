@@ -3,7 +3,11 @@
 This project hosts a browser-based sandbox inspired by classic block-building games. It ships with a static HTML bootstrap (`index.html`) for lightweight deployment and a Vite workspace (`three-demo/`) that provides a modern development loop while reusing the shared `src/` modules.
 
 ## Features
+
 - Dedicated texture engine that layers fractal noise, Worley cells, and analytic patterns to craft deterministic block materials.
+=======
+- Deterministic, procedurally generated textures for every block type.
+
 - Streaming chunk manager that expands the world as you explore.
 - Water buoyancy, oxygen tracking, and fall damage to ground the traversal loop.
 - Enhanced lighting pass with ACES filmic tone mapping, soft shadows, and a fill light for richer visuals.
