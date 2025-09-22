@@ -231,6 +231,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       entries.length,
     );
     mesh.userData.defaultColor = engine.getDefaultBlockColor();
+
     const needsNewInstanceColor =
       !mesh.instanceColor || mesh.instanceColor.count < entries.length;
     if (needsNewInstanceColor) {
@@ -238,6 +239,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
     }
     mesh.geometry.setAttribute('instanceColor', mesh.instanceColor);
+
     entries.forEach((entry, index) => {
       mesh.setMatrixAt(index, entry.matrix);
       entry.index = index;
@@ -246,6 +248,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         mesh.setColorAt(index, color);
       } else if (mesh.instanceColor) {
         mesh.instanceColor.setXYZ(index, color.r, color.g, color.b);
+
       }
     });
     mesh.instanceMatrix.needsUpdate = true;

@@ -1,7 +1,9 @@
 import { ValueNoise2D } from './noise.js';
+
 import temperate from './biomes/temperate.json' with { type: 'json' };
 import desert from './biomes/desert.json' with { type: 'json' };
 import tundra from './biomes/tundra.json' with { type: 'json' };
+
 
 const rawBiomeDefinitions = [temperate, desert, tundra];
 
