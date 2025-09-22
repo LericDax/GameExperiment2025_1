@@ -82,6 +82,86 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+.command-console {
+  position: fixed;
+  inset: auto 1.5rem 2rem 1.5rem;
+  max-width: 640px;
+  margin: 0 auto;
+  background: rgba(14, 17, 26, 0.88);
+  color: #f5f7ff;
+  border: 1px solid rgba(94, 124, 223, 0.5);
+  border-radius: 8px;
+  box-shadow: 0 18px 38px rgba(8, 11, 19, 0.65);
+  backdrop-filter: blur(6px);
+  font-family: 'Fira Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 160ms ease, transform 160ms ease;
+  z-index: 80;
+}
+
+.command-console.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.command-console-log {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 1rem 1rem 0.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.command-console-form {
+  border-top: 1px solid rgba(94, 124, 223, 0.35);
+  padding: 0.65rem 1rem 0.85rem 1rem;
+}
+
+.command-console-input {
+  width: 100%;
+  background: rgba(9, 12, 20, 0.85);
+  border: 1px solid rgba(114, 144, 246, 0.35);
+  border-radius: 6px;
+  padding: 0.55rem 0.75rem;
+  color: inherit;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.command-console-input:focus {
+  outline: none;
+  border-color: rgba(164, 192, 255, 0.9);
+  box-shadow: 0 0 0 2px rgba(114, 144, 246, 0.25);
+}
+
+.command-console-entry {
+  font-size: 0.9rem;
+  line-height: 1.3;
+  color: rgba(238, 243, 255, 0.92);
+  word-break: break-word;
+}
+
+.command-console-entry.level-success {
+  color: #8de4a8;
+}
+
+.command-console-entry.level-warn {
+  color: #f5d67b;
+}
+
+.command-console-entry.level-error {
+  color: #ff8c8c;
+}
+
+.command-console-entry.level-info {
+  color: rgba(221, 229, 255, 0.92);
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
