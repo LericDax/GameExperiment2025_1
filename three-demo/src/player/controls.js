@@ -31,7 +31,6 @@ export function createPlayerControls({
   renderer,
   overlay,
   worldConfig,
-  terrainHeight,
   solidBlocks,
   waterColumns,
   chunkManager,
@@ -396,10 +395,6 @@ export function createPlayerControls({
     pointerLockDocument.addEventListener(eventName, handlePointerLockError)
   );
 
-  function sampleHeight(x, z) {
-    return terrainHeight(Math.round(x), Math.round(z));
-  }
-
   function collidesAt(position) {
     const playerFeet = position.y - playerEyeHeight;
     const capsulePadding = 0.1;
@@ -456,6 +451,63 @@ export function createPlayerControls({
     }
 
     return false;
+  }
+
+  function findStandingSurface(position, tolerance = 0.75) {
+    const playerFeet = position.y - playerEyeHeight;
+    const playerMinX = position.x - playerRadius;
+    const playerMaxX = position.x + playerRadius;
+    const playerMinZ = position.z - playerRadius;
+    const playerMaxZ = position.z + playerRadius;
+
+    const minBlockX = Math.floor(playerMinX - 0.5);
+    const maxBlockX = Math.floor(playerMaxX + 0.5);
+    const minBlockZ = Math.floor(playerMinZ - 0.5);
+    const maxBlockZ = Math.floor(playerMaxZ + 0.5);
+
+    const searchTop = Math.min(
+      worldConfig.maxHeight + 2,
+      Math.floor(playerFeet + tolerance),
+    );
+    const searchBottom = Math.max(-8, Math.floor(playerFeet - 6));
+    const epsilon = 1e-4;
+    let bestSurface = null;
+
+    for (let x = minBlockX; x <= maxBlockX; x++) {
+      for (let z = minBlockZ; z <= maxBlockZ; z++) {
+        for (let y = searchTop; y >= searchBottom; y--) {
+          if (!solidBlocks.has(blockKey(x, y, z))) {
+            continue;
+          }
+
+          const blockMinX = x - 0.5;
+          const blockMaxX = x + 0.5;
+          const blockMinZ = z - 0.5;
+          const blockMaxZ = z + 0.5;
+
+          const horizontalOverlap =
+            playerMaxX > blockMinX + epsilon &&
+            playerMinX < blockMaxX - epsilon &&
+            playerMaxZ > blockMinZ + epsilon &&
+            playerMinZ < blockMaxZ - epsilon;
+
+          if (!horizontalOverlap) {
+            continue;
+          }
+
+          const blockTop = y + 0.5;
+          if (blockTop > playerFeet + tolerance) {
+            continue;
+          }
+
+          if (!bestSurface || blockTop > bestSurface.height) {
+            bestSurface = { height: blockTop };
+          }
+        }
+      }
+    }
+
+    return bestSurface;
   }
 
   function update(delta) {
@@ -532,17 +584,23 @@ export function createPlayerControls({
       }
     }
 
-    const terrainY = sampleHeight(position.x, position.z);
-    const groundLevel = terrainY + 0.5;
+    const standingSurface = findStandingSurface(position);
+    const supportTargetY = standingSurface
+      ? standingSurface.height + playerEyeHeight
+      : Number.NEGATIVE_INFINITY;
     const waterTarget =
       worldConfig.waterLevel + 0.5 + playerEyeHeight - 0.2;
-    let targetY = groundLevel + playerEyeHeight;
+    let targetY = supportTargetY;
     if (!feetInWater && inWaterColumn) {
       targetY = Math.max(targetY, waterTarget);
     }
 
     if (jumpRequested) {
-      const nearGround = position.y <= targetY + nearGroundThreshold;
+
+      const nearGround =
+        Number.isFinite(supportTargetY) &&
+        position.y <= supportTargetY + nearGroundThreshold;
+
       if (isGrounded || nearGround) {
         verticalVelocity = jumpVelocity;
         isGrounded = false;
@@ -576,15 +634,22 @@ export function createPlayerControls({
       maxDownwardSpeed = verticalVelocity;
     }
 
-    if (position.y <= targetY) {
-      if (!feetInWater && maxDownwardSpeed < -12) {
+    if (Number.isFinite(targetY) && position.y <= targetY) {
+      const landedOnSupport =
+        Number.isFinite(supportTargetY) &&
+        position.y <= supportTargetY + 1e-3;
+      if (
+        landedOnSupport &&
+        !feetInWater &&
+        maxDownwardSpeed < -12
+      ) {
         const impact = Math.abs(maxDownwardSpeed) - 10;
         applyDamage(impact * 4.5, 'You hit the ground hard.');
       }
-      position.y = targetY;
+      position.y = landedOnSupport ? supportTargetY : targetY;
       verticalVelocity = 0;
       maxDownwardSpeed = 0;
-      isGrounded = true;
+      isGrounded = landedOnSupport;
     } else {
       isGrounded = false;
     }
