@@ -133,7 +133,7 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     if (!typeData) {
       return null;
     }
-    const { entries, mesh } = typeData;
+    const { entries, mesh, tintAttribute } = typeData;
     if (!mesh || !mesh.isInstancedMesh) {
       return null;
     }
@@ -148,13 +148,25 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
       return null;
     }
 
+    const writeTint = (index, tintColor) => {
+      if (!tintAttribute) {
+        return;
+      }
+      const tint = tintColor ?? mesh.userData?.defaultTint;
+      if (!tint) {
+        return;
+      }
+      const offset = index * 3;
+      tintAttribute.array[offset] = tint.r;
+      tintAttribute.array[offset + 1] = tint.g;
+      tintAttribute.array[offset + 2] = tint.b;
+    };
+
     if (instanceId !== lastIndex) {
       const swapped = entries[lastIndex];
       entries[instanceId] = swapped;
       mesh.setMatrixAt(instanceId, swapped.matrix);
-      if (typeof mesh.setColorAt === 'function') {
-        mesh.setColorAt(instanceId, swapped.color ?? mesh.userData?.defaultColor);
-      }
+      writeTint(instanceId, swapped.tintColor);
       mesh.instanceMatrix.needsUpdate = true;
       if (chunk.blockLookup) {
         const swappedInfo = chunk.blockLookup.get(swapped.key);
@@ -168,8 +180,8 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     entries.pop();
     mesh.count = entries.length;
     mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) {
-      mesh.instanceColor.needsUpdate = true;
+    if (tintAttribute) {
+      tintAttribute.needsUpdate = true;
     }
 
     if (chunk.blockLookup) {
