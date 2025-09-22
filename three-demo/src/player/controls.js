@@ -347,10 +347,12 @@ export function createPlayerControls({
   function collidesAt(position) {
     const playerFeet = position.y - playerEyeHeight;
     const capsulePadding = 0.1;
+
     const bottom = playerFeet + capsulePadding;
     const top = playerFeet + playerHeight - capsulePadding;
     const minY = Math.floor(bottom);
     const maxY = Math.floor(top);
+
 
     if (minY > maxY) {
       return false;
