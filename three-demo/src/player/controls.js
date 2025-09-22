@@ -82,6 +82,22 @@ export function createPlayerControls({
   const overlayStatus = overlay?.querySelector('#overlay-status');
   let lockAttemptTimer = null;
 
+  function hideOverlay() {
+    if (!overlay) {
+      return;
+    }
+    overlay.classList.add('hidden');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+
+  function showOverlay() {
+    if (!overlay) {
+      return;
+    }
+    overlay.classList.remove('hidden');
+    overlay.removeAttribute('aria-hidden');
+  }
+
   controls.getObject().position.set(0, worldConfig.waterLevel + playerEyeHeight + 1, 0);
 
   const playerState = {
@@ -89,11 +105,11 @@ export function createPlayerControls({
     oxygen: 12,
     maxOxygen: 12,
     isInWater: false,
-    statusMessage: '',
+    statusMessage: 'Click or tap the game view to look around. Use WASD to move.',
   };
-  let statusTimer = 0;
+  let statusTimer = Number.POSITIVE_INFINITY;
   let maxDownwardSpeed = 0;
-  let stateDirty = false;
+  let stateDirty = true;
 
   function markStateDirty() {
     stateDirty = true;
@@ -139,13 +155,21 @@ export function createPlayerControls({
     }
   }
 
-  function setOverlayStatus(message, { isError = false } = {}) {
+  function setOverlayStatus(message, { isError = false, showOverlay: shouldShow = false } = {}) {
     if (!overlayStatus) {
       return;
     }
     overlayStatus.textContent = message;
     overlayStatus.classList.toggle('visible', Boolean(message));
     overlayStatus.classList.toggle('error', Boolean(message) && isError);
+    if (!overlay) {
+      return;
+    }
+    if (shouldShow) {
+      showOverlay();
+    } else if (!message) {
+      hideOverlay();
+    }
   }
 
   function clearLockAttemptTimer() {
@@ -162,7 +186,11 @@ export function createPlayerControls({
       if (!controls.isLocked) {
         setOverlayStatus(
           'Pointer lock was blocked by the browser. Open the demo in a standalone tab or allow pointer lock in your browser preferences.',
-          { isError: true }
+          { isError: true, showOverlay: false }
+        );
+        setStatus(
+          'Pointer lock was blocked. Open the demo in a standalone tab or enable pointer lock permissions.',
+          6
         );
       }
     }, 250);
@@ -171,7 +199,11 @@ export function createPlayerControls({
   if (!pointerLockSupported) {
     setOverlayStatus(
       'Pointer Lock API is not available in this environment. Use a desktop browser tab to enable full mouse look.',
-      { isError: true }
+      { isError: true, showOverlay: false }
+    );
+    setStatus(
+      'Pointer lock is unavailable here. Keyboard movement works, but mouse look requires a desktop browser tab.',
+      Number.POSITIVE_INFINITY
     );
   }
 
@@ -236,12 +268,12 @@ export function createPlayerControls({
     if (!pointerLockSupported) {
       setOverlayStatus(
         'Pointer Lock is unavailable here. Try opening the experience in a standalone browser window.',
-        { isError: true }
+        { isError: true, showOverlay: false }
       );
       return;
     }
 
-    setOverlayStatus('');
+    setOverlayStatus('', { showOverlay: false });
     try {
       controls.lock();
       scheduleLockVerification();
@@ -249,7 +281,11 @@ export function createPlayerControls({
       console.error('Failed to initiate pointer lock:', error);
       setOverlayStatus(
         'Pointer lock request failed. Open the page in a new tab or allow pointer lock in your browser settings.',
-        { isError: true }
+        { isError: true, showOverlay: false }
+      );
+      setStatus(
+        'Pointer lock request failed. Open the demo in a new tab or allow pointer lock in your browser settings.',
+        6
       );
     }
   }
@@ -257,14 +293,19 @@ export function createPlayerControls({
   const handleOverlayClick = () => attemptPointerLock();
   const handleLock = () => {
     clearLockAttemptTimer();
-    overlay.classList.add('hidden');
-    setOverlayStatus('');
+    hideOverlay();
+    statusTimer = 0;
+    clearStatus();
+    pushState();
+    setOverlayStatus('', { showOverlay: false });
+    setStatus('Press Esc to release the pointer.', 3.5);
   };
   const handleUnlock = () => {
-    overlay.classList.remove('hidden');
-    if (pointerLockSupported) {
-      setOverlayStatus('Click to resume control.');
+    if (!pointerLockSupported) {
+      return;
     }
+    setStatus('Click or tap the game view to resume mouse look.', Number.POSITIVE_INFINITY);
+    setOverlayStatus('Click to resume control.', { showOverlay: false });
   };
 
   function handlePointerLockError(event) {
@@ -272,15 +313,31 @@ export function createPlayerControls({
     console.error('Pointer lock error:', event);
     setOverlayStatus(
       'Pointer lock was blocked. Open the demo in a dedicated browser tab or enable pointer lock permissions and try again.',
-      { isError: true }
+      { isError: true, showOverlay: false }
+    );
+    setStatus(
+      'Pointer lock was blocked. Open the demo in a dedicated browser tab or enable pointer lock permissions and try again.',
+      6
     );
   }
 
-  overlay.addEventListener('click', handleOverlayClick);
+  function handlePointerDown(event) {
+    if (controls.isLocked) {
+      return;
+    }
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+    attemptPointerLock();
+  }
+
+  hideOverlay();
+  overlay?.addEventListener('click', handleOverlayClick);
   controls.addEventListener('lock', handleLock);
   controls.addEventListener('unlock', handleUnlock);
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('keyup', onKeyUp);
+  pointerLockElement.addEventListener('pointerdown', handlePointerDown);
   POINTER_LOCK_ERROR_EVENTS.forEach((eventName) =>
     pointerLockDocument.addEventListener(eventName, handlePointerLockError)
   );
@@ -453,11 +510,12 @@ export function createPlayerControls({
 
   function dispose() {
     scene.remove(controls.getObject());
-    overlay.removeEventListener('click', handleOverlayClick);
+    overlay?.removeEventListener('click', handleOverlayClick);
     controls.removeEventListener('lock', handleLock);
     controls.removeEventListener('unlock', handleUnlock);
     document.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('keyup', onKeyUp);
+    pointerLockElement.removeEventListener('pointerdown', handlePointerDown);
     POINTER_LOCK_ERROR_EVENTS.forEach((eventName) =>
       pointerLockDocument.removeEventListener(eventName, handlePointerLockError)
     );
