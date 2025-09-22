@@ -184,7 +184,6 @@ try {
     playerControls,
   })
 
-
   commandConsole.log(
     'Developer console ready. Press ` to open and Esc to close. Type /help for commands.',
   )

@@ -1,3 +1,7 @@
+
+import './command-console.css';
+
+
 const DEFAULT_OPTIONS = {
   openKey: 'Backquote',
   commandPrefix: '/',
@@ -300,6 +304,7 @@ export function createCommandConsole(options = {}) {
   }
 
   function handleInputKeydown(event) {
+
 
     if (event.code === settings.openKey && !event.repeat) {
       event.preventDefault();

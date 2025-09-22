@@ -145,7 +145,7 @@ button:focus-visible {
 
 .command-console-input:focus {
   outline: none;
-<
+
   border-color: rgba(206, 220, 255, 0.68);
   box-shadow: 0 0 0 2px rgba(160, 182, 255, 0.24);
 }
