@@ -28,6 +28,7 @@ export function createPlayerControls({
   terrainHeight,
   solidBlocks,
   waterColumns,
+  onStateChange = () => {},
 }) {
   const controls = new PointerLockControls(camera, renderer.domElement);
   scene.add(controls.getObject());
@@ -48,10 +49,64 @@ export function createPlayerControls({
   const playerRadius = 0.35;
   const gravity = 18;
   const jumpVelocity = 7.8;
-  const halfSize = worldConfig.chunkSize / 2;
   const collisionOffsets = createCollisionOffsets(playerRadius);
 
   controls.getObject().position.set(0, worldConfig.waterLevel + playerEyeHeight + 1, 0);
+
+  const playerState = {
+    health: 100,
+    oxygen: 12,
+    maxOxygen: 12,
+    isInWater: false,
+    statusMessage: '',
+  };
+  let statusTimer = 0;
+  let maxDownwardSpeed = 0;
+  let stateDirty = false;
+
+  function markStateDirty() {
+    stateDirty = true;
+  }
+
+  function pushState() {
+    if (!stateDirty) {
+      return;
+    }
+    onStateChange({ ...playerState });
+    stateDirty = false;
+  }
+
+  function setStatus(message, duration = 2.2) {
+    if (message === playerState.statusMessage && statusTimer > 0) {
+      statusTimer = duration;
+      return;
+    }
+    playerState.statusMessage = message;
+    statusTimer = duration;
+    markStateDirty();
+  }
+
+  function clearStatus() {
+    if (!playerState.statusMessage) {
+      return;
+    }
+    playerState.statusMessage = '';
+    markStateDirty();
+  }
+
+  function applyDamage(amount, message) {
+    if (amount <= 0) {
+      return;
+    }
+    const previousHealth = playerState.health;
+    playerState.health = Math.max(0, previousHealth - amount);
+    if (playerState.health !== previousHealth) {
+      markStateDirty();
+    }
+    if (message) {
+      setStatus(message, 2.4);
+    }
+  }
 
   const onKeyDown = (event) => {
     switch (event.code) {
@@ -120,13 +175,6 @@ export function createPlayerControls({
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('keyup', onKeyUp);
 
-  function clampToWorld(position) {
-    const min = -halfSize + 1;
-    const max = halfSize - 1;
-    position.x = THREE.MathUtils.clamp(position.x, min, max);
-    position.z = THREE.MathUtils.clamp(position.z, min, max);
-  }
-
   function sampleHeight(x, z) {
     return terrainHeight(Math.round(x), Math.round(z));
   }
@@ -156,14 +204,47 @@ export function createPlayerControls({
 
   function update(delta) {
     const { forward, backward, left, right, sprint } = moveState;
+    const position = controls.getObject().position;
+
+    const columnKey = `${Math.round(position.x)}|${Math.round(position.z)}`;
+    const waterSurface = worldConfig.waterLevel + 0.5;
+    const feetY = position.y - playerEyeHeight;
+    const headY = position.y;
+    const inWaterColumn = waterColumns.has(columnKey);
+    const feetInWater = inWaterColumn && feetY < waterSurface;
+    const headUnderwater = inWaterColumn && headY < waterSurface;
+
+    if (playerState.isInWater !== feetInWater) {
+      playerState.isInWater = feetInWater;
+      markStateDirty();
+    }
+
+    const previousOxygen = playerState.oxygen;
+    if (headUnderwater) {
+      playerState.oxygen = Math.max(0, playerState.oxygen - delta);
+      if (playerState.oxygen === 0) {
+        applyDamage(15 * delta, 'You are drowning!');
+      }
+    } else {
+      const recoveryRate = feetInWater ? 0.6 : 1.8;
+      playerState.oxygen = Math.min(
+        playerState.maxOxygen,
+        playerState.oxygen + delta * recoveryRate
+      );
+    }
+    if (Math.abs(playerState.oxygen - previousOxygen) > 0.001) {
+      markStateDirty();
+    }
+
     const direction = new THREE.Vector3();
     direction.z = Number(forward) - Number(backward);
     direction.x = Number(right) - Number(left);
     if (direction.lengthSq() > 0) {
       direction.normalize();
       const baseSpeed = 5.2;
-      const sprintBonus = sprint && forward ? 3.2 : 0;
-      const moveSpeed = baseSpeed + sprintBonus;
+      const sprintBonus = sprint && forward && !feetInWater ? 3.2 : 0;
+      const mediumPenalty = feetInWater ? 0.42 : 1;
+      const moveSpeed = (baseSpeed + sprintBonus) * mediumPenalty;
       const moveX = direction.x * moveSpeed * delta;
       const moveZ = direction.z * moveSpeed * delta;
 
@@ -195,22 +276,35 @@ export function createPlayerControls({
       }
     }
 
-    clampToWorld(controls.getObject().position);
-
-    const position = controls.getObject().position;
     const terrainY = sampleHeight(position.x, position.z);
+    const waterTarget = worldConfig.waterLevel + playerEyeHeight - 0.2;
     let targetY = terrainY + playerEyeHeight;
-    const columnKey = `${Math.round(position.x)}|${Math.round(position.z)}`;
-    if (waterColumns.has(columnKey)) {
-      targetY = Math.max(targetY, worldConfig.waterLevel + playerEyeHeight);
+    if (!feetInWater && inWaterColumn) {
+      targetY = Math.max(targetY, waterTarget);
     }
-    if (jumpRequested && isGrounded) {
-      verticalVelocity = jumpVelocity;
-      isGrounded = false;
+
+    if (jumpRequested) {
+      if (isGrounded) {
+        verticalVelocity = jumpVelocity;
+        isGrounded = false;
+      } else if (feetInWater) {
+        verticalVelocity = Math.max(verticalVelocity, 3.5);
+      }
     }
     jumpRequested = false;
 
-    verticalVelocity -= gravity * delta;
+    const effectiveGravity = feetInWater ? gravity * 0.35 : gravity;
+    verticalVelocity -= effectiveGravity * delta;
+    if (feetInWater) {
+      const submersion = THREE.MathUtils.clamp(waterSurface - feetY, 0, 6);
+      const buoyancy = submersion * 2.4;
+      verticalVelocity += buoyancy * delta;
+      verticalVelocity *= 0.82;
+      if (sprint && !isGrounded) {
+        verticalVelocity -= 4.2 * delta;
+      }
+    }
+
     const previousY = position.y;
     position.y += verticalVelocity * delta;
 
@@ -219,13 +313,32 @@ export function createPlayerControls({
       verticalVelocity = 0;
     }
 
+    if (verticalVelocity < maxDownwardSpeed) {
+      maxDownwardSpeed = verticalVelocity;
+    }
+
     if (position.y <= targetY) {
+      if (!feetInWater && maxDownwardSpeed < -12) {
+        const impact = Math.abs(maxDownwardSpeed) - 10;
+        applyDamage(impact * 4.5, 'You hit the ground hard.');
+      }
       position.y = targetY;
       verticalVelocity = 0;
+      maxDownwardSpeed = 0;
       isGrounded = true;
     } else {
       isGrounded = false;
     }
+
+    if (statusTimer > 0) {
+      statusTimer -= delta;
+      if (statusTimer <= 0) {
+        statusTimer = 0;
+        clearStatus();
+      }
+    }
+
+    pushState();
   }
 
   function dispose() {
@@ -237,5 +350,13 @@ export function createPlayerControls({
     document.removeEventListener('keyup', onKeyUp);
   }
 
-  return { controls, moveState, collidesAt, update, dispose };
+  function getPosition() {
+    return controls.getObject().position;
+  }
+
+  function getState() {
+    return { ...playerState };
+  }
+
+  return { controls, moveState, collidesAt, update, dispose, getPosition, getState };
 }

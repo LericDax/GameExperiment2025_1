@@ -102,7 +102,16 @@ function addCloud(addBlock, x, y, z) {
   blocks.forEach(([dx, dy, dz]) => addBlock('cloud', x + dx, y + dy, z + dz));
 }
 
-export function generateWorld(blockMaterials) {
+function chunkWorldBounds(chunkX, chunkZ) {
+  const { chunkSize } = worldConfig;
+  const halfSize = chunkSize / 2;
+  return {
+    minX: chunkX * chunkSize - halfSize,
+    minZ: chunkZ * chunkSize - halfSize,
+  };
+}
+
+export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const instancedData = {
     grass: [],
     dirt: [],
@@ -113,63 +122,70 @@ export function generateWorld(blockMaterials) {
     log: [],
     cloud: [],
   };
-  const solidBlocks = new Set();
-  const waterColumns = new Set();
+  const solidBlockKeys = new Set();
+  const waterColumnKeys = new Set();
   const matrix = new THREE.Matrix4();
+
+  const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
+  const { chunkSize, waterLevel } = worldConfig;
 
   const addBlock = (type, x, y, z) => {
     matrix.setPosition(x, y, z);
     instancedData[type].push(matrix.clone());
     if (solidTypes.has(type)) {
-      solidBlocks.add(blockKey(x, y, z));
+      solidBlockKeys.add(blockKey(x, y, z));
     }
     if (type === 'water') {
-      waterColumns.add(`${x}|${z}`);
+      waterColumnKeys.add(`${x}|${z}`);
     }
   };
 
-  const halfSize = worldConfig.chunkSize / 2;
-  for (let x = -halfSize; x < halfSize; x++) {
-    for (let z = -halfSize; z < halfSize; z++) {
-      const height = terrainHeight(x, z);
-      const surfaceType = height <= worldConfig.waterLevel + 1 ? 'sand' : 'grass';
+  for (let lx = 0; lx < chunkSize; lx++) {
+    const worldX = minX + lx;
+    for (let lz = 0; lz < chunkSize; lz++) {
+      const worldZ = minZ + lz;
+      const height = terrainHeight(worldX, worldZ);
+      const surfaceType = height <= waterLevel + 1 ? 'sand' : 'grass';
 
       for (let y = 0; y <= height; y++) {
         if (y === height) {
-          addBlock(surfaceType, x, y, z);
+          addBlock(surfaceType, worldX, y, worldZ);
         } else if (y < height - 4) {
-          addBlock('stone', x, y, z);
+          addBlock('stone', worldX, y, worldZ);
         } else {
-          addBlock('dirt', x, y, z);
+          addBlock('dirt', worldX, y, worldZ);
         }
       }
 
-      if (height < worldConfig.waterLevel) {
-        for (let y = height + 1; y <= worldConfig.waterLevel; y++) {
-          addBlock('water', x, y, z);
+      if (height < waterLevel) {
+        for (let y = height + 1; y <= waterLevel; y++) {
+          addBlock('water', worldX, y, worldZ);
         }
-      } else if (surfaceType === 'grass' && randomAt(x, z, 1) > 0.92) {
-        addTree(addBlock, x, z, height);
+      } else if (surfaceType === 'grass' && randomAt(worldX, worldZ, 1) > 0.92) {
+        addTree(addBlock, worldX, worldZ, height);
       }
 
-      if (randomAt(x, z, 5) > 0.98 && height > worldConfig.waterLevel + 4) {
+      if (randomAt(worldX, worldZ, 5) > 0.98 && height > waterLevel + 4) {
         const shrubHeight = height + 1;
-        addBlock('leaf', x, shrubHeight, z);
-        if (randomAt(x + 10, z + 10, 6) > 0.6) {
-          addBlock('leaf', x, shrubHeight + 1, z);
+        addBlock('leaf', worldX, shrubHeight, worldZ);
+        if (randomAt(worldX + 10, worldZ + 10, 6) > 0.6) {
+          addBlock('leaf', worldX, shrubHeight + 1, worldZ);
         }
       }
     }
   }
 
-  for (let i = 0; i < 8; i++) {
-    const cx = (randomAt(i * 7, i * 13, 3) - 0.5) * worldConfig.chunkSize;
-    const cz = (randomAt(i * 5, i * 11, 4) - 0.5) * worldConfig.chunkSize;
-    const cy = worldConfig.waterLevel + 15 + randomAt(i * 3, i * 9, 8) * 8;
-    addCloud(addBlock, Math.round(cx), Math.round(cy), Math.round(cz));
+  const cloudAttempts = 2 + Math.floor(randomAt(chunkX, chunkZ, 12) * 3);
+  for (let i = 0; i < cloudAttempts; i++) {
+    const offsetX = Math.floor(randomAt(chunkX, chunkZ, 20 + i) * chunkSize);
+    const offsetZ = Math.floor(randomAt(chunkZ, chunkX, 30 + i) * chunkSize);
+    const worldX = minX + offsetX;
+    const worldZ = minZ + offsetZ;
+    const worldY = waterLevel + 15 + Math.floor(randomAt(worldX, worldZ, 40 + i) * 8);
+    addCloud(addBlock, Math.round(worldX), Math.round(worldY), Math.round(worldZ));
   }
 
-  const meshes = [];
+  const group = new THREE.Group();
   Object.entries(instancedData).forEach(([type, matrices]) => {
     if (matrices.length === 0) return;
     const mesh = new THREE.InstancedMesh(
@@ -181,8 +197,26 @@ export function generateWorld(blockMaterials) {
     mesh.instanceMatrix.needsUpdate = true;
     mesh.castShadow = ['cloud', 'water'].includes(type) ? false : true;
     mesh.receiveShadow = type !== 'cloud';
-    meshes.push(mesh);
+    mesh.frustumCulled = false;
+    group.add(mesh);
   });
 
-  return { meshes, solidBlocks, waterColumns };
+  group.name = `chunk_${chunkX}_${chunkZ}`;
+
+  return {
+    chunkX,
+    chunkZ,
+    group,
+    solidBlockKeys,
+    waterColumnKeys,
+  };
+}
+
+export function generateWorld(blockMaterials) {
+  const chunk = generateChunk(blockMaterials, 0, 0);
+  return {
+    meshes: [...chunk.group.children],
+    solidBlocks: new Set(chunk.solidBlockKeys),
+    waterColumns: new Set(chunk.waterColumnKeys),
+  };
 }
