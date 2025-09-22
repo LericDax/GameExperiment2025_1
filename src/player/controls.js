@@ -19,6 +19,27 @@ function createCollisionOffsets(radius) {
   ];
 }
 
+const POINTER_LOCK_ERROR_EVENTS = [
+  'pointerlockerror',
+  'mozpointerlockerror',
+  'webkitpointerlockerror',
+];
+
+function isPointerLockSupported(doc) {
+  if (!doc) {
+    return false;
+  }
+  const hasPointerLockElement =
+    'pointerLockElement' in doc ||
+    'mozPointerLockElement' in doc ||
+    'webkitPointerLockElement' in doc;
+  const hasExitPointerLock =
+    typeof doc.exitPointerLock === 'function' ||
+    typeof doc.mozExitPointerLock === 'function' ||
+    typeof doc.webkitExitPointerLock === 'function';
+  return hasPointerLockElement && hasExitPointerLock;
+}
+
 export function createPlayerControls({
   scene,
   camera,
@@ -50,6 +71,11 @@ export function createPlayerControls({
   const gravity = 18;
   const jumpVelocity = 7.8;
   const collisionOffsets = createCollisionOffsets(playerRadius);
+  const pointerLockElement = renderer.domElement;
+  const pointerLockDocument = pointerLockElement.ownerDocument;
+  const pointerLockSupported = isPointerLockSupported(pointerLockDocument);
+  const overlayStatus = overlay?.querySelector('#overlay-status');
+  let lockAttemptTimer = null;
 
   controls.getObject().position.set(0, worldConfig.waterLevel + playerEyeHeight + 1, 0);
 
@@ -106,6 +132,42 @@ export function createPlayerControls({
     if (message) {
       setStatus(message, 2.4);
     }
+  }
+
+  function setOverlayStatus(message, { isError = false } = {}) {
+    if (!overlayStatus) {
+      return;
+    }
+    overlayStatus.textContent = message;
+    overlayStatus.classList.toggle('visible', Boolean(message));
+    overlayStatus.classList.toggle('error', Boolean(message) && isError);
+  }
+
+  function clearLockAttemptTimer() {
+    if (lockAttemptTimer === null) {
+      return;
+    }
+    window.clearTimeout(lockAttemptTimer);
+    lockAttemptTimer = null;
+  }
+
+  function scheduleLockVerification() {
+    clearLockAttemptTimer();
+    lockAttemptTimer = window.setTimeout(() => {
+      if (!controls.isLocked) {
+        setOverlayStatus(
+          'Pointer lock was blocked by the browser. Open the demo in a standalone tab or allow pointer lock in your browser preferences.',
+          { isError: true }
+        );
+      }
+    }, 250);
+  }
+
+  if (!pointerLockSupported) {
+    setOverlayStatus(
+      'Pointer Lock API is not available in this environment. Use a desktop browser tab to enable full mouse look.',
+      { isError: true }
+    );
   }
 
   const onKeyDown = (event) => {
@@ -165,15 +227,58 @@ export function createPlayerControls({
     }
   };
 
-  const handleOverlayClick = () => controls.lock();
-  const handleLock = () => overlay.classList.add('hidden');
-  const handleUnlock = () => overlay.classList.remove('hidden');
+  function attemptPointerLock() {
+    if (!pointerLockSupported) {
+      setOverlayStatus(
+        'Pointer Lock is unavailable here. Try opening the experience in a standalone browser window.',
+        { isError: true }
+      );
+      return;
+    }
+
+    setOverlayStatus('');
+    try {
+      controls.lock();
+      scheduleLockVerification();
+    } catch (error) {
+      console.error('Failed to initiate pointer lock:', error);
+      setOverlayStatus(
+        'Pointer lock request failed. Open the page in a new tab or allow pointer lock in your browser settings.',
+        { isError: true }
+      );
+    }
+  }
+
+  const handleOverlayClick = () => attemptPointerLock();
+  const handleLock = () => {
+    clearLockAttemptTimer();
+    overlay.classList.add('hidden');
+    setOverlayStatus('');
+  };
+  const handleUnlock = () => {
+    overlay.classList.remove('hidden');
+    if (pointerLockSupported) {
+      setOverlayStatus('Click to resume control.');
+    }
+  };
+
+  function handlePointerLockError(event) {
+    clearLockAttemptTimer();
+    console.error('Pointer lock error:', event);
+    setOverlayStatus(
+      'Pointer lock was blocked. Open the demo in a dedicated browser tab or enable pointer lock permissions and try again.',
+      { isError: true }
+    );
+  }
 
   overlay.addEventListener('click', handleOverlayClick);
   controls.addEventListener('lock', handleLock);
   controls.addEventListener('unlock', handleUnlock);
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('keyup', onKeyUp);
+  POINTER_LOCK_ERROR_EVENTS.forEach((eventName) =>
+    pointerLockDocument.addEventListener(eventName, handlePointerLockError)
+  );
 
   function sampleHeight(x, z) {
     return terrainHeight(Math.round(x), Math.round(z));
@@ -348,6 +453,10 @@ export function createPlayerControls({
     controls.removeEventListener('unlock', handleUnlock);
     document.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('keyup', onKeyUp);
+    POINTER_LOCK_ERROR_EVENTS.forEach((eventName) =>
+      pointerLockDocument.removeEventListener(eventName, handlePointerLockError)
+    );
+    clearLockAttemptTimer();
   }
 
   function getPosition() {

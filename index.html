@@ -42,6 +42,23 @@
         line-height: 1.6;
       }
 
+      #overlay-status {
+        margin-top: 18px;
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.85);
+        line-height: 1.5;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      #overlay-status.visible {
+        opacity: 1;
+      }
+
+      #overlay-status.error {
+        color: #ffb4a2;
+      }
+
       #hud {
         position: absolute;
         left: 24px;
@@ -124,6 +141,7 @@
           jump, and Shift to sprint (or dive while swimming). Keep an eye on
           your health and oxygen in the HUD.
         </p>
+        <p id="overlay-status" role="alert" aria-live="assertive"></p>
       </div>
     </div>
     <script type="module" src="./src/main.js"></script>
