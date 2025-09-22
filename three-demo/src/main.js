@@ -149,6 +149,7 @@ try {
     worldConfig,
     terrainHeight,
     solidBlocks: chunkManager.solidBlocks,
+    softBlocks: chunkManager.softBlocks,
     waterColumns: chunkManager.waterColumns,
     chunkManager,
     damageMaterials: blockMaterials.damageStages,

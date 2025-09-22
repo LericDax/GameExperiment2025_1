@@ -1,0 +1,28 @@
+{
+  "id": "blue_flower",
+  "label": "Blue Meadow Flower",
+  "category": "flowers",
+  "author": "system",
+  "description": "Delicate wildflower constructed from mini voxels.",
+  "collision": "none",
+  "voxelScale": 0.2,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["temperate_forest"],
+    "weight": 1
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "tint": "#4e6932", "destructible": true },
+    { "type": "log", "position": [0, 1, 0], "tint": "#4e6932" },
+    { "type": "leaf", "position": [0, 2, 0], "size": [1, 1.2, 1], "tint": "#58a83d" },
+    { "type": "leaf", "position": [0, 2.8, 0], "size": [1.2, 0.6, 1.2], "tint": "#5ac25a" },
+    { "type": "leaf", "position": [0, 3.6, 0], "size": [1.2, 0.6, 1.2], "tint": "#60cf61" },
+    { "type": "leaf", "position": [1.2, 4, 0], "size": [1.4, 0.6, 1.4], "tint": "#4e87ff", "isSolid": false },
+    { "type": "leaf", "position": [-1.2, 4, 0], "size": [1.4, 0.6, 1.4], "tint": "#4e87ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 4, 1.2], "size": [1.4, 0.6, 1.4], "tint": "#4e87ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 4, -1.2], "size": [1.4, 0.6, 1.4], "tint": "#4e87ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 4.5, 0], "size": [1.2, 0.6, 1.2], "tint": "#f6f29c", "isSolid": false }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "temperate_shrub",
+  "label": "Temperate Shrub",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Rounded shrub assembled from terrain voxels.",
+  "collision": "soft",
+  "voxelScale": 1,
+  "attachment": {
+    "groundOffset": 1
+  },
+  "placement": {
+    "biomes": ["temperate_forest", "sunset_dunes", "frostbound_steppe"],
+    "weight": 2
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0] },
+    { "type": "leaf", "position": [1, 0, 0] },
+    { "type": "leaf", "position": [-1, 0, 0] },
+    { "type": "leaf", "position": [0, 0, 1] },
+    { "type": "leaf", "position": [0, 0, -1] },
+    { "type": "leaf", "position": [0, 1, 0] },
+    { "type": "leaf", "position": [1, 1, 0] },
+    { "type": "leaf", "position": [-1, 1, 0] },
+    { "type": "leaf", "position": [0, 1, 1] },
+    { "type": "leaf", "position": [0, 1, -1] }
+  ]
+}
