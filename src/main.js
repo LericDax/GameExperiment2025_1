@@ -1,7 +1,75 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
+import { buildTexturePalette } from './textures.js';
+
+const DEFAULT_SEED = 1337;
+const SEED_STORAGE_KEY = 'worldSeed';
+
+function parseSeed(value) {
+  if (value == null) {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return (Math.abs(Math.floor(parsed)) >>> 0) || 0;
+}
+
+function determineSeed() {
+  const params = new URLSearchParams(window.location.search);
+  const querySeed = parseSeed(params.get('seed'));
+  if (querySeed !== null) {
+    return querySeed;
+  }
+
+  try {
+    const storedSeed = parseSeed(localStorage.getItem(SEED_STORAGE_KEY));
+    if (storedSeed !== null) {
+      return storedSeed;
+    }
+  } catch (error) {
+    console.warn('Unable to read stored world seed.', error);
+  }
+
+  return DEFAULT_SEED;
+}
+
+const worldSeed = determineSeed();
+
+function persistSeed(seed) {
+  try {
+    localStorage.setItem(SEED_STORAGE_KEY, String(seed));
+  } catch (error) {
+    console.warn('Unable to persist world seed.', error);
+  }
+}
+
+persistSeed(worldSeed);
+
+const worldConfig = {
+  seed: worldSeed,
+  chunkSize: 48,
+  maxHeight: 20,
+  baseHeight: 6,
+  waterLevel: 8,
+};
+
+window.randomizeWorldSeed = () => {
+  const newSeed = (Math.random() * 0xffffffff) >>> 0;
+  persistSeed(newSeed);
+  const params = new URLSearchParams(window.location.search);
+  params.set('seed', String(newSeed));
+  const nextSearch = params.toString();
+  window.location.search = nextSearch ? `?${nextSearch}` : '';
+};
+console.info(
+  'Call window.randomizeWorldSeed() to randomize the world seed and reload the scene.'
+);
 
 const overlay = document.getElementById('overlay');
+
+const textures = buildTexturePalette(worldConfig.seed);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xa9d6ff);
@@ -105,112 +173,6 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-function hexToRgb(hex) {
-  const value = hex.replace('#', '');
-  const bigint = parseInt(value, 16);
-  return {
-    r: (bigint >> 16) & 255,
-    g: (bigint >> 8) & 255,
-    b: bigint & 255,
-  };
-}
-
-function createProceduralTexture({
-  baseColor = '#ffffff',
-  accentColor = '#dddddd',
-  noiseStrength = 0.25,
-  vignette = 0.15,
-  size = 64,
-}) {
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-
-  const base = hexToRgb(baseColor);
-  const accent = hexToRgb(accentColor);
-
-  const imageData = ctx.createImageData(size, size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const index = (x + y * size) * 4;
-      const nx = x / size - 0.5;
-      const ny = y / size - 0.5;
-      const distance = Math.sqrt(nx * nx + ny * ny);
-      const vignetteFactor = 1 - vignette * distance;
-      const random = Math.random() * noiseStrength - noiseStrength / 2;
-      imageData.data[index] = THREE.MathUtils.clamp(
-        base.r + (accent.r - 128) * random,
-        0,
-        255
-      );
-      imageData.data[index + 1] = THREE.MathUtils.clamp(
-        base.g + (accent.g - 128) * random,
-        0,
-        255
-      );
-      imageData.data[index + 2] = THREE.MathUtils.clamp(
-        base.b + (accent.b - 128) * random,
-        0,
-        255
-      );
-      imageData.data[index + 3] = 255 * vignetteFactor;
-    }
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestFilter;
-  return texture;
-}
-
-const textures = {
-  grass: createProceduralTexture({
-    baseColor: '#4a9c47',
-    accentColor: '#6fd25f',
-    noiseStrength: 0.6,
-  }),
-  dirt: createProceduralTexture({
-    baseColor: '#6b4a2f',
-    accentColor: '#56331a',
-    noiseStrength: 0.4,
-  }),
-  stone: createProceduralTexture({
-    baseColor: '#8c8c8c',
-    accentColor: '#cccccc',
-    noiseStrength: 0.2,
-  }),
-  sand: createProceduralTexture({
-    baseColor: '#d7c27a',
-    accentColor: '#f0e4a0',
-    noiseStrength: 0.35,
-  }),
-  water: createProceduralTexture({
-    baseColor: '#2c70c9',
-    accentColor: '#4fa4ff',
-    noiseStrength: 0.5,
-  }),
-  leaf: createProceduralTexture({
-    baseColor: '#3f7c35',
-    accentColor: '#79c35a',
-    noiseStrength: 0.6,
-  }),
-  log: createProceduralTexture({
-    baseColor: '#725032',
-    accentColor: '#9c7045',
-    noiseStrength: 0.45,
-  }),
-  cloud: createProceduralTexture({
-    baseColor: '#f7f8fb',
-    accentColor: '#d9e5ff',
-    noiseStrength: 0.2,
-    vignette: 0.02,
-  }),
-};
-
 const blockMaterials = {
   grass: new THREE.MeshStandardMaterial({ map: textures.grass }),
   dirt: new THREE.MeshStandardMaterial({ map: textures.dirt }),
@@ -269,14 +231,7 @@ class ValueNoise2D {
   }
 }
 
-const noiseGenerator = new ValueNoise2D(1337);
-
-const worldConfig = {
-  chunkSize: 48,
-  maxHeight: 20,
-  baseHeight: 6,
-  waterLevel: 8,
-};
+const noiseGenerator = new ValueNoise2D(worldConfig.seed);
 
 function terrainHeight(x, z) {
   const frequency1 = 0.06;
@@ -291,9 +246,21 @@ function terrainHeight(x, z) {
   return Math.floor(THREE.MathUtils.clamp(height, 2, worldConfig.maxHeight));
 }
 
+function hashRandomSeed(x, z, offset = 0) {
+  const ix = Math.round(x * 73856093);
+  const iz = Math.round(z * 19349663);
+  let h = Math.imul(ix, 0x27d4eb2d) >>> 0;
+  h = Math.imul(h ^ iz, 0x165667b1) >>> 0;
+  h = Math.imul(h ^ (offset + 0x9e3779b9), 0x85ebca6b) >>> 0;
+  h ^= worldConfig.seed;
+  h ^= h >>> 15;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
 function randomAt(x, z, offset = 0) {
-  const value = Math.sin(x * 12.9898 + z * 78.233 + offset * 43758.5453 + worldConfig.chunkSize);
-  return value - Math.floor(value);
+  return hashRandomSeed(x, z, offset) / 4294967296;
 }
 
 const instancedData = {
