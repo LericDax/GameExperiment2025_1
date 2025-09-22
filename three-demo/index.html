@@ -42,6 +42,74 @@
         line-height: 1.6;
       }
 
+      #hud {
+        position: absolute;
+        left: 24px;
+        bottom: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        pointer-events: none;
+        min-width: 220px;
+        font-size: 14px;
+      }
+
+      .hud-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .hud-label {
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        color: rgba(255, 255, 255, 0.8);
+      }
+
+      .hud-track {
+        flex: 1;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+
+      .hud-fill {
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(90deg, #6bff8f, #2ec4a0);
+        transition: width 0.2s ease;
+      }
+
+      #hud-oxygen-fill {
+        background: linear-gradient(90deg, #7ecbff, #3a8dff);
+      }
+
+      .hud-value {
+        font-variant-numeric: tabular-nums;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.9);
+        min-width: 32px;
+        text-align: right;
+      }
+
+      #hud-status {
+        min-height: 18px;
+        font-size: 13px;
+        color: #ffe28a;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+
+      #hud-status.visible {
+        opacity: 1;
+      }
+
+      #hud.in-water .hud-fill {
+        background: linear-gradient(90deg, #45d0ff, #1b7bff);
+      }
+
       canvas {
         display: block;
       }
@@ -53,8 +121,9 @@
         <div id="instructions">
           <h1>Procedural Block World</h1>
           <p>
-            Click anywhere to lock the pointer, then use WASD to move and Space
-            to hop up ledges. Move the mouse to look around.
+            Click anywhere to lock the pointer, then use WASD to move, Space to
+            jump, and Shift to sprint (or dive while swimming). Keep an eye on
+            your health and oxygen in the HUD.
           </p>
         </div>
       </div>

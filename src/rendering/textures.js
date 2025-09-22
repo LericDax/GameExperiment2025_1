@@ -10,12 +10,32 @@ function hexToRgb(hex) {
   };
 }
 
+function createSeededRandom(seed) {
+  let state = seed >>> 0;
+  return function next() {
+    state += 0x6d2b79f5;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashSeed(baseSeed, label) {
+  let hash = baseSeed >>> 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = Math.imul(hash ^ label.charCodeAt(i), 0x45d9f3b);
+    hash = (hash ^ (hash >>> 16)) >>> 0;
+  }
+  return hash >>> 0;
+}
+
 function createProceduralTexture({
   baseColor = '#ffffff',
   accentColor = '#dddddd',
   noiseStrength = 0.25,
   vignette = 0.15,
   size = 64,
+  random = Math.random,
 }) {
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -33,19 +53,19 @@ function createProceduralTexture({
       const ny = y / size - 0.5;
       const distance = Math.sqrt(nx * nx + ny * ny);
       const vignetteFactor = 1 - vignette * distance;
-      const random = Math.random() * noiseStrength - noiseStrength / 2;
+      const randomValue = random() * noiseStrength - noiseStrength / 2;
       imageData.data[index] = THREE.MathUtils.clamp(
-        base.r + (accent.r - 128) * random,
+        base.r + (accent.r - 128) * randomValue,
         0,
         255
       );
       imageData.data[index + 1] = THREE.MathUtils.clamp(
-        base.g + (accent.g - 128) * random,
+        base.g + (accent.g - 128) * randomValue,
         0,
         255
       );
       imageData.data[index + 2] = THREE.MathUtils.clamp(
-        base.b + (accent.b - 128) * random,
+        base.b + (accent.b - 128) * randomValue,
         0,
         255
       );
@@ -62,44 +82,50 @@ function createProceduralTexture({
   return texture;
 }
 
-export function createBlockMaterials() {
+export function createBlockMaterials({ seed = 1337 } = {}) {
+  const textureFor = (key, config) =>
+    createProceduralTexture({
+      ...config,
+      random: createSeededRandom(hashSeed(seed, key)),
+    });
+
   const textures = {
-    grass: createProceduralTexture({
+    grass: textureFor('grass', {
       baseColor: '#4a9c47',
       accentColor: '#6fd25f',
       noiseStrength: 0.6,
     }),
-    dirt: createProceduralTexture({
+    dirt: textureFor('dirt', {
       baseColor: '#6b4a2f',
       accentColor: '#56331a',
       noiseStrength: 0.4,
     }),
-    stone: createProceduralTexture({
+    stone: textureFor('stone', {
       baseColor: '#8c8c8c',
       accentColor: '#cccccc',
       noiseStrength: 0.2,
     }),
-    sand: createProceduralTexture({
+    sand: textureFor('sand', {
       baseColor: '#d7c27a',
       accentColor: '#f0e4a0',
       noiseStrength: 0.35,
     }),
-    water: createProceduralTexture({
+    water: textureFor('water', {
       baseColor: '#2c70c9',
       accentColor: '#4fa4ff',
       noiseStrength: 0.5,
     }),
-    leaf: createProceduralTexture({
+    leaf: textureFor('leaf', {
       baseColor: '#3f7c35',
       accentColor: '#79c35a',
       noiseStrength: 0.6,
     }),
-    log: createProceduralTexture({
+    log: textureFor('log', {
       baseColor: '#725032',
       accentColor: '#9c7045',
       noiseStrength: 0.45,
     }),
-    cloud: createProceduralTexture({
+    cloud: textureFor('cloud', {
       baseColor: '#f7f8fb',
       accentColor: '#d9e5ff',
       noiseStrength: 0.2,
