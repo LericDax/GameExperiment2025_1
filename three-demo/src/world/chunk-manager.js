@@ -21,6 +21,16 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
       return;
     }
     const chunk = generateChunk(blockMaterials, chunkX, chunkZ);
+    chunk.group.children.forEach((child) => {
+      if (!child.isInstancedMesh) {
+        return;
+      }
+      const { type } = child.userData;
+      if (!type) {
+        return;
+      }
+      child.userData.chunkKey = key;
+    });
     scene.add(chunk.group);
     chunk.solidBlockKeys.forEach((block) => solidBlocks.add(block));
     chunk.waterColumnKeys.forEach((column) => waterColumns.add(column));
@@ -72,11 +82,112 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
   }
 
+  function getChunkForMesh(mesh) {
+    if (!mesh?.isInstancedMesh) {
+      return null;
+    }
+    const key = mesh.userData?.chunkKey;
+    if (!key) {
+      return null;
+    }
+    return loadedChunks.get(key) ?? null;
+  }
+
+  function getBlockFromIntersection(intersection) {
+    if (!intersection || typeof intersection.instanceId !== 'number') {
+      return null;
+    }
+    const mesh = intersection.object;
+    if (!mesh?.isInstancedMesh) {
+      return null;
+    }
+    const chunk = getChunkForMesh(mesh);
+    if (!chunk) {
+      return null;
+    }
+    const { type } = mesh.userData || {};
+    if (!type) {
+      return null;
+    }
+    const typeData = chunk.typeData?.get(type);
+    if (!typeData) {
+      return null;
+    }
+    const entry = typeData.entries[intersection.instanceId];
+    if (!entry) {
+      return null;
+    }
+    return {
+      chunk,
+      type,
+      instanceId: intersection.instanceId,
+      entry,
+    };
+  }
+
+  function removeBlockInstance({ chunk, type, instanceId }) {
+    if (!chunk || typeof instanceId !== 'number' || !chunk.typeData) {
+      return null;
+    }
+    const typeData = chunk.typeData.get(type);
+    if (!typeData) {
+      return null;
+    }
+    const { entries, mesh } = typeData;
+    if (!mesh || !mesh.isInstancedMesh) {
+      return null;
+    }
+    if (instanceId < 0 || instanceId >= entries.length) {
+      return null;
+    }
+
+    const lastIndex = entries.length - 1;
+    const removed = entries[instanceId];
+
+    if (!removed) {
+      return null;
+    }
+
+    if (instanceId !== lastIndex) {
+      const swapped = entries[lastIndex];
+      entries[instanceId] = swapped;
+      mesh.setMatrixAt(instanceId, swapped.matrix);
+      mesh.instanceMatrix.needsUpdate = true;
+      if (chunk.blockLookup) {
+        const swappedInfo = chunk.blockLookup.get(swapped.key);
+        if (swappedInfo) {
+          swappedInfo.index = instanceId;
+        }
+      }
+      swapped.index = instanceId;
+    }
+
+    entries.pop();
+    mesh.count = entries.length;
+    mesh.instanceMatrix.needsUpdate = true;
+
+    if (chunk.blockLookup) {
+      chunk.blockLookup.delete(removed.key);
+    }
+    if (removed.isSolid) {
+      chunk.solidBlockKeys.delete(removed.key);
+      solidBlocks.delete(removed.key);
+    }
+    if (removed.isWater) {
+      chunk.waterColumnKeys.delete(`${removed.position.x}|${removed.position.z}`);
+      waterColumns.delete(`${removed.position.x}|${removed.position.z}`);
+    }
+
+    return removed;
+  }
+
   return {
     update,
     dispose,
     solidBlocks,
     waterColumns,
+    getBlockFromIntersection,
+    removeBlockInstance,
   };
 }
 

@@ -31,9 +31,10 @@ export function createPlayerControls({
   renderer,
   overlay,
   worldConfig,
-  terrainHeight,
   solidBlocks,
   waterColumns,
+  chunkManager,
+  damageMaterials = [],
   onStateChange = () => {},
 }) {
   if (!THREE) {
@@ -41,6 +42,9 @@ export function createPlayerControls({
   }
   if (!PointerLockControls) {
     throw new Error('createPlayerControls requires PointerLockControls');
+  }
+  if (!chunkManager) {
+    throw new Error('createPlayerControls requires a chunk manager for block interactions');
   }
   const controls = new PointerLockControls(camera, renderer.domElement);
   const controlObject =
@@ -69,12 +73,47 @@ export function createPlayerControls({
   const playerHeight = 1.8;
   const playerRadius = 0.35;
   const gravity = 18;
-  const jumpVelocity = 7.8;
+  const jumpVelocity = 10.2;
+  const nearGroundThreshold = 0.18;
   const pointerLockElement = renderer.domElement;
   const pointerLockDocument = pointerLockElement.ownerDocument;
   const pointerLockSupported = isPointerLockSupported(pointerLockDocument);
   const overlayStatus = overlay?.querySelector('#overlay-status');
   let lockAttemptTimer = null;
+  const attackRay = new THREE.Raycaster();
+  attackRay.far = 6.2;
+  const aimVector = new THREE.Vector2(0, 0);
+  const blockDurability = new Map([
+    ['grass', 0.8],
+    ['dirt', 1.2],
+    ['sand', 0.65],
+    ['stone', 2.4],
+    ['log', 1.8],
+    ['leaf', 0.5],
+  ]);
+  const overlayMaterials = Array.isArray(damageMaterials) && damageMaterials.length > 0
+    ? damageMaterials
+    : [
+        new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.12,
+          depthWrite: false,
+        }),
+      ];
+  const overlayGeometry = new THREE.BoxGeometry(1.02, 1.02, 1.02);
+  const damageOverlayMesh = new THREE.Mesh(overlayGeometry, overlayMaterials[0]);
+  damageOverlayMesh.visible = false;
+  damageOverlayMesh.renderOrder = 10;
+  damageOverlayMesh.frustumCulled = false;
+  scene.add(damageOverlayMesh);
+  let currentOverlayMaterialIndex = 0;
+
+  const attackState = {
+    swinging: false,
+    target: null,
+    progress: 0,
+  };
 
   function hideOverlay() {
     if (!overlay) {
@@ -302,6 +341,7 @@ export function createPlayerControls({
     if (!pointerLockSupported) {
       return;
     }
+    stopAttack();
     setStatus('Click or tap the game view to resume mouse look.', Number.POSITIVE_INFINITY);
     setOverlayStatus('Click to resume control.', { showOverlay: false });
   };
@@ -319,14 +359,27 @@ export function createPlayerControls({
     );
   }
 
+  function stopAttack() {
+    attackState.swinging = false;
+  }
+
   function handlePointerDown(event) {
     if (controls.isLocked) {
+      if (event.button === 0) {
+        attackState.swinging = true;
+      }
       return;
     }
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return;
     }
     attemptPointerLock();
+  }
+
+  function handlePointerUp(event) {
+    if (event.button === 0) {
+      stopAttack();
+    }
   }
 
   hideOverlay();
@@ -336,13 +389,11 @@ export function createPlayerControls({
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('keyup', onKeyUp);
   pointerLockElement.addEventListener('pointerdown', handlePointerDown);
+  pointerLockElement.addEventListener('pointerup', handlePointerUp);
+  document.addEventListener('pointerup', handlePointerUp);
   POINTER_LOCK_ERROR_EVENTS.forEach((eventName) =>
     pointerLockDocument.addEventListener(eventName, handlePointerLockError)
   );
-
-  function sampleHeight(x, z) {
-    return terrainHeight(Math.round(x), Math.round(z));
-  }
 
   function collidesAt(position) {
     const playerFeet = position.y - playerEyeHeight;
@@ -400,6 +451,63 @@ export function createPlayerControls({
     }
 
     return false;
+  }
+
+  function findStandingSurface(position, tolerance = 0.75) {
+    const playerFeet = position.y - playerEyeHeight;
+    const playerMinX = position.x - playerRadius;
+    const playerMaxX = position.x + playerRadius;
+    const playerMinZ = position.z - playerRadius;
+    const playerMaxZ = position.z + playerRadius;
+
+    const minBlockX = Math.floor(playerMinX - 0.5);
+    const maxBlockX = Math.floor(playerMaxX + 0.5);
+    const minBlockZ = Math.floor(playerMinZ - 0.5);
+    const maxBlockZ = Math.floor(playerMaxZ + 0.5);
+
+    const searchTop = Math.min(
+      worldConfig.maxHeight + 2,
+      Math.floor(playerFeet + tolerance),
+    );
+    const searchBottom = Math.max(-8, Math.floor(playerFeet - 6));
+    const epsilon = 1e-4;
+    let bestSurface = null;
+
+    for (let x = minBlockX; x <= maxBlockX; x++) {
+      for (let z = minBlockZ; z <= maxBlockZ; z++) {
+        for (let y = searchTop; y >= searchBottom; y--) {
+          if (!solidBlocks.has(blockKey(x, y, z))) {
+            continue;
+          }
+
+          const blockMinX = x - 0.5;
+          const blockMaxX = x + 0.5;
+          const blockMinZ = z - 0.5;
+          const blockMaxZ = z + 0.5;
+
+          const horizontalOverlap =
+            playerMaxX > blockMinX + epsilon &&
+            playerMinX < blockMaxX - epsilon &&
+            playerMaxZ > blockMinZ + epsilon &&
+            playerMinZ < blockMaxZ - epsilon;
+
+          if (!horizontalOverlap) {
+            continue;
+          }
+
+          const blockTop = y + 0.5;
+          if (blockTop > playerFeet + tolerance) {
+            continue;
+          }
+
+          if (!bestSurface || blockTop > bestSurface.height) {
+            bestSurface = { height: blockTop };
+          }
+        }
+      }
+    }
+
+    return bestSurface;
   }
 
   function update(delta) {
@@ -476,21 +584,26 @@ export function createPlayerControls({
       }
     }
 
-    const terrainY = sampleHeight(position.x, position.z);
-    const groundLevel = terrainY + 0.5;
+    const standingSurface = findStandingSurface(position);
+    const supportTargetY = standingSurface
+      ? standingSurface.height + playerEyeHeight
+      : Number.NEGATIVE_INFINITY;
     const waterTarget =
       worldConfig.waterLevel + 0.5 + playerEyeHeight - 0.2;
-    let targetY = groundLevel + playerEyeHeight;
+    let targetY = supportTargetY;
     if (!feetInWater && inWaterColumn) {
       targetY = Math.max(targetY, waterTarget);
     }
 
     if (jumpRequested) {
-      if (isGrounded) {
+      const nearGround =
+        Number.isFinite(supportTargetY) &&
+        position.y <= supportTargetY + nearGroundThreshold;
+      if (isGrounded || nearGround) {
         verticalVelocity = jumpVelocity;
         isGrounded = false;
       } else if (feetInWater) {
-        verticalVelocity = Math.max(verticalVelocity, 3.5);
+        verticalVelocity = Math.max(verticalVelocity, 4.6);
       }
     }
     jumpRequested = false;
@@ -519,15 +632,22 @@ export function createPlayerControls({
       maxDownwardSpeed = verticalVelocity;
     }
 
-    if (position.y <= targetY) {
-      if (!feetInWater && maxDownwardSpeed < -12) {
+    if (Number.isFinite(targetY) && position.y <= targetY) {
+      const landedOnSupport =
+        Number.isFinite(supportTargetY) &&
+        position.y <= supportTargetY + 1e-3;
+      if (
+        landedOnSupport &&
+        !feetInWater &&
+        maxDownwardSpeed < -12
+      ) {
         const impact = Math.abs(maxDownwardSpeed) - 10;
         applyDamage(impact * 4.5, 'You hit the ground hard.');
       }
-      position.y = targetY;
+      position.y = landedOnSupport ? supportTargetY : targetY;
       verticalVelocity = 0;
       maxDownwardSpeed = 0;
-      isGrounded = true;
+      isGrounded = landedOnSupport;
     } else {
       isGrounded = false;
     }
@@ -540,7 +660,104 @@ export function createPlayerControls({
       }
     }
 
+    updateAttack(delta);
     pushState();
+  }
+
+  function updateAttack(delta) {
+    if (!controls.isLocked) {
+      resetAttackProgress();
+      return;
+    }
+
+    attackRay.setFromCamera(aimVector, camera);
+    const intersections = attackRay.intersectObjects(scene.children, true);
+    let blockInfo = null;
+    for (const intersection of intersections) {
+      if (!intersection.object?.isInstancedMesh) {
+        continue;
+      }
+      const info = chunkManager.getBlockFromIntersection(intersection);
+      if (!info?.entry?.destructible) {
+        continue;
+      }
+      blockInfo = info;
+      break;
+    }
+
+    if (!blockInfo) {
+      decayAttack(delta);
+      return;
+    }
+
+    if (!attackState.target || attackState.target.entry.key !== blockInfo.entry.key) {
+      attackState.target = blockInfo;
+      attackState.progress = 0;
+    }
+
+    if (attackState.swinging) {
+      const type = attackState.target.entry.type;
+      const durability = blockDurability.get(type) ?? 1.2;
+      attackState.progress += delta / Math.max(durability, 0.1);
+      if (attackState.progress >= 1) {
+        chunkManager.removeBlockInstance({
+          chunk: attackState.target.chunk,
+          type: attackState.target.type,
+          instanceId: attackState.target.instanceId,
+        });
+        resetAttackProgress();
+        return;
+      }
+    } else {
+      attackState.progress = Math.max(0, attackState.progress - delta * 1.5);
+    }
+
+    if (attackState.target && attackState.progress > 0) {
+      showDamageOverlay(attackState.target.entry.position, attackState.progress);
+    } else {
+      hideDamageOverlay();
+    }
+  }
+
+  function decayAttack(delta) {
+    attackState.target = null;
+    attackState.progress = Math.max(0, attackState.progress - delta * 2.5);
+    if (attackState.progress <= 0) {
+      hideDamageOverlay();
+    }
+  }
+
+  function resetAttackProgress() {
+    attackState.target = null;
+    attackState.progress = 0;
+    hideDamageOverlay();
+  }
+
+  function hideDamageOverlay() {
+    if (!damageOverlayMesh.visible) {
+      return;
+    }
+    damageOverlayMesh.visible = false;
+  }
+
+  function showDamageOverlay(position, progress) {
+    if (!position) {
+      hideDamageOverlay();
+      return;
+    }
+    const stageCount = overlayMaterials.length;
+    const stageIndex = Math.min(
+      stageCount - 1,
+      Math.floor(progress * stageCount)
+    );
+    if (stageIndex !== currentOverlayMaterialIndex) {
+      damageOverlayMesh.material = overlayMaterials[stageIndex];
+      currentOverlayMaterialIndex = stageIndex;
+    }
+    damageOverlayMesh.position.copy(position);
+    if (!damageOverlayMesh.visible) {
+      damageOverlayMesh.visible = true;
+    }
   }
 
   function dispose() {
@@ -551,10 +768,14 @@ export function createPlayerControls({
     document.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('keyup', onKeyUp);
     pointerLockElement.removeEventListener('pointerdown', handlePointerDown);
+    pointerLockElement.removeEventListener('pointerup', handlePointerUp);
+    document.removeEventListener('pointerup', handlePointerUp);
     POINTER_LOCK_ERROR_EVENTS.forEach((eventName) =>
       pointerLockDocument.removeEventListener(eventName, handlePointerLockError)
     );
     clearLockAttemptTimer();
+    scene.remove(damageOverlayMesh);
+    damageOverlayMesh.geometry.dispose();
   }
 
   function getPosition() {

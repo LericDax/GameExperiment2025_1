@@ -4,7 +4,6 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { createBlockMaterials } from './rendering/textures.js'
 import {
   initializeWorldGeneration,
-  terrainHeight,
   worldConfig,
 } from './world/generation.js'
 import { createChunkManager } from './world/chunk-manager.js'
@@ -147,9 +146,10 @@ try {
     renderer,
     overlay,
     worldConfig,
-    terrainHeight,
     solidBlocks: chunkManager.solidBlocks,
     waterColumns: chunkManager.waterColumns,
+    chunkManager,
+    damageMaterials: blockMaterials.damageStages,
     onStateChange: updateHud,
   })
 
