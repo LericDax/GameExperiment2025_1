@@ -67,6 +67,13 @@ export function createPlayerControls({
     sprint: false,
   };
 
+  const cameraForward = new THREE.Vector3();
+  const cameraRight = new THREE.Vector3();
+  const cameraUp = new THREE.Vector3(0, 1, 0);
+  const movementStep = new THREE.Vector3();
+  const attemptPosition = new THREE.Vector3();
+  const axisAttempt = new THREE.Vector3();
+
   let jumpRequested = false;
   let verticalVelocity = 0;
   let isGrounded = false;
@@ -747,37 +754,58 @@ export function createPlayerControls({
     direction.x = Number(right) - Number(left);
     if (direction.lengthSq() > 0) {
       direction.normalize();
+
+      controls.getDirection(cameraForward);
+      cameraForward.y = 0;
+      if (cameraForward.lengthSq() === 0) {
+        cameraForward.set(0, 0, -1);
+      } else {
+        cameraForward.normalize();
+      }
+
+      cameraRight.crossVectors(cameraForward, cameraUp);
+      if (cameraRight.lengthSq() === 0) {
+        cameraRight.set(1, 0, 0);
+      } else {
+        cameraRight.normalize();
+      }
+
+      movementStep
+        .copy(cameraForward)
+        .multiplyScalar(direction.z)
+        .addScaledVector(cameraRight, direction.x);
+
+      if (movementStep.lengthSq() > 0) {
+        movementStep.normalize();
+      }
+
       const baseSpeed = 5.2;
       const sprintBonus = sprint && forward && !feetInWater ? 3.2 : 0;
       const mediumPenalty = feetInWater ? 0.42 : 1;
       const moveSpeed = (baseSpeed + sprintBonus) * mediumPenalty;
-      const moveX = direction.x * moveSpeed * delta;
-      const moveZ = direction.z * moveSpeed * delta;
-
-      const yaw = controlObject.rotation.y;
-      const sin = Math.sin(yaw);
-      const cos = Math.cos(yaw);
-      const worldX = moveX * cos - moveZ * sin;
-      const worldZ = moveZ * cos + moveX * sin;
+      movementStep.multiplyScalar(moveSpeed * delta);
 
       const currentPosition = controlObject.position;
-      const attemptPosition = currentPosition.clone();
+      const worldX = movementStep.x;
+      const worldZ = movementStep.z;
+
+      attemptPosition.copy(currentPosition);
       attemptPosition.x += worldX;
       attemptPosition.z += worldZ;
 
       if (!collidesAt(attemptPosition)) {
         currentPosition.copy(attemptPosition);
       } else {
-        const attemptX = currentPosition.clone();
-        attemptX.x += worldX;
-        if (!collidesAt(attemptX)) {
-          currentPosition.x = attemptX.x;
+        axisAttempt.copy(currentPosition);
+        axisAttempt.x += worldX;
+        if (!collidesAt(axisAttempt)) {
+          currentPosition.x = axisAttempt.x;
         }
 
-        const attemptZ = currentPosition.clone();
-        attemptZ.z += worldZ;
-        if (!collidesAt(attemptZ)) {
-          currentPosition.z = attemptZ.z;
+        axisAttempt.copy(currentPosition);
+        axisAttempt.z += worldZ;
+        if (!collidesAt(axisAttempt)) {
+          currentPosition.z = axisAttempt.z;
         }
       }
     }
