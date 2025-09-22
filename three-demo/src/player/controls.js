@@ -596,9 +596,11 @@ export function createPlayerControls({
     }
 
     if (jumpRequested) {
+
       const nearGround =
         Number.isFinite(supportTargetY) &&
         position.y <= supportTargetY + nearGroundThreshold;
+
       if (isGrounded || nearGround) {
         verticalVelocity = jumpVelocity;
         isGrounded = false;
