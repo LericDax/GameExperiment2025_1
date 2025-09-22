@@ -1,6 +1,3 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
-
 function blockKey(x, y, z) {
   return `${x}|${y}|${z}`;
 }
@@ -41,6 +38,8 @@ function isPointerLockSupported(doc) {
 }
 
 export function createPlayerControls({
+  THREE,
+  PointerLockControls,
   scene,
   camera,
   renderer,
@@ -51,6 +50,12 @@ export function createPlayerControls({
   waterColumns,
   onStateChange = () => {},
 }) {
+  if (!THREE) {
+    throw new Error('createPlayerControls requires a THREE instance');
+  }
+  if (!PointerLockControls) {
+    throw new Error('createPlayerControls requires PointerLockControls');
+  }
   const controls = new PointerLockControls(camera, renderer.domElement);
   scene.add(controls.getObject());
 

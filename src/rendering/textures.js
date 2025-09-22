@@ -1,8 +1,10 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import { TextureEngine } from './texture-engine.js';
 
-export function createBlockMaterials({ seed = 1337 } = {}) {
-  const engine = new TextureEngine(seed);
+export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
+  if (!THREE) {
+    throw new Error('createBlockMaterials requires a THREE instance');
+  }
+  const engine = new TextureEngine({ THREE, seed });
 
   const textures = {
     grass: engine.createTexture('grass', {

@@ -1,5 +1,3 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-
 class ValueNoise2D {
   constructor(seed = 1) {
     this.seed = seed;
@@ -25,14 +23,40 @@ class ValueNoise2D {
 
     const n0 = this.hash(x0, y0);
     const n1 = this.hash(x1, y0);
-    const ix0 = THREE.MathUtils.lerp(n0, n1, sx);
+    const ix0 = lerp(n0, n1, sx);
 
     const n2 = this.hash(x0, y1);
     const n3 = this.hash(x1, y1);
-    const ix1 = THREE.MathUtils.lerp(n2, n3, sx);
+    const ix1 = lerp(n2, n3, sx);
 
-    return THREE.MathUtils.lerp(ix0, ix1, sy);
+    return lerp(ix0, ix1, sy);
   }
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+let THREERef = null;
+let blockGeometry = null;
+
+function ensureThree() {
+  if (!THREERef) {
+    throw new Error('World generation requires initialization with a THREE instance');
+  }
+  return THREERef;
+}
+
+export function initializeWorldGeneration({ THREE }) {
+  if (!THREE) {
+    throw new Error('initializeWorldGeneration requires a THREE instance');
+  }
+  THREERef = THREE;
+  blockGeometry = new THREE.BoxGeometry(1, 1, 1);
 }
 
 const noiseGenerator = new ValueNoise2D(1337);
@@ -54,7 +78,7 @@ export function terrainHeight(x, z) {
   const n2 = noiseGenerator.noise(x * frequency2 + 100, z * frequency2 + 100);
   const combined = n1 * amplitude1 + n2 * amplitude2;
   const height = worldConfig.baseHeight + combined;
-  return Math.floor(THREE.MathUtils.clamp(height, 2, worldConfig.maxHeight));
+  return Math.floor(clamp(height, 2, worldConfig.maxHeight));
 }
 
 export function randomAt(x, z, offset = 0) {
@@ -62,7 +86,6 @@ export function randomAt(x, z, offset = 0) {
   return value - Math.floor(value);
 }
 
-const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
 const solidTypes = new Set(['grass', 'dirt', 'stone', 'sand', 'leaf', 'log']);
 
 function blockKey(x, y, z) {
@@ -112,6 +135,10 @@ function chunkWorldBounds(chunkX, chunkZ) {
 }
 
 export function generateChunk(blockMaterials, chunkX, chunkZ) {
+  const THREE = ensureThree();
+  if (!blockGeometry) {
+    blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+  }
   const instancedData = {
     grass: [],
     dirt: [],
