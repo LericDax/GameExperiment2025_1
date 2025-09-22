@@ -34,6 +34,8 @@ export function createPlayerControls({
   terrainHeight,
   solidBlocks,
   waterColumns,
+  chunkManager,
+  damageMaterials = [],
   onStateChange = () => {},
 }) {
   if (!THREE) {
@@ -41,6 +43,9 @@ export function createPlayerControls({
   }
   if (!PointerLockControls) {
     throw new Error('createPlayerControls requires PointerLockControls');
+  }
+  if (!chunkManager) {
+    throw new Error('createPlayerControls requires a chunk manager for block interactions');
   }
   const controls = new PointerLockControls(camera, renderer.domElement);
   const controlObject =
@@ -69,12 +74,47 @@ export function createPlayerControls({
   const playerHeight = 1.8;
   const playerRadius = 0.35;
   const gravity = 18;
-  const jumpVelocity = 7.8;
+  const jumpVelocity = 10.2;
+  const nearGroundThreshold = 0.18;
   const pointerLockElement = renderer.domElement;
   const pointerLockDocument = pointerLockElement.ownerDocument;
   const pointerLockSupported = isPointerLockSupported(pointerLockDocument);
   const overlayStatus = overlay?.querySelector('#overlay-status');
   let lockAttemptTimer = null;
+  const attackRay = new THREE.Raycaster();
+  attackRay.far = 6.2;
+  const aimVector = new THREE.Vector2(0, 0);
+  const blockDurability = new Map([
+    ['grass', 0.8],
+    ['dirt', 1.2],
+    ['sand', 0.65],
+    ['stone', 2.4],
+    ['log', 1.8],
+    ['leaf', 0.5],
+  ]);
+  const overlayMaterials = Array.isArray(damageMaterials) && damageMaterials.length > 0
+    ? damageMaterials
+    : [
+        new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.12,
+          depthWrite: false,
+        }),
+      ];
+  const overlayGeometry = new THREE.BoxGeometry(1.02, 1.02, 1.02);
+  const damageOverlayMesh = new THREE.Mesh(overlayGeometry, overlayMaterials[0]);
+  damageOverlayMesh.visible = false;
+  damageOverlayMesh.renderOrder = 10;
+  damageOverlayMesh.frustumCulled = false;
+  scene.add(damageOverlayMesh);
+  let currentOverlayMaterialIndex = 0;
+
+  const attackState = {
+    swinging: false,
+    target: null,
+    progress: 0,
+  };
 
   function hideOverlay() {
     if (!overlay) {
@@ -302,6 +342,7 @@ export function createPlayerControls({
     if (!pointerLockSupported) {
       return;
     }
+    stopAttack();
     setStatus('Click or tap the game view to resume mouse look.', Number.POSITIVE_INFINITY);
     setOverlayStatus('Click to resume control.', { showOverlay: false });
   };
@@ -319,14 +360,27 @@ export function createPlayerControls({
     );
   }
 
+  function stopAttack() {
+    attackState.swinging = false;
+  }
+
   function handlePointerDown(event) {
     if (controls.isLocked) {
+      if (event.button === 0) {
+        attackState.swinging = true;
+      }
       return;
     }
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return;
     }
     attemptPointerLock();
+  }
+
+  function handlePointerUp(event) {
+    if (event.button === 0) {
+      stopAttack();
+    }
   }
 
   hideOverlay();
@@ -336,6 +390,8 @@ export function createPlayerControls({
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('keyup', onKeyUp);
   pointerLockElement.addEventListener('pointerdown', handlePointerDown);
+  pointerLockElement.addEventListener('pointerup', handlePointerUp);
+  document.addEventListener('pointerup', handlePointerUp);
   POINTER_LOCK_ERROR_EVENTS.forEach((eventName) =>
     pointerLockDocument.addEventListener(eventName, handlePointerLockError)
   );
@@ -486,11 +542,12 @@ export function createPlayerControls({
     }
 
     if (jumpRequested) {
-      if (isGrounded) {
+      const nearGround = position.y <= targetY + nearGroundThreshold;
+      if (isGrounded || nearGround) {
         verticalVelocity = jumpVelocity;
         isGrounded = false;
       } else if (feetInWater) {
-        verticalVelocity = Math.max(verticalVelocity, 3.5);
+        verticalVelocity = Math.max(verticalVelocity, 4.6);
       }
     }
     jumpRequested = false;
@@ -540,7 +597,104 @@ export function createPlayerControls({
       }
     }
 
+    updateAttack(delta);
     pushState();
+  }
+
+  function updateAttack(delta) {
+    if (!controls.isLocked) {
+      resetAttackProgress();
+      return;
+    }
+
+    attackRay.setFromCamera(aimVector, camera);
+    const intersections = attackRay.intersectObjects(scene.children, true);
+    let blockInfo = null;
+    for (const intersection of intersections) {
+      if (!intersection.object?.isInstancedMesh) {
+        continue;
+      }
+      const info = chunkManager.getBlockFromIntersection(intersection);
+      if (!info?.entry?.destructible) {
+        continue;
+      }
+      blockInfo = info;
+      break;
+    }
+
+    if (!blockInfo) {
+      decayAttack(delta);
+      return;
+    }
+
+    if (!attackState.target || attackState.target.entry.key !== blockInfo.entry.key) {
+      attackState.target = blockInfo;
+      attackState.progress = 0;
+    }
+
+    if (attackState.swinging) {
+      const type = attackState.target.entry.type;
+      const durability = blockDurability.get(type) ?? 1.2;
+      attackState.progress += delta / Math.max(durability, 0.1);
+      if (attackState.progress >= 1) {
+        chunkManager.removeBlockInstance({
+          chunk: attackState.target.chunk,
+          type: attackState.target.type,
+          instanceId: attackState.target.instanceId,
+        });
+        resetAttackProgress();
+        return;
+      }
+    } else {
+      attackState.progress = Math.max(0, attackState.progress - delta * 1.5);
+    }
+
+    if (attackState.target && attackState.progress > 0) {
+      showDamageOverlay(attackState.target.entry.position, attackState.progress);
+    } else {
+      hideDamageOverlay();
+    }
+  }
+
+  function decayAttack(delta) {
+    attackState.target = null;
+    attackState.progress = Math.max(0, attackState.progress - delta * 2.5);
+    if (attackState.progress <= 0) {
+      hideDamageOverlay();
+    }
+  }
+
+  function resetAttackProgress() {
+    attackState.target = null;
+    attackState.progress = 0;
+    hideDamageOverlay();
+  }
+
+  function hideDamageOverlay() {
+    if (!damageOverlayMesh.visible) {
+      return;
+    }
+    damageOverlayMesh.visible = false;
+  }
+
+  function showDamageOverlay(position, progress) {
+    if (!position) {
+      hideDamageOverlay();
+      return;
+    }
+    const stageCount = overlayMaterials.length;
+    const stageIndex = Math.min(
+      stageCount - 1,
+      Math.floor(progress * stageCount)
+    );
+    if (stageIndex !== currentOverlayMaterialIndex) {
+      damageOverlayMesh.material = overlayMaterials[stageIndex];
+      currentOverlayMaterialIndex = stageIndex;
+    }
+    damageOverlayMesh.position.copy(position);
+    if (!damageOverlayMesh.visible) {
+      damageOverlayMesh.visible = true;
+    }
   }
 
   function dispose() {
@@ -551,10 +705,14 @@ export function createPlayerControls({
     document.removeEventListener('keydown', onKeyDown);
     document.removeEventListener('keyup', onKeyUp);
     pointerLockElement.removeEventListener('pointerdown', handlePointerDown);
+    pointerLockElement.removeEventListener('pointerup', handlePointerUp);
+    document.removeEventListener('pointerup', handlePointerUp);
     POINTER_LOCK_ERROR_EVENTS.forEach((eventName) =>
       pointerLockDocument.removeEventListener(eventName, handlePointerLockError)
     );
     clearLockAttemptTimer();
+    scene.remove(damageOverlayMesh);
+    damageOverlayMesh.geometry.dispose();
   }
 
   function getPosition() {

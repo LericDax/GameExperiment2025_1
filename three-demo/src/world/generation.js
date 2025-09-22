@@ -139,26 +139,33 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   if (!blockGeometry) {
     blockGeometry = new THREE.BoxGeometry(1, 1, 1);
   }
-  const instancedData = {
-    grass: [],
-    dirt: [],
-    stone: [],
-    sand: [],
-    water: [],
-    leaf: [],
-    log: [],
-    cloud: [],
-  };
+  const instancedData = new Map();
   const solidBlockKeys = new Set();
   const waterColumnKeys = new Set();
   const matrix = new THREE.Matrix4();
+  const blockLookup = new Map();
+  const typeData = new Map();
 
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
   const { chunkSize, waterLevel } = worldConfig;
 
   const addBlock = (type, x, y, z) => {
     matrix.setPosition(x, y, z);
-    instancedData[type].push(matrix.clone());
+    if (!instancedData.has(type)) {
+      instancedData.set(type, []);
+    }
+    const key = blockKey(x, y, z);
+    const entry = {
+      key,
+      matrix: matrix.clone(),
+      position: new THREE.Vector3(x, y, z),
+      type,
+      isSolid: solidTypes.has(type),
+      isWater: type === 'water',
+      destructible: type !== 'water' && type !== 'cloud',
+    };
+    instancedData.get(type).push(entry);
+    blockLookup.set(key, entry);
     if (solidTypes.has(type)) {
       solidBlockKeys.add(blockKey(x, y, z));
     }
@@ -213,18 +220,25 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   }
 
   const group = new THREE.Group();
-  Object.entries(instancedData).forEach(([type, matrices]) => {
-    if (matrices.length === 0) return;
+  instancedData.forEach((entries, type) => {
+    if (entries.length === 0) {
+      return;
+    }
     const mesh = new THREE.InstancedMesh(
       blockGeometry,
       blockMaterials[type],
-      matrices.length
+      entries.length
     );
-    matrices.forEach((m, index) => mesh.setMatrixAt(index, m));
+    entries.forEach((entry, index) => {
+      mesh.setMatrixAt(index, entry.matrix);
+      entry.index = index;
+    });
     mesh.instanceMatrix.needsUpdate = true;
     mesh.castShadow = ['cloud', 'water'].includes(type) ? false : true;
     mesh.receiveShadow = type !== 'cloud';
     mesh.frustumCulled = false;
+    mesh.userData.type = type;
+    typeData.set(type, { entries, mesh });
     group.add(mesh);
   });
 
@@ -236,6 +250,8 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     group,
     solidBlockKeys,
     waterColumnKeys,
+    blockLookup,
+    typeData,
   };
 }
 
