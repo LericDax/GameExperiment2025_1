@@ -57,7 +57,16 @@ export function createPlayerControls({
     throw new Error('createPlayerControls requires PointerLockControls');
   }
   const controls = new PointerLockControls(camera, renderer.domElement);
-  scene.add(controls.getObject());
+  const controlObject =
+    typeof controls.getObject === 'function'
+      ? controls.getObject()
+      : controls.object ?? null;
+
+  if (!controlObject) {
+    throw new Error('PointerLockControls did not expose a control object');
+  }
+
+  scene.add(controlObject);
 
   const moveState = {
     forward: false,
@@ -98,7 +107,11 @@ export function createPlayerControls({
     overlay.removeAttribute('aria-hidden');
   }
 
-  controls.getObject().position.set(0, worldConfig.waterLevel + playerEyeHeight + 1, 0);
+  controlObject.position.set(
+    0,
+    worldConfig.waterLevel + playerEyeHeight + 1,
+    0,
+  );
 
   const playerState = {
     health: 100,
@@ -371,7 +384,7 @@ export function createPlayerControls({
 
   function update(delta) {
     const { forward, backward, left, right, sprint } = moveState;
-    const position = controls.getObject().position;
+    const position = controlObject.position;
 
     const columnKey = `${Math.round(position.x)}|${Math.round(position.z)}`;
     const waterSurface = worldConfig.waterLevel + 0.5;
@@ -415,13 +428,13 @@ export function createPlayerControls({
       const moveX = direction.x * moveSpeed * delta;
       const moveZ = direction.z * moveSpeed * delta;
 
-      const yaw = controls.getObject().rotation.y;
+      const yaw = controlObject.rotation.y;
       const sin = Math.sin(yaw);
       const cos = Math.cos(yaw);
       const worldX = moveX * cos - moveZ * sin;
       const worldZ = moveZ * cos + moveX * sin;
 
-      const currentPosition = controls.getObject().position;
+      const currentPosition = controlObject.position;
       const attemptPosition = currentPosition.clone();
       attemptPosition.x += worldX;
       attemptPosition.z += worldZ;
@@ -509,7 +522,7 @@ export function createPlayerControls({
   }
 
   function dispose() {
-    scene.remove(controls.getObject());
+    scene.remove(controlObject);
     overlay?.removeEventListener('click', handleOverlayClick);
     controls.removeEventListener('lock', handleLock);
     controls.removeEventListener('unlock', handleUnlock);
@@ -523,7 +536,7 @@ export function createPlayerControls({
   }
 
   function getPosition() {
-    return controls.getObject().position;
+    return controlObject.position;
   }
 
   function getState() {

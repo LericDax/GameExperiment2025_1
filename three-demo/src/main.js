@@ -11,6 +11,25 @@ import { createChunkManager } from './world/chunk-manager.js'
 import { createPlayerControls } from './player/controls.js'
 
 const overlay = document.getElementById('overlay')
+const overlayStatus = overlay?.querySelector('#overlay-status')
+
+function setOverlayStatus(message, { isError = false, revealOverlay = true } = {}) {
+  if (!overlay || !overlayStatus) {
+    return
+  }
+  overlayStatus.textContent = message
+  overlayStatus.classList.toggle('visible', Boolean(message))
+  overlayStatus.classList.toggle('error', Boolean(message) && isError)
+  if (!message) {
+    overlay.classList.add('hidden')
+    overlay.setAttribute('aria-hidden', 'true')
+    return
+  }
+  if (revealOverlay) {
+    overlay.classList.remove('hidden')
+    overlay.removeAttribute('aria-hidden')
+  }
+}
 
 initializeWorldGeneration({ THREE })
 
@@ -38,14 +57,6 @@ document.body.appendChild(renderer.domElement)
 
 const clock = new THREE.Clock()
 
-const blockMaterials = createBlockMaterials({ THREE })
-
-const chunkManager = createChunkManager({
-  scene,
-  blockMaterials,
-  viewDistance: 2,
-})
-
 const hud = document.createElement('div')
 hud.id = 'hud'
 hud.innerHTML = `
@@ -72,8 +83,33 @@ const healthValue = hud.querySelector('#hud-health-value')
 const oxygenFill = hud.querySelector('#hud-oxygen-fill')
 const oxygenValue = hud.querySelector('#hud-oxygen-value')
 const statusElement = hud.querySelector('#hud-status')
+let lastHudState = null
+let hudStatusOverride = null
+let hudStatusOverrideIsError = false
+
+function renderHudStatus(message, isError = false) {
+  if (!statusElement) {
+    return
+  }
+  statusElement.textContent = message
+  statusElement.classList.toggle('visible', Boolean(message))
+  statusElement.classList.toggle('error', Boolean(message) && isError)
+}
+
+function setHudStatusOverride(message, { isError = false } = {}) {
+  hudStatusOverride = message ?? null
+  hudStatusOverrideIsError = Boolean(message) && isError
+  if (hudStatusOverride !== null) {
+    renderHudStatus(hudStatusOverride, hudStatusOverrideIsError)
+  } else if (lastHudState) {
+    renderHudStatus(lastHudState.statusMessage ?? '', false)
+  } else {
+    renderHudStatus('', false)
+  }
+}
 
 function updateHud(state) {
+  lastHudState = state
   const healthPercent = THREE.MathUtils.clamp(state.health / 100, 0, 1)
   healthFill.style.width = `${healthPercent * 100}%`
   healthValue.textContent = `${Math.round(state.health)}`
@@ -82,27 +118,51 @@ function updateHud(state) {
   oxygenFill.style.width = `${oxygenPercent * 100}%`
   oxygenValue.textContent = `${state.oxygen.toFixed(1)}`
 
-  statusElement.textContent = state.statusMessage ?? ''
-  statusElement.classList.toggle('visible', Boolean(state.statusMessage))
+  const statusMessage =
+    hudStatusOverride !== null ? hudStatusOverride : state.statusMessage ?? ''
+  const statusIsError = hudStatusOverride !== null ? hudStatusOverrideIsError : false
+  renderHudStatus(statusMessage, statusIsError)
   hud.classList.toggle('in-water', state.isInWater)
 }
 
-const playerControls = createPlayerControls({
-  THREE,
-  PointerLockControls,
-  scene,
-  camera,
-  renderer,
-  overlay,
-  worldConfig,
-  terrainHeight,
-  solidBlocks: chunkManager.solidBlocks,
-  waterColumns: chunkManager.waterColumns,
-  onStateChange: updateHud,
-})
+let blockMaterials
+let chunkManager
+let playerControls
+let initializationError = null
 
-chunkManager.update(playerControls.getPosition())
-updateHud(playerControls.getState())
+try {
+  blockMaterials = createBlockMaterials({ THREE })
+
+  chunkManager = createChunkManager({
+    scene,
+    blockMaterials,
+    viewDistance: 2,
+  })
+
+  playerControls = createPlayerControls({
+    THREE,
+    PointerLockControls,
+    scene,
+    camera,
+    renderer,
+    overlay,
+    worldConfig,
+    terrainHeight,
+    solidBlocks: chunkManager.solidBlocks,
+    waterColumns: chunkManager.waterColumns,
+    onStateChange: updateHud,
+  })
+
+  chunkManager.update(playerControls.getPosition())
+  updateHud(playerControls.getState())
+} catch (error) {
+  initializationError = error instanceof Error ? error : new Error(String(error))
+  console.error('Failed to initialize world:', initializationError)
+  const message =
+    'Failed to initialize the world. Check the console for more details and verify texture assets.'
+  setOverlayStatus(message, { isError: true, revealOverlay: true })
+  setHudStatusOverride(message, { isError: true })
+}
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
 scene.add(ambientLight)
@@ -118,26 +178,37 @@ sun.shadow.camera.near = 0.5
 sun.shadow.camera.far = 200
 scene.add(sun)
 
-const waterMaterial = blockMaterials.water
-let waveTime = 0
+if (!initializationError) {
+  const waterMaterial = blockMaterials.water
+  let waveTime = 0
+  let missingWaterWarningShown = false
 
-function animate() {
-  requestAnimationFrame(animate)
-  const delta = Math.min(clock.getDelta(), 0.05)
+  function animate() {
+    requestAnimationFrame(animate)
+    const delta = Math.min(clock.getDelta(), 0.05)
 
-  chunkManager.update(playerControls.getPosition())
-  playerControls.update(delta)
+    chunkManager.update(playerControls.getPosition())
+    playerControls.update(delta)
 
-  waveTime += delta
-  const waveOffset = (Math.sin(waveTime * 0.8) + 1) * 0.06
-  waterMaterial.map.offset.y = waveOffset
+    if (waterMaterial?.map) {
+      waveTime += delta
+      const waveOffset = (Math.sin(waveTime * 0.8) + 1) * 0.06
+      waterMaterial.map.offset.y = waveOffset
+    } else if (!missingWaterWarningShown) {
+      missingWaterWarningShown = true
+      const message =
+        'Water material is missing its texture map. Disabling wave animation.'
+      console.warn(message)
+      setHudStatusOverride(message, { isError: true })
+    }
 
-  renderer.render(scene, camera)
+    renderer.render(scene, camera)
+  }
+
+  animate()
+
+  window.addEventListener('beforeunload', () => {
+    playerControls.dispose()
+    chunkManager.dispose()
+  })
 }
-
-animate()
-
-window.addEventListener('beforeunload', () => {
-  playerControls.dispose()
-  chunkManager.dispose()
-})
