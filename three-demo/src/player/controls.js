@@ -31,6 +31,7 @@ export function createPlayerControls({
   renderer,
   overlay,
   worldConfig,
+  terrainHeight,
   solidBlocks,
   waterColumns,
   chunkManager,
@@ -75,6 +76,12 @@ export function createPlayerControls({
   const gravity = 18;
   const jumpVelocity = 10.2;
   const nearGroundThreshold = 0.18;
+  const spawnDropHeight = 6;
+  const minSpawnHeight = worldConfig.maxHeight + playerEyeHeight + 8;
+  const maxRescueHeight = worldConfig.maxHeight + playerEyeHeight + 60;
+  const spawnSearchRadius = 30;
+  const spawnSearchStep = 6;
+  const fallbackSpawnPosition = new THREE.Vector3(0, minSpawnHeight, 0);
   const pointerLockElement = renderer.domElement;
   const pointerLockDocument = pointerLockElement.ownerDocument;
   const pointerLockSupported = isPointerLockSupported(pointerLockDocument);
@@ -147,6 +154,9 @@ export function createPlayerControls({
   let statusTimer = Number.POSITIVE_INFINITY;
   let maxDownwardSpeed = 0;
   let stateDirty = true;
+  const defaultStatusMessage = playerState.statusMessage;
+  let collisionRescueFailureMessage = null;
+  let collisionRescueFailureNotified = false;
 
   function markStateDirty() {
     stateDirty = true;
@@ -209,6 +219,130 @@ export function createPlayerControls({
     }
   }
 
+  function preloadChunksAround(position) {
+    if (!chunkManager || typeof chunkManager.update !== 'function') {
+      return false;
+    }
+    try {
+      chunkManager.update(position);
+      return true;
+    } catch (error) {
+      console.error('Failed to update chunks near position:', position, error);
+      return false;
+    }
+  }
+
+  function highestSolidAt(x, z) {
+    if (!solidBlocks || typeof solidBlocks.has !== 'function') {
+      return null;
+    }
+    const ceiling = Math.max(Math.ceil(minSpawnHeight) + 8, worldConfig.maxHeight + 32);
+    for (let y = ceiling; y >= -32; y--) {
+      if (solidBlocks.has(blockKey(x, y, z))) {
+        return y;
+      }
+    }
+    return null;
+  }
+
+  function evaluateSpawnColumn(x, z) {
+    let surfaceY = null;
+    const topSolid = highestSolidAt(x, z);
+    if (Number.isFinite(topSolid)) {
+      surfaceY = topSolid + 0.5;
+    } else if (typeof terrainHeight === 'function') {
+      try {
+        const terrainValue = terrainHeight(x, z);
+        if (Number.isFinite(terrainValue)) {
+          surfaceY = terrainValue + 0.5;
+        }
+      } catch (error) {
+        console.error('Failed to sample terrain height for spawn column', x, z, error);
+      }
+    }
+
+    if (!Number.isFinite(surfaceY)) {
+      return null;
+    }
+
+    const columnKey = `${x}|${z}`;
+    const hasWaterColumn = Boolean(waterColumns?.has?.(columnKey));
+    const isSubmerged = hasWaterColumn && surfaceY <= worldConfig.waterLevel + 0.5;
+    const spawnY = Math.max(surfaceY + playerEyeHeight + spawnDropHeight, minSpawnHeight);
+
+    return {
+      x,
+      z,
+      surfaceY,
+      spawnY,
+      hasWaterColumn,
+      isSubmerged,
+    };
+  }
+
+  function selectSpawnPosition() {
+    const candidates = [];
+    for (let x = -spawnSearchRadius; x <= spawnSearchRadius; x += spawnSearchStep) {
+      for (let z = -spawnSearchRadius; z <= spawnSearchRadius; z += spawnSearchStep) {
+        const distance = Math.hypot(x, z);
+        candidates.push({ x, z, distance });
+      }
+    }
+    candidates.sort((a, b) => a.distance - b.distance);
+
+    let best = null;
+    let bestScore = -Infinity;
+
+    for (const candidate of candidates) {
+      const info = evaluateSpawnColumn(candidate.x, candidate.z);
+      if (!info) {
+        continue;
+      }
+
+      const drynessBonus = info.isSubmerged ? -800 : info.hasWaterColumn ? -300 : 400;
+      const score = info.surfaceY + drynessBonus - candidate.distance * 0.35;
+      if (!best || score > bestScore) {
+        best = { info, score };
+        bestScore = score;
+      }
+    }
+
+    if (!best) {
+      return {
+        position: fallbackSpawnPosition.clone(),
+        usedFallback: true,
+        columnHasWater: false,
+        columnIsSubmerged: false,
+      };
+    }
+
+    return {
+      position: new THREE.Vector3(best.info.x, best.info.spawnY, best.info.z),
+      usedFallback: false,
+      columnHasWater: best.info.hasWaterColumn,
+      columnIsSubmerged: best.info.isSubmerged,
+    };
+  }
+
+  function initializeSpawn() {
+    controlObject.position.copy(fallbackSpawnPosition);
+    preloadChunksAround(controlObject.position);
+
+    const selection = selectSpawnPosition();
+    controlObject.position.copy(selection.position);
+    preloadChunksAround(controlObject.position);
+
+    if (!attemptCollisionRescue('spawn')) {
+      console.error('Unable to resolve spawn collisions. Player may remain stuck.');
+    }
+
+    if (selection.usedFallback) {
+      console.warn('Using fallback spawn height because no suitable terrain column was found nearby.');
+    } else if (selection.columnIsSubmerged) {
+      console.info('Spawning above a water column. Player will descend into water before reaching land.');
+    }
+  }
+
   function clearLockAttemptTimer() {
     if (lockAttemptTimer === null) {
       return;
@@ -243,6 +377,8 @@ export function createPlayerControls({
       Number.POSITIVE_INFINITY
     );
   }
+
+  initializeSpawn();
 
   const onKeyDown = (event) => {
     switch (event.code) {
@@ -395,6 +531,62 @@ export function createPlayerControls({
     pointerLockDocument.addEventListener(eventName, handlePointerLockError)
   );
 
+  function attemptCollisionRescue(reason = 'update') {
+    const currentPosition = controlObject.position;
+    if (!collidesAt(currentPosition)) {
+      if (
+        collisionRescueFailureMessage &&
+        playerState.statusMessage === collisionRescueFailureMessage
+      ) {
+        setStatus(defaultStatusMessage, Number.POSITIVE_INFINITY);
+      }
+      collisionRescueFailureMessage = null;
+      collisionRescueFailureNotified = false;
+      return true;
+    }
+
+    const workingPosition = currentPosition.clone();
+    let attempts = 0;
+    let resolved = false;
+
+    while (attempts < 24 && workingPosition.y <= maxRescueHeight) {
+      workingPosition.y += 0.75;
+      attempts += 1;
+      if (!collidesAt(workingPosition)) {
+        resolved = true;
+        break;
+      }
+    }
+
+    if (resolved) {
+      currentPosition.copy(workingPosition);
+      verticalVelocity = Math.min(verticalVelocity, 0);
+      maxDownwardSpeed = Math.min(maxDownwardSpeed, 0);
+      isGrounded = false;
+      if (
+        collisionRescueFailureMessage &&
+        playerState.statusMessage === collisionRescueFailureMessage
+      ) {
+        setStatus(defaultStatusMessage, Number.POSITIVE_INFINITY);
+      }
+      collisionRescueFailureMessage = null;
+      collisionRescueFailureNotified = false;
+      return true;
+    }
+
+    if (!collisionRescueFailureNotified) {
+      const message =
+        reason === 'spawn'
+          ? 'We could not locate a safe place to spawn you. Press Esc to exit pointer lock and reload the demo.'
+          : 'We could not move you to a safe spot. Press Esc to exit pointer lock and reload the demo.';
+      collisionRescueFailureMessage = message;
+      setStatus(message, Number.POSITIVE_INFINITY);
+      collisionRescueFailureNotified = true;
+    }
+
+    return false;
+  }
+
   function collidesAt(position) {
     const playerFeet = position.y - playerEyeHeight;
     const capsulePadding = 0.1;
@@ -513,6 +705,12 @@ export function createPlayerControls({
   function update(delta) {
     const { forward, backward, left, right, sprint } = moveState;
     const position = controlObject.position;
+
+    const resolved = attemptCollisionRescue('update');
+    if (!resolved && collidesAt(position)) {
+      pushState();
+      return;
+    }
 
     const columnKey = `${Math.round(position.x)}|${Math.round(position.z)}`;
     const waterSurface = worldConfig.waterLevel + 0.5;
