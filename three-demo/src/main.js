@@ -5,6 +5,7 @@ import { createBlockMaterials } from './rendering/textures.js'
 import {
   initializeWorldGeneration,
   worldConfig,
+  terrainHeight,
 } from './world/generation.js'
 import { createChunkManager } from './world/chunk-manager.js'
 import { createPlayerControls } from './player/controls.js'
@@ -146,6 +147,7 @@ try {
     renderer,
     overlay,
     worldConfig,
+    terrainHeight,
     solidBlocks: chunkManager.solidBlocks,
     waterColumns: chunkManager.waterColumns,
     chunkManager,
