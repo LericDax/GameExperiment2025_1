@@ -225,8 +225,9 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     if (entries.length === 0) {
       return;
     }
+    const geometry = blockGeometry.clone();
     const mesh = new THREE.InstancedMesh(
-      blockGeometry,
+      geometry,
       blockMaterials[type],
       entries.length,
     );
