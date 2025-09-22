@@ -52,7 +52,9 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
   const varianceScale = climateScale * 0.45;
 
   const defaultColor = new THREE.Color(0xffffff);
+
   const defaultTint = new THREE.Color(0xffffff);
+
   const basePaletteColors = Object.fromEntries(
     Object.entries(NEUTRAL_BASE_PALETTE).map(([type, hex]) => [
       type,
@@ -63,7 +65,16 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
   const biomes = rawBiomeDefinitions.map((definition, index) => {
     const palette = { ...NEUTRAL_BASE_PALETTE, ...(definition.palette ?? {}) };
     const paletteColors = Object.fromEntries(
-      Object.entries(palette).map(([type, hex]) => [type, new THREE.Color(hex)]),
+      Object.entries(palette).map(([type, hex]) => {
+        const targetColor = new THREE.Color(hex);
+        const baseColor = basePaletteColors[type] ?? defaultColor;
+        const tint = new THREE.Color(
+          baseColor.r === 0 ? 1 : targetColor.r / baseColor.r,
+          baseColor.g === 0 ? 1 : targetColor.g / baseColor.g,
+          baseColor.b === 0 ? 1 : targetColor.b / baseColor.b,
+        );
+        return [type, tint];
+      }),
     );
     const paletteTints = Object.fromEntries(
       Object.entries(paletteColors).map(([type, targetColor]) => {
