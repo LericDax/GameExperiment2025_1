@@ -1,5 +1,3 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -57,7 +55,11 @@ const WHITE = { r: 1, g: 1, b: 1 };
 const BLACK = { r: 0, g: 0, b: 0 };
 
 export class TextureEngine {
-  constructor(seed = 1337) {
+  constructor({ THREE, seed = 1337 } = {}) {
+    if (!THREE) {
+      throw new Error('TextureEngine requires a THREE instance');
+    }
+    this.THREE = THREE;
     this.seed = seed >>> 0;
   }
 
@@ -249,7 +251,13 @@ export class TextureEngine {
     return Math.pow(normalized, sharpness);
   }
 
-  createTexture(label, { size = 64, generator, wrap = THREE.RepeatWrapping, filter = THREE.NearestFilter }) {
+  createTexture(
+    label,
+    { size = 64, generator, wrap = undefined, filter = undefined } = {}
+  ) {
+    const THREE = this.THREE;
+    const textureWrap = wrap ?? THREE.RepeatWrapping;
+    const textureFilter = filter ?? THREE.NearestFilter;
     const canvas = document.createElement('canvas');
     canvas.width = size;
     canvas.height = size;
@@ -291,9 +299,9 @@ export class TextureEngine {
     ctx.putImageData(imageData, 0, 0);
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = texture.wrapT = wrap;
-    texture.magFilter = filter;
-    texture.minFilter = filter;
+    texture.wrapS = texture.wrapT = textureWrap;
+    texture.magFilter = textureFilter;
+    texture.minFilter = textureFilter;
     return texture;
   }
 }

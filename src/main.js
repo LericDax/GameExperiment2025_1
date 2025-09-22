@@ -1,11 +1,18 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/controls/PointerLockControls.js';
 
 import { createBlockMaterials } from './rendering/textures.js';
-import { terrainHeight, worldConfig } from './world/generation.js';
+import {
+  initializeWorldGeneration,
+  terrainHeight,
+  worldConfig,
+} from './world/generation.js';
 import { createChunkManager } from './world/chunk-manager.js';
 import { createPlayerControls } from './player/controls.js';
 
 const overlay = document.getElementById('overlay');
+
+initializeWorldGeneration({ THREE });
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xa9d6ff);
@@ -31,7 +38,7 @@ document.body.appendChild(renderer.domElement);
 
 const clock = new THREE.Clock();
 
-const blockMaterials = createBlockMaterials();
+const blockMaterials = createBlockMaterials({ THREE });
 
 const chunkManager = createChunkManager({
   scene,
@@ -81,6 +88,8 @@ function updateHud(state) {
 }
 
 const playerControls = createPlayerControls({
+  THREE,
+  PointerLockControls,
   scene,
   camera,
   renderer,
