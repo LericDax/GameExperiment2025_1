@@ -18,6 +18,16 @@ const NEUTRAL_BASE_PALETTE = {
   cloud: '#f7f8fb',
 };
 
+function safeDivide(component, baseComponent) {
+  if (!Number.isFinite(component) || !Number.isFinite(baseComponent)) {
+    return 1;
+  }
+  if (baseComponent === 0) {
+    return 1;
+  }
+  return component / baseComponent;
+}
+
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
 }
@@ -42,6 +52,9 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
   const varianceScale = climateScale * 0.45;
 
   const defaultColor = new THREE.Color(0xffffff);
+
+  const defaultTint = new THREE.Color(0xffffff);
+
   const basePaletteColors = Object.fromEntries(
     Object.entries(NEUTRAL_BASE_PALETTE).map(([type, hex]) => [
       type,
@@ -63,6 +76,17 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
         return [type, tint];
       }),
     );
+    const paletteTints = Object.fromEntries(
+      Object.entries(paletteColors).map(([type, targetColor]) => {
+        const baseColor = basePaletteColors[type] ?? defaultColor;
+        const tint = new THREE.Color(
+          safeDivide(targetColor.r, baseColor.r),
+          safeDivide(targetColor.g, baseColor.g),
+          safeDivide(targetColor.b, baseColor.b),
+        );
+        return [type, tint];
+      }),
+    );
 
     const terrainDefinition = definition.terrain ?? {};
     const treeHeight = terrainDefinition.treeHeight ?? {};
@@ -79,6 +103,7 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
       },
       palette,
       paletteColors,
+      paletteTints,
       terrain: {
         surfaceBlock: terrainDefinition.surfaceBlock ?? 'grass',
         shoreBlock: terrainDefinition.shoreBlock ?? 'sand',
@@ -167,13 +192,24 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
     return biome.paletteColors[type] ?? defaultColor;
   }
 
+  function getBlockTint(biome, type) {
+    if (!biome?.paletteTints) {
+      return defaultTint;
+    }
+    return biome.paletteTints[type] ?? defaultTint;
+  }
+
   return {
     biomes,
     sampleClimate,
     getBiomeAt,
     getBlockColor,
+    getBlockTint,
     getDefaultBlockColor() {
       return defaultColor;
+    },
+    getDefaultBlockTint() {
+      return defaultTint;
     },
   };
 }

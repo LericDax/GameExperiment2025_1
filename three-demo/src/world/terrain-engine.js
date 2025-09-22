@@ -40,7 +40,9 @@ export function createTerrainEngine({ THREE, seed = 1337, worldConfig = {} } = {
     sampleColumn,
     getBiomeAt: (x, z) => biomeEngine.getBiomeAt(x, z),
     getBlockColor: (biome, type) => biomeEngine.getBlockColor(biome, type),
+    getBlockTint: (biome, type) => biomeEngine.getBlockTint(biome, type),
     getDefaultBlockColor: () => biomeEngine.getDefaultBlockColor(),
+    getDefaultBlockTint: () => biomeEngine.getDefaultBlockTint(),
     biomeEngine,
   };
 }
