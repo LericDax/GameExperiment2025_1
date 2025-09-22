@@ -91,6 +91,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   }
   const instancedData = new Map();
   const solidBlockKeys = new Set();
+  const softBlockKeys = new Set();
   const waterColumnKeys = new Set();
   const matrix = new THREE.Matrix4();
   const defaultQuaternion = new THREE.Quaternion();
@@ -158,7 +159,10 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     if (!instancedData.has(type)) {
       instancedData.set(type, []);
     }
-    const key = options.key ?? blockKey(x, y, z);
+
+    const coordinateKey = blockKey(x, y, z);
+    const key = options.key ?? coordinateKey;
+
     const paletteColor = engine.getBlockColor(biome, type);
     const tintStrength = clamp(biome?.shader?.tintStrength ?? 1, 0, 1);
 
@@ -196,15 +200,30 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
 
     const tintColor = paletteBlend;
-    const isSolid =
-      typeof options.isSolid === 'boolean' ? options.isSolid : solidTypes.has(type);
+
     const isWater = type === 'water';
+    let collisionMode = options.collisionMode;
+    if (!collisionMode) {
+      if (isWater) {
+        collisionMode = 'liquid';
+      } else if (typeof options.isSolid === 'boolean') {
+        collisionMode = options.isSolid ? 'solid' : 'none';
+      } else if (solidTypes.has(type)) {
+        collisionMode = 'solid';
+      } else {
+        collisionMode = 'none';
+      }
+    }
+    const isSolid = collisionMode === 'solid';
+    const isSoft = collisionMode === 'soft';
+
     const destructible =
       typeof options.destructible === 'boolean'
         ? options.destructible
         : type !== 'water' && type !== 'cloud';
     const entry = {
       key,
+      coordinateKey,
       matrix: matrix.clone(),
       position: new THREE.Vector3(x, y, z),
       type,
@@ -219,11 +238,20 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       isSolid,
       isWater,
       destructible,
+
+      collisionMode,
     };
     instancedData.get(type).push(entry);
     blockLookup.set(key, entry);
+    if (key !== coordinateKey) {
+      blockLookup.set(coordinateKey, entry);
+    }
     if (isSolid) {
-      solidBlockKeys.add(key);
+      solidBlockKeys.add(coordinateKey);
+    }
+    if (isSoft) {
+      softBlockKeys.add(coordinateKey);
+
     }
     if (isWater) {
       waterColumnKeys.add(`${x}|${z}`);
@@ -354,6 +382,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     chunkZ,
     group,
     solidBlockKeys,
+    softBlockKeys,
     waterColumnKeys,
     blockLookup,
     typeData,

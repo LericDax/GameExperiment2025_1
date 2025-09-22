@@ -12,6 +12,7 @@ function worldToChunk(value) {
 export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) {
   const loadedChunks = new Map();
   const solidBlocks = new Set();
+  const softBlocks = new Set();
   const waterColumns = new Set();
   let lastCenterKey = null;
 
@@ -32,8 +33,9 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
       child.userData.chunkKey = key;
     });
     scene.add(chunk.group);
-    chunk.solidBlockKeys.forEach((block) => solidBlocks.add(block));
-    chunk.waterColumnKeys.forEach((column) => waterColumns.add(column));
+    (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.add(block));
+    (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
+    (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.add(column));
     loadedChunks.set(key, chunk);
   }
 
@@ -44,8 +46,9 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     }
 
     scene.remove(chunk.group);
-    chunk.solidBlockKeys.forEach((block) => solidBlocks.delete(block));
-    chunk.waterColumnKeys.forEach((column) => waterColumns.delete(column));
+    (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.delete(block));
+    (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.delete(block));
+    (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.delete(column));
     loadedChunks.delete(key);
   }
 
@@ -186,10 +189,19 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
 
     if (chunk.blockLookup) {
       chunk.blockLookup.delete(removed.key);
+      if (removed.coordinateKey && removed.coordinateKey !== removed.key) {
+        chunk.blockLookup.delete(removed.coordinateKey);
+      }
     }
     if (removed.isSolid) {
-      chunk.solidBlockKeys.delete(removed.key);
-      solidBlocks.delete(removed.key);
+      const coordinateKey = removed.coordinateKey ?? removed.key;
+      chunk.solidBlockKeys.delete(coordinateKey);
+      solidBlocks.delete(coordinateKey);
+    }
+    if (removed.collisionMode === 'soft') {
+      const coordinateKey = removed.coordinateKey ?? removed.key;
+      chunk.softBlockKeys.delete(coordinateKey);
+      softBlocks.delete(coordinateKey);
     }
     if (removed.isWater) {
       chunk.waterColumnKeys.delete(`${removed.position.x}|${removed.position.z}`);
@@ -203,6 +215,7 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     update,
     dispose,
     solidBlocks,
+    softBlocks,
     waterColumns,
     getBlockFromIntersection,
     removeBlockInstance,

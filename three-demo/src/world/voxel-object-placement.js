@@ -15,12 +15,30 @@ function resolveScaleVector({ size }, voxelScale) {
   };
 }
 
+
+function resolveCollisionMode(voxel, object) {
+  if (voxel?.collisionMode) {
+    return voxel.collisionMode;
+  }
+  if (typeof voxel?.isSolid === 'boolean') {
+    return voxel.isSolid ? 'solid' : 'none';
+  }
+  const objectMode = object?.collision?.mode ?? 'auto';
+  if (objectMode !== 'auto') {
+    return objectMode;
+  }
+  return object.voxelScale < 1 ? 'none' : 'solid';
+}
+
+
 export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
   if (!object || typeof addBlock !== 'function') {
     return;
   }
   const base = origin ?? { x: 0, y: 0, z: 0 };
+
   const defaultSolidOverride = object.voxelScale < 1;
+
 
   object.voxels.forEach((voxel) => {
     const scale = resolveScaleVector(voxel, object.voxelScale);
@@ -28,16 +46,13 @@ export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
     const worldY = base.y + voxel.position.y * object.voxelScale;
     const worldZ = base.z + voxel.position.z * object.voxelScale;
 
-    let solidOverride;
-    if (typeof voxel.isSolid === 'boolean') {
-      solidOverride = voxel.isSolid;
-    } else if (defaultSolidOverride) {
-      solidOverride = false;
-    }
+    const collisionMode = resolveCollisionMode(voxel, object);
 
     addBlock(voxel.type, worldX, worldY, worldZ, biome, {
       scale,
-      isSolid: solidOverride,
+      collisionMode,
+      isSolid: collisionMode === 'solid',
+
       destructible: voxel.destructible,
       tint: voxel.tint,
       sourceObjectId: object.id,

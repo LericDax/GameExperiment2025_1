@@ -33,6 +33,7 @@ export function createPlayerControls({
   worldConfig,
   terrainHeight,
   solidBlocks,
+  softBlocks,
   waterColumns,
   chunkManager,
   damageMaterials = [],
@@ -652,6 +653,53 @@ export function createPlayerControls({
     return false;
   }
 
+  function isInSoftMedium(position) {
+    if (!softBlocks || softBlocks.size === 0) {
+      return false;
+    }
+
+    const playerFeet = position.y - playerEyeHeight;
+    const playerHead = position.y;
+    const minBlockX = Math.floor(position.x - playerRadius - 0.5);
+    const maxBlockX = Math.floor(position.x + playerRadius + 0.5);
+    const minBlockZ = Math.floor(position.z - playerRadius - 0.5);
+    const maxBlockZ = Math.floor(position.z + playerRadius + 0.5);
+    const minBlockY = Math.floor(playerFeet - 0.5);
+    const maxBlockY = Math.floor(playerHead + 0.5);
+    const epsilon = 1e-4;
+
+    for (let x = minBlockX; x <= maxBlockX; x++) {
+      for (let z = minBlockZ; z <= maxBlockZ; z++) {
+        for (let y = minBlockY; y <= maxBlockY; y++) {
+          if (!softBlocks.has(blockKey(x, y, z))) {
+            continue;
+          }
+
+          const blockMinX = x - 0.5;
+          const blockMaxX = x + 0.5;
+          const blockMinY = y - 0.5;
+          const blockMaxY = y + 0.5;
+          const blockMinZ = z - 0.5;
+          const blockMaxZ = z + 0.5;
+
+          const overlaps =
+            position.x + playerRadius > blockMinX + epsilon &&
+            position.x - playerRadius < blockMaxX - epsilon &&
+            playerHead > blockMinY + epsilon &&
+            playerFeet < blockMaxY - epsilon &&
+            position.z + playerRadius > blockMinZ + epsilon &&
+            position.z - playerRadius < blockMaxZ - epsilon;
+
+          if (overlaps) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
   function findStandingSurface(position, tolerance = 0.75) {
     const playerFeet = position.y - playerEyeHeight;
     const playerMinX = position.x - playerRadius;
@@ -726,6 +774,7 @@ export function createPlayerControls({
     const inWaterColumn = waterColumns.has(columnKey);
     const feetInWater = inWaterColumn && feetY < waterSurface;
     const headUnderwater = inWaterColumn && headY < waterSurface;
+    const inSoftMedium = !feetInWater && isInSoftMedium(position);
 
     if (playerState.isInWater !== feetInWater) {
       playerState.isInWater = feetInWater;
@@ -781,7 +830,7 @@ export function createPlayerControls({
 
       const baseSpeed = 5.2;
       const sprintBonus = sprint && forward && !feetInWater ? 3.2 : 0;
-      const mediumPenalty = feetInWater ? 0.42 : 1;
+      const mediumPenalty = feetInWater ? 0.42 : inSoftMedium ? 0.7 : 1;
       const moveSpeed = (baseSpeed + sprintBonus) * mediumPenalty;
       movementStep.multiplyScalar(moveSpeed * delta);
 

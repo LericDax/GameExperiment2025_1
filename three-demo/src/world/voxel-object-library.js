@@ -96,6 +96,19 @@ function normalizeVoxel(voxel, index, { path }) {
   const destructible =
     typeof voxel.destructible === 'boolean' ? voxel.destructible : undefined;
 
+  let collisionMode = null;
+  if (typeof voxel.collision === 'string') {
+    const normalized = voxel.collision.toLowerCase();
+    if (['solid', 'none', 'soft'].includes(normalized)) {
+      collisionMode = normalized;
+    } else if (normalized !== 'auto') {
+      throw new Error(
+        `Unsupported collision mode "${voxel.collision}" in voxel entry ${index} for ${path}.`,
+      );
+    }
+  }
+
+
   return {
     index,
     type: voxel.type,
@@ -104,6 +117,9 @@ function normalizeVoxel(voxel, index, { path }) {
     tint,
     isSolid,
     destructible,
+
+    collisionMode,
+
     metadata: typeof voxel.metadata === 'object' ? { ...voxel.metadata } : null,
   };
 }
@@ -162,6 +178,22 @@ function normalizeDefinition(path, raw) {
         : 1,
   };
 
+
+  let collisionMode = null;
+  if (typeof definition?.collision === 'string') {
+    collisionMode = definition.collision.toLowerCase();
+  } else if (typeof definition?.collision?.mode === 'string') {
+    collisionMode = definition.collision.mode.toLowerCase();
+  }
+  if (collisionMode && !['auto', 'solid', 'none', 'soft'].includes(collisionMode)) {
+    throw new Error(
+      `Unsupported collision mode "${collisionMode}" in voxel object definition at ${path}.`,
+    );
+  }
+
+  const normalizedCollision = collisionMode || 'auto';
+
+
   const boundingBox = computeBoundingBox(voxels, definition.voxelScale);
 
   return {
@@ -176,6 +208,9 @@ function normalizeDefinition(path, raw) {
     placement,
     voxels,
     boundingBox,
+
+    collision: { mode: normalizedCollision },
+
     path,
     raw: definition,
   };
