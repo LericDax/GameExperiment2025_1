@@ -1,4 +1,5 @@
 import { createTerrainEngine } from './terrain-engine.js';
+import { populateColumnWithVoxelObjects } from './voxel-object-placement.js';
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -60,30 +61,6 @@ function blockKey(x, y, z) {
   return `${x}|${y}|${z}`;
 }
 
-function addTree(addBlock, x, z, groundHeight, biome) {
-  const treeRange = biome?.terrain?.treeHeight ?? { min: 3, max: 6 };
-  const minHeight = Math.max(1, treeRange.min ?? 3);
-  const maxHeight = Math.max(minHeight, treeRange.max ?? minHeight);
-  const randomValue = randomAt(x, z, 2);
-  const treeHeight = minHeight + Math.floor(randomValue * (maxHeight - minHeight + 1));
-  for (let y = 1; y <= treeHeight; y++) {
-    addBlock('log', x, groundHeight + y, z, biome);
-  }
-
-  const canopyRadius = Math.max(1, Math.round(treeHeight / 2));
-  const canopyCenter = groundHeight + treeHeight;
-  for (let dx = -canopyRadius; dx <= canopyRadius; dx++) {
-    for (let dy = -canopyRadius; dy <= canopyRadius; dy++) {
-      for (let dz = -canopyRadius; dz <= canopyRadius; dz++) {
-        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (distance <= canopyRadius + (dy === canopyRadius ? 0 : -0.3)) {
-          addBlock('leaf', x + dx, canopyCenter + dy, z + dz, biome);
-        }
-      }
-    }
-  }
-}
-
 function addCloud(addBlock, x, y, z) {
   const blocks = [
     [0, 0, 0],
@@ -116,6 +93,8 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const solidBlockKeys = new Set();
   const waterColumnKeys = new Set();
   const matrix = new THREE.Matrix4();
+  const defaultQuaternion = new THREE.Quaternion();
+  const reusablePosition = new THREE.Vector3();
   const blockLookup = new Map();
   const typeData = new Map();
   const biomePresence = new Map();
@@ -123,12 +102,63 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
   const { chunkSize, waterLevel } = worldConfig;
 
-  const addBlock = (type, x, y, z, biome) => {
-    matrix.setPosition(x, y, z);
+  const resolveScaleVector = (scaleOption) => {
+    if (!scaleOption && scaleOption !== 0) {
+      return new THREE.Vector3(1, 1, 1);
+    }
+    if (scaleOption.isVector3) {
+      return scaleOption.clone();
+    }
+    if (typeof scaleOption === 'number') {
+      return new THREE.Vector3(scaleOption, scaleOption, scaleOption);
+    }
+    if (Array.isArray(scaleOption)) {
+      const [sx = 1, sy = 1, sz = 1] = scaleOption;
+      return new THREE.Vector3(sx, sy, sz);
+    }
+    if (typeof scaleOption === 'object') {
+      const sx =
+        typeof scaleOption.x === 'number'
+          ? scaleOption.x
+          : typeof scaleOption.width === 'number'
+          ? scaleOption.width
+          : 1;
+      const sy =
+        typeof scaleOption.y === 'number'
+          ? scaleOption.y
+          : typeof scaleOption.height === 'number'
+          ? scaleOption.height
+          : 1;
+      const sz =
+        typeof scaleOption.z === 'number'
+          ? scaleOption.z
+          : typeof scaleOption.depth === 'number'
+          ? scaleOption.depth
+          : 1;
+      return new THREE.Vector3(sx, sy, sz);
+    }
+    return new THREE.Vector3(1, 1, 1);
+  };
+
+  const parseTintOverride = (value) => {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    try {
+      return new THREE.Color(value);
+    } catch (error) {
+      console.warn('Invalid tint override provided for block placement:', value, error);
+      return null;
+    }
+  };
+
+  const addBlock = (type, x, y, z, biome, options = {}) => {
+    const scaleVector = resolveScaleVector(options.scale);
+    matrix.compose(reusablePosition.set(x, y, z), defaultQuaternion, scaleVector);
     if (!instancedData.has(type)) {
       instancedData.set(type, []);
     }
-    const key = blockKey(x, y, z);
+    const key = options.key ?? blockKey(x, y, z);
     const paletteColor = engine.getBlockColor(biome, type);
     const tintStrength = clamp(biome?.shader?.tintStrength ?? 1, 0, 1);
 
@@ -160,7 +190,19 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
     paletteBlend.multiply(altitudeBlend);
 
+    const tintOverride = parseTintOverride(options.tint);
+    if (tintOverride) {
+      paletteBlend.multiply(tintOverride);
+    }
+
     const tintColor = paletteBlend;
+    const isSolid =
+      typeof options.isSolid === 'boolean' ? options.isSolid : solidTypes.has(type);
+    const isWater = type === 'water';
+    const destructible =
+      typeof options.destructible === 'boolean'
+        ? options.destructible
+        : type !== 'water' && type !== 'cloud';
     const entry = {
       key,
       matrix: matrix.clone(),
@@ -169,16 +211,21 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       biomeId: biome?.id ?? null,
       paletteColor,
       tintColor,
-      isSolid: solidTypes.has(type),
-      isWater: type === 'water',
-      destructible: type !== 'water' && type !== 'cloud',
+      scale: scaleVector.clone(),
+      sourceObjectId: options.sourceObjectId ?? null,
+      voxelIndex: options.voxelIndex ?? null,
+      metadata: options.metadata ?? null,
+      tintOverride,
+      isSolid,
+      isWater,
+      destructible,
     };
     instancedData.get(type).push(entry);
     blockLookup.set(key, entry);
-    if (solidTypes.has(type)) {
-      solidBlockKeys.add(blockKey(x, y, z));
+    if (isSolid) {
+      solidBlockKeys.add(key);
     }
-    if (type === 'water') {
+    if (isWater) {
       waterColumnKeys.add(`${x}|${z}`);
     }
   };
@@ -225,19 +272,14 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
           addBlock('water', worldX, y, worldZ, biome);
         }
       } else {
-        const treeDensity = biome?.terrain?.treeDensity ?? 0;
-        if (treeDensity > 0 && randomAt(worldX, worldZ, 1) > 1 - treeDensity) {
-          addTree(addBlock, worldX, worldZ, height, biome);
-        }
-
-        const shrubChance = biome?.terrain?.shrubChance ?? 0;
-        if (shrubChance > 0 && randomAt(worldX, worldZ, 5) > 1 - shrubChance) {
-          const shrubHeight = height + 1;
-          addBlock('leaf', worldX, shrubHeight, worldZ, biome);
-          if (randomAt(worldX + 10, worldZ + 10, 6) > 0.6) {
-            addBlock('leaf', worldX, shrubHeight + 1, worldZ, biome);
-          }
-        }
+        populateColumnWithVoxelObjects({
+          addBlock,
+          biome,
+          groundHeight: height,
+          worldX,
+          worldZ,
+          randomSource: (offset) => randomAt(worldX, worldZ, offset),
+        });
       }
     }
   }

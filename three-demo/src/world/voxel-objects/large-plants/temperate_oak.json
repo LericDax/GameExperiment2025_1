@@ -1,0 +1,39 @@
+{
+  "id": "temperate_oak",
+  "label": "Temperate Oak Tree",
+  "category": "large-plants",
+  "author": "system",
+  "description": "Compact broadleaf tree built from terrain-scale voxels.",
+  "voxelScale": 1,
+  "attachment": {
+    "groundOffset": 1
+  },
+  "placement": {
+    "biomes": ["temperate_forest", "frostbound_steppe"],
+    "weight": 3
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0] },
+    { "type": "log", "position": [0, 1, 0] },
+    { "type": "log", "position": [0, 2, 0] },
+    { "type": "log", "position": [0, 3, 0] },
+    { "type": "leaf", "position": [0, 4, 0] },
+    { "type": "leaf", "position": [1, 3, 0] },
+    { "type": "leaf", "position": [-1, 3, 0] },
+    { "type": "leaf", "position": [0, 3, 1] },
+    { "type": "leaf", "position": [0, 3, -1] },
+    { "type": "leaf", "position": [1, 4, 0] },
+    { "type": "leaf", "position": [-1, 4, 0] },
+    { "type": "leaf", "position": [0, 4, 1] },
+    { "type": "leaf", "position": [0, 4, -1] },
+    { "type": "leaf", "position": [1, 4, 1] },
+    { "type": "leaf", "position": [-1, 4, -1] },
+    { "type": "leaf", "position": [1, 4, -1] },
+    { "type": "leaf", "position": [-1, 4, 1] },
+    { "type": "leaf", "position": [0, 5, 0] },
+    { "type": "leaf", "position": [0, 5, 1] },
+    { "type": "leaf", "position": [0, 5, -1] },
+    { "type": "leaf", "position": [1, 5, 0] },
+    { "type": "leaf", "position": [-1, 5, 0] }
+  ]
+}
