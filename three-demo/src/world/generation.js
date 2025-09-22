@@ -232,10 +232,14 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     );
     mesh.userData.defaultColor = engine.getDefaultBlockColor();
 
-    if (!mesh.instanceColor) {
+    const needsNewInstanceColor =
+      !mesh.instanceColor || mesh.instanceColor.count < entries.length;
+    if (needsNewInstanceColor) {
       const colorArray = new Float32Array(entries.length * 3);
       mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
     }
+    mesh.geometry.setAttribute('instanceColor', mesh.instanceColor);
+
     entries.forEach((entry, index) => {
       mesh.setMatrixAt(index, entry.matrix);
       entry.index = index;
