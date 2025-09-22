@@ -150,6 +150,8 @@ try {
     terrainHeight,
     solidBlocks: chunkManager.solidBlocks,
     waterColumns: chunkManager.waterColumns,
+    chunkManager,
+    damageMaterials: blockMaterials.damageStages,
     onStateChange: updateHud,
   })
 

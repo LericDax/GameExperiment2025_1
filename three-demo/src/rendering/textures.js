@@ -217,6 +217,57 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
     }),
   };
 
+  const damageStageCount = 6;
+  const damageTextures = Array.from({ length: damageStageCount }, (_, stage) => {
+    const intensity = (stage + 1) / damageStageCount;
+    return engine.createTexture(`damage_stage_${stage}`, {
+      size: 128,
+      wrap: THREE.ClampToEdgeWrapping,
+      generator: ({ worley, noise, rings }) => {
+        const fracture = 1 - worley({
+          scale: 7.5 + stage * 0.8,
+          jitter: 0.72,
+          distancePower: 1.4,
+          variant: `damage:${stage}:fracture`,
+        });
+        const radialStress = rings({
+          frequency: 6 + stage * 0.25,
+          sharpness: 2.2,
+          offset: stage * 0.03,
+          variant: `damage:${stage}:rings`,
+        });
+        const scratches = noise({
+          scale: 18,
+          octaves: 3,
+          persistence: 0.58,
+          variant: `damage:${stage}:scratch`,
+        });
+
+        const crackMask = Math.pow(fracture, 3.1);
+        const stressMask = Math.pow(radialStress, 1.9);
+        const microMask = Math.pow(scratches, 1.5);
+        const combined = Math.min(
+          1,
+          crackMask * 0.7 + stressMask * 0.45 + microMask * 0.25,
+        );
+        const alpha = Math.pow(combined, 0.9) * Math.pow(intensity, 1.1);
+        const value = 0.65 + intensity * 0.3;
+        return { r: value, g: value, b: value, a: Math.min(1, alpha) };
+      },
+    });
+  });
+
+  const damageStages = damageTextures.map((texture) => {
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    material.toneMapped = false;
+    return material;
+  });
+
   return {
     grass: new THREE.MeshStandardMaterial({ map: textures.grass }),
     dirt: new THREE.MeshStandardMaterial({ map: textures.dirt }),
@@ -236,5 +287,6 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
       opacity: 0.85,
       depthWrite: false,
     }),
+    damageStages,
   };
 }
