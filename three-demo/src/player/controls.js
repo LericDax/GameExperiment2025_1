@@ -349,8 +349,10 @@ export function createPlayerControls({
     const capsulePadding = 0.1;
     const bottom = playerFeet + capsulePadding;
     const top = playerFeet + playerHeight - capsulePadding;
+    const minY = Math.floor(bottom);
+    const maxY = Math.floor(top);
 
-    if (bottom >= top) {
+    if (minY > maxY) {
       return false;
     }
 
@@ -358,21 +360,17 @@ export function createPlayerControls({
     const playerMaxX = position.x + playerRadius;
     const playerMinZ = position.z - playerRadius;
     const playerMaxZ = position.z + playerRadius;
-    const playerMinY = bottom;
-    const playerMaxY = top;
 
     const minBlockX = Math.floor(playerMinX - 0.5);
     const maxBlockX = Math.floor(playerMaxX + 0.5);
     const minBlockZ = Math.floor(playerMinZ - 0.5);
     const maxBlockZ = Math.floor(playerMaxZ + 0.5);
-    const minBlockY = Math.floor(playerMinY - 0.5);
-    const maxBlockY = Math.floor(playerMaxY + 0.5);
 
     const epsilon = 1e-4;
 
     for (let x = minBlockX; x <= maxBlockX; x++) {
       for (let z = minBlockZ; z <= maxBlockZ; z++) {
-        for (let y = minBlockY; y <= maxBlockY; y++) {
+        for (let y = minY - 1; y <= maxY + 1; y++) {
           if (!solidBlocks.has(blockKey(x, y, z))) {
             continue;
           }
@@ -387,8 +385,8 @@ export function createPlayerControls({
           const overlaps =
             playerMaxX > blockMinX + epsilon &&
             playerMinX < blockMaxX - epsilon &&
-            playerMaxY > blockMinY + epsilon &&
-            playerMinY < blockMaxY - epsilon &&
+            top > blockMinY + epsilon &&
+            bottom < blockMaxY - epsilon &&
             playerMaxZ > blockMinZ + epsilon &&
             playerMinZ < blockMaxZ - epsilon;
 
