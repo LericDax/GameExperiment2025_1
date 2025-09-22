@@ -129,7 +129,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       instancedData.set(type, []);
     }
     const key = blockKey(x, y, z);
-    const color = engine.getBlockColor(biome, type);
+    const color = engine.getBlockTint(biome, type);
     const entry = {
       key,
       matrix: matrix.clone(),
@@ -230,7 +230,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       blockMaterials[type],
       entries.length,
     );
-    mesh.userData.defaultColor = engine.getDefaultBlockColor();
+    mesh.userData.defaultColor = engine.getDefaultBlockTint();
 
     const needsNewInstanceColor =
       !mesh.instanceColor || mesh.instanceColor.count < entries.length;
@@ -243,7 +243,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     entries.forEach((entry, index) => {
       mesh.setMatrixAt(index, entry.matrix);
       entry.index = index;
-      const color = entry.color ?? engine.getDefaultBlockColor();
+      const color = entry.color ?? engine.getDefaultBlockTint();
       if (typeof mesh.setColorAt === 'function') {
         mesh.setColorAt(index, color);
       } else if (mesh.instanceColor) {

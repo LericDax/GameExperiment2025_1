@@ -7,7 +7,7 @@ import tundra from './biomes/tundra.json' with { type: 'json' };
 
 const rawBiomeDefinitions = [temperate, desert, tundra];
 
-const DEFAULT_PALETTE = {
+const NEUTRAL_BASE_PALETTE = {
   grass: '#4a9c47',
   dirt: '#6b4a2f',
   stone: '#8c8c8c',
@@ -17,6 +17,16 @@ const DEFAULT_PALETTE = {
   log: '#725032',
   cloud: '#f7f8fb',
 };
+
+function safeDivide(component, baseComponent) {
+  if (!Number.isFinite(component) || !Number.isFinite(baseComponent)) {
+    return 1;
+  }
+  if (baseComponent === 0) {
+    return 1;
+  }
+  return component / baseComponent;
+}
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
@@ -41,12 +51,30 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
   const detailScale = climateScale * 2.15;
   const varianceScale = climateScale * 0.45;
 
-  const defaultColor = new THREE.Color(DEFAULT_PALETTE.grass);
+  const defaultColor = new THREE.Color(0xffffff);
+  const defaultTint = new THREE.Color(0xffffff);
+  const basePaletteColors = Object.fromEntries(
+    Object.entries(NEUTRAL_BASE_PALETTE).map(([type, hex]) => [
+      type,
+      new THREE.Color(hex),
+    ]),
+  );
 
   const biomes = rawBiomeDefinitions.map((definition, index) => {
-    const palette = { ...DEFAULT_PALETTE, ...(definition.palette ?? {}) };
+    const palette = { ...NEUTRAL_BASE_PALETTE, ...(definition.palette ?? {}) };
     const paletteColors = Object.fromEntries(
       Object.entries(palette).map(([type, hex]) => [type, new THREE.Color(hex)]),
+    );
+    const paletteTints = Object.fromEntries(
+      Object.entries(paletteColors).map(([type, targetColor]) => {
+        const baseColor = basePaletteColors[type] ?? defaultColor;
+        const tint = new THREE.Color(
+          safeDivide(targetColor.r, baseColor.r),
+          safeDivide(targetColor.g, baseColor.g),
+          safeDivide(targetColor.b, baseColor.b),
+        );
+        return [type, tint];
+      }),
     );
 
     const terrainDefinition = definition.terrain ?? {};
@@ -64,6 +92,7 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
       },
       palette,
       paletteColors,
+      paletteTints,
       terrain: {
         surfaceBlock: terrainDefinition.surfaceBlock ?? 'grass',
         shoreBlock: terrainDefinition.shoreBlock ?? 'sand',
@@ -152,13 +181,24 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
     return biome.paletteColors[type] ?? defaultColor;
   }
 
+  function getBlockTint(biome, type) {
+    if (!biome?.paletteTints) {
+      return defaultTint;
+    }
+    return biome.paletteTints[type] ?? defaultTint;
+  }
+
   return {
     biomes,
     sampleClimate,
     getBiomeAt,
     getBlockColor,
+    getBlockTint,
     getDefaultBlockColor() {
       return defaultColor;
+    },
+    getDefaultBlockTint() {
+      return defaultTint;
     },
   };
 }
