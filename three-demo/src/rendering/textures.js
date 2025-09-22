@@ -268,26 +268,38 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
     return material;
   });
 
+  const createStandardBlockMaterial = (texture, overrides = {}) =>
+    new THREE.MeshStandardMaterial({
+      map: texture,
+      flatShading: true,
+      vertexColors: true,
+      roughness: 0.85,
+      metalness: 0,
+      ...overrides,
+    });
+
   return {
-    grass: new THREE.MeshStandardMaterial({ map: textures.grass, vertexColors: true }),
-    dirt: new THREE.MeshStandardMaterial({ map: textures.dirt, vertexColors: true }),
-    stone: new THREE.MeshStandardMaterial({ map: textures.stone, vertexColors: true }),
-    sand: new THREE.MeshStandardMaterial({ map: textures.sand, vertexColors: true }),
-    water: new THREE.MeshStandardMaterial({
-      map: textures.water,
+    grass: createStandardBlockMaterial(textures.grass, { roughness: 0.9 }),
+    dirt: createStandardBlockMaterial(textures.dirt, { roughness: 0.92 }),
+    stone: createStandardBlockMaterial(textures.stone, { roughness: 0.75 }),
+    sand: createStandardBlockMaterial(textures.sand, { roughness: 0.8 }),
+    water: createStandardBlockMaterial(textures.water, {
+      flatShading: false,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.78,
+      roughness: 0.35,
+      metalness: 0.02,
       depthWrite: false,
-      vertexColors: true,
     }),
-    leaf: new THREE.MeshStandardMaterial({ map: textures.leaf, vertexColors: true }),
-    log: new THREE.MeshStandardMaterial({ map: textures.log, vertexColors: true }),
-    cloud: new THREE.MeshStandardMaterial({
-      map: textures.cloud,
+    leaf: createStandardBlockMaterial(textures.leaf, { roughness: 0.65 }),
+    log: createStandardBlockMaterial(textures.log, { roughness: 0.7 }),
+    cloud: createStandardBlockMaterial(textures.cloud, {
+      flatShading: false,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.9,
+      roughness: 0.6,
+      metalness: 0,
       depthWrite: false,
-      vertexColors: true,
     }),
     damageStages,
   };
