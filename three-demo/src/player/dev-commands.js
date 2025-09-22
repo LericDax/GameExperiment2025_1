@@ -1,3 +1,5 @@
+import { sampleBiomeAt } from '../world/generation.js';
+
 export function registerDeveloperCommands({
   commandConsole,
   playerControls,
@@ -76,10 +78,14 @@ export function registerDeveloperCommands({
     usage: '/whereami',
     handler: ({ success }) => {
       const position = playerControls.getPosition();
+      const biomeSample = sampleBiomeAt(Math.round(position.x), Math.round(position.z));
+      const biomeLabel = biomeSample?.biome?.label ?? 'Unknown biome';
+      const biomeId = biomeSample?.biome?.id;
+      const biomeDescription = biomeId ? `${biomeLabel} [${biomeId}]` : biomeLabel;
       success(
         `Position — X: ${position.x.toFixed(2)}, Y: ${position.y.toFixed(
           2,
-        )}, Z: ${position.z.toFixed(2)}`,
+        )}, Z: ${position.z.toFixed(2)} | Biome: ${biomeDescription}`,
       );
     },
   });

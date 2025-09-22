@@ -1,4 +1,8 @@
-import { getWeightedVoxelObject, isVoxelObjectAllowedInBiome } from './voxel-object-library.js';
+import {
+  getWeightedVoxelObject,
+  isVoxelObjectAllowedInBiome,
+} from './voxel-object-library.js';
+import { resolveVoxelObjectVoxels } from './voxel-object-processor.js';
 
 function ensureRandomSource(randomSource) {
   if (typeof randomSource === 'function') {
@@ -36,15 +40,23 @@ export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
     return;
   }
   const base = origin ?? { x: 0, y: 0, z: 0 };
+  const groundAnchorOffset = object.attachment?.groundOffset ?? object.voxelScale;
+  const anchor = {
+    x: base.x,
+    y: base.y - groundAnchorOffset,
+    z: base.z,
+  };
 
   const defaultSolidOverride = object.voxelScale < 1;
 
 
-  object.voxels.forEach((voxel) => {
+  const voxels = resolveVoxelObjectVoxels(object);
+
+  voxels.forEach((voxel) => {
     const scale = resolveScaleVector(voxel, object.voxelScale);
-    const worldX = base.x + voxel.position.x * object.voxelScale;
-    const worldY = base.y + voxel.position.y * object.voxelScale;
-    const worldZ = base.z + voxel.position.z * object.voxelScale;
+    const worldX = anchor.x + voxel.position.x * object.voxelScale;
+    const worldY = anchor.y + voxel.position.y * object.voxelScale + scale.y / 2;
+    const worldZ = anchor.z + voxel.position.z * object.voxelScale;
 
     const collisionMode = resolveCollisionMode(voxel, object);
 
