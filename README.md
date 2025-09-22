@@ -5,7 +5,6 @@ This project hosts a browser-based sandbox inspired by classic block-building ga
 ## Features
 
 - Dedicated texture engine that layers fractal noise, Worley cells, and analytic patterns to craft deterministic block materials.
-=======
 - Deterministic, procedurally generated textures for every block type.
 
 - Streaming chunk manager that expands the world as you explore.
