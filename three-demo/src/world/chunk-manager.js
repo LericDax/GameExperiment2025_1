@@ -152,6 +152,9 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
       const swapped = entries[lastIndex];
       entries[instanceId] = swapped;
       mesh.setMatrixAt(instanceId, swapped.matrix);
+      if (typeof mesh.setColorAt === 'function') {
+        mesh.setColorAt(instanceId, swapped.color ?? mesh.userData?.defaultColor);
+      }
       mesh.instanceMatrix.needsUpdate = true;
       if (chunk.blockLookup) {
         const swappedInfo = chunk.blockLookup.get(swapped.key);
@@ -165,6 +168,9 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     entries.pop();
     mesh.count = entries.length;
     mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) {
+      mesh.instanceColor.needsUpdate = true;
+    }
 
     if (chunk.blockLookup) {
       chunk.blockLookup.delete(removed.key);
