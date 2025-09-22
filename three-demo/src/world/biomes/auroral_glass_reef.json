@@ -1,0 +1,43 @@
+{
+  "id": "auroral_glass_reef",
+  "label": "Auroral Glass Reef",
+  "tags": ["aquatic", "cold", "luminous"],
+  "climate": {
+    "temperature": 0.32,
+    "moisture": 0.85
+  },
+  "terrain": {
+    "surfaceBlock": "sand",
+    "shoreBlock": "sand",
+    "subSurfaceBlock": "sand",
+    "subSurfaceDepth": 5,
+    "deepBlock": "stone",
+    "treeDensity": 0.0,
+    "shrubChance": 0.0,
+    "flowerChance": 0.0,
+    "rockChance": 0.08,
+    "fungiChance": 0.0,
+    "waterPlantChance": 0.3,
+    "structureChance": 0.08,
+    "treeHeight": {
+      "min": 1,
+      "max": 2
+    },
+    "heightOffset": -3
+  },
+  "palette": {
+    "sand": "#81f0f0",
+    "grass": "#98f6ff",
+    "dirt": "#63b7c0",
+    "stone": "#6ad0d9",
+    "leaf": "#a7fff9",
+    "log": "#5fd3c7",
+    "water": "#49b2f7",
+    "cloud": "#b9f2ff"
+  },
+  "shader": {
+    "fogColor": "#7ed6ff",
+    "tintColor": "#8bdcf8",
+    "tintStrength": 0.5
+  }
+}

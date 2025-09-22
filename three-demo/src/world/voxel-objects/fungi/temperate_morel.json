@@ -1,0 +1,25 @@
+{
+  "id": "temperate_morel",
+  "label": "Forest Morel",
+  "category": "fungi",
+  "author": "system",
+  "description": "Ridged mushroom emerging after warm rains.",
+  "collision": "soft",
+  "voxelScale": 0.22,
+  "attachment": {
+    "groundOffset": 0.08
+  },
+  "placement": {
+    "biomes": ["temperate_forest"],
+    "weight": 1.9,
+    "maxSlope": 0.55,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.6,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "size": [0.6, 1.2, 0.6], "tint": "#7c5a38" },
+    { "type": "leaf", "position": [0, 1.0, 0], "size": [1.4, 1.4, 1.4], "tint": "#d8b87a" },
+    { "type": "leaf", "position": [0, 1.6, 0], "size": [1.0, 1.0, 1.0], "tint": "#f3d79a", "isSolid": false }
+  ]
+}

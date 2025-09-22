@@ -1,0 +1,27 @@
+{
+  "id": "noctilucent_pillarcap",
+  "label": "Pillarcap Mycotree",
+  "category": "large-plants",
+  "author": "system",
+  "description": "Towering fungal column with translucent crown.",
+  "collision": "soft",
+  "voxelScale": 0.45,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["noctilucent_fungus_glade"],
+    "weight": 1.6,
+    "maxSlope": 0.5,
+    "forbidUnderwater": false,
+    "jitterRadius": 0.6
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "size": [1.2, 5.5, 1.2], "tint": "#6a4d84" },
+    { "type": "log", "position": [0, 5.8, 0], "size": [1.0, 1.0, 1.0], "tint": "#735694" },
+    { "type": "leaf", "position": [0, 5.6, 0], "size": [3.4, 0.8, 3.4], "tint": "#6fe9f1", "isSolid": false },
+    { "type": "leaf", "position": [0, 6.4, 0], "size": [2.4, 0.6, 2.4], "tint": "#9bfdf7", "isSolid": false },
+    { "type": "leaf", "position": [0, 4.2, 0], "size": [1.6, 1.2, 1.6], "tint": "#5cd6dc", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.2, 0], "size": [1.4, 0.6, 1.4], "tint": "#4bc2c8", "isSolid": false }
+  ]
+}

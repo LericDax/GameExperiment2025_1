@@ -1,6 +1,7 @@
 {
   "id": "temperate_forest",
   "label": "Temperate Forest",
+  "tags": ["temperate", "leafy", "balanced"],
   "climate": {
     "temperature": 0.58,
     "moisture": 0.72
@@ -12,7 +13,12 @@
     "subSurfaceDepth": 4,
     "deepBlock": "stone",
     "treeDensity": 0.08,
-    "shrubChance": 0.025,
+    "shrubChance": 0.045,
+    "flowerChance": 0.08,
+    "rockChance": 0.04,
+    "fungiChance": 0.05,
+    "waterPlantChance": 0.0,
+    "structureChance": 0.0,
     "treeHeight": {
       "min": 3,
       "max": 6

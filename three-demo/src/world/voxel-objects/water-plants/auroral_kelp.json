@@ -1,0 +1,25 @@
+{
+  "id": "auroral_kelp",
+  "label": "Auroral Kelp",
+  "category": "water-plants",
+  "author": "system",
+  "description": "Ribbon kelp that sways beneath shimmering icewater.",
+  "collision": "soft",
+  "voxelScale": 0.3,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["auroral_glass_reef"],
+    "weight": 3.6,
+    "requiresUnderwater": true,
+    "maxSlope": 0.6,
+    "jitterRadius": 0.5,
+    "maxInstancesPerColumn": 3
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [0.6, 2.4, 0.6], "tint": "#7affff", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.8, 0], "size": [0.6, 2.0, 0.6], "tint": "#a9fff7", "isSolid": false },
+    { "type": "leaf", "position": [0, 3.4, 0], "size": [0.6, 1.8, 0.6], "tint": "#c0fff2", "isSolid": false }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "librarium_stack",
+  "label": "Infinite Tome Stack",
+  "category": "structures",
+  "author": "system",
+  "description": "Shelving pillar of tomes arranged around a silent core.",
+  "collision": "solid",
+  "voxelScale": 0.4,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["pseudo_borgesian_librarium"],
+    "weight": 2.1,
+    "maxSlope": 0.4,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.5
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "size": [2.2, 4.5, 2.2], "tint": "#9d8260" },
+    { "type": "stone", "position": [0, 0.2, 0], "size": [2.6, 0.6, 2.6], "tint": "#6f5d7d" },
+    { "type": "stone", "position": [0, 4.8, 0], "size": [2.6, 0.6, 2.6], "tint": "#5d4b6d" },
+    { "type": "leaf", "position": [1.4, 2.2, 0], "size": [0.5, 2.2, 2.2], "tint": "#c9a1ff", "isSolid": false },
+    { "type": "leaf", "position": [-1.4, 2.2, 0], "size": [0.5, 2.2, 2.2], "tint": "#b78df7", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.2, 1.4], "size": [2.2, 2.2, 0.5], "tint": "#d6b3ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.2, -1.4], "size": [2.2, 2.2, 0.5], "tint": "#c79bff", "isSolid": false },
+    { "type": "leaf", "position": [0, 4.2, 0], "size": [1.2, 0.8, 1.2], "tint": "#f6e6ff", "isSolid": false }
+  ]
+}

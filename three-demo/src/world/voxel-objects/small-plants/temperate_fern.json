@@ -1,0 +1,29 @@
+{
+  "id": "temperate_fern",
+  "label": "Softspire Fern",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Fans of delicate fronds reaching outward toward forest light.",
+  "collision": "soft",
+  "voxelScale": 0.22,
+  "attachment": {
+    "groundOffset": 0.08
+  },
+  "placement": {
+    "biomes": ["temperate_forest", "noctilucent_fungus_glade"],
+    "weight": 2.6,
+    "maxSlope": 0.6,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.75,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.8, 0.4, 0.5], "tint": "#5cbf66" },
+    { "type": "leaf", "position": [0, 0, 0], "size": [0.5, 0.4, 1.8], "tint": "#67c76f" },
+    { "type": "leaf", "position": [0.9, 0.4, 0.9], "size": [1.1, 0.3, 0.3], "tint": "#58b860" },
+    { "type": "leaf", "position": [-0.9, 0.4, -0.9], "size": [0.3, 0.3, 1.1], "tint": "#63c86a" },
+    { "type": "leaf", "position": [0.9, 0.6, -0.9], "size": [1.1, 0.3, 0.3], "tint": "#4fae58" },
+    { "type": "leaf", "position": [-0.9, 0.6, 0.9], "size": [0.3, 0.3, 1.1], "tint": "#71d77a" },
+    { "type": "leaf", "position": [0, 0.8, 0], "size": [0.4, 0.7, 0.4], "tint": "#8de08c", "isSolid": false }
+  ]
+}

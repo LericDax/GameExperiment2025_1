@@ -1,0 +1,25 @@
+{
+  "id": "librarium_plinth",
+  "label": "Catalog Plinth",
+  "category": "rocks",
+  "author": "system",
+  "description": "Marble plinth used for indexing impossible shelves.",
+  "collision": "solid",
+  "voxelScale": 0.35,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["pseudo_borgesian_librarium"],
+    "weight": 1.4,
+    "maxSlope": 0.5,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.6
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [2.4, 0.6, 2.4], "tint": "#7e6d8e" },
+    { "type": "stone", "position": [0, 0.6, 0], "size": [1.8, 0.6, 1.8], "tint": "#8c79a1" },
+    { "type": "stone", "position": [0, 1.2, 0], "size": [1.2, 0.8, 1.2], "tint": "#a695c3" },
+    { "type": "leaf", "position": [0, 1.8, 0], "size": [1.4, 0.4, 1.4], "tint": "#e4d8ff", "isSolid": false }
+  ]
+}

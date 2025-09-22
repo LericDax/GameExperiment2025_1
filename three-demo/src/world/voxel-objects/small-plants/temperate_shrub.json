@@ -12,19 +12,23 @@
     "groundOffset": 1
   },
   "placement": {
-    "biomes": ["temperate_forest", "sunset_dunes", "frostbound_steppe"],
-    "weight": 2
+    "biomes": ["temperate_forest", "frostbound_steppe", "noctilucent_fungus_glade"],
+    "weight": 1.8,
+    "maxSlope": 0.65,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.8
   },
   "voxels": [
-    { "type": "leaf", "position": [0, 0, 0] },
-    { "type": "leaf", "position": [1, 0, 0] },
-    { "type": "leaf", "position": [-1, 0, 0] },
-    { "type": "leaf", "position": [0, 0, 1] },
-    { "type": "leaf", "position": [0, 0, -1] },
-    { "type": "leaf", "position": [0, 1, 0] },
-    { "type": "leaf", "position": [1, 1, 0] },
-    { "type": "leaf", "position": [-1, 1, 0] },
-    { "type": "leaf", "position": [0, 1, 1] },
-    { "type": "leaf", "position": [0, 1, -1] }
+    { "type": "leaf", "position": [0, 0, 0], "tint": "#5fb35b" },
+    { "type": "leaf", "position": [1, 0, 0], "tint": "#6ac468" },
+    { "type": "leaf", "position": [-1, 0, 0], "tint": "#57ab53" },
+    { "type": "leaf", "position": [0, 0, 1], "tint": "#63bf5f" },
+    { "type": "leaf", "position": [0, 0, -1], "tint": "#58ad55" },
+    { "type": "leaf", "position": [0, 1, 0], "size": [1.4, 1.2, 1.4], "tint": "#6fd46f" },
+    { "type": "leaf", "position": [1, 1, 0], "size": [1.2, 1.1, 1.2], "tint": "#66c765" },
+    { "type": "leaf", "position": [-1, 1, 0], "size": [1.2, 1.1, 1.2], "tint": "#5db95b" },
+    { "type": "leaf", "position": [0, 1, 1], "size": [1.2, 1.1, 1.2], "tint": "#68c766" },
+    { "type": "leaf", "position": [0, 1, -1], "size": [1.2, 1.1, 1.2], "tint": "#5ab456" },
+    { "type": "leaf", "position": [0, 2, 0], "size": [1.0, 0.8, 1.0], "tint": "#7ae07a", "isSolid": false }
   ]
 }
