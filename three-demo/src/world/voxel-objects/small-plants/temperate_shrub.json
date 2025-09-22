@@ -4,7 +4,9 @@
   "category": "small-plants",
   "author": "system",
   "description": "Rounded shrub assembled from terrain voxels.",
+
   "collision": "soft",
+
   "voxelScale": 1,
   "attachment": {
     "groundOffset": 1

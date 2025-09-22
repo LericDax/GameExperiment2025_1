@@ -95,6 +95,7 @@ function normalizeVoxel(voxel, index, { path }) {
     typeof voxel.isSolid === 'boolean' ? voxel.isSolid : undefined;
   const destructible =
     typeof voxel.destructible === 'boolean' ? voxel.destructible : undefined;
+
   let collisionMode = null;
   if (typeof voxel.collision === 'string') {
     const normalized = voxel.collision.toLowerCase();
@@ -107,6 +108,7 @@ function normalizeVoxel(voxel, index, { path }) {
     }
   }
 
+
   return {
     index,
     type: voxel.type,
@@ -115,7 +117,9 @@ function normalizeVoxel(voxel, index, { path }) {
     tint,
     isSolid,
     destructible,
+
     collisionMode,
+
     metadata: typeof voxel.metadata === 'object' ? { ...voxel.metadata } : null,
   };
 }
@@ -174,6 +178,7 @@ function normalizeDefinition(path, raw) {
         : 1,
   };
 
+
   let collisionMode = null;
   if (typeof definition?.collision === 'string') {
     collisionMode = definition.collision.toLowerCase();
@@ -187,6 +192,7 @@ function normalizeDefinition(path, raw) {
   }
 
   const normalizedCollision = collisionMode || 'auto';
+
 
   const boundingBox = computeBoundingBox(voxels, definition.voxelScale);
 
@@ -202,7 +208,9 @@ function normalizeDefinition(path, raw) {
     placement,
     voxels,
     boundingBox,
+
     collision: { mode: normalizedCollision },
+
     path,
     raw: definition,
   };

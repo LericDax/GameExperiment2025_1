@@ -15,6 +15,7 @@ function resolveScaleVector({ size }, voxelScale) {
   };
 }
 
+
 function resolveCollisionMode(voxel, object) {
   if (voxel?.collisionMode) {
     return voxel.collisionMode;
@@ -29,23 +30,29 @@ function resolveCollisionMode(voxel, object) {
   return object.voxelScale < 1 ? 'none' : 'solid';
 }
 
+
 export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
   if (!object || typeof addBlock !== 'function') {
     return;
   }
   const base = origin ?? { x: 0, y: 0, z: 0 };
 
+  const defaultSolidOverride = object.voxelScale < 1;
+
+
   object.voxels.forEach((voxel) => {
     const scale = resolveScaleVector(voxel, object.voxelScale);
     const worldX = base.x + voxel.position.x * object.voxelScale;
     const worldY = base.y + voxel.position.y * object.voxelScale;
     const worldZ = base.z + voxel.position.z * object.voxelScale;
+
     const collisionMode = resolveCollisionMode(voxel, object);
 
     addBlock(voxel.type, worldX, worldY, worldZ, biome, {
       scale,
       collisionMode,
       isSolid: collisionMode === 'solid',
+
       destructible: voxel.destructible,
       tint: voxel.tint,
       sourceObjectId: object.id,

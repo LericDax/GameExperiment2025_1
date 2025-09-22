@@ -4,7 +4,9 @@
   "category": "flowers",
   "author": "system",
   "description": "Delicate wildflower constructed from mini voxels.",
+
   "collision": "none",
+
   "voxelScale": 0.2,
   "attachment": {
     "groundOffset": 0.1

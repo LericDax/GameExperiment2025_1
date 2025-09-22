@@ -159,8 +159,10 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     if (!instancedData.has(type)) {
       instancedData.set(type, []);
     }
+
     const coordinateKey = blockKey(x, y, z);
     const key = options.key ?? coordinateKey;
+
     const paletteColor = engine.getBlockColor(biome, type);
     const tintStrength = clamp(biome?.shader?.tintStrength ?? 1, 0, 1);
 
@@ -198,6 +200,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
 
     const tintColor = paletteBlend;
+
     const isWater = type === 'water';
     let collisionMode = options.collisionMode;
     if (!collisionMode) {
@@ -213,6 +216,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
     const isSolid = collisionMode === 'solid';
     const isSoft = collisionMode === 'soft';
+
     const destructible =
       typeof options.destructible === 'boolean'
         ? options.destructible
@@ -234,6 +238,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       isSolid,
       isWater,
       destructible,
+
       collisionMode,
     };
     instancedData.get(type).push(entry);
@@ -246,6 +251,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
     if (isSoft) {
       softBlockKeys.add(coordinateKey);
+
     }
     if (isWater) {
       waterColumnKeys.add(`${x}|${z}`);
