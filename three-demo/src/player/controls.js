@@ -2,20 +2,6 @@ function blockKey(x, y, z) {
   return `${x}|${y}|${z}`;
 }
 
-function createCollisionOffsets(radius) {
-  return [
-    [0, 0],
-    [radius, 0],
-    [-radius, 0],
-    [0, radius],
-    [0, -radius],
-    [radius, radius],
-    [radius, -radius],
-    [-radius, radius],
-    [-radius, -radius],
-  ];
-}
-
 const POINTER_LOCK_ERROR_EVENTS = [
   'pointerlockerror',
   'mozpointerlockerror',
@@ -84,7 +70,6 @@ export function createPlayerControls({
   const playerRadius = 0.35;
   const gravity = 18;
   const jumpVelocity = 7.8;
-  const collisionOffsets = createCollisionOffsets(playerRadius);
   const pointerLockElement = renderer.domElement;
   const pointerLockDocument = pointerLockElement.ownerDocument;
   const pointerLockSupported = isPointerLockSupported(pointerLockDocument);
@@ -109,7 +94,7 @@ export function createPlayerControls({
 
   controlObject.position.set(
     0,
-    worldConfig.waterLevel + playerEyeHeight + 1,
+    worldConfig.waterLevel + playerEyeHeight + 1.5,
     0,
   );
 
@@ -362,20 +347,54 @@ export function createPlayerControls({
   function collidesAt(position) {
     const playerFeet = position.y - playerEyeHeight;
     const capsulePadding = 0.1;
-    const minY = Math.floor(playerFeet + capsulePadding);
-    const maxY = Math.floor(playerFeet + playerHeight - capsulePadding);
+
+    const bottom = playerFeet + capsulePadding;
+    const top = playerFeet + playerHeight - capsulePadding;
+    const minY = Math.floor(bottom);
+    const maxY = Math.floor(top);
+
+
     if (minY > maxY) {
       return false;
     }
 
-    for (const [dx, dz] of collisionOffsets) {
-      const sampleX = position.x + dx;
-      const sampleZ = position.z + dz;
-      const blockX = Math.round(sampleX);
-      const blockZ = Math.round(sampleZ);
-      for (let y = minY; y <= maxY; y++) {
-        if (solidBlocks.has(blockKey(blockX, y, blockZ))) {
-          return true;
+    const playerMinX = position.x - playerRadius;
+    const playerMaxX = position.x + playerRadius;
+    const playerMinZ = position.z - playerRadius;
+    const playerMaxZ = position.z + playerRadius;
+
+    const minBlockX = Math.floor(playerMinX - 0.5);
+    const maxBlockX = Math.floor(playerMaxX + 0.5);
+    const minBlockZ = Math.floor(playerMinZ - 0.5);
+    const maxBlockZ = Math.floor(playerMaxZ + 0.5);
+
+    const epsilon = 1e-4;
+
+    for (let x = minBlockX; x <= maxBlockX; x++) {
+      for (let z = minBlockZ; z <= maxBlockZ; z++) {
+        for (let y = minY - 1; y <= maxY + 1; y++) {
+          if (!solidBlocks.has(blockKey(x, y, z))) {
+            continue;
+          }
+
+          const blockMinX = x - 0.5;
+          const blockMaxX = x + 0.5;
+          const blockMinY = y - 0.5;
+          const blockMaxY = y + 0.5;
+          const blockMinZ = z - 0.5;
+          const blockMaxZ = z + 0.5;
+
+          const overlaps =
+            playerMaxX > blockMinX + epsilon &&
+            playerMinX < blockMaxX - epsilon &&
+            top > blockMinY + epsilon &&
+            bottom < blockMaxY - epsilon &&
+            playerMaxZ > blockMinZ + epsilon &&
+            playerMinZ < blockMaxZ - epsilon;
+
+          if (overlaps) {
+            return true;
+          }
         }
       }
     }
@@ -458,8 +477,10 @@ export function createPlayerControls({
     }
 
     const terrainY = sampleHeight(position.x, position.z);
-    const waterTarget = worldConfig.waterLevel + playerEyeHeight - 0.2;
-    let targetY = terrainY + playerEyeHeight;
+    const groundLevel = terrainY + 0.5;
+    const waterTarget =
+      worldConfig.waterLevel + 0.5 + playerEyeHeight - 0.2;
+    let targetY = groundLevel + playerEyeHeight;
     if (!feetInWater && inWaterColumn) {
       targetY = Math.max(targetY, waterTarget);
     }
