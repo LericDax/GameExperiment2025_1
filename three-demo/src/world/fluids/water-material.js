@@ -151,8 +151,10 @@ float dreamcastHeight = 0.6;
 vec3 dreamcastPalette = mix(uDeepColor, uShallowColor, dreamcastHeight);
 vec3 waterfallPalette = mix(dreamcastPalette, uWaterfallColor, smoothstep(0.35, 0.95, surfaceMix));
 vec3 biomeColor = diffuseColor.rgb;
+
 gBiomeColor = biomeColor;
 gWaterfallPalette = waterfallPalette;
+
 vec3 paletteInfluence = mix(vec3(1.0), waterfallPalette, 0.85);
 diffuseColor.rgb *= paletteInfluence;
         `,
