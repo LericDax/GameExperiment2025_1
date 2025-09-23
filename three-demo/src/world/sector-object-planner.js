@@ -347,124 +347,151 @@ function linePoints({
   return points;
 }
 
+
+const weightEntries = (...pairs) => Object.fromEntries(pairs);
+
+const scatter = (category, config) => ({
+  type: 'scatter',
+  category,
+  ...config,
+});
+
+const line = (category, config) => ({
+  type: 'line',
+  category,
+  ...config,
+});
+
 const schemaLibrary = [
   {
-
     id: 'meadow-breath',
     weight: 1.1,
-    themes: {
-      'open-field': 1.2,
-      'broad-meadow': 1.4,
-      'mixed-glade': 0.7,
-    },
+    themes: weightEntries(
+      ['open-field', 1.3],
+      ['broad-meadow', 1.4],
+      ['mixed-glade', 0.6],
+    ),
     densityPreference: 'sparse',
     instructions: [
-      {
-        type: 'scatter',
-        category: 'large-plants',
-        count: 0,
-        radius: 6,
-        jitterRadius: 2,
-        minSpacing: 6,
-        seed: 7,
-      },
-      {
-        type: 'scatter',
-        category: 'small-plants',
+      scatter('small-plants', {
+
         count: 2,
         radius: 11,
         jitterRadius: 2.6,
         minSpacing: 3.5,
         seed: 13,
-      },
-      {
-        type: 'scatter',
-        category: 'flowers',
+
+      }),
+      scatter('flowers', {
         count: 4,
         radius: 12,
-        jitterRadius: 3.2,
+        jitterRadius: 3.1,
         minSpacing: 3,
         seed: 19,
-      },
+      }),
+
     ],
   },
   {
     id: 'prairie-band',
-    weight: 0.9,
-    themes: {
-      'open-field': 1.1,
-      'broad-meadow': 1.3,
-      'mixed-glade': 0.6,
-    },
+
+    weight: 0.95,
+    themes: weightEntries(
+      ['open-field', 1.2],
+      ['broad-meadow', 1.2],
+      ['mixed-glade', 0.6],
+    ),
     densityPreference: 'sparse',
     instructions: [
-      {
-        type: 'line',
-        category: 'flowers',
+      line('flowers', {
         count: 5,
-        length: 14,
-        jitterRadius: 2.8,
-        minSpacing: 3,
+        length: 18,
+        jitterRadius: 2.5,
+        minSpacing: 3.2,
         seed: 23,
-      },
-      {
-        type: 'scatter',
-        category: 'small-plants',
-        count: 2,
+      }),
+      scatter('small-plants', {
+        count: 3,
         radius: 10,
-        jitterRadius: 2.4,
-        minSpacing: 3.5,
-        seed: 31,
-      },
+        jitterRadius: 2.2,
+        minSpacing: 3.2,
+        seed: 29,
+      }),
     ],
   },
   {
-    id: 'copse-trio',
-    weight: 1,
-    themes: {
-      'thin-woods': 1.2,
-      'mixed-glade': 1,
-      'open-field': 0.4,
-    },
+    id: 'field-lattice',
+    weight: 0.9,
+    themes: weightEntries(
+      ['open-field', 1.1],
+      ['broad-meadow', 1.2],
+      ['mixed-glade', 0.7],
+    ),
+    tags: weightEntries(['field-edge', 0.4], ['sparse', 0.3]),
+    densityPreference: 'sparse',
     instructions: [
-      {
-        type: 'scatter',
-        category: 'large-plants',
+      scatter('small-plants', {
+        count: 1,
+        radius: 10,
+        jitterRadius: 2.1,
+        minSpacing: 4,
+        seed: 31,
+      }),
+      scatter('flowers', {
         count: 3,
-        radius: 9,
-        jitterRadius: 2.7,
-        minSpacing: 6,
-        clump: 1.4,
+        radius: 12,
+        jitterRadius: 3.1,
+        minSpacing: 2.6,
+        seed: 37,
+      }),
+      scatter('rocks', {
+        count: 1,
+        radius: 8,
+        jitterRadius: 2.1,
+        minSpacing: 4.5,
         seed: 41,
-      },
-      {
-        type: 'scatter',
-        category: 'small-plants',
-        count: 3,
+      }),
+    ],
+  },
+  {
+    id: 'veil-clearing',
+    weight: 1.05,
+    themes: weightEntries(
+      ['mixed-glade', 1.2],
+      ['thin-woods', 1.1],
+      ['open-field', 0.8],
+    ),
+    densityPreference: 'medium',
+    instructions: [
+      scatter('large-plants', {
+        count: 2,
+        radius: 9,
+        jitterRadius: 2.6,
+        minSpacing: 6.5,
+        seed: 43,
+      }),
+      scatter('small-plants', {
+        count: 4,
         radius: 11,
-        jitterRadius: 2.4,
+        jitterRadius: 2.7,
         minSpacing: 3.5,
         seed: 47,
-      },
+      }),
+
     ],
   },
   {
     id: 'sentinel-clearing',
     weight: 1.1,
-    themes: {
-      'thin-woods': 1.1,
-      'mixed-glade': 1,
-      'open-field': 0.5,
-    },
-    tags: {
-      'field-edge': 0.5,
-      dense: 0.3,
-    },
 
+    themes: weightEntries(
+      ['thin-woods', 1.1],
+      ['mixed-glade', 1],
+      ['open-field', 0.6],
+    ),
+    tags: weightEntries(['field-edge', 0.5], ['dense', 0.3]),
     instructions: [
-      {
-        type: 'scatter',
-        category: 'large-plants',
+      scatter('large-plants', {
         count: 1,
 
         radius: 6,
@@ -472,137 +499,136 @@ const schemaLibrary = [
         minSpacing: 7,
         seed: 53,
 
-      },
-      {
-        type: 'scatter',
-        category: 'rocks',
+      }),
+      scatter('rocks', {
+
         count: 2,
         radius: 9,
         jitterRadius: 2.2,
         minSpacing: 5,
 
         seed: 59,
-
-      },
-      {
-        type: 'scatter',
-        category: 'small-plants',
+      }),
+      scatter('small-plants', {
         count: 3,
         radius: 10,
-        jitterRadius: 3,
-        minSpacing: 4,
-
+        jitterRadius: 2.9,
+        minSpacing: 3.8,
         seed: 61,
+      }),
 
-      },
     ],
   },
   {
     id: 'triad-grove',
     weight: 1,
 
-    themes: {
-      'thin-woods': 1.1,
-      'thick-forest': 0.6,
-      'mixed-glade': 0.8,
-    },
+    themes: weightEntries(
+      ['thin-woods', 1.1],
+      ['thick-forest', 0.7],
+      ['mixed-glade', 0.8],
+    ),
     densityPreference: 'medium',
-
     instructions: [
-      {
-        type: 'scatter',
-        category: 'large-plants',
+      scatter('large-plants', {
+
         count: 3,
         radius: 8,
         jitterRadius: 2.8,
         minSpacing: 6.5,
-        clump: 1.5,
 
+        clump: 1.6,
         seed: 67,
+      }),
+      scatter('small-plants', {
 
-        seed: 19,
-
-      },
-      {
-        type: 'scatter',
-        category: 'small-plants',
         count: 4,
         radius: 12,
         jitterRadius: 2.6,
         minSpacing: 4,
 
         seed: 71,
-
-        seed: 29,
-
-      },
-      {
-        type: 'scatter',
-        category: 'flowers',
-        count: 3,
-        radius: 12,
-        jitterRadius: 3.2,
-        minSpacing: 3,
-
+      }),
+      scatter('flowers', {
+        count: 2,
+        radius: 10,
+        jitterRadius: 2.7,
+        minSpacing: 3.5,
         seed: 73,
-      },
+      }),
     ],
   },
   {
-    id: 'woodland-drift',
+    id: 'woodland-ridge',
     weight: 0.95,
-    themes: {
-      'thin-woods': 1,
-      'thick-forest': 0.8,
-      'mixed-glade': 0.7,
-    },
-    tags: {
-      'woodland-approach': 0.6,
-    },
-
-        seed: 31,
-      },
-    ],
-  },
-  {
-    id: 'meadow-ring',
-    weight: 0.9,
-
+    themes: weightEntries(
+      ['thin-woods', 1.2],
+      ['thick-forest', 0.7],
+      ['mixed-glade', 1],
+    ),
+    tags: weightEntries(
+      ['field-edge', 0.4],
+      ['forest-thickening', 0.4],
+      ['woodland-approach', 0.4],
+    ),
     instructions: [
-      {
-        type: 'line',
-        category: 'large-plants',
-
+      line('large-plants', {
         count: 3,
         length: 16,
-        jitterRadius: 2.5,
+        jitterRadius: 2.4,
         minSpacing: 6,
         seed: 79,
-      },
-      {
-        type: 'scatter',
-        category: 'small-plants',
+      }),
+      scatter('small-plants', {
+
         count: 5,
         radius: 12,
         jitterRadius: 2.4,
         minSpacing: 3.5,
         seed: 83,
-      },
+
+      }),
+    ],
+  },
+  {
+    id: 'woodland-carpet',
+    weight: 0.9,
+    themes: weightEntries(
+      ['thin-woods', 1.1],
+      ['mixed-glade', 1.1],
+      ['thick-forest', 0.6],
+    ),
+    tags: weightEntries(['woodland-approach', 0.5], ['sparse', 0.3]),
+    instructions: [
+      scatter('small-plants', {
+        count: 5,
+        radius: 13,
+        jitterRadius: 2.3,
+        minSpacing: 3.2,
+        seed: 91,
+      }),
+      scatter('flowers', {
+        count: 2,
+        radius: 11,
+        jitterRadius: 2.8,
+        minSpacing: 3,
+        seed: 93,
+      }),
     ],
   },
   {
     id: 'forest-column',
     weight: 1,
-    themes: {
-      'thick-forest': 1.2,
-      'deep-forest': 1.4,
-      'wet-wood': 0.8,
-    },
+
+    themes: weightEntries(
+      ['thick-forest', 1.2],
+      ['deep-forest', 1.3],
+      ['wet-wood', 0.8],
+    ),
     densityPreference: 'dense',
     instructions: [
-      {
-        type: 'scatter',
-        category: 'large-plants',
+      scatter('large-plants', {
+
         count: 4,
         radius: 10,
         jitterRadius: 2.4,
@@ -610,366 +636,604 @@ const schemaLibrary = [
         clump: 1.8,
         seed: 97,
 
-      },
-      {
-        type: 'scatter',
-        category: 'small-plants',
+      }),
+      scatter('small-plants', {
         count: 4,
         radius: 11,
-
         jitterRadius: 2.2,
         minSpacing: 3.5,
         seed: 101,
-      },
-      {
-        type: 'scatter',
-        category: 'fungi',
+      }),
+      scatter('fungi', {
+
         count: 2,
         radius: 8,
         jitterRadius: 2,
         minSpacing: 3,
         seed: 103,
-      },
+
+      }),
     ],
   },
   {
     id: 'understory-ring',
     weight: 0.85,
-    themes: {
-      'thick-forest': 1,
-      'deep-forest': 1.2,
-      'wet-wood': 1,
-    },
+
+    themes: weightEntries(
+      ['thick-forest', 1],
+      ['deep-forest', 1.2],
+      ['wet-wood', 1],
+    ),
     densityPreference: 'dense',
     instructions: [
-      {
-        type: 'line',
-        category: 'large-plants',
+      line('large-plants', {
         count: 4,
         length: 14,
-        jitterRadius: 2.1,
+        jitterRadius: 2.2,
         minSpacing: 5.5,
         seed: 109,
-
-      },
-      {
-        type: 'scatter',
-        category: 'small-plants',
-
+      }),
+      scatter('small-plants', {
         count: 5,
-        radius: 10,
-        jitterRadius: 2.3,
-        minSpacing: 3.5,
+        radius: 12,
+        jitterRadius: 2.5,
+        minSpacing: 3,
         seed: 113,
-      },
-      {
-        type: 'scatter',
-        category: 'fungi',
-        count: 3,
-        radius: 9,
-        jitterRadius: 2,
+      }),
+      scatter('fungi', {
+        count: 2,
+        radius: 7,
+        jitterRadius: 1.9,
         minSpacing: 2.8,
         seed: 127,
-      },
+      }),
     ],
   },
   {
-    id: 'bog-swell',
-    weight: 0.8,
-    themes: {
-      'wet-meadow': 1.2,
-      'wet-wood': 1.1,
-      'river-wetland': 1.3,
-    },
-    wetnessPreference: 'wet',
-
+    id: 'shadowed-knoll',
+    weight: 0.9,
+    themes: weightEntries(
+      ['thick-forest', 1.1],
+      ['deep-forest', 1.3],
+      ['wet-wood', 0.9],
+    ),
+    tags: weightEntries(['dense', 0.4], ['forest-thickening', 0.5]),
+    densityPreference: 'dense',
     instructions: [
-      {
-        type: 'scatter',
-        category: 'fungi',
-
-        count: 4,
+      scatter('large-plants', {
+        count: 3,
         radius: 9,
         jitterRadius: 2.3,
+        minSpacing: 5.5,
+        seed: 133,
+      }),
+      scatter('small-plants', {
+        count: 5,
+        radius: 10,
+        jitterRadius: 2.4,
+        minSpacing: 3.4,
+        seed: 137,
+      }),
+      scatter('fungi', {
+        count: 3,
+        radius: 8,
+        jitterRadius: 2,
+        minSpacing: 2.5,
+        seed: 139,
+      }),
+    ],
+  },
+  {
+    id: 'pillar-holdfast',
+    weight: 0.75,
+    themes: weightEntries(['deep-forest', 1.3], ['wet-wood', 1.1]),
+    tags: weightEntries(['dense', 0.5]),
+    densityPreference: 'dense',
+    instructions: [
+      scatter('large-plants', {
+        count: 5,
+        radius: 11,
+        jitterRadius: 2.3,
+        minSpacing: 5,
+        clump: 2.2,
+        seed: 149,
+      }),
+      scatter('small-plants', {
+        count: 6,
+        radius: 12,
+        jitterRadius: 2.1,
         minSpacing: 3,
-        seed: 131,
-
-      },
-      {
-        type: 'scatter',
-        category: 'small-plants',
-
+        seed: 151,
+      }),
+      scatter('fungi', {
+        count: 4,
+        radius: 9,
+        jitterRadius: 2,
+        minSpacing: 2.3,
+        seed: 157,
+      }),
+    ],
+  },
+  {
+    id: 'root-pillar',
+    weight: 0.8,
+    themes: weightEntries(['deep-forest', 1.4], ['wet-wood', 1]),
+    tags: weightEntries(['dense', 0.6]),
+    densityPreference: 'dense',
+    instructions: [
+      line('large-plants', {
+        count: 4,
+        length: 12,
+        jitterRadius: 2.2,
+        minSpacing: 5,
+        seed: 163,
+      }),
+      scatter('large-plants', {
+        count: 1,
+        radius: 6,
+        jitterRadius: 2.1,
+        minSpacing: 4.5,
+        seed: 167,
+      }),
+      scatter('small-plants', {
+        count: 4,
+        radius: 10,
+        jitterRadius: 2.4,
+        minSpacing: 3,
+        seed: 173,
+      }),
+      scatter('fungi', {
+        count: 3,
+        radius: 8,
+        jitterRadius: 2,
+        minSpacing: 2.4,
+        seed: 179,
+      }),
+    ],
+  },
+  {
+    id: 'glade-radii',
+    weight: 0.9,
+    themes: weightEntries(
+      ['mixed-glade', 1.1],
+      ['thin-woods', 1],
+      ['open-field', 0.7],
+    ),
+    tags: weightEntries(['field-edge', 0.3], ['woodland-approach', 0.3]),
+    densityPreference: 'medium',
+    instructions: [
+      scatter('flowers', {
+        count: 3,
+        radius: 13,
+        jitterRadius: 3,
+        minSpacing: 3,
+        seed: 187,
+      }),
+      scatter('small-plants', {
         count: 4,
         radius: 11,
+        jitterRadius: 2.4,
+        minSpacing: 3.3,
+        seed: 189,
+      }),
+    ],
+  },
+  {
+    id: 'river-braid',
+    weight: 0.9,
+    themes: weightEntries(
+      ['river-meadow', 1.4],
+      ['river-wetland', 1.2],
+      ['wet-meadow', 0.8],
+    ),
+    tags: weightEntries(['near-river', 0.8], ['wet-transition', 0.4]),
+    alignWith: 'river',
+    preferShore: true,
+    densityPreference: 'sparse',
+    instructions: [
+      line('small-plants', {
+        count: 4,
+        length: 18,
         jitterRadius: 2.5,
-        minSpacing: 3,
-        seed: 137,
-      },
-      {
-        type: 'scatter',
-        category: 'flowers',
-        count: 2,
+        minSpacing: 4,
+        seed: 191,
+      }),
+      scatter('flowers', {
+        count: 3,
         radius: 10,
         jitterRadius: 2.8,
         minSpacing: 3,
-        allowUnderwater: true,
-        seed: 139,
-      },
+        seed: 197,
+      }),
     ],
   },
   {
-    id: 'reedy-channel',
-    weight: 0.75,
-    themes: {
-      'river-wetland': 1.4,
-      'river-meadow': 1.2,
-      'wet-meadow': 0.7,
-    },
-    tags: {
-      'wet-transition': 0.6,
-    },
+    id: 'river-point-bar',
+    weight: 0.85,
+    themes: weightEntries(
+      ['river-meadow', 1.3],
+      ['river-wetland', 1.1],
+      ['wet-meadow', 0.9],
+    ),
+    tags: weightEntries(['near-river', 0.7], ['wet-transition', 0.3]),
     alignWith: 'river',
+    preferShore: true,
+    densityPreference: 'medium',
     instructions: [
-      {
-        type: 'line',
-        category: 'water-plants',
+      scatter('large-plants', {
+        count: 2,
+        radius: 9,
+        jitterRadius: 2.4,
+        minSpacing: 5.5,
+        seed: 199,
+      }),
+      scatter('small-plants', {
+        count: 3,
+        radius: 10,
+        jitterRadius: 2.5,
+        minSpacing: 3.2,
+        seed: 203,
+      }),
+      scatter('flowers', {
+        count: 2,
+        radius: 11,
+        jitterRadius: 2.9,
+        minSpacing: 3,
+        seed: 211,
+      }),
+    ],
+  },
+  {
+    id: 'wetland-mirror',
+    weight: 0.9,
+    themes: weightEntries(
+      ['river-wetland', 1.4],
+      ['wet-meadow', 1.2],
+      ['wet-wood', 1],
+    ),
+    tags: weightEntries(['wet-transition', 0.6], ['boggy', 0.6]),
+    allowUnderwater: true,
+    preferShore: true,
+    densityPreference: 'medium',
+    instructions: [
+      line('small-plants', {
         count: 5,
         length: 16,
         jitterRadius: 2.6,
         minSpacing: 3.2,
-        seed: 149,
-        requireUnderwater: true,
-        allowUnderwater: true,
-      },
-      {
-        type: 'scatter',
-        category: 'flowers',
-        count: 2,
-        radius: 9,
-        jitterRadius: 2.4,
-        minSpacing: 3,
-        allowUnderwater: true,
-        seed: 151,
-      },
-    ],
-    preferShore: true,
-  },
-  {
-    id: 'river-perch',
-    weight: 0.7,
-    themes: {
-      'river-meadow': 1.1,
-      'river-wetland': 0.9,
-      'wet-meadow': 0.6,
-    },
-    alignWith: 'river',
-    densityPreference: 'sparse',
-    instructions: [
-      {
-        type: 'scatter',
-        category: 'large-plants',
-        count: 1,
-        radius: 6,
-        jitterRadius: 2,
-        minSpacing: 7,
-        seed: 157,
-      },
-      {
-        type: 'scatter',
-        category: 'water-plants',
-        count: 3,
-        radius: 9,
-        jitterRadius: 2.1,
-        minSpacing: 3,
-        seed: 163,
-        requireUnderwater: true,
-        allowUnderwater: true,
-      },
-    ],
-    preferShore: true,
-  },
-  {
-    id: 'rock-garden',
-    weight: 0.85,
-    themes: {
-      'rocky-field': 1.3,
-      'rocky-woods': 1.1,
-      'mixed-glade': 0.8,
-    },
-    densityPreference: 'medium',
-    wetnessPreference: 'dry',
-    tags: {
-      stony: 0.6,
-    },
-    instructions: [
-      {
-        type: 'scatter',
-        category: 'rocks',
-        count: 5,
-        radius: 13,
-        jitterRadius: 2.5,
-        minSpacing: 4.5,
-        clump: 0.7,
-        seed: 173,
-      },
-      {
-        type: 'scatter',
-        category: 'small-plants',
-        count: 2,
-        radius: 8,
-        jitterRadius: 2.2,
-        minSpacing: 3.5,
-        seed: 179,
-
-      },
-      {
-        type: 'scatter',
-        category: 'flowers',
-
-        count: 2,
-        radius: 10,
-        jitterRadius: 2.4,
-        minSpacing: 3,
-        seed: 181,
-      },
-    ],
-  },
-  {
-    id: 'ridge-line',
-    weight: 0.8,
-    themes: {
-      'rocky-field': 1.2,
-      'rocky-woods': 1.3,
-      'thin-woods': 0.6,
-    },
-    alignWith: 'stone',
-    wetnessPreference: 'dry',
-    instructions: [
-      {
-        type: 'line',
-        category: 'rocks',
-        count: 4,
-        length: 18,
-        jitterRadius: 2.2,
-        minSpacing: 4.5,
-        seed: 191,
-      },
-      {
-        type: 'scatter',
-        category: 'large-plants',
-        count: 2,
-        radius: 8,
-        jitterRadius: 2.1,
-        minSpacing: 5.5,
-        seed: 193,
-      },
-    ],
-  },
-  {
-    id: 'fungal-arc',
-    weight: 0.75,
-    themes: {
-      'wet-wood': 1.2,
-      'deep-forest': 1,
-      'wet-meadow': 0.8,
-    },
-    densityPreference: 'dense',
-    wetnessPreference: 'wet',
-    instructions: [
-      {
-        type: 'line',
-        category: 'fungi',
-        count: 4,
-        length: 12,
-        jitterRadius: 2,
-        minSpacing: 3,
-        seed: 199,
-      },
-      {
-        type: 'scatter',
-        category: 'small-plants',
-        count: 3,
-        radius: 9,
-        jitterRadius: 2,
-        minSpacing: 3,
-        seed: 211,
-      },
-    ],
-  },
-  {
-    id: 'mushroom-ring',
-    weight: 0.7,
-    themes: {
-      'wet-wood': 1.3,
-      'deep-forest': 1.1,
-      'thick-forest': 0.9,
-    },
-    instructions: [
-      {
-        type: 'scatter',
-        category: 'fungi',
-        count: 6,
-        radius: 10,
-        jitterRadius: 2.1,
-        minSpacing: 2.8,
-        clump: 1.6,
         seed: 223,
-
-      },
-      {
-        type: 'scatter',
-        category: 'flowers',
-        count: 2,
-        radius: 9,
-
-        jitterRadius: 2.2,
+      }),
+      scatter('flowers', {
+        count: 3,
+        radius: 12,
+        jitterRadius: 3.3,
         minSpacing: 3,
         seed: 227,
-      },
+      }),
     ],
   },
   {
-    id: 'structure-clearing',
-    weight: 0.45,
-    themes: {
-      'mixed-glade': 1,
-      'thin-woods': 0.8,
-      'open-field': 0.7,
-    },
-    densityPreference: 'sparse',
-
+    id: 'marsh-ribbon',
+    weight: 0.82,
+    themes: weightEntries(
+      ['river-wetland', 1.3],
+      ['wet-meadow', 1.1],
+      ['wet-wood', 1.2],
+    ),
+    tags: weightEntries(['wet-transition', 0.7], ['boggy', 0.7]),
+    allowUnderwater: true,
+    preferShore: true,
+    densityPreference: 'medium',
     instructions: [
-      {
-        type: 'scatter',
-        category: 'structures',
-        count: 1,
-        radius: 4,
-        jitterRadius: 2,
-        minSpacing: 8,
-
-        seed: 233,
-
-      },
-      {
-        type: 'scatter',
-        category: 'rocks',
+      scatter('large-plants', {
         count: 2,
-        radius: 9,
-        jitterRadius: 2.3,
-        minSpacing: 4,
-        seed: 239,
-
-      },
-      {
-        type: 'scatter',
-        category: 'flowers',
+        radius: 8,
+        jitterRadius: 2.2,
+        minSpacing: 4.5,
+        seed: 229,
+      }),
+      scatter('small-plants', {
+        count: 4,
+        radius: 11,
+        jitterRadius: 2.6,
+        minSpacing: 3.2,
+        seed: 233,
+      }),
+      scatter('flowers', {
         count: 2,
         radius: 11,
         jitterRadius: 3,
         minSpacing: 3,
-
         seed: 241,
-      },
+      }),
+    ],
+  },
+  {
+    id: 'bog-lattice',
+    weight: 0.78,
+    themes: weightEntries(
+      ['river-wetland', 1.2],
+      ['wet-wood', 1.3],
+      ['wet-meadow', 1],
+    ),
+    tags: weightEntries(['boggy', 0.8], ['wet-transition', 0.5]),
+    allowUnderwater: true,
+    densityPreference: 'dense',
+    instructions: [
+      scatter('large-plants', {
+        count: 3,
+        radius: 9,
+        jitterRadius: 2.2,
+        minSpacing: 4.8,
+        seed: 251,
+      }),
+      scatter('small-plants', {
+        count: 5,
+        radius: 10,
+        jitterRadius: 2.5,
+        minSpacing: 3,
+        seed: 257,
+      }),
+      scatter('fungi', {
+        count: 3,
+        radius: 8,
+        jitterRadius: 2,
+        minSpacing: 2.6,
+        seed: 263,
+      }),
+    ],
+  },
+  {
+    id: 'reed-stand',
+    weight: 0.85,
+    themes: weightEntries(
+      ['river-wetland', 1.2],
+      ['wet-meadow', 1.1],
+      ['wet-wood', 1],
+    ),
+    tags: weightEntries(['near-river', 0.6], ['wet-transition', 0.6]),
+    allowUnderwater: true,
+    preferShore: true,
+    densityPreference: 'medium',
+    instructions: [
+      line('small-plants', {
+        count: 6,
+        length: 20,
+        jitterRadius: 2.4,
+        minSpacing: 3,
+        seed: 271,
+      }),
+      scatter('flowers', {
+        count: 2,
+        radius: 10,
+        jitterRadius: 2.7,
+        minSpacing: 3,
+        seed: 277,
+      }),
+    ],
+  },
+  {
+    id: 'rocky-uplift',
+    weight: 0.9,
+    themes: weightEntries(
+      ['rocky-field', 1.4],
+      ['rocky-woods', 1.2],
+      ['mixed-glade', 0.7],
+    ),
+    tags: weightEntries(['stony', 0.8], ['sparse', 0.3]),
+    wetnessPreference: 'dry',
+    instructions: [
+      scatter('rocks', {
+        count: 3,
+        radius: 10,
+        jitterRadius: 2.4,
+        minSpacing: 4.8,
+        seed: 281,
+      }),
+      scatter('large-plants', {
+        count: 1,
+        radius: 8,
+        jitterRadius: 2.1,
+        minSpacing: 5,
+        seed: 283,
+      }),
+      scatter('small-plants', {
+        count: 2,
+        radius: 9,
+        jitterRadius: 2.2,
+        minSpacing: 3.6,
+        seed: 289,
+      }),
+    ],
+  },
+  {
+    id: 'boulder-field',
+    weight: 0.8,
+    themes: weightEntries(
+      ['rocky-field', 1.5],
+      ['rocky-woods', 1.3],
+    ),
+    tags: weightEntries(['stony', 1], ['sparse', 0.4]),
+    wetnessPreference: 'dry',
+    densityPreference: 'sparse',
+    instructions: [
+      scatter('rocks', {
+        count: 4,
+        radius: 11,
+        jitterRadius: 2.5,
+        minSpacing: 5,
+        seed: 293,
+      }),
+      scatter('small-plants', {
+        count: 2,
+        radius: 9,
+        jitterRadius: 2.1,
+        minSpacing: 3.5,
+        seed: 307,
+      }),
+    ],
+  },
+  {
+    id: 'scree-run',
+    weight: 0.85,
+    themes: weightEntries(
+      ['rocky-field', 1.3],
+      ['rocky-woods', 1.2],
+      ['thin-woods', 0.6],
+    ),
+    tags: weightEntries(['stony', 0.8], ['forest-thickening', 0.3]),
+    wetnessPreference: 'dry',
+    instructions: [
+      line('rocks', {
+        count: 4,
+        length: 15,
+        jitterRadius: 2.3,
+        minSpacing: 4.5,
+        seed: 311,
+      }),
+      scatter('small-plants', {
+        count: 2,
+        radius: 8,
+        jitterRadius: 2,
+        minSpacing: 3.2,
+        seed: 313,
+      }),
+    ],
+  },
+  {
+    id: 'hill-grove',
+    weight: 0.92,
+    themes: weightEntries(
+      ['rocky-woods', 1.2],
+      ['thin-woods', 1.1],
+      ['thick-forest', 0.7],
+    ),
+    tags: weightEntries(['stony', 0.5], ['woodland-approach', 0.4]),
+    wetnessPreference: 'dry',
+    instructions: [
+      scatter('large-plants', {
+        count: 2,
+        radius: 9,
+        jitterRadius: 2.4,
+        minSpacing: 6,
+        seed: 317,
+      }),
+      scatter('rocks', {
+        count: 2,
+        radius: 10,
+        jitterRadius: 2.3,
+        minSpacing: 4.5,
+        seed: 319,
+      }),
+      scatter('small-plants', {
+        count: 3,
+        radius: 11,
+        jitterRadius: 2.4,
+        minSpacing: 3.5,
+        seed: 323,
+      }),
+    ],
+  },
+  {
+    id: 'glade-convergence',
+    weight: 0.88,
+    themes: weightEntries(
+      ['mixed-glade', 1.2],
+      ['thin-woods', 1],
+      ['open-field', 0.8],
+    ),
+    tags: weightEntries(['field-edge', 0.4], ['woodland-approach', 0.4]),
+    densityPreference: 'medium',
+    instructions: [
+      line('flowers', {
+        count: 4,
+        length: 12,
+        jitterRadius: 2.4,
+        minSpacing: 3,
+        seed: 331,
+      }),
+      scatter('small-plants', {
+        count: 3,
+        radius: 10,
+        jitterRadius: 2.5,
+        minSpacing: 3.2,
+        seed: 337,
+      }),
+      scatter('flowers', {
+        count: 2,
+        radius: 9,
+        jitterRadius: 2.6,
+        minSpacing: 2.8,
+        seed: 347,
+      }),
+    ],
+  },
+  {
+    id: 'thicket-lip',
+    weight: 0.86,
+    themes: weightEntries(
+      ['thin-woods', 1.2],
+      ['thick-forest', 0.9],
+      ['mixed-glade', 0.9],
+    ),
+    tags: weightEntries(['forest-thickening', 0.6], ['woodland-approach', 0.5]),
+    densityPreference: 'medium',
+    instructions: [
+      scatter('large-plants', {
+        count: 2,
+        radius: 8,
+        jitterRadius: 2.5,
+        minSpacing: 6,
+        seed: 353,
+      }),
+      scatter('small-plants', {
+        count: 4,
+        radius: 11,
+        jitterRadius: 2.6,
+        minSpacing: 3.4,
+        seed: 359,
+      }),
+      scatter('fungi', {
+        count: 2,
+        radius: 7,
+        jitterRadius: 2,
+        minSpacing: 2.6,
+        seed: 367,
+      }),
+    ],
+  },
+  {
+    id: 'wet-glade',
+    weight: 0.9,
+    themes: weightEntries(
+      ['wet-wood', 1.2],
+      ['mixed-glade', 1],
+      ['wet-meadow', 1],
+    ),
+    tags: weightEntries(['wet-transition', 0.5], ['boggy', 0.4]),
+    densityPreference: 'medium',
+    instructions: [
+      scatter('large-plants', {
+        count: 2,
+        radius: 9,
+        jitterRadius: 2.3,
+        minSpacing: 5.5,
+        seed: 373,
+      }),
+      scatter('small-plants', {
+        count: 4,
+        radius: 11,
+        jitterRadius: 2.5,
+        minSpacing: 3.2,
+        seed: 379,
+      }),
+      scatter('flowers', {
+        count: 2,
+        radius: 10,
+        jitterRadius: 2.7,
+        minSpacing: 2.8,
+        seed: 383,
+      }),
     ],
   },
 ];
