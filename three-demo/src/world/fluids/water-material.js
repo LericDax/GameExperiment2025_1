@@ -1,10 +1,12 @@
 export function createDreamcastWaterMaterial({ THREE }) {
   const material = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color('#1d90d4'),
-    roughness: 0.14,
+    roughness: 0.12,
     metalness: 0.03,
-    transmission: 0.78,
-    thickness: 1.8,
+    transmission: 0.58,
+    thickness: 1.15,
+    attenuationDistance: 1.85,
+    attenuationColor: new THREE.Color('#3cb7ff'),
     transparent: true,
     opacity: 1,
     reflectivity: 0.72,
@@ -134,6 +136,9 @@ vec3 gBiomeColor;
 vec3 gWaterfallPalette;
 float gSurfaceMix;
 
+vec3 gDreamcastPalette;
+
+
         `,
       )
       .replace(
@@ -144,19 +149,32 @@ float surfaceMix = clamp(vSurfaceType, 0.0, 1.0);
 gSurfaceMix = surfaceMix;
 #endif
 #ifdef USE_TRANSMISSION
+
+float dreamcastHeight = clamp(vWorldPosition.y * 0.038 + 0.54, 0.0, 1.0);
+
 float dreamcastHeight = clamp(vWorldPosition.y * 0.04 + 0.48, 0.0, 1.0);
+
 #else
-float dreamcastHeight = 0.6;
+float dreamcastHeight = 0.62;
 #endif
-vec3 dreamcastPalette = mix(uDeepColor, uShallowColor, dreamcastHeight);
-vec3 waterfallPalette = mix(dreamcastPalette, uWaterfallColor, smoothstep(0.35, 0.95, surfaceMix));
 vec3 biomeColor = diffuseColor.rgb;
+vec3 dreamcastPalette = mix(uDeepColor, uShallowColor, dreamcastHeight);
 
-gBiomeColor = biomeColor;
+vec3 lagoonPalette = mix(biomeColor, dreamcastPalette, 0.65);
+float cataract = smoothstep(0.2, 0.92, surfaceMix);
+vec3 waterfallPalette = mix(lagoonPalette, uWaterfallColor, cataract);
+float foamHaze = smoothstep(0.15, 0.85, vEdgeFoam + vFlowStrength * 0.5);
+vec3 hazePalette = mix(lagoonPalette, waterfallPalette, foamHaze * 0.45);
+vec3 fresnelBase = mix(vec3(1.0), hazePalette, 0.35);
+
+gBiomeColor = lagoonPalette;
 gWaterfallPalette = waterfallPalette;
+gDreamcastPalette = dreamcastPalette;
 
-vec3 paletteInfluence = mix(vec3(1.0), waterfallPalette, 0.85);
-diffuseColor.rgb *= paletteInfluence;
+diffuseColor.rgb = mix(lagoonPalette, waterfallPalette, cataract * 0.35);
+diffuseColor.rgb = mix(diffuseColor.rgb, hazePalette, 0.55);
+diffuseColor.rgb *= fresnelBase;
+
         `,
       )
       .replace(
@@ -173,25 +191,37 @@ vec3 flowNormal = normalize(vec3(vFlowDirection, 0.25));
 vec3 dreamcastAzimuth = normalize(vec3(dreamcastLight.x, dreamcastLight.z, dreamcastLight.y));
 float ribbonHighlight = max(dot(flowNormal, dreamcastAzimuth), 0.0) * vFlowStrength;
 outgoingLight += waterfallPalette * ribbonHighlight * 0.18;
+vec3 viewDir = normalize(-vViewPosition);
+float fresnel = pow(1.0 - clamp(dot(normalize(normal), viewDir), 0.0, 1.0), 2.6);
+vec3 rimShimmer = mix(lagoonPalette, waterfallPalette, cataract);
+outgoingLight += rimShimmer * fresnel * 0.65;
+vec3 basinIrradiance = mix(lagoonPalette, gDreamcastPalette, 0.45);
+outgoingLight = mix(outgoingLight, basinIrradiance, 0.38);
 float opacityMix = mix(uOpacity, uWaterfallOpacity, smoothstep(0.35, 0.95, surfaceMix));
 float translucency = clamp(1.0 - opacityMix, 0.0, 1.0);
-vec3 transmittedBiome = mix(biomeColor, waterfallPalette, 0.55);
-outgoingLight += transmittedBiome * translucency * 0.4;
-diffuseColor.a = opacityMix;
+
+vec3 transmittedBiome = mix(lagoonPalette, waterfallPalette, 0.55);
+outgoingLight += transmittedBiome * translucency * 0.36;
+diffuseColor.a = mix(opacityMix, 0.94, fresnel * 0.3);
+
         `,
       );
 
     shader.fragmentShader = shader.fragmentShader.replace(
       'totalDiffuse = mix( totalDiffuse, transmitted.rgb, material.transmission );',
-      `vec3 transmissionBiome = mix(transmitted.rgb, gBiomeColor, 0.7);
+
+      `vec3 transmissionBiome = mix(transmitted.rgb, gBiomeColor, 0.85);
 float waterfallInfluence = smoothstep(0.35, 0.95, gSurfaceMix);
-vec3 tintedTransmission = mix(transmissionBiome, gWaterfallPalette, waterfallInfluence * 0.85);
+vec3 tintedTransmission = mix(transmissionBiome, gWaterfallPalette, waterfallInfluence * 0.9);
+vec3 absorption = mix(gDreamcastPalette, gBiomeColor, 0.35);
 totalDiffuse = mix(totalDiffuse, tintedTransmission, material.transmission);
+totalDiffuse += absorption * (1.0 - material.transmission) * 0.45;
+
 `,
     );
   };
 
-  material.customProgramCacheKey = () => 'DreamcastWaterMaterial_v2';
+  material.customProgramCacheKey = () => 'DreamcastWaterMaterial_v3';
 
 
 
