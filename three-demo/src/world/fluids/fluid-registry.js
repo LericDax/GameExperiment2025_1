@@ -1,0 +1,166 @@
+import { createDreamcastWaterMaterial } from './water-material.js';
+
+let THREERef = null;
+
+const fluidDefinitions = new Map();
+const fluidRuntime = new Map();
+
+export function initializeFluidRegistry({ THREE }) {
+  if (!THREE) {
+    throw new Error('initializeFluidRegistry requires a THREE instance');
+  }
+  THREERef = THREE;
+  fluidDefinitions.clear();
+  fluidRuntime.clear();
+
+  registerFluidType('water', {
+    label: 'Water',
+    createMaterial: (context) => createDreamcastWaterMaterial(context),
+    presenceResolver: ({
+      x,
+      z,
+      sampleColumnHeight,
+      worldConfig,
+    }) => {
+      const groundHeight = sampleColumnHeight(x, z);
+      if (groundHeight < worldConfig.waterLevel) {
+        const surfaceY = worldConfig.waterLevel + 0.5;
+        return {
+          hasFluid: true,
+          surfaceY,
+          bottomY: groundHeight + 0.5,
+        };
+      }
+      const surfaceY = groundHeight + 0.5;
+      return {
+        hasFluid: false,
+        surfaceY,
+        bottomY: surfaceY,
+      };
+    },
+  });
+}
+
+export function registerFluidType(id, definition) {
+  if (!THREERef) {
+    throw new Error(
+      'Fluid registry must be initialized with initializeFluidRegistry before registering fluids',
+    );
+  }
+  if (!id) {
+    throw new Error('registerFluidType requires a string identifier');
+  }
+  const normalized = {
+    label: definition?.label ?? id,
+    createMaterial: definition?.createMaterial,
+    presenceResolver: definition?.presenceResolver ?? null,
+    waveProfile: definition?.waveProfile ?? null,
+  };
+  fluidDefinitions.set(id, normalized);
+  fluidRuntime.delete(id);
+}
+
+export function isFluidType(id) {
+  return fluidDefinitions.has(id);
+}
+
+export function getFluidDefinition(id) {
+  return fluidDefinitions.get(id) ?? null;
+}
+
+function ensureRuntime(id) {
+  if (!THREERef) {
+    throw new Error('Fluid registry not initialized. Call initializeFluidRegistry first.');
+  }
+  if (!fluidDefinitions.has(id)) {
+    throw new Error(`Unknown fluid type: ${id}`);
+  }
+  let runtime = fluidRuntime.get(id);
+  if (runtime) {
+    return runtime;
+  }
+  const definition = fluidDefinitions.get(id);
+  const materialFactory = definition.createMaterial;
+  if (typeof materialFactory !== 'function') {
+    throw new Error(`Fluid type "${id}" is missing a createMaterial() factory.`);
+  }
+  const { material, update } = materialFactory({ THREE: THREERef, definition });
+  material.depthWrite = false;
+  material.transparent = true;
+  runtime = {
+    definition,
+    material,
+    update: typeof update === 'function' ? update : null,
+    surfaces: new Set(),
+  };
+  fluidRuntime.set(id, runtime);
+  return runtime;
+}
+
+export function createFluidSurface({ type, geometry }) {
+  const runtime = ensureRuntime(type);
+  const mesh = new THREERef.Mesh(geometry, runtime.material);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  mesh.userData.fluidType = type;
+  runtime.surfaces.add(mesh);
+  return mesh;
+}
+
+export function disposeFluidSurface(mesh) {
+  if (!mesh) {
+    return;
+  }
+  const type = mesh.userData?.fluidType;
+  if (!type) {
+    return;
+  }
+  const runtime = fluidRuntime.get(type);
+  if (!runtime) {
+    return;
+  }
+  runtime.surfaces.delete(mesh);
+}
+
+export function updateFluids(delta) {
+  if (!delta || delta <= 0) {
+    return;
+  }
+  fluidRuntime.forEach((runtime) => {
+    if (typeof runtime.update === 'function') {
+      runtime.update(delta, runtime.surfaces);
+    }
+  });
+}
+
+export function getFluidMaterial(type) {
+  const runtime = ensureRuntime(type);
+  return runtime.material;
+}
+
+export function resolveFluidPresence({ type, x, z, sampleColumnHeight, worldConfig }) {
+  const definition = fluidDefinitions.get(type);
+  if (!definition) {
+    const fallbackSurface = sampleColumnHeight(x, z) + 0.5;
+    return {
+      hasFluid: false,
+      surfaceY: fallbackSurface,
+      bottomY: fallbackSurface,
+    };
+  }
+  if (typeof definition.presenceResolver === 'function') {
+    return definition.presenceResolver({
+      x,
+      z,
+      sampleColumnHeight,
+      worldConfig,
+    });
+  }
+  const groundHeight = sampleColumnHeight(x, z);
+  const surfaceY = groundHeight + 0.5;
+  return {
+    hasFluid: false,
+    surfaceY,
+    bottomY: surfaceY,
+  };
+}
