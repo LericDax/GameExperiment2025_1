@@ -456,6 +456,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       if (!column.color) {
         column.color = new THREE.Color('#3a79c5');
       }
+      column.depth = Math.max(0.05, column.surfaceY - column.bottomY);
     });
 
     columns.forEach((column) => {
@@ -512,6 +513,16 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       column.flowDirection = flowVector;
       column.flowStrength = flowStrength;
       column.foamAmount = Math.min(1, foamExposure * 0.18 + flowStrength * 0.4);
+      const dropMax = Math.max(dropPx, dropNx, dropPz, dropNz);
+      const neighborFluidCount = neighborOffsets.reduce((acc, offset) => {
+        return acc + (neighbors[offset.key]?.hasFluid ? 1 : 0);
+      }, 0);
+      const shoreline = Math.min(
+        1,
+        dropMax * 0.75 + (1 - neighborFluidCount / neighborOffsets.length) * 0.45 +
+          (column.foamAmount ?? 0) * 0.5,
+      );
+      column.shoreline = shoreline;
     });
 
     const geometry = buildFluidGeometry({
