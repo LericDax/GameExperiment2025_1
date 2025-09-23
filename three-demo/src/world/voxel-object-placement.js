@@ -7,6 +7,9 @@ import {
   getSectorPlacementsForColumn,
   markPlacementCompleted,
 } from './sector-object-planner.js';
+import { ValueNoise2D } from './noise.js';
+
+const objectDensityField = new ValueNoise2D(9103);
 
 function ensureRandomSource(randomSource) {
   if (typeof randomSource === 'function') {
@@ -112,6 +115,12 @@ export function populateColumnWithVoxelObjects({
   const terrain = biome.terrain ?? {};
 
   const climate = columnSample?.climate ?? biome?.climate ?? {};
+  const columnBaseOffset = {
+    x: (random(7) - 0.5) * 0.8,
+    z: (random(8) - 0.5) * 0.8,
+  };
+  const densityNoise = objectDensityField.noise(worldX * 0.11, worldZ * 0.11);
+  const densityScale = 0.28 + densityNoise * 0.32;
 
   const canPlaceObject = (object) => {
     if (!object) {
@@ -262,12 +271,12 @@ export function populateColumnWithVoxelObjects({
         : placement.jitterRadius !== null && placement.jitterRadius !== undefined
         ? placement.jitterRadius
         : object.voxelScale < 1
-        ? 0.35
+        ? 0.85
         : 0;
     const baseX =
-      typeof options.baseX === 'number' ? options.baseX : worldX;
+      typeof options.baseX === 'number' ? options.baseX : worldX + columnBaseOffset.x;
     const baseZ =
-      typeof options.baseZ === 'number' ? options.baseZ : worldZ;
+      typeof options.baseZ === 'number' ? options.baseZ : worldZ + columnBaseOffset.z;
     const angleSeedOffset = options.angleSeed ?? 120 + seedOffset * 13;
     const radiusSeedOffset = options.radiusSeed ?? 220 + seedOffset * 17;
     for (let i = 0; i < instances; i++) {
@@ -316,7 +325,6 @@ export function populateColumnWithVoxelObjects({
     return placeObject(object, randomOffset);
   };
 
-  const densityScale = 0.45;
   const treeDensity = Math.max(0, terrain.treeDensity ?? 0) * densityScale;
   if (treeDensity > 0 && !isUnderwater) {
     const roll = random(31);
