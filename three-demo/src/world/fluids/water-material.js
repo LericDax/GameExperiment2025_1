@@ -1,6 +1,7 @@
 export function createDreamcastWaterMaterial({ THREE }) {
   const material = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color('#1d90d4'),
+
     roughness: 0.14,
     metalness: 0.03,
     transmission: 0.78,
@@ -10,12 +11,15 @@ export function createDreamcastWaterMaterial({ THREE }) {
     reflectivity: 0.72,
     clearcoat: 0.52,
     clearcoatRoughness: 0.1,
+
     ior: 1.33,
     vertexColors: true,
   });
 
+
   material.side = THREE.DoubleSide;
   material.envMapIntensity = 0.65;
+
 
   const uniforms = {
     uTime: { value: 0 },
@@ -25,13 +29,17 @@ export function createDreamcastWaterMaterial({ THREE }) {
     uRippleScale: { value: 1.4 },
     uFlowSpeed: { value: 1.35 },
     uWaterfallTumble: { value: 0.12 },
+
     uOpacity: { value: 0.75 },
     uWaterfallOpacity: { value: 0.6 },
+
     uShallowColor: { value: new THREE.Color('#4fdfff') },
     uDeepColor: { value: new THREE.Color('#0b2a6f') },
     uFoamColor: { value: new THREE.Color('#ffffff') },
     uWaterfallColor: { value: new THREE.Color('#3cb7ff') },
+
     uSpecularBoost: { value: 0.22 },
+
   };
 
   material.onBeforeCompile = (shader) => {
@@ -71,6 +79,9 @@ varying float vSurfaceType;
 varying vec2 vFlowDirection;
 varying float vFlowStrength;
 varying float vEdgeFoam;
+
+varying vec3 vWorldPosition;
+
         `,
       )
       .replace(
@@ -83,11 +94,13 @@ float crossWave = sin((position.x * 0.8 - position.z * 1.3) * (uWaveFrequency * 
 float swirlWave = sin((position.x * 0.35 + position.z * 0.65) * uRippleScale + uTime * 0.6);
 float directional = dot(flowDirection, vec2(position.x, position.z)) * flowStrength;
 float crest = max(0.0, directional * 0.6);
+
 float secondary = sin((position.x * 1.6 + position.z * 0.8) * (uWaveFrequency * 0.45) + uTime * 1.6);
 float displacementPrimary =
   (baseWave + crossWave * 0.6 + swirlWave * 0.35 + crest) * uWaveAmplitude * elevationMask;
 float displacementSecondary = secondary * uSecondaryWaveAmplitude * elevationMask;
 transformed.y += displacementPrimary + displacementSecondary;
+
 transformed.xz += flowDirection * flowStrength * 0.08 * elevationMask * sin(uTime * 0.9 + position.y * 0.6);
 if (surfaceMask > 0.5) {
   float tumble = sin(uTime * uFlowSpeed + position.y * 2.3) * uWaterfallTumble;
@@ -99,10 +112,12 @@ vSurfaceType = surfaceMask;
 vFlowDirection = flowDirection;
 vFlowStrength = flowStrength;
 vEdgeFoam = edgeFoam;
+
 #ifdef USE_TRANSMISSION
 vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
 vWorldPosition = worldPos.xyz;
 #endif
+
         `,
       );
 
@@ -122,6 +137,7 @@ varying float vSurfaceType;
 varying vec2 vFlowDirection;
 varying float vFlowStrength;
 varying float vEdgeFoam;
+
         `,
       )
       .replace(
@@ -159,6 +175,7 @@ diffuseColor.a = opacityMix;
   };
 
   material.customProgramCacheKey = () => 'DreamcastWaterMaterial_v2';
+
 
   const update = (delta) => {
     uniforms.uTime.value += delta;
