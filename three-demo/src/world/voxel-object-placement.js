@@ -184,8 +184,12 @@ export function populateColumnWithVoxelObjects({
     return true;
   };
 
+  let plannedStructurePlacements = 0;
   const applySectorPlacements = () => {
     const { placements } = getSectorPlacementsForColumn(worldX, worldZ);
+    plannedStructurePlacements = placements.reduce((count, placement) => {
+      return placement.category === 'structures' ? count + 1 : count;
+    }, 0);
     placements.forEach((placement) => {
       if (placement.completed) {
         return;
@@ -363,8 +367,12 @@ export function populateColumnWithVoxelObjects({
 
   const structureChanceRaw = Math.max(0, terrain.structureChance ?? 0);
   const structureChance = Math.min(1, structureChanceRaw) * densityScale;
-  attemptCategory('structures', structureChance, 151, {
-    allowUnderwater: true,
-  });
+  const adjustedStructureChance =
+    plannedStructurePlacements > 0 ? structureChance * 0.1 : structureChance;
+  if (adjustedStructureChance > 0) {
+    attemptCategory('structures', adjustedStructureChance, 151, {
+      allowUnderwater: true,
+    });
+  }
 }
 
