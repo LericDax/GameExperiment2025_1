@@ -1,5 +1,11 @@
 import { createTerrainEngine } from './terrain-engine.js';
 import { populateColumnWithVoxelObjects } from './voxel-object-placement.js';
+import {
+  createFluidSurface,
+  isFluidType,
+  resolveFluidPresence,
+} from './fluids/fluid-registry.js';
+import { buildFluidGeometry } from './fluids/fluid-geometry.js';
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -104,6 +110,8 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const solidBlockKeys = new Set();
   const softBlockKeys = new Set();
   const waterColumnKeys = new Set();
+  const fluidColumnsByType = new Map();
+  const fluidSurfaces = [];
   const matrix = new THREE.Matrix4();
   const defaultQuaternion = new THREE.Quaternion();
   const reusablePosition = new THREE.Vector3();
@@ -272,9 +280,10 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     const tintColor = paletteBlend;
 
     const isWater = type === 'water';
+    const isFluid = isFluidType(type);
     let collisionMode = options.collisionMode;
     if (!collisionMode) {
-      if (isWater) {
+      if (isFluid) {
         collisionMode = 'liquid';
       } else if (typeof options.isSolid === 'boolean') {
         collisionMode = options.isSolid ? 'solid' : 'none';
@@ -290,7 +299,42 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     const destructible =
       typeof options.destructible === 'boolean'
         ? options.destructible
-        : type !== 'water' && type !== 'cloud';
+        : !isFluid && type !== 'cloud';
+
+    if (isFluid) {
+      if (!fluidColumnsByType.has(type)) {
+        fluidColumnsByType.set(type, new Map());
+      }
+      const columns = fluidColumnsByType.get(type);
+      const columnKey = `${x}|${z}`;
+      const blockTop = y + 0.5;
+      const blockBottom = y - 0.5;
+      let column = columns.get(columnKey);
+      if (!column) {
+        column = {
+          key: columnKey,
+          x,
+          z,
+          minY: blockBottom,
+          maxY: blockTop,
+          color: new THREE.Color(
+            biome?.palette?.water ?? biome?.palette?.cloud ?? '#3a79c5',
+          ),
+          biome,
+        };
+        columns.set(columnKey, column);
+      } else {
+        column.minY = Math.min(column.minY, blockBottom);
+        column.maxY = Math.max(column.maxY, blockTop);
+        if (biome?.palette?.water) {
+          column.color = new THREE.Color(biome.palette.water);
+        }
+      }
+      if (isWater) {
+        waterColumnKeys.add(columnKey);
+      }
+      return;
+    }
     const entry = {
       key,
       coordinateKey,
@@ -322,9 +366,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     if (isSoft) {
       softBlockKeys.add(coordinateKey);
 
-    }
-    if (isWater) {
-      waterColumnKeys.add(`${x}|${z}`);
     }
   };
 
@@ -390,6 +431,94 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
   }
 
+  const neighborOffsets = [
+    { key: 'px', dx: 1, dz: 0 },
+    { key: 'nx', dx: -1, dz: 0 },
+    { key: 'pz', dx: 0, dz: 1 },
+    { key: 'nz', dx: 0, dz: -1 },
+  ];
+
+  fluidColumnsByType.forEach((columns, type) => {
+    if (!columns || columns.size === 0) {
+      return;
+    }
+
+    columns.forEach((column) => {
+      column.surfaceY = column.maxY;
+      column.bottomY = column.minY;
+      if (!column.color) {
+        column.color = new THREE.Color('#3a79c5');
+      }
+    });
+
+    columns.forEach((column) => {
+      const neighbors = {};
+      let foamExposure = 0;
+      const centerSurface = column.surfaceY;
+
+      neighborOffsets.forEach((offset) => {
+        const nx = column.x + offset.dx;
+        const nz = column.z + offset.dz;
+        const neighborKey = `${nx}|${nz}`;
+        const neighborColumn = columns.get(neighborKey);
+        let neighborInfo;
+        if (neighborColumn) {
+          neighborInfo = {
+            hasFluid: true,
+            surfaceY: neighborColumn.surfaceY,
+            bottomY: neighborColumn.bottomY,
+            foamHint: Math.max(0, centerSurface - neighborColumn.surfaceY),
+          };
+        } else {
+          const presence = resolveFluidPresence({
+            type,
+            x: nx,
+            z: nz,
+            sampleColumnHeight: getColumnHeight,
+            worldConfig,
+          });
+          neighborInfo = {
+            hasFluid: Boolean(presence?.hasFluid),
+            surfaceY: presence?.surfaceY ?? centerSurface,
+            bottomY: presence?.bottomY ?? column.bottomY,
+            foamHint: Math.max(0, centerSurface - (presence?.surfaceY ?? centerSurface)),
+          };
+        }
+        neighbors[offset.key] = neighborInfo;
+        foamExposure = Math.max(foamExposure, neighborInfo.foamHint ?? 0);
+      });
+
+      const dropPx = Math.max(0, centerSurface - (neighbors.px?.surfaceY ?? centerSurface));
+      const dropNx = Math.max(0, centerSurface - (neighbors.nx?.surfaceY ?? centerSurface));
+      const dropPz = Math.max(0, centerSurface - (neighbors.pz?.surfaceY ?? centerSurface));
+      const dropNz = Math.max(0, centerSurface - (neighbors.nz?.surfaceY ?? centerSurface));
+
+      const flowVector = new THREE.Vector2(dropPx - dropNx, dropPz - dropNz);
+      const flowStrength = Math.min(1, flowVector.length() * 0.6);
+      if (flowStrength > 0.001) {
+        flowVector.normalize();
+      } else {
+        flowVector.set(0, 0);
+      }
+
+      column.neighbors = neighbors;
+      column.flowDirection = flowVector;
+      column.flowStrength = flowStrength;
+      column.foamAmount = Math.min(1, foamExposure * 0.18 + flowStrength * 0.4);
+    });
+
+    const geometry = buildFluidGeometry({
+      THREE,
+      columns: Array.from(columns.values()),
+    });
+    if (!geometry.getAttribute('position') || geometry.getAttribute('position').count === 0) {
+      return;
+    }
+    const surface = createFluidSurface({ type, geometry });
+    surface.userData.type = `fluid:${type}`;
+    fluidSurfaces.push(surface);
+  });
+
   const cloudAttempts = 2 + Math.floor(randomAt(chunkX, chunkZ, 12) * 3);
   for (let i = 0; i < cloudAttempts; i++) {
     const offsetX = Math.floor(randomAt(chunkX, chunkZ, 20 + i) * chunkSize);
@@ -402,6 +531,9 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
   const group = new THREE.Group();
   instancedData.forEach((entries, type) => {
+    if (isFluidType(type)) {
+      return;
+    }
     if (entries.length === 0) {
       return;
     }
@@ -440,6 +572,10 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     group.add(mesh);
   });
 
+  fluidSurfaces.forEach((surface) => {
+    group.add(surface);
+  });
+
   group.name = `chunk_${chunkX}_${chunkZ}`;
   const totalSamples = chunkSize * chunkSize;
   const biomes = Array.from(biomePresence.values()).map(({ biome, samples }) => ({
@@ -462,6 +598,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     solidBlockKeys,
     softBlockKeys,
     waterColumnKeys,
+    fluidSurfaces,
     blockLookup,
     typeData,
     biomes,
