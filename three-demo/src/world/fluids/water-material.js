@@ -130,12 +130,19 @@ varying vec2 vFlowDirection;
 varying float vFlowStrength;
 varying float vEdgeFoam;
 
+vec3 gBiomeColor;
+vec3 gWaterfallPalette;
+float gSurfaceMix;
+
         `,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
 float surfaceMix = clamp(vSurfaceType, 0.0, 1.0);
+#ifdef USE_TRANSMISSION
+gSurfaceMix = surfaceMix;
+#endif
 #ifdef USE_TRANSMISSION
 float dreamcastHeight = clamp(vWorldPosition.y * 0.04 + 0.48, 0.0, 1.0);
 #else
@@ -144,6 +151,10 @@ float dreamcastHeight = 0.6;
 vec3 dreamcastPalette = mix(uDeepColor, uShallowColor, dreamcastHeight);
 vec3 waterfallPalette = mix(dreamcastPalette, uWaterfallColor, smoothstep(0.35, 0.95, surfaceMix));
 vec3 biomeColor = diffuseColor.rgb;
+
+gBiomeColor = biomeColor;
+gWaterfallPalette = waterfallPalette;
+
 vec3 paletteInfluence = mix(vec3(1.0), waterfallPalette, 0.85);
 diffuseColor.rgb *= paletteInfluence;
         `,
@@ -169,6 +180,15 @@ outgoingLight += transmittedBiome * translucency * 0.4;
 diffuseColor.a = opacityMix;
         `,
       );
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      'totalDiffuse = mix( totalDiffuse, transmitted.rgb, material.transmission );',
+      `vec3 transmissionBiome = mix(transmitted.rgb, gBiomeColor, 0.7);
+float waterfallInfluence = smoothstep(0.35, 0.95, gSurfaceMix);
+vec3 tintedTransmission = mix(transmissionBiome, gWaterfallPalette, waterfallInfluence * 0.85);
+totalDiffuse = mix(totalDiffuse, tintedTransmission, material.transmission);
+`,
+    );
   };
 
   material.customProgramCacheKey = () => 'DreamcastWaterMaterial_v2';
