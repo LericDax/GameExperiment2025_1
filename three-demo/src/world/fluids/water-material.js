@@ -119,6 +119,7 @@ vDisplacedNormal = normalMatrix * bentNormal;
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
+vec3 transformed = vec3(position);
 float surfaceMask = clamp(surfaceType, 0.0, 1.0);
 float depthFactor = clamp(depth / max(uFadeDepth, 0.0001), 0.1, 1.6);
 float wave = sampleHydraWave(position.xz, flowDirection, flowStrength);
