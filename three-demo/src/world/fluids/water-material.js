@@ -1,5 +1,6 @@
 export function createDreamcastWaterMaterial({ THREE }) {
 
+
   const material = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color('#1d90d4'),
 
@@ -23,6 +24,7 @@ export function createDreamcastWaterMaterial({ THREE }) {
 
 
 
+
   const uniforms = {
     uTime: { value: 0 },
     uWaveAmplitude: { value: 0.12 },
@@ -43,7 +45,8 @@ export function createDreamcastWaterMaterial({ THREE }) {
     uSpecularBoost: { value: 0.28 },
   };
 
-  const vertexShader = /* glsl */ `
+  const vertexShader = /* glsl */ String.raw`
+
     #include <common>
     #include <fog_pars_vertex>
 
@@ -113,7 +116,9 @@ export function createDreamcastWaterMaterial({ THREE }) {
     }
   `;
 
-  const fragmentShader = /* glsl */ `
+
+  const fragmentShader = /* glsl */ String.raw`
+
     #include <common>
     #include <fog_pars_fragment>
 
@@ -184,7 +189,7 @@ export function createDreamcastWaterMaterial({ THREE }) {
     side: THREE.DoubleSide,
     fog: true,
   });
-=======
+
 
     uSpecularBoost: { value: 0.22 },
 
