@@ -15,6 +15,7 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
   const solidBlocks = new Set();
   const softBlocks = new Set();
   const waterColumns = new Set();
+  const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   let lastCenterKey = null;
 
   function ensureChunk(chunkX, chunkZ) {
@@ -93,6 +94,74 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
   function dispose() {
     Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
   }
+
+  function computeMaterialVisibility(material) {
+    if (!material) {
+      return true;
+    }
+    if (Array.isArray(material)) {
+      return material.some((entry) => entry?.visible !== false);
+    }
+    return material.visible !== false;
+  }
+
+  const debugSnapshot = !isDevBuild
+    ? undefined
+    : () => {
+        const chunks = [];
+        let totalBlocks = 0;
+
+        loadedChunks.forEach((chunk, key) => {
+          const blocks = [];
+
+          if (chunk?.typeData) {
+            chunk.typeData.forEach((typeData, type) => {
+              if (!typeData) {
+                return;
+              }
+              const { mesh, entries } = typeData;
+              const meshVisible = mesh?.visible !== false;
+              const materialVisible = computeMaterialVisibility(mesh?.material);
+
+              entries.forEach((entry) => {
+                if (!entry?.position) {
+                  return;
+                }
+                blocks.push({
+                  key: entry.key,
+                  type,
+                  position: {
+                    x: entry.position.x,
+                    y: entry.position.y,
+                    z: entry.position.z,
+                  },
+                  isSolid: Boolean(entry.isSolid),
+                  isWater: Boolean(entry.isWater),
+                  collisionMode: entry.collisionMode ?? null,
+                  meshVisible,
+                  materialVisible,
+                });
+              });
+            });
+          }
+
+          totalBlocks += blocks.length;
+          chunks.push({
+            key,
+            chunkX: chunk.chunkX,
+            chunkZ: chunk.chunkZ,
+            blockCount: blocks.length,
+            blocks,
+          });
+        });
+
+        return {
+          generatedAt: Date.now(),
+          chunkCount: chunks.length,
+          totalBlocks,
+          chunks,
+        };
+      };
 
   function getChunkForMesh(mesh) {
     if (!mesh?.isInstancedMesh) {
@@ -228,6 +297,7 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     waterColumns,
     getBlockFromIntersection,
     removeBlockInstance,
+    ...(debugSnapshot ? { debugSnapshot } : {}),
   };
 }
 

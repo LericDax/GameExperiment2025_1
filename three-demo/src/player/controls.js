@@ -86,6 +86,9 @@ export function createPlayerControls({
   const movementStep = new THREE.Vector3();
   const attemptPosition = new THREE.Vector3();
   const axisAttempt = new THREE.Vector3();
+  const manualPosition = new THREE.Vector3();
+  const previousPosition = new THREE.Vector3();
+  const yawPitchEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
   let jumpRequested = false;
   let verticalVelocity = 0;
@@ -706,6 +709,78 @@ export function createPlayerControls({
     return false;
   }
 
+  function copyVectorLike(source, target) {
+    if (!source || !target) {
+      throw new Error('copyVectorLike requires valid source and target objects.');
+    }
+    if (typeof source.x === 'number' && typeof source.y === 'number' && typeof source.z === 'number') {
+      target.set(source.x, source.y, source.z);
+      return;
+    }
+    if (typeof source.isVector3 === 'boolean' && source.isVector3) {
+      target.copy(source);
+      return;
+    }
+    throw new Error('Position must provide numeric x, y, z properties.');
+  }
+
+  function setPosition(nextPosition) {
+    copyVectorLike(nextPosition, manualPosition);
+    if (
+      !Number.isFinite(manualPosition.x) ||
+      !Number.isFinite(manualPosition.y) ||
+      !Number.isFinite(manualPosition.z)
+    ) {
+      throw new Error('Position components must be finite numbers.');
+    }
+
+    previousPosition.copy(controlObject.position);
+    controlObject.position.copy(manualPosition);
+
+    if (!collidesAt(controlObject.position)) {
+      return true;
+    }
+
+    const resolved = attemptCollisionRescue('teleport');
+    if (!resolved) {
+      controlObject.position.copy(previousPosition);
+    }
+    return resolved;
+  }
+
+  function getYawPitch() {
+    yawPitchEuler.setFromQuaternion(controlObject.quaternion, 'YXZ');
+    return {
+      yaw: yawPitchEuler.y,
+      pitch: yawPitchEuler.x,
+    };
+  }
+
+  function resolveYawPitchArgs(yaw, pitch) {
+    if (typeof yaw === 'object' && yaw !== null) {
+      return { yaw: yaw.yaw, pitch: yaw.pitch };
+    }
+    return { yaw, pitch };
+  }
+
+  function setYawPitch(yaw, pitch) {
+    const resolved = resolveYawPitchArgs(yaw, pitch);
+    if (!Number.isFinite(resolved.yaw) || !Number.isFinite(resolved.pitch)) {
+      throw new Error('Yaw and pitch must be finite numbers.');
+    }
+
+    const halfPi = Math.PI / 2;
+    const minPitch = halfPi - (typeof controls.maxPolarAngle === 'number' ? controls.maxPolarAngle : Math.PI);
+    const maxPitch = halfPi - (typeof controls.minPolarAngle === 'number' ? controls.minPolarAngle : 0);
+    const clampedPitch = THREE.MathUtils.clamp(resolved.pitch, minPitch, maxPitch);
+
+    yawPitchEuler.set(clampedPitch, resolved.yaw, 0, 'YXZ');
+    controlObject.quaternion.setFromEuler(yawPitchEuler);
+    controlObject.rotation.setFromQuaternion(controlObject.quaternion, controlObject.rotation.order);
+    controls.dispatchEvent({ type: 'change' });
+    return getYawPitch();
+  }
+
   function isInSoftMedium(position) {
     if (!softBlocks || softBlocks.size === 0) {
       return false;
@@ -1244,7 +1319,10 @@ export function createPlayerControls({
     update,
     dispose,
     getPosition,
+    setPosition,
     getState,
+    getYawPitch,
+    setYawPitch,
     setInputEnabled,
     setGodModeEnabled,
     isGodModeEnabled,
