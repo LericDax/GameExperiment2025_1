@@ -14,6 +14,7 @@ function pseudoRandom(sectorX, sectorZ, offset = 0) {
   return value - Math.floor(value);
 }
 
+
 function smoothRandom(x, z, scale, offset = 0) {
   const scaledX = x * scale;
   const scaledZ = z * scale;
@@ -346,6 +347,7 @@ function linePoints({
   return points;
 }
 
+
 const weightEntries = (...pairs) => Object.fromEntries(pairs);
 
 const scatter = (category, config) => ({
@@ -372,11 +374,13 @@ const schemaLibrary = [
     densityPreference: 'sparse',
     instructions: [
       scatter('small-plants', {
+
         count: 2,
         radius: 11,
         jitterRadius: 2.6,
         minSpacing: 3.5,
         seed: 13,
+
       }),
       scatter('flowers', {
         count: 4,
@@ -385,10 +389,12 @@ const schemaLibrary = [
         minSpacing: 3,
         seed: 19,
       }),
+
     ],
   },
   {
     id: 'prairie-band',
+
     weight: 0.95,
     themes: weightEntries(
       ['open-field', 1.2],
@@ -471,11 +477,13 @@ const schemaLibrary = [
         minSpacing: 3.5,
         seed: 47,
       }),
+
     ],
   },
   {
     id: 'sentinel-clearing',
     weight: 1.1,
+
     themes: weightEntries(
       ['thin-woods', 1.1],
       ['mixed-glade', 1],
@@ -485,16 +493,20 @@ const schemaLibrary = [
     instructions: [
       scatter('large-plants', {
         count: 1,
+
         radius: 6,
         jitterRadius: 2.4,
         minSpacing: 7,
         seed: 53,
+
       }),
       scatter('rocks', {
+
         count: 2,
         radius: 9,
         jitterRadius: 2.2,
         minSpacing: 5,
+
         seed: 59,
       }),
       scatter('small-plants', {
@@ -504,11 +516,13 @@ const schemaLibrary = [
         minSpacing: 3.8,
         seed: 61,
       }),
+
     ],
   },
   {
     id: 'triad-grove',
     weight: 1,
+
     themes: weightEntries(
       ['thin-woods', 1.1],
       ['thick-forest', 0.7],
@@ -517,18 +531,22 @@ const schemaLibrary = [
     densityPreference: 'medium',
     instructions: [
       scatter('large-plants', {
+
         count: 3,
         radius: 8,
         jitterRadius: 2.8,
         minSpacing: 6.5,
+
         clump: 1.6,
         seed: 67,
       }),
       scatter('small-plants', {
+
         count: 4,
         radius: 12,
         jitterRadius: 2.6,
         minSpacing: 4,
+
         seed: 71,
       }),
       scatter('flowers', {
@@ -562,11 +580,13 @@ const schemaLibrary = [
         seed: 79,
       }),
       scatter('small-plants', {
+
         count: 5,
         radius: 12,
         jitterRadius: 2.4,
         minSpacing: 3.5,
         seed: 83,
+
       }),
     ],
   },
@@ -599,6 +619,7 @@ const schemaLibrary = [
   {
     id: 'forest-column',
     weight: 1,
+
     themes: weightEntries(
       ['thick-forest', 1.2],
       ['deep-forest', 1.3],
@@ -607,12 +628,14 @@ const schemaLibrary = [
     densityPreference: 'dense',
     instructions: [
       scatter('large-plants', {
+
         count: 4,
         radius: 10,
         jitterRadius: 2.4,
         minSpacing: 5.5,
         clump: 1.8,
         seed: 97,
+
       }),
       scatter('small-plants', {
         count: 4,
@@ -622,17 +645,20 @@ const schemaLibrary = [
         seed: 101,
       }),
       scatter('fungi', {
+
         count: 2,
         radius: 8,
         jitterRadius: 2,
         minSpacing: 3,
         seed: 103,
+
       }),
     ],
   },
   {
     id: 'understory-ring',
     weight: 0.85,
+
     themes: weightEntries(
       ['thick-forest', 1],
       ['deep-forest', 1.2],
@@ -1280,10 +1306,12 @@ function selectSchema(random, context) {
     }
   }
   return candidates[candidates.length - 1].schema;
+
 }
 
 function buildPlacements(sectorX, sectorZ) {
   const random = (offset) => pseudoRandom(sectorX, sectorZ, offset);
+
   const context = resolveSectorContext(sectorX, sectorZ);
   const schema = selectSchema(random, context);
   let rotation = Math.floor(random(7) * 4) % 4;
@@ -1296,6 +1324,7 @@ function buildPlacements(sectorX, sectorZ) {
       }
     }
   }
+
   const sector = {
     x: sectorX,
     z: sectorZ,
