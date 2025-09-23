@@ -143,7 +143,9 @@ float dreamcastHeight = 0.6;
 #endif
 vec3 dreamcastPalette = mix(uDeepColor, uShallowColor, dreamcastHeight);
 vec3 waterfallPalette = mix(dreamcastPalette, uWaterfallColor, smoothstep(0.35, 0.95, surfaceMix));
-diffuseColor.rgb *= mix(vec3(1.0), waterfallPalette, 0.85);
+vec3 biomeColor = diffuseColor.rgb;
+vec3 paletteInfluence = mix(vec3(1.0), waterfallPalette, 0.85);
+diffuseColor.rgb *= paletteInfluence;
         `,
       )
       .replace(
@@ -161,6 +163,9 @@ vec3 dreamcastAzimuth = normalize(vec3(dreamcastLight.x, dreamcastLight.z, dream
 float ribbonHighlight = max(dot(flowNormal, dreamcastAzimuth), 0.0) * vFlowStrength;
 outgoingLight += waterfallPalette * ribbonHighlight * 0.18;
 float opacityMix = mix(uOpacity, uWaterfallOpacity, smoothstep(0.35, 0.95, surfaceMix));
+float translucency = clamp(1.0 - opacityMix, 0.0, 1.0);
+vec3 transmittedBiome = mix(biomeColor, waterfallPalette, 0.55);
+outgoingLight += transmittedBiome * translucency * 0.4;
 diffuseColor.a = opacityMix;
         `,
       );

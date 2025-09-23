@@ -2,6 +2,24 @@ import { createDreamcastWaterMaterial } from './water-material.js';
 
 let THREERef = null;
 
+// Developer toggle to inspect fluid geometry using a plain material.
+const DEV_USE_BASIC_FLUID_MATERIAL = (() => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('fluidBasic')) {
+    return true;
+  }
+  try {
+    return window.localStorage?.getItem('fluidMaterial') === 'basic';
+  } catch (error) {
+    return false;
+  }
+})();
+
+let debugBasicMaterial = null;
+
 const fluidDefinitions = new Map();
 const fluidRuntime = new Map();
 
@@ -99,12 +117,32 @@ function ensureRuntime(id) {
 
 export function createFluidSurface({ type, geometry }) {
   const runtime = ensureRuntime(type);
-  const mesh = new THREERef.Mesh(geometry, runtime.material);
+  const material = DEV_USE_BASIC_FLUID_MATERIAL
+    ? getDebugBasicMaterial(runtime.material)
+    : runtime.material;
+  const mesh = new THREERef.Mesh(geometry, material);
   mesh.castShadow = false;
   mesh.receiveShadow = true;
   mesh.userData.fluidType = type;
   runtime.surfaces.add(mesh);
   return mesh;
+}
+
+function getDebugBasicMaterial(runtimeMaterial) {
+  if (!debugBasicMaterial) {
+    debugBasicMaterial = new THREERef.MeshBasicMaterial({
+      color: new THREERef.Color('#ffffff'),
+      vertexColors: true,
+      transparent: true,
+      depthWrite: false,
+      side: THREERef.DoubleSide,
+    });
+  }
+  if (runtimeMaterial) {
+    debugBasicMaterial.opacity = runtimeMaterial.opacity ?? 1;
+    debugBasicMaterial.transparent = runtimeMaterial.transparent ?? true;
+  }
+  return debugBasicMaterial;
 }
 
 export function disposeFluidSurface(mesh) {
