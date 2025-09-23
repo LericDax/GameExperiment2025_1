@@ -1,4 +1,5 @@
 export function createHydraWaterMaterial({ THREE }) {
+
   const material = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color('#1c6dd9'),
     roughness: 0.08,
@@ -13,11 +14,13 @@ export function createHydraWaterMaterial({ THREE }) {
     reflectivity: 0.52,
     clearcoat: 0.38,
     clearcoatRoughness: 0.15,
+
     vertexColors: true,
   });
 
   material.side = THREE.DoubleSide;
   material.depthWrite = false;
+
   material.envMapIntensity = 0.82;
 
   const uniforms = {
@@ -36,10 +39,12 @@ export function createHydraWaterMaterial({ THREE }) {
     uHorizonTint: { value: new THREE.Color('#7bd4ff') },
     uUnderwaterColor: { value: new THREE.Color('#052946') },
     uSurfaceGlintColor: { value: new THREE.Color('#66e0ff') },
+
   };
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uniforms.uTime;
+
     shader.uniforms.uPrimaryScale = uniforms.uPrimaryScale;
     shader.uniforms.uSecondaryScale = uniforms.uSecondaryScale;
     shader.uniforms.uChoppiness = uniforms.uChoppiness;
@@ -55,6 +60,7 @@ export function createHydraWaterMaterial({ THREE }) {
     shader.uniforms.uUnderwaterColor = uniforms.uUnderwaterColor;
     shader.uniforms.uSurfaceGlintColor = uniforms.uSurfaceGlintColor;
 
+
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -67,6 +73,7 @@ attribute float depth;
 attribute float shoreline;
 
 uniform float uTime;
+
 uniform float uPrimaryScale;
 uniform float uSecondaryScale;
 uniform float uChoppiness;
@@ -100,6 +107,7 @@ vec2 sampleHydraSlope(vec2 uv, vec2 flowDir, float flowStrength) {
   float offsetX = sampleHydraWave(uv + vec2(eps, 0.0), flowDir, flowStrength);
   float offsetZ = sampleHydraWave(uv + vec2(0.0, eps), flowDir, flowStrength);
   return vec2(offsetX - center, offsetZ - center) / eps;
+
 }
 
         `,
@@ -107,6 +115,7 @@ vec2 sampleHydraSlope(vec2 uv, vec2 flowDir, float flowStrength) {
       .replace(
         '#include <beginnormal_vertex>',
         `#include <beginnormal_vertex>
+
 vec2 hydraSlope = sampleHydraSlope(position.xz, flowDirection, flowStrength);
 float depthAttenuation = clamp(depth / max(uFadeDepth, 0.001), 0.0, 1.0);
 float choppy = uChoppiness + depthAttenuation * 0.4;
@@ -114,11 +123,13 @@ vec3 bentNormal = normalize(vec3(-hydraSlope.x * choppy, 1.0, -hydraSlope.y * ch
 objectNormal = bentNormal;
 vDisplacedNormal = normalMatrix * bentNormal;
 
+
         `,
       )
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
+
 vec3 transformed = vec3(position);
 float surfaceMask = clamp(surfaceType, 0.0, 1.0);
 float depthFactor = clamp(depth / max(uFadeDepth, 0.0001), 0.1, 1.6);
@@ -137,6 +148,7 @@ vShore = shoreline;
 vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
 vWorldPosition = worldPosition.xyz;
 
+
         `,
       );
 
@@ -144,6 +156,7 @@ vWorldPosition = worldPosition.xyz;
       .replace(
         '#include <common>',
         `#include <common>
+
 uniform float uTime;
 uniform float uFadeDepth;
 uniform float uRefractionStrength;
@@ -177,11 +190,13 @@ float gHydraShoreMix;
 normal = normalize(vDisplacedNormal);
 geometryNormal = normal;
 
+
         `,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
+
 #ifdef USE_COLOR_ALPHA
 diffuseColor *= vColor;
 #elif defined( USE_COLOR )
@@ -214,11 +229,13 @@ gFoamColor = foamColor;
 gHydraDepthMix = depthMix;
 gHydraShoreMix = shoreMix;
 
+
         `,
       )
       .replace(
         'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
         `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+
 outgoingLight += gFoamColor;
 vec3 viewDir = normalize(-vViewPosition);
 float fresnel = pow(1.0 - max(dot(normalize(vDisplacedNormal), viewDir), 0.0), 3.0);
@@ -245,6 +262,7 @@ totalDiffuse += abyss * (0.2 + (1.0 - material.transmission) * 0.4);
   const update = (delta) => {
     uniforms.uTime.value += delta;
     if (uniforms.uTime.value > 10000) {
+
       uniforms.uTime.value = 0;
     }
   };
