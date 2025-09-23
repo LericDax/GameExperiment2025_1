@@ -18,7 +18,7 @@
     "rockChance": 0.06,
     "fungiChance": 0.0,
     "waterPlantChance": 0.0,
-    "structureChance": 0.2,
+    "structureChance": 0.07,
     "treeHeight": {
       "min": 2,
       "max": 4

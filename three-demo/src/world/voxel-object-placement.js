@@ -361,7 +361,9 @@ export function populateColumnWithVoxelObjects({
     { allowUnderwater: true, requireUnderwater: true },
   );
 
-  attemptCategory('structures', Math.max(0, terrain.structureChance ?? 0), 151, {
+  const structureChanceRaw = Math.max(0, terrain.structureChance ?? 0);
+  const structureChance = Math.min(1, structureChanceRaw) * densityScale;
+  attemptCategory('structures', structureChance, 151, {
     allowUnderwater: true,
   });
 }
