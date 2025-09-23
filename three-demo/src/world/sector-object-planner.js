@@ -14,6 +14,7 @@ function pseudoRandom(sectorX, sectorZ, offset = 0) {
   return value - Math.floor(value);
 }
 
+
 function smoothRandom(x, z, scale, offset = 0) {
   const scaledX = x * scale;
   const scaledZ = z * scale;
@@ -348,6 +349,7 @@ function linePoints({
 
 const schemaLibrary = [
   {
+
     id: 'meadow-breath',
     weight: 1.1,
     themes: {
@@ -458,15 +460,18 @@ const schemaLibrary = [
       'field-edge': 0.5,
       dense: 0.3,
     },
+
     instructions: [
       {
         type: 'scatter',
         category: 'large-plants',
         count: 1,
+
         radius: 6,
         jitterRadius: 2.4,
         minSpacing: 7,
         seed: 53,
+
       },
       {
         type: 'scatter',
@@ -475,7 +480,9 @@ const schemaLibrary = [
         radius: 9,
         jitterRadius: 2.2,
         minSpacing: 5,
+
         seed: 59,
+
       },
       {
         type: 'scatter',
@@ -484,19 +491,23 @@ const schemaLibrary = [
         radius: 10,
         jitterRadius: 3,
         minSpacing: 4,
+
         seed: 61,
+
       },
     ],
   },
   {
     id: 'triad-grove',
     weight: 1,
+
     themes: {
       'thin-woods': 1.1,
       'thick-forest': 0.6,
       'mixed-glade': 0.8,
     },
     densityPreference: 'medium',
+
     instructions: [
       {
         type: 'scatter',
@@ -506,7 +517,11 @@ const schemaLibrary = [
         jitterRadius: 2.8,
         minSpacing: 6.5,
         clump: 1.5,
+
         seed: 67,
+
+        seed: 19,
+
       },
       {
         type: 'scatter',
@@ -515,7 +530,11 @@ const schemaLibrary = [
         radius: 12,
         jitterRadius: 2.6,
         minSpacing: 4,
+
         seed: 71,
+
+        seed: 29,
+
       },
       {
         type: 'scatter',
@@ -524,6 +543,7 @@ const schemaLibrary = [
         radius: 12,
         jitterRadius: 3.2,
         minSpacing: 3,
+
         seed: 73,
       },
     ],
@@ -539,10 +559,20 @@ const schemaLibrary = [
     tags: {
       'woodland-approach': 0.6,
     },
+
+        seed: 31,
+      },
+    ],
+  },
+  {
+    id: 'meadow-ring',
+    weight: 0.9,
+
     instructions: [
       {
         type: 'line',
         category: 'large-plants',
+
         count: 3,
         length: 16,
         jitterRadius: 2.5,
@@ -579,12 +609,14 @@ const schemaLibrary = [
         minSpacing: 5.5,
         clump: 1.8,
         seed: 97,
+
       },
       {
         type: 'scatter',
         category: 'small-plants',
         count: 4,
         radius: 11,
+
         jitterRadius: 2.2,
         minSpacing: 3.5,
         seed: 101,
@@ -618,10 +650,12 @@ const schemaLibrary = [
         jitterRadius: 2.1,
         minSpacing: 5.5,
         seed: 109,
+
       },
       {
         type: 'scatter',
         category: 'small-plants',
+
         count: 5,
         radius: 10,
         jitterRadius: 2.3,
@@ -648,19 +682,23 @@ const schemaLibrary = [
       'river-wetland': 1.3,
     },
     wetnessPreference: 'wet',
+
     instructions: [
       {
         type: 'scatter',
         category: 'fungi',
+
         count: 4,
         radius: 9,
         jitterRadius: 2.3,
         minSpacing: 3,
         seed: 131,
+
       },
       {
         type: 'scatter',
         category: 'small-plants',
+
         count: 4,
         radius: 11,
         jitterRadius: 2.5,
@@ -782,10 +820,12 @@ const schemaLibrary = [
         jitterRadius: 2.2,
         minSpacing: 3.5,
         seed: 179,
+
       },
       {
         type: 'scatter',
         category: 'flowers',
+
         count: 2,
         radius: 10,
         jitterRadius: 2.4,
@@ -874,12 +914,14 @@ const schemaLibrary = [
         minSpacing: 2.8,
         clump: 1.6,
         seed: 223,
+
       },
       {
         type: 'scatter',
         category: 'flowers',
         count: 2,
         radius: 9,
+
         jitterRadius: 2.2,
         minSpacing: 3,
         seed: 227,
@@ -895,6 +937,7 @@ const schemaLibrary = [
       'open-field': 0.7,
     },
     densityPreference: 'sparse',
+
     instructions: [
       {
         type: 'scatter',
@@ -903,7 +946,9 @@ const schemaLibrary = [
         radius: 4,
         jitterRadius: 2,
         minSpacing: 8,
+
         seed: 233,
+
       },
       {
         type: 'scatter',
@@ -913,6 +958,7 @@ const schemaLibrary = [
         jitterRadius: 2.3,
         minSpacing: 4,
         seed: 239,
+
       },
       {
         type: 'scatter',
@@ -921,6 +967,7 @@ const schemaLibrary = [
         radius: 11,
         jitterRadius: 3,
         minSpacing: 3,
+
         seed: 241,
       },
     ],
@@ -995,10 +1042,12 @@ function selectSchema(random, context) {
     }
   }
   return candidates[candidates.length - 1].schema;
+
 }
 
 function buildPlacements(sectorX, sectorZ) {
   const random = (offset) => pseudoRandom(sectorX, sectorZ, offset);
+
   const context = resolveSectorContext(sectorX, sectorZ);
   const schema = selectSchema(random, context);
   let rotation = Math.floor(random(7) * 4) % 4;
@@ -1011,6 +1060,7 @@ function buildPlacements(sectorX, sectorZ) {
       }
     }
   }
+
   const sector = {
     x: sectorX,
     z: sectorZ,
