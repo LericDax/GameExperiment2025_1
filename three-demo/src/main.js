@@ -11,6 +11,7 @@ import { createChunkManager } from './world/chunk-manager.js'
 import { createPlayerControls } from './player/controls.js'
 import { createCommandConsole } from './ui/command-console.js'
 import { registerDeveloperCommands } from './player/dev-commands.js'
+import { initializeMusicSystem } from './audio/music-system.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -79,6 +80,8 @@ hud.innerHTML = `
   <div id="hud-status" role="status" aria-live="polite"></div>
 `
 document.body.appendChild(hud)
+
+const musicSystem = initializeMusicSystem({ overlay, root: document.body })
 
 const healthFill = hud.querySelector('#hud-health-fill')
 const healthValue = hud.querySelector('#hud-health-value')
@@ -243,5 +246,6 @@ if (!initializationError) {
   window.addEventListener('beforeunload', () => {
     playerControls.dispose()
     chunkManager.dispose()
+    musicSystem?.dispose()
   })
 }
