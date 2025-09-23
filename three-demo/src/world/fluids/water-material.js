@@ -142,6 +142,12 @@ vec3 gDreamcastPalette;
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
+#ifdef USE_COLOR_ALPHA
+diffuseColor *= vColor;
+#elif defined( USE_COLOR )
+diffuseColor.rgb *= vColor;
+#endif
+float baseAlpha = diffuseColor.a;
 float surfaceMix = clamp(vSurfaceType, 0.0, 1.0);
 #ifdef USE_TRANSMISSION
 gSurfaceMix = surfaceMix;
@@ -196,7 +202,10 @@ float translucency = clamp(1.0 - opacityMix, 0.0, 1.0);
 
 vec3 transmittedBiome = mix(lagoonPalette, waterfallPalette, 0.55);
 outgoingLight += transmittedBiome * translucency * 0.36;
-diffuseColor.a = mix(opacityMix, 0.94, fresnel * 0.3);
+float finalAlpha = mix(opacityMix, 0.94, fresnel * 0.3);
+float tintedAlpha = finalAlpha * baseAlpha;
+float fadeFloor = max(0.18, baseAlpha * 0.5);
+diffuseColor.a = clamp(tintedAlpha, fadeFloor, 1.0);
 
         `,
       );
