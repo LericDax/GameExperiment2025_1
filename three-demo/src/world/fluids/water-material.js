@@ -147,11 +147,7 @@ float surfaceMix = clamp(vSurfaceType, 0.0, 1.0);
 gSurfaceMix = surfaceMix;
 #endif
 #ifdef USE_TRANSMISSION
-
-float dreamcastHeight = clamp(vWorldPosition.y * 0.038 + 0.54, 0.0, 1.0);
-
 float dreamcastHeight = clamp(vWorldPosition.y * 0.04 + 0.48, 0.0, 1.0);
-
 #else
 float dreamcastHeight = 0.62;
 #endif
