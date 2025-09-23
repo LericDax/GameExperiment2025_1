@@ -1,18 +1,25 @@
 export function createDreamcastWaterMaterial({ THREE }) {
   const material = new THREE.MeshPhysicalMaterial({
     color: new THREE.Color('#1d90d4'),
-    roughness: 0.18,
-    metalness: 0.04,
-    transmission: 0.72,
-    thickness: 1.4,
+
+    roughness: 0.14,
+    metalness: 0.03,
+    transmission: 0.78,
+    thickness: 1.8,
     transparent: true,
     opacity: 1,
-    reflectivity: 0.68,
-    clearcoat: 0.45,
-    clearcoatRoughness: 0.12,
+    reflectivity: 0.72,
+    clearcoat: 0.52,
+    clearcoatRoughness: 0.1,
+
     ior: 1.33,
     vertexColors: true,
   });
+
+
+  material.side = THREE.DoubleSide;
+  material.envMapIntensity = 0.65;
+
 
   const uniforms = {
     uTime: { value: 0 },
@@ -22,13 +29,17 @@ export function createDreamcastWaterMaterial({ THREE }) {
     uRippleScale: { value: 1.4 },
     uFlowSpeed: { value: 1.35 },
     uWaterfallTumble: { value: 0.12 },
-    uOpacity: { value: 0.72 },
-    uWaterfallOpacity: { value: 0.58 },
+
+    uOpacity: { value: 0.75 },
+    uWaterfallOpacity: { value: 0.6 },
+
     uShallowColor: { value: new THREE.Color('#4fdfff') },
     uDeepColor: { value: new THREE.Color('#0b2a6f') },
     uFoamColor: { value: new THREE.Color('#ffffff') },
     uWaterfallColor: { value: new THREE.Color('#3cb7ff') },
-    uSpecularBoost: { value: 0.15 },
+
+    uSpecularBoost: { value: 0.22 },
+
   };
 
   material.onBeforeCompile = (shader) => {
@@ -68,7 +79,9 @@ varying float vSurfaceType;
 varying vec2 vFlowDirection;
 varying float vFlowStrength;
 varying float vEdgeFoam;
+
 varying vec3 vWorldPosition;
+
         `,
       )
       .replace(
@@ -81,8 +94,13 @@ float crossWave = sin((position.x * 0.8 - position.z * 1.3) * (uWaveFrequency * 
 float swirlWave = sin((position.x * 0.35 + position.z * 0.65) * uRippleScale + uTime * 0.6);
 float directional = dot(flowDirection, vec2(position.x, position.z)) * flowStrength;
 float crest = max(0.0, directional * 0.6);
-float displacement = (baseWave + crossWave * 0.6 + swirlWave * 0.4 + crest) * uWaveAmplitude * elevationMask;
-transformed.y += displacement;
+
+float secondary = sin((position.x * 1.6 + position.z * 0.8) * (uWaveFrequency * 0.45) + uTime * 1.6);
+float displacementPrimary =
+  (baseWave + crossWave * 0.6 + swirlWave * 0.35 + crest) * uWaveAmplitude * elevationMask;
+float displacementSecondary = secondary * uSecondaryWaveAmplitude * elevationMask;
+transformed.y += displacementPrimary + displacementSecondary;
+
 transformed.xz += flowDirection * flowStrength * 0.08 * elevationMask * sin(uTime * 0.9 + position.y * 0.6);
 if (surfaceMask > 0.5) {
   float tumble = sin(uTime * uFlowSpeed + position.y * 2.3) * uWaterfallTumble;
@@ -94,8 +112,12 @@ vSurfaceType = surfaceMask;
 vFlowDirection = flowDirection;
 vFlowStrength = flowStrength;
 vEdgeFoam = edgeFoam;
+
+#ifdef USE_TRANSMISSION
 vec4 worldPos = modelMatrix * vec4(transformed, 1.0);
 vWorldPosition = worldPos.xyz;
+#endif
+
         `,
       );
 
@@ -115,29 +137,45 @@ varying float vSurfaceType;
 varying vec2 vFlowDirection;
 varying float vFlowStrength;
 varying float vEdgeFoam;
-varying vec3 vWorldPosition;
+
         `,
       )
       .replace(
-        '#include <output_fragment>',
-        `vec3 dreamcastPalette = mix(uDeepColor, uShallowColor, clamp(vWorldPosition.y * 0.035 + 0.55, 0.0, 1.0));
-vec3 waterfallTint = mix(dreamcastPalette, uWaterfallColor, smoothstep(0.35, 1.0, vSurfaceType));
-float foamFactor = smoothstep(0.28, 0.92, vEdgeFoam + vFlowStrength * 0.85);
-vec3 foamColor = uFoamColor * foamFactor * mix(0.35, 0.75, vSurfaceType);
-vec3 paletteTint = waterfallTint;
-diffuseColor.rgb *= paletteTint;
-diffuseColor.rgb += foamColor;
+        '#include <color_fragment>',
+        `#include <color_fragment>
+float surfaceMix = clamp(vSurfaceType, 0.0, 1.0);
+#ifdef USE_TRANSMISSION
+float dreamcastHeight = clamp(vWorldPosition.y * 0.04 + 0.48, 0.0, 1.0);
+#else
+float dreamcastHeight = 0.6;
+#endif
+vec3 dreamcastPalette = mix(uDeepColor, uShallowColor, dreamcastHeight);
+vec3 waterfallPalette = mix(dreamcastPalette, uWaterfallColor, smoothstep(0.35, 0.95, surfaceMix));
+diffuseColor.rgb *= mix(vec3(1.0), waterfallPalette, 0.85);
+        `,
+      )
+      .replace(
+        'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
+        `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+float surfaceMix = clamp(vSurfaceType, 0.0, 1.0);
+float foamFactor = smoothstep(0.25, 0.95, vEdgeFoam + vFlowStrength * 0.85);
+vec3 foam = uFoamColor * foamFactor * mix(0.32, 0.72, surfaceMix);
+outgoingLight += foam;
 vec3 dreamcastLight = normalize(vec3(0.22, 0.94, 0.31));
-float sparkle = pow(max(dot(normal, dreamcastLight), 0.0), 18.0) * uSpecularBoost;
-diffuseColor.rgb += sparkle;
-float opacityMix = mix(uOpacity, uWaterfallOpacity, smoothstep(0.45, 0.95, vSurfaceType));
+float sparkle = pow(max(dot(normalize(normal), dreamcastLight), 0.0), 24.0) * uSpecularBoost;
+outgoingLight += sparkle;
+vec3 flowNormal = normalize(vec3(vFlowDirection, 0.25));
+vec3 dreamcastAzimuth = normalize(vec3(dreamcastLight.x, dreamcastLight.z, dreamcastLight.y));
+float ribbonHighlight = max(dot(flowNormal, dreamcastAzimuth), 0.0) * vFlowStrength;
+outgoingLight += waterfallPalette * ribbonHighlight * 0.18;
+float opacityMix = mix(uOpacity, uWaterfallOpacity, smoothstep(0.35, 0.95, surfaceMix));
 diffuseColor.a = opacityMix;
-gl_FragColor = diffuseColor;
         `,
       );
   };
 
-  material.customProgramCacheKey = () => 'DreamcastWaterMaterial_v1';
+  material.customProgramCacheKey = () => 'DreamcastWaterMaterial_v2';
+
 
   const update = (delta) => {
     uniforms.uTime.value += delta;
