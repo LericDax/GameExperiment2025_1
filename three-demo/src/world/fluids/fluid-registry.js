@@ -1,4 +1,4 @@
-import { createDreamcastWaterMaterial } from './water-material.js';
+import { createHydraWaterMaterial } from './water-material.js';
 
 let THREERef = null;
 
@@ -33,7 +33,7 @@ export function initializeFluidRegistry({ THREE }) {
 
   registerFluidType('water', {
     label: 'Water',
-    createMaterial: (context) => createDreamcastWaterMaterial(context),
+    createMaterial: (context) => createHydraWaterMaterial(context),
     presenceResolver: ({
       x,
       z,
