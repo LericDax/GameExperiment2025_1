@@ -5,6 +5,7 @@
   - All gameplay modules live under `three-demo/src/`.
   - The root `index.html` only documents how to launch the Vite dev server or serve the production build.
 - When modifying code under `three-demo/src/`, make sure it continues to work with the Vite tooling (dev server and build output).
+- Ambient audio, music systems, and other sound features are allowed. Keep audio assets under `three-demo/src/sounds/` (or its subdirectories) so they can be picked up by Vite.
 
 ## Code Style
 - Use modern ES modules everywhere (`import`/`export` syntax, no CommonJS).

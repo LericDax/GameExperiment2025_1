@@ -134,6 +134,108 @@
       canvas {
         display: block;
       }
+
+      .volume-widget {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        width: 220px;
+        padding: 10px 12px 12px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: rgba(12, 16, 24, 0.78);
+        border: 1px solid rgba(132, 160, 220, 0.24);
+        border-radius: 12px;
+        box-shadow: 0 12px 32px rgba(5, 8, 14, 0.35);
+        color: rgba(236, 242, 255, 0.92);
+        backdrop-filter: blur(6px);
+        z-index: 120;
+        pointer-events: auto;
+      }
+
+      .volume-widget.dragging {
+        cursor: grabbing;
+      }
+
+      .volume-widget-handle {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: rgba(200, 220, 255, 0.72);
+        cursor: grab;
+        user-select: none;
+      }
+
+      .volume-widget-title {
+        font-weight: 600;
+        font-size: 11px;
+      }
+
+      .volume-widget-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .volume-widget button {
+        appearance: none;
+        border: 1px solid rgba(140, 168, 232, 0.3);
+        background: rgba(18, 24, 36, 0.85);
+        color: inherit;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+        line-height: 1;
+        cursor: pointer;
+        transition: border-color 160ms ease, background 160ms ease;
+      }
+
+      .volume-widget button:hover,
+      .volume-widget button:focus-visible {
+        border-color: rgba(196, 214, 255, 0.65);
+        background: rgba(24, 32, 46, 0.95);
+        outline: none;
+      }
+
+      .volume-widget button:active {
+        background: rgba(16, 22, 34, 0.95);
+      }
+
+      .volume-widget-toggle {
+        width: 42px;
+      }
+
+      .volume-widget-next {
+        width: 42px;
+      }
+
+      .volume-widget-slider {
+        flex: 1;
+        accent-color: #94b9ff;
+        cursor: pointer;
+      }
+
+      .volume-widget-track {
+        min-height: 16px;
+        font-size: 12px;
+        line-height: 1.4;
+        color: rgba(214, 228, 255, 0.85);
+        text-shadow: 0 1px 1px rgba(2, 4, 8, 0.5);
+      }
+
+      .volume-widget-hint {
+        font-size: 11px;
+        line-height: 1.4;
+        color: rgba(255, 190, 140, 0.85);
+      }
+
+      .volume-widget-no-select {
+        user-select: none !important;
+      }
     </style>
   </head>
   <body>
