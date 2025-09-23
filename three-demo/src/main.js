@@ -169,6 +169,17 @@ try {
   chunkManager.update(playerControls.getPosition())
   updateHud(playerControls.getState())
 
+  if (import.meta.env.DEV) {
+    const debugNamespace = (window.__VOXEL_DEBUG__ = window.__VOXEL_DEBUG__ || {})
+    debugNamespace.chunkSnapshot = () => chunkManager.debugSnapshot?.()
+    debugNamespace.player = {
+      controls: playerControls,
+      setPosition: (position) => playerControls.setPosition(position),
+      setYawPitch: (yaw, pitch) => playerControls.setYawPitch(yaw, pitch),
+      getYawPitch: () => playerControls.getYawPitch(),
+    }
+  }
+
   const commandConsole = createCommandConsole({
     onToggle: (isOpen) => {
       if (playerControls) {
