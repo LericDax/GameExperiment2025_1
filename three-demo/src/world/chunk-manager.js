@@ -1,4 +1,5 @@
 import { generateChunk, worldConfig } from './generation.js';
+import { disposeFluidSurface } from './fluids/fluid-registry.js';
 
 function chunkKey(x, z) {
   return `${x}|${z}`;
@@ -32,6 +33,10 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
       }
       child.userData.chunkKey = key;
     });
+    (chunk.fluidSurfaces ?? []).forEach((surface) => {
+      surface.userData = surface.userData || {};
+      surface.userData.chunkKey = key;
+    });
     scene.add(chunk.group);
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.add(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
@@ -46,6 +51,10 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     }
 
     scene.remove(chunk.group);
+    (chunk.fluidSurfaces ?? []).forEach((surface) => {
+      surface.geometry?.dispose?.();
+      disposeFluidSurface(surface);
+    });
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.delete(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.delete(block));
     (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.delete(column));

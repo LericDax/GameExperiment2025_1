@@ -12,6 +12,10 @@ import { createPlayerControls } from './player/controls.js'
 import { createCommandConsole } from './ui/command-console.js'
 import { registerDeveloperCommands } from './player/dev-commands.js'
 import { initializeMusicSystem } from './audio/music-system.js'
+import {
+  initializeFluidRegistry,
+  updateFluids,
+} from './world/fluids/fluid-registry.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -35,6 +39,7 @@ function setOverlayStatus(message, { isError = false, revealOverlay = true } = {
 }
 
 initializeWorldGeneration({ THREE })
+initializeFluidRegistry({ THREE })
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0xa9d6ff)
@@ -215,28 +220,13 @@ sun.shadow.camera.far = 200
 scene.add(sun)
 
 if (!initializationError) {
-  const waterMaterial = blockMaterials.water
-  let waveTime = 0
-  let missingWaterWarningShown = false
-
   function animate() {
     requestAnimationFrame(animate)
     const delta = Math.min(clock.getDelta(), 0.05)
 
     chunkManager.update(playerControls.getPosition())
     playerControls.update(delta)
-
-    if (waterMaterial?.map) {
-      waveTime += delta
-      const waveOffset = (Math.sin(waveTime * 0.8) + 1) * 0.06
-      waterMaterial.map.offset.y = waveOffset
-    } else if (!missingWaterWarningShown) {
-      missingWaterWarningShown = true
-      const message =
-        'Water material is missing its texture map. Disabling wave animation.'
-      console.warn(message)
-      setHudStatusOverride(message, { isError: true })
-    }
+    updateFluids(delta)
 
     renderer.render(scene, camera)
   }
