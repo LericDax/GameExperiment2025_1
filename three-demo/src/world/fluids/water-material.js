@@ -74,8 +74,6 @@ varying vec2 vFlowDirection;
 varying float vFlowStrength;
 varying float vEdgeFoam;
 
-varying vec3 vWorldPosition;
-
         `,
       )
       .replace(
