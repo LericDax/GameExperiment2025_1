@@ -50,9 +50,20 @@ export function sampleBiomeAt(x, z) {
   return engine.getBiomeAt(x, z);
 }
 
+function hashCoordinate(x, z, offset = 0) {
+  let h = Math.imul(x | 0, 374761393);
+  h = Math.imul(h + Math.imul(z | 0, 668265263), 1274126177);
+  h ^= h >>> 15;
+  h = Math.imul(h + Math.imul(offset | 0, 1597334677), 2246822519);
+  h ^= h >>> 13;
+  h = Math.imul(h, 3266489917);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
 export function randomAt(x, z, offset = 0) {
-  const value = Math.sin(x * 12.9898 + z * 78.233 + offset * 43758.5453 + worldConfig.chunkSize);
-  return value - Math.floor(value);
+  const hashed = hashCoordinate(Math.floor(x), Math.floor(z), Math.floor(offset));
+  return hashed / 4294967296;
 }
 
 const solidTypes = new Set(['grass', 'dirt', 'stone', 'sand', 'leaf', 'log']);
