@@ -14,6 +14,8 @@ export function buildFluidGeometry({ THREE, columns }) {
   const flowDirections = [];
   const flowStrengths = [];
   const edgeFoam = [];
+  const depths = [];
+  const shorelines = [];
 
   const pushVertex = (
     vertex,
@@ -24,6 +26,8 @@ export function buildFluidGeometry({ THREE, columns }) {
     flowDir,
     flowStrength,
     foam,
+    depthValue,
+    shorelineValue,
   ) => {
     positions.push(vertex.x, vertex.y, vertex.z);
     normals.push(normal.x, normal.y, normal.z);
@@ -33,12 +37,14 @@ export function buildFluidGeometry({ THREE, columns }) {
     flowDirections.push(flowDir.x, flowDir.y);
     flowStrengths.push(flowStrength);
     edgeFoam.push(foam);
+    depths.push(depthValue);
+    shorelines.push(shorelineValue);
   };
 
   const tempColor = new THREE.Color();
 
   const topFace = (column) => {
-    const { x, z, surfaceY, color, flowStrength, foamAmount } = column;
+    const { x, z, surfaceY, color, flowStrength, foamAmount, depth, shoreline } = column;
     const left = x - 0.5;
     const right = x + 0.5;
     const front = z + 0.5;
@@ -47,6 +53,8 @@ export function buildFluidGeometry({ THREE, columns }) {
     const flowDir = column.flowDirection ?? new THREE.Vector2(0, 0);
     const strength = column.flowStrength ?? 0;
     const foam = foamAmount ?? 0;
+    const depthValue = depth ?? Math.max(0.05, surfaceY - column.bottomY);
+    const shorelineValue = shoreline ?? 0;
 
     const tint = tempColor.copy(color);
 
@@ -59,6 +67,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
     pushVertex(
       new THREE.Vector3(right, surfaceY, back),
@@ -69,6 +79,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
     pushVertex(
       new THREE.Vector3(right, surfaceY, front),
@@ -79,6 +91,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
 
     pushVertex(
@@ -90,6 +104,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
     pushVertex(
       new THREE.Vector3(right, surfaceY, front),
@@ -100,6 +116,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
     pushVertex(
       new THREE.Vector3(left, surfaceY, front),
@@ -110,14 +128,21 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
   };
 
   const sideFace = (column, neighborInfo, direction) => {
-    const { x, z, surfaceY, bottomY, color } = column;
+    const { x, z, surfaceY, bottomY, color, depth, shoreline } = column;
     const flowDir = column.flowDirection ?? new THREE.Vector2(0, 0);
     const strength = column.flowStrength ?? 0.15;
     const foam = Math.max(column.foamAmount ?? 0, neighborInfo.foamHint ?? 0);
+    const depthValue = depth ?? Math.max(0.05, surfaceY - bottomY);
+    const shorelineValue = Math.max(
+      shoreline ?? 0,
+      neighborInfo.foamHint ? Math.min(1, neighborInfo.foamHint * 0.75) : 0,
+    );
 
     const dropSurface = surfaceY;
     const dropBottom = Math.min(bottomY, neighborInfo.bottomY);
@@ -180,6 +205,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
     pushVertex(
       verts[1],
@@ -190,6 +217,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
     pushVertex(
       verts[2],
@@ -200,6 +229,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
 
     pushVertex(
@@ -211,6 +242,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
     pushVertex(
       verts[2],
@@ -221,6 +254,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
     pushVertex(
       verts[3],
@@ -231,6 +266,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       flowDir,
       strength,
       foam,
+      depthValue,
+      shorelineValue,
     );
   };
 
@@ -268,6 +305,8 @@ export function buildFluidGeometry({ THREE, columns }) {
     new THREE.Float32BufferAttribute(flowStrengths, 1),
   );
   geometry.setAttribute('edgeFoam', new THREE.Float32BufferAttribute(edgeFoam, 1));
+  geometry.setAttribute('depth', new THREE.Float32BufferAttribute(depths, 1));
+  geometry.setAttribute('shoreline', new THREE.Float32BufferAttribute(shorelines, 1));
 
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
