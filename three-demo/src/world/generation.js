@@ -42,7 +42,7 @@ export const worldConfig = {
   chunkSize: 48,
   maxHeight: 20,
   baseHeight: 6,
-  waterLevel: 8,
+  waterLevel: 9,
 };
 
 export function terrainHeight(x, z) {
