@@ -43,6 +43,29 @@ export function registerDeveloperCommands({
       intervalId: null,
     },
     lastErrorMessage: null,
+    lastView: null,
+  };
+
+  const asciiListeners = new Set();
+
+  const notifyAsciiListeners = (event) => {
+    asciiListeners.forEach((listener) => {
+      try {
+        listener(event);
+      } catch (error) {
+        console.error('ASCII map listener failed:', error);
+      }
+    });
+  };
+
+  const addAsciiListener = (listener) => {
+    if (typeof listener !== 'function') {
+      throw new Error('ASCII listener must be a function.');
+    }
+    asciiListeners.add(listener);
+    return () => {
+      asciiListeners.delete(listener);
+    };
   };
 
   const headlessScanner = createHeadlessScanner({ THREE, scene, chunkManager });
@@ -56,7 +79,7 @@ export function registerDeveloperCommands({
     lastKey: null,
   };
 
-  const getDebugSnapshot = () => window.__VOXEL_DEBUG__?.chunkSnapshot?.();
+  const getDebugSnapshot = () => window.__VOXEL_DEBUG__?.chunkSnapshot;
 
   const cloneAsciiOptions = (source = asciiState.options) => ({
     radius: Math.max(1, Math.round(source.radius ?? 16)),
@@ -238,6 +261,8 @@ export function registerDeveloperCommands({
         asciiState.lastErrorMessage = view.error;
         commandConsole.log(`[ASCII] ${view.error}`);
       }
+      asciiState.lastView = view;
+      notifyAsciiListeners({ type: 'error', view });
       return false;
     }
 
@@ -251,6 +276,8 @@ export function registerDeveloperCommands({
     if (view.legend) {
       commandConsole.log(view.legend);
     }
+    asciiState.lastView = view;
+    notifyAsciiListeners({ type: 'render', view });
     return true;
   };
 
@@ -268,6 +295,12 @@ export function registerDeveloperCommands({
     if (!silent) {
       commandConsole.log('ASCII watch disabled.');
     }
+    notifyAsciiListeners({
+      type: 'status',
+      status: 'stopped',
+      mode: 'off',
+      intervalMs: asciiState.watch.intervalMs,
+    });
   };
 
   const startAsciiWatch = ({ mode, intervalMs }) => {
@@ -287,6 +320,12 @@ export function registerDeveloperCommands({
       renderOnce(true);
       asciiState.watch.rafId = window.requestAnimationFrame(frameLoop);
       commandConsole.log('ASCII watch enabled (per frame).');
+      notifyAsciiListeners({
+        type: 'status',
+        status: 'started',
+        mode: 'frame',
+        intervalMs: null,
+      });
       return;
     }
 
@@ -303,6 +342,30 @@ export function registerDeveloperCommands({
     asciiState.watch.intervalMs = effectiveInterval;
     renderOnce(true);
     commandConsole.log(`ASCII watch enabled (every ${effectiveInterval} ms).`);
+    notifyAsciiListeners({
+      type: 'status',
+      status: 'started',
+      mode: 'interval',
+      intervalMs: effectiveInterval,
+    });
+  };
+
+  const resolveAsciiOptions = (overrides) => {
+    if (!overrides) {
+      return cloneAsciiOptions();
+    }
+    const merged = { ...asciiState.options, ...overrides };
+    return cloneAsciiOptions(merged);
+  };
+
+  const formatAsciiView = (view) => {
+    if (!view) {
+      return '';
+    }
+    if (view.error) {
+      return `[ASCII] ${view.error}`;
+    }
+    return [view.header, view.map, view.legend].filter(Boolean).join('\n');
   };
 
   const parseDistance = (value) => {
@@ -854,4 +917,65 @@ export function registerDeveloperCommands({
       }
     },
   });
+
+  if (import.meta.env?.DEV && typeof window !== 'undefined') {
+    const debugNamespace = (window.__VOXEL_DEBUG__ = window.__VOXEL_DEBUG__ || {});
+
+    const asciiDebug = {
+      getView: (overrides) =>
+        buildAsciiView({
+          optionsOverride: overrides ? resolveAsciiOptions(overrides) : undefined,
+        }),
+      render: (overrides) => {
+        const view = asciiDebug.getView(overrides);
+        outputAsciiView(view);
+        return view;
+      },
+      on: (listener) => addAsciiListener(listener),
+      off: (listener) => {
+        asciiListeners.delete(listener);
+      },
+      stop: () => stopAsciiWatch(),
+      startFrame: () => startAsciiWatch({ mode: 'frame' }),
+      startInterval: (ms) => {
+        if (typeof ms === 'number') {
+          startAsciiWatch({ mode: 'interval', intervalMs: Math.max(16, Math.round(ms)) });
+        } else {
+          startAsciiWatch({ mode: 'interval', intervalMs: asciiState.watch.intervalMs });
+        }
+      },
+      status: () => ({
+        mode: asciiState.watch.mode,
+        intervalMs:
+          asciiState.watch.mode === 'frame'
+            ? null
+            : asciiState.watch.activeIntervalMs ?? asciiState.watch.intervalMs,
+      }),
+      options: () => ({ ...cloneAsciiOptions() }),
+      setOptions: (overrides = {}) => {
+        asciiState.options = resolveAsciiOptions(overrides);
+        return { ...asciiState.options };
+      },
+      lastView: () => asciiState.lastView,
+      format: (view) => formatAsciiView(view ?? asciiState.lastView),
+    };
+
+    debugNamespace.ascii = Object.assign(debugNamespace.ascii ?? {}, asciiDebug);
+
+    debugNamespace.commandConsole = Object.assign(debugNamespace.commandConsole ?? {}, {
+      execute: (input) => {
+        if (!input || typeof input !== 'string') {
+          throw new Error('commandConsole.execute expects a string.');
+        }
+        const normalized = input.trim().startsWith('/') ? input : `/${input}`;
+        commandConsole.executeCommand(normalized);
+      },
+      list: () =>
+        commandConsole
+          .listCommands()
+          .map(({ name, description, usage }) => ({ name, description, usage })),
+      getEntries: () => commandConsole.getEntries(),
+      onLog: (listener) => commandConsole.addLogListener(listener),
+    });
+  }
 }
