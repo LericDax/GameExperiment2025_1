@@ -7,6 +7,21 @@ import {
 } from './fluids/fluid-registry.js';
 import { buildFluidGeometry } from './fluids/fluid-geometry.js';
 
+const DEV_FORCE_FLUID_BLOCKS = (() => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('fluidBlocks')) {
+    return true;
+  }
+  try {
+    return window.localStorage?.getItem('fluidRender') === 'blocks';
+  } catch (error) {
+    return false;
+  }
+})();
+
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -231,6 +246,128 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
   };
 
+  const registerInstancedEntry = ({
+    type,
+    key,
+    coordinateKey,
+    matrix: entryMatrix,
+    position,
+    biome,
+    paletteColor,
+    tintColor,
+    scaleVector,
+    tintOverride,
+    isSolid,
+    isSoft,
+    isWater,
+    destructible,
+    collisionMode,
+    options = {},
+  }) => {
+    const entry = {
+      key,
+      coordinateKey,
+      matrix: entryMatrix.clone(),
+      position: new THREE.Vector3(position.x, position.y, position.z),
+      type,
+      biomeId: biome?.id ?? null,
+      paletteColor,
+      tintColor,
+      scale: scaleVector.clone(),
+      sourceObjectId: options.sourceObjectId ?? null,
+      voxelIndex: options.voxelIndex ?? null,
+      metadata: options.metadata ?? null,
+      tintOverride,
+      isSolid,
+      isWater,
+      destructible,
+      collisionMode,
+    };
+    instancedData.get(type).push(entry);
+    blockLookup.set(key, entry);
+    if (coordinateKey && key !== coordinateKey) {
+      blockLookup.set(coordinateKey, entry);
+    }
+    if (coordinateKey) {
+      if (isSolid) {
+        solidBlockKeys.add(coordinateKey);
+      }
+      if (isSoft) {
+        softBlockKeys.add(coordinateKey);
+      }
+    }
+    return entry;
+  };
+
+  const upsertFluidFallbackEntry = ({
+    column,
+    type,
+    biome,
+    paletteColor,
+    tintColor,
+    tintOverride,
+  }) => {
+    if (!DEV_FORCE_FLUID_BLOCKS) {
+      return null;
+    }
+    const fallbackScale = new THREE.Vector3(1, 1, 1);
+    const centerY = column.maxY - 0.5;
+    const fallbackMatrix = new THREE.Matrix4();
+    fallbackMatrix.compose(
+      new THREE.Vector3(column.x, centerY, column.z),
+      defaultQuaternion,
+      fallbackScale,
+    );
+    const fallbackKey = column.fallbackKey ?? `fluid:${type}:${column.key}`;
+    const coordinateKey = blockKey(column.x, centerY, column.z);
+    const biomeRef = biome ?? column.biome ?? null;
+
+    if (!column.fallbackEntry) {
+      const entry = registerInstancedEntry({
+        type,
+        key: fallbackKey,
+        coordinateKey,
+        matrix: fallbackMatrix,
+        position: { x: column.x, y: centerY, z: column.z },
+        biome: biomeRef,
+        paletteColor,
+        tintColor,
+        scaleVector: fallbackScale,
+        tintOverride,
+        isSolid: false,
+        isSoft: false,
+        isWater: true,
+        destructible: false,
+        collisionMode: 'liquid',
+        options: {},
+      });
+      column.fallbackEntry = entry;
+      column.fallbackKey = fallbackKey;
+      return entry;
+    }
+
+    const entry = column.fallbackEntry;
+    const previousCoordinateKey = entry.coordinateKey;
+    entry.matrix.copy(fallbackMatrix);
+    entry.position.set(column.x, centerY, column.z);
+    entry.scale.copy(fallbackScale);
+    entry.biomeId = biomeRef?.id ?? null;
+    entry.paletteColor = paletteColor;
+    entry.tintColor = tintColor;
+    entry.tintOverride = tintOverride;
+    entry.isSolid = false;
+    entry.isWater = true;
+    entry.destructible = false;
+    entry.collisionMode = 'liquid';
+    if (previousCoordinateKey && previousCoordinateKey !== coordinateKey) {
+      blockLookup.delete(previousCoordinateKey);
+    }
+    entry.coordinateKey = coordinateKey;
+    blockLookup.set(entry.key, entry);
+    blockLookup.set(coordinateKey, entry);
+    return entry;
+  };
+
   const addBlock = (type, x, y, z, biome, options = {}) => {
     const scaleVector = resolveScaleVector(options.scale);
     matrix.compose(reusablePosition.set(x, y, z), defaultQuaternion, scaleVector);
@@ -333,40 +470,40 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       if (isWater) {
         waterColumnKeys.add(columnKey);
       }
+      column.fallbackBiome = biome;
+      column.fallbackPaletteColor = paletteColor;
+      column.fallbackTintColor = tintColor;
+      column.fallbackTintOverride = tintOverride;
+      if (DEV_FORCE_FLUID_BLOCKS) {
+        upsertFluidFallbackEntry({
+          column,
+          type,
+          biome,
+          paletteColor,
+          tintColor,
+          tintOverride,
+        });
+      }
       return;
     }
-    const entry = {
+    registerInstancedEntry({
+      type,
       key,
       coordinateKey,
-      matrix: matrix.clone(),
-      position: new THREE.Vector3(x, y, z),
-      type,
-      biomeId: biome?.id ?? null,
+      matrix,
+      position: { x, y, z },
+      biome,
       paletteColor,
       tintColor,
-      scale: scaleVector.clone(),
-      sourceObjectId: options.sourceObjectId ?? null,
-      voxelIndex: options.voxelIndex ?? null,
-      metadata: options.metadata ?? null,
+      scaleVector,
       tintOverride,
       isSolid,
+      isSoft,
       isWater,
       destructible,
-
       collisionMode,
-    };
-    instancedData.get(type).push(entry);
-    blockLookup.set(key, entry);
-    if (key !== coordinateKey) {
-      blockLookup.set(coordinateKey, entry);
-    }
-    if (isSolid) {
-      solidBlockKeys.add(coordinateKey);
-    }
-    if (isSoft) {
-      softBlockKeys.add(coordinateKey);
-
-    }
+      options,
+    });
   };
 
   for (let lx = 0; lx < chunkSize; lx++) {
@@ -533,6 +670,27 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       if (type === 'water') {
         console.log('[fluid debug] water geometry has no vertices');
       }
+      if (DEV_FORCE_FLUID_BLOCKS) {
+        columns.forEach((column) => {
+          const fallbackBiome = column.fallbackBiome ?? column.biome ?? null;
+          const fallbackPalette = column.fallbackPaletteColor ?? column.color ?? null;
+          const fallbackTint =
+            column.fallbackTintColor ?? fallbackPalette ?? column.color ?? null;
+          const fallbackTintOverride = column.fallbackTintOverride ?? null;
+          column.fallbackBiome = fallbackBiome;
+          column.fallbackPaletteColor = fallbackPalette;
+          column.fallbackTintColor = fallbackTint;
+          column.fallbackTintOverride = fallbackTintOverride;
+          upsertFluidFallbackEntry({
+            column,
+            type,
+            biome: fallbackBiome,
+            paletteColor: fallbackPalette,
+            tintColor: fallbackTint,
+            tintOverride: fallbackTintOverride,
+          });
+        });
+      }
       return;
     }
     const surface = createFluidSurface({ type, geometry });
@@ -555,7 +713,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
   const group = new THREE.Group();
   instancedData.forEach((entries, type) => {
-    if (isFluidType(type)) {
+    if (isFluidType(type) && !DEV_FORCE_FLUID_BLOCKS) {
       return;
     }
     if (entries.length === 0) {
