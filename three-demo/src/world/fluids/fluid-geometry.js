@@ -6,6 +6,122 @@ const FACE_DIRECTIONS = [
 ];
 
 export function buildFluidGeometry({ THREE, columns }) {
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+  const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value);
+  const issues = [];
+
+  columns.forEach((column) => {
+    const key = column?.key ?? `${column?.x ?? 0}|${column?.z ?? 0}`;
+    if (!(column.color instanceof THREE.Color)) {
+      try {
+        column.color = new THREE.Color(column.color ?? '#3a79c5');
+      } catch (error) {
+        column.color = new THREE.Color('#3a79c5');
+        issues.push({ key, issue: 'color reset to default' });
+      }
+    }
+    if (!(column.flowDirection instanceof THREE.Vector2)) {
+      column.flowDirection = new THREE.Vector2(0, 0);
+      issues.push({ key, issue: 'flowDirection reset' });
+    } else {
+      const x = isFiniteNumber(column.flowDirection.x)
+        ? clamp(column.flowDirection.x, -1, 1)
+        : 0;
+      const y = isFiniteNumber(column.flowDirection.y)
+        ? clamp(column.flowDirection.y, -1, 1)
+        : 0;
+      column.flowDirection.set(x, y);
+      const length = column.flowDirection.length();
+      if (length > 1) {
+        column.flowDirection.multiplyScalar(1 / length);
+      }
+      if (!isFiniteNumber(column.flowDirection.x) || !isFiniteNumber(column.flowDirection.y)) {
+        column.flowDirection.set(0, 0);
+        issues.push({ key, issue: 'flowDirection contained NaN' });
+      }
+    }
+    column.flowStrength = clamp(
+      isFiniteNumber(column.flowStrength) ? column.flowStrength : column.flowDirection.length(),
+      0,
+      1,
+    );
+    column.foamAmount = clamp(isFiniteNumber(column.foamAmount) ? column.foamAmount : 0, 0, 1);
+    column.depth = Math.max(
+      0.05,
+      isFiniteNumber(column.depth)
+        ? column.depth
+        : isFiniteNumber(column.surfaceY) && isFiniteNumber(column.bottomY)
+        ? column.surfaceY - column.bottomY
+        : 0.05,
+    );
+    column.shoreline = clamp(
+      isFiniteNumber(column.shoreline) ? column.shoreline : column.foamAmount,
+      0,
+      1,
+    );
+
+    const bottomY = isFiniteNumber(column.bottomY)
+      ? column.bottomY
+      : isFiniteNumber(column.minY)
+      ? column.minY
+      : isFiniteNumber(column.surfaceY)
+      ? column.surfaceY - column.depth
+      : -0.5;
+    if (!isFiniteNumber(column.bottomY) || column.bottomY !== bottomY) {
+      column.bottomY = bottomY;
+      issues.push({ key, issue: 'bottomY sanitized' });
+    }
+    const surfaceY = isFiniteNumber(column.surfaceY)
+      ? column.surfaceY
+      : isFiniteNumber(column.maxY)
+      ? column.maxY
+      : column.bottomY + column.depth;
+    if (!isFiniteNumber(column.surfaceY) || column.surfaceY !== surfaceY) {
+      column.surfaceY = surfaceY;
+      issues.push({ key, issue: 'surfaceY sanitized' });
+    }
+
+    const sanitizedNeighbors = {};
+    FACE_DIRECTIONS.forEach(({ key: neighborKey }) => {
+      const neighborInfo = column.neighbors?.[neighborKey] ?? null;
+      const neighborSurface = isFiniteNumber(neighborInfo?.surfaceY)
+        ? neighborInfo.surfaceY
+        : column.surfaceY;
+      const neighborBottom = isFiniteNumber(neighborInfo?.bottomY)
+        ? neighborInfo.bottomY
+        : column.bottomY;
+      const foamHint = clamp(
+        isFiniteNumber(neighborInfo?.foamHint) ? neighborInfo.foamHint : 0,
+        0,
+        16,
+      );
+      if (!neighborInfo) {
+        issues.push({ key, issue: `missing neighbor ${neighborKey}` });
+      } else if (
+        neighborSurface !== neighborInfo.surfaceY ||
+        neighborBottom !== neighborInfo.bottomY ||
+        foamHint !== neighborInfo.foamHint
+      ) {
+        issues.push({ key, issue: `neighbor ${neighborKey} sanitized` });
+      }
+      sanitizedNeighbors[neighborKey] = {
+        hasFluid: Boolean(neighborInfo?.hasFluid),
+        surfaceY: neighborSurface,
+        bottomY: neighborBottom,
+        foamHint,
+      };
+    });
+    column.neighbors = sanitizedNeighbors;
+  });
+
+  if (issues.length > 0) {
+    const sample = issues.slice(0, 5);
+    console.warn(
+      `[fluid warning] Sanitized ${issues.length} fluid column attribute issue(s). Sample:`,
+      sample,
+    );
+  }
+
   const positions = [];
   const normals = [];
   const uvs = [];
