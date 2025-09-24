@@ -60,7 +60,6 @@ export function createHydraWaterMaterial({ THREE }) {
     shader.uniforms.uUnderwaterColor = uniforms.uUnderwaterColor;
     shader.uniforms.uSurfaceGlintColor = uniforms.uSurfaceGlintColor;
 
-
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -87,7 +86,7 @@ varying float vFoamEdge;
 varying float vDepth;
 varying float vShore;
 varying vec3 vDisplacedNormal;
-varying vec3 vWorldPosition;
+varying vec3 vHydraWorldPosition;
 
 float sampleHydraWave(vec2 uv, vec2 flowDir, float flowStrength) {
   vec2 advected = uv;
@@ -130,7 +129,6 @@ vDisplacedNormal = normalMatrix * bentNormal;
         '#include <begin_vertex>',
         `#include <begin_vertex>
 
-vec3 transformed = vec3(position);
 float surfaceMask = clamp(surfaceType, 0.0, 1.0);
 float depthFactor = clamp(depth / max(uFadeDepth, 0.0001), 0.1, 1.6);
 float wave = sampleHydraWave(position.xz, flowDirection, flowStrength);
@@ -145,12 +143,17 @@ vFlow = flowDirection * flowStrength;
 vFoamEdge = edgeFoam;
 vDepth = depth;
 vShore = shoreline;
-vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
-vWorldPosition = worldPosition.xyz;
 
 
         `,
       );
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <worldpos_vertex>',
+      `#include <worldpos_vertex>
+vHydraWorldPosition = worldPosition.xyz;
+`
+    );
 
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -175,7 +178,7 @@ varying float vFoamEdge;
 varying float vDepth;
 varying float vShore;
 varying vec3 vDisplacedNormal;
-varying vec3 vWorldPosition;
+varying vec3 vHydraWorldPosition;
 
 vec3 gHydraTint;
 vec3 gFoamColor;
@@ -210,11 +213,11 @@ vec3 tint = mix(shallowTint, deepTint, depthMix);
 float waterfallMask = smoothstep(0.35, 1.0, vSurfaceType);
 vec3 horizonBlend = mix(tint, uHorizonTint, 0.35 * (1.0 - depthMix));
 diffuseColor.rgb = mix(horizonBlend, tint, depthMix * 0.7);
-float altitudeMix = clamp(vWorldPosition.y * 0.02 + 0.5, 0.0, 1.0);
+float altitudeMix = clamp(vHydraWorldPosition.y * 0.02 + 0.5, 0.0, 1.0);
 diffuseColor.rgb = mix(
   diffuseColor.rgb,
   mix(uHorizonTint, uShallowTint, altitudeMix),
-  0.08 * (1.0 - depthMix),
+  0.08 * (1.0 - depthMix)
 );
 float glint = clamp(length(vFlow) * 0.45 + shoreMix * 0.2 + waterfallMask * 0.2, 0.0, 1.0);
 diffuseColor.rgb = mix(diffuseColor.rgb, uSurfaceGlintColor, glint * 0.25);
