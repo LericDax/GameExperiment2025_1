@@ -1,6 +1,6 @@
 import { renderAsciiViewport } from '../devtools/ascii-viewport.js';
 import { createHeadlessScanner } from '../devtools/headless-scanner.js';
-import { sampleBiomeAt, terrainHeight, worldConfig } from '../world/generation.js';
+import { sampleBiomeAt, worldConfig } from '../world/generation.js';
 
 export function registerDeveloperCommands({
   commandConsole,
@@ -43,29 +43,6 @@ export function registerDeveloperCommands({
       intervalId: null,
     },
     lastErrorMessage: null,
-    lastView: null,
-  };
-
-  const asciiListeners = new Set();
-
-  const notifyAsciiListeners = (event) => {
-    asciiListeners.forEach((listener) => {
-      try {
-        listener(event);
-      } catch (error) {
-        console.error('ASCII map listener failed:', error);
-      }
-    });
-  };
-
-  const addAsciiListener = (listener) => {
-    if (typeof listener !== 'function') {
-      throw new Error('ASCII listener must be a function.');
-    }
-    asciiListeners.add(listener);
-    return () => {
-      asciiListeners.delete(listener);
-    };
   };
 
   const headlessScanner = createHeadlessScanner({ THREE, scene, chunkManager });
@@ -261,8 +238,6 @@ export function registerDeveloperCommands({
         asciiState.lastErrorMessage = view.error;
         commandConsole.log(`[ASCII] ${view.error}`);
       }
-      asciiState.lastView = view;
-      notifyAsciiListeners({ type: 'error', view });
       return false;
     }
 
@@ -276,8 +251,6 @@ export function registerDeveloperCommands({
     if (view.legend) {
       commandConsole.log(view.legend);
     }
-    asciiState.lastView = view;
-    notifyAsciiListeners({ type: 'render', view });
     return true;
   };
 
@@ -295,12 +268,6 @@ export function registerDeveloperCommands({
     if (!silent) {
       commandConsole.log('ASCII watch disabled.');
     }
-    notifyAsciiListeners({
-      type: 'status',
-      status: 'stopped',
-      mode: 'off',
-      intervalMs: asciiState.watch.intervalMs,
-    });
   };
 
   const startAsciiWatch = ({ mode, intervalMs }) => {
@@ -320,12 +287,6 @@ export function registerDeveloperCommands({
       renderOnce(true);
       asciiState.watch.rafId = window.requestAnimationFrame(frameLoop);
       commandConsole.log('ASCII watch enabled (per frame).');
-      notifyAsciiListeners({
-        type: 'status',
-        status: 'started',
-        mode: 'frame',
-        intervalMs: null,
-      });
       return;
     }
 
@@ -342,30 +303,6 @@ export function registerDeveloperCommands({
     asciiState.watch.intervalMs = effectiveInterval;
     renderOnce(true);
     commandConsole.log(`ASCII watch enabled (every ${effectiveInterval} ms).`);
-    notifyAsciiListeners({
-      type: 'status',
-      status: 'started',
-      mode: 'interval',
-      intervalMs: effectiveInterval,
-    });
-  };
-
-  const resolveAsciiOptions = (overrides) => {
-    if (!overrides) {
-      return cloneAsciiOptions();
-    }
-    const merged = { ...asciiState.options, ...overrides };
-    return cloneAsciiOptions(merged);
-  };
-
-  const formatAsciiView = (view) => {
-    if (!view) {
-      return '';
-    }
-    if (view.error) {
-      return `[ASCII] ${view.error}`;
-    }
-    return [view.header, view.map, view.legend].filter(Boolean).join('\n');
   };
 
   const parseDistance = (value) => {
@@ -416,441 +353,6 @@ export function registerDeveloperCommands({
       throw new Error(`${label} must be numeric (optionally suffixed with deg or rad).`);
     }
     return unit === 'rad' ? numeric : THREE.MathUtils.degToRad(numeric);
-  };
-
-  const teleportEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-  const teleportYawEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-  const teleportForwardBasis = new THREE.Vector3(0, 0, -1);
-  const teleportRightBasis = new THREE.Vector3(1, 0, 0);
-  const teleportForward = new THREE.Vector3();
-  const teleportRight = new THREE.Vector3();
-  const teleportOffset = new THREE.Vector3();
-  const teleportUp = new THREE.Vector3(0, 1, 0);
-
-  const RELATIVE_DIRECTION_ALIASES = new Map([
-    ['forward', 'forward'],
-    ['forwards', 'forward'],
-    ['fwd', 'forward'],
-    ['back', 'backward'],
-    ['backward', 'backward'],
-    ['backwards', 'backward'],
-    ['reverse', 'backward'],
-    ['backtrack', 'backward'],
-    ['right', 'right'],
-    ['straferight', 'right'],
-    ['left', 'left'],
-    ['strafeleft', 'left'],
-    ['up', 'up'],
-    ['ascend', 'up'],
-    ['rise', 'up'],
-    ['down', 'down'],
-    ['descend', 'down'],
-    ['drop', 'down'],
-  ]);
-
-  const normalizeRelativeToken = (token) => {
-    if (!token) {
-      throw new Error('Expected at least one relative step.');
-    }
-    const trimmed = token.trim();
-    if (!trimmed) {
-      throw new Error('Relative steps must not be empty.');
-    }
-    const match = /^([a-z]+)(?:\(([^)]+)\))?$/i.exec(trimmed);
-    if (!match) {
-      throw new Error(
-        `Unrecognized relative step "${token}". Use syntax like forward(3) or up(2).`,
-      );
-    }
-    const directionKey = match[1].toLowerCase();
-    const normalizedDirection = RELATIVE_DIRECTION_ALIASES.get(directionKey);
-    if (!normalizedDirection) {
-      throw new Error(
-        `Unknown direction "${directionKey}". Expected forward/backward/left/right/up/down.`,
-      );
-    }
-    const distanceText = match[2];
-    const distance = distanceText === undefined || distanceText === '' ? 1 : Number(distanceText);
-    if (!Number.isFinite(distance)) {
-      throw new Error(`Step distance for "${directionKey}" must be a finite number.`);
-    }
-    return { direction: normalizedDirection, distance };
-  };
-
-  const computeRelativeOffset = (tokens) => {
-    if (!Array.isArray(tokens) || tokens.length === 0) {
-      throw new Error('Provide at least one relative step to teleport.');
-    }
-    const orientation = playerControls.getYawPitch();
-    teleportEuler.set(orientation.pitch, orientation.yaw, 0, 'YXZ');
-    teleportYawEuler.set(0, orientation.yaw, 0, 'YXZ');
-    teleportForward.copy(teleportForwardBasis).applyEuler(teleportEuler).normalize();
-    teleportRight.copy(teleportRightBasis).applyEuler(teleportYawEuler).normalize();
-    if (!Number.isFinite(teleportRight.lengthSq()) || teleportRight.lengthSq() === 0) {
-      teleportRight.set(1, 0, 0);
-    }
-    teleportOffset.set(0, 0, 0);
-
-    tokens.forEach((token) => {
-      const { direction, distance } = normalizeRelativeToken(token);
-      switch (direction) {
-        case 'forward':
-          teleportOffset.addScaledVector(teleportForward, distance);
-          break;
-        case 'backward':
-          teleportOffset.addScaledVector(teleportForward, -distance);
-          break;
-        case 'right':
-          teleportOffset.addScaledVector(teleportRight, distance);
-          break;
-        case 'left':
-          teleportOffset.addScaledVector(teleportRight, -distance);
-          break;
-        case 'up':
-          teleportOffset.addScaledVector(teleportUp, distance);
-          break;
-        case 'down':
-          teleportOffset.addScaledVector(teleportUp, -distance);
-          break;
-        default:
-          throw new Error(`Unsupported direction "${direction}".`);
-      }
-    });
-
-    return teleportOffset.clone();
-  };
-
-  const computeHorizontalDistanceSq = (x, z, origin) => {
-    const reference = origin ?? playerControls.getPosition();
-    const dx = x - reference.x;
-    const dz = z - reference.z;
-    return dx * dx + dz * dz;
-  };
-
-  const findSurfaceHeightAt = (x, z) => {
-    const blockSet = chunkManager?.solidBlocks;
-    if (!blockSet || typeof blockSet.has !== 'function') {
-      return null;
-    }
-    const columnX = Math.round(x);
-    const columnZ = Math.round(z);
-    const searchTop = worldConfig.maxHeight + 64;
-    for (let y = searchTop; y >= -64; y -= 1) {
-      if (blockSet.has(`${columnX}|${y}|${columnZ}`)) {
-        return y + 0.5;
-      }
-    }
-    return null;
-  };
-
-  const estimateEyeHeight = () => {
-    const current = playerControls.getPosition();
-    const surface = findSurfaceHeightAt(current.x, current.z);
-    if (surface !== null) {
-      const offset = current.y - surface;
-      if (Number.isFinite(offset) && offset > 0.5 && offset < 3.5) {
-        return offset;
-      }
-    }
-    return 1.7;
-  };
-
-  const resolveFluidColumns = (chunk) => {
-    if (!chunk) {
-      return null;
-    }
-    if (chunk.fluidColumns instanceof Map) {
-      return chunk.fluidColumns;
-    }
-    if (chunk.fluidColumnsByType instanceof Map) {
-      return chunk.fluidColumnsByType;
-    }
-    return null;
-  };
-
-  const resolveBiomeEntries = (chunk) => {
-    if (!chunk) {
-      return [];
-    }
-    if (Array.isArray(chunk.biomes)) {
-      return chunk.biomes;
-    }
-    if (Array.isArray(chunk.group?.userData?.biomes)) {
-      return chunk.group.userData.biomes;
-    }
-    return [];
-  };
-
-  const movePlayerTo = (targetPosition, { announce, label } = {}) => {
-    const moved = playerControls.setPosition(targetPosition);
-    if (!moved) {
-      throw new Error('Unable to move to target position — location is obstructed.');
-    }
-    const position = playerControls.getPosition();
-    const summary = `X=${position.x.toFixed(2)} Y=${position.y.toFixed(2)} Z=${position.z.toFixed(2)}`;
-    if (announce) {
-      commandConsole.log(announce);
-    }
-    if (label) {
-      commandConsole.log(label);
-    }
-    commandConsole.log(`Teleport complete — ${summary}.`);
-    return position;
-  };
-
-  const getLoadedChunks = () => {
-    if (typeof chunkManager.getLoadedChunks === 'function') {
-      return chunkManager.getLoadedChunks();
-    }
-    const snapshot = chunkManager.debugSnapshot?.();
-    if (snapshot?.chunks) {
-      return snapshot.chunks.map((entry) => entry.chunk).filter(Boolean);
-    }
-    return [];
-  };
-
-  const computeStandingPosition = ({ x, z, surfaceHint = null, offset = 0.25 }) => {
-    let surface = Number.isFinite(surfaceHint) ? surfaceHint : null;
-    if (surface === null) {
-      surface = findSurfaceHeightAt(x, z);
-    }
-    if (surface === null && typeof terrainHeight === 'function') {
-      try {
-        const terrain = terrainHeight(Math.round(x), Math.round(z));
-        if (Number.isFinite(terrain)) {
-          surface = terrain + 0.5;
-        }
-      } catch (error) {
-        // Ignore terrain sampling failures and fall back to base height.
-      }
-    }
-    if (surface === null) {
-      surface = worldConfig.baseHeight + 0.5;
-    }
-    const headOffset = estimateEyeHeight() + offset;
-    return new THREE.Vector3(x, surface + headOffset, z);
-  };
-
-  const requireLoadedChunks = () => {
-    const chunks = getLoadedChunks();
-    if (!chunks || chunks.length === 0) {
-      throw new Error(
-        'No chunks are currently loaded. Move around the world to stream in terrain before teleporting.',
-      );
-    }
-    return chunks;
-  };
-
-  const handleRelativeTeleport = (tokens) => {
-    const offset = computeRelativeOffset(tokens);
-    if (offset.lengthSq() === 0) {
-      throw new Error('Relative steps cancelled each other out — no movement requested.');
-    }
-    const origin = playerControls.getPosition();
-    const target = origin.clone().add(offset);
-    const announce = `Teleporting by offset ΔX=${offset.x.toFixed(2)} ΔY=${offset.y.toFixed(2)} ΔZ=${offset.z.toFixed(2)}.`;
-    movePlayerTo(target, { announce });
-  };
-
-  const handleTeleportBiome = (args) => {
-    if (!args.length) {
-      throw new Error('Usage: /teleport biome <id|name>.');
-    }
-    const queryRaw = args.join(' ').trim();
-    if (!queryRaw) {
-      throw new Error('Provide a biome id or name to search for.');
-    }
-    const query = queryRaw.toLowerCase();
-    const chunks = requireLoadedChunks();
-    const origin = playerControls.getPosition();
-    let best = null;
-    chunks.forEach((chunk) => {
-      const biomes = resolveBiomeEntries(chunk);
-      if (!Array.isArray(biomes) || biomes.length === 0) {
-        return;
-      }
-      const match = biomes.find((entry) => {
-        if (!entry) {
-          return false;
-        }
-        const id = typeof entry.id === 'string' ? entry.id.toLowerCase() : '';
-        const label = typeof entry.label === 'string' ? entry.label.toLowerCase() : '';
-        return id === query || label === query;
-      });
-      if (!match) {
-        return;
-      }
-      const x = chunk.chunkX * worldConfig.chunkSize;
-      const z = chunk.chunkZ * worldConfig.chunkSize;
-      const distanceSq = computeHorizontalDistanceSq(x, z, origin);
-      if (!best || distanceSq < best.distanceSq) {
-        best = { chunk, match, x, z, distanceSq };
-      }
-    });
-    if (!best) {
-      throw new Error(`No loaded chunk matches biome "${queryRaw}".`);
-    }
-    const target = computeStandingPosition({ x: best.x, z: best.z });
-    const biomeLabel = best.match.label ?? best.match.id ?? 'Unknown biome';
-    const biomeId = best.match.id ? ` [${best.match.id}]` : '';
-    const distance = Math.sqrt(best.distanceSq);
-    const announce = `Teleporting to biome ${biomeLabel}${biomeId} at chunk (${best.chunk.chunkX}, ${best.chunk.chunkZ}).`;
-    const weightPercent =
-      typeof best.match.weight === 'number' ? `${(best.match.weight * 100).toFixed(1)}%` : null;
-    const labelParts = [`Horizontal distance ≈${distance.toFixed(1)}m`];
-    if (weightPercent) {
-      labelParts.push(`Chunk weight ${weightPercent}`);
-    }
-    movePlayerTo(target, { announce, label: labelParts.join(' | ') });
-  };
-
-  const handleTeleportFluid = (args) => {
-    if (!args.length) {
-      throw new Error('Usage: /teleport fluid <type>.');
-    }
-    const query = args[0].toLowerCase();
-    const chunks = requireLoadedChunks();
-    const origin = playerControls.getPosition();
-    let best = null;
-    chunks.forEach((chunk) => {
-      const columnsByType = resolveFluidColumns(chunk);
-      if (!columnsByType) {
-        return;
-      }
-      const columns = columnsByType.get(query);
-      if (!(columns instanceof Map)) {
-        return;
-      }
-      columns.forEach((column) => {
-        if (!column) {
-          return;
-        }
-        const columnX = column.x ?? column.worldX ?? column.position?.x ?? 0;
-        const columnZ = column.z ?? column.worldZ ?? column.position?.z ?? 0;
-        const distanceSq = computeHorizontalDistanceSq(columnX, columnZ, origin);
-        const surface =
-          typeof column.surfaceY === 'number'
-            ? column.surfaceY
-            : typeof column.maxY === 'number'
-            ? column.maxY
-            : null;
-        if (!best || distanceSq < best.distanceSq) {
-          best = { chunk, column, x: columnX, z: columnZ, surface, distanceSq };
-        }
-      });
-    });
-    if (!best) {
-      throw new Error(`No loaded fluid columns of type "${query}" were found.`);
-    }
-    const depth = typeof best.column.depth === 'number' ? best.column.depth : null;
-    const offset = depth !== null ? Math.max(0.35, Math.min(1, depth * 0.5)) : 0.35;
-    const target = computeStandingPosition({
-      x: best.x,
-      z: best.z,
-      surfaceHint: best.surface,
-      offset,
-    });
-    const announce = `Teleporting to ${query} column at (${Math.round(best.x)}, ${Math.round(best.z)}) in chunk (${best.chunk.chunkX}, ${best.chunk.chunkZ}).`;
-    const distance = Math.sqrt(best.distanceSq);
-    const labelParts = [`Horizontal distance ≈${distance.toFixed(1)}m`];
-    if (Number.isFinite(best.surface)) {
-      labelParts.push(`Surface Y≈${best.surface.toFixed(2)}`);
-    }
-    if (depth !== null) {
-      labelParts.push(`Depth≈${depth.toFixed(2)}`);
-    }
-    movePlayerTo(target, { announce, label: labelParts.join(' | ') });
-  };
-
-  const handleTeleportObject = (args) => {
-    if (!args.length) {
-      throw new Error('Usage: /teleport object <id>.');
-    }
-    const queryRaw = args[0];
-    const query = queryRaw.toLowerCase();
-    const chunks = requireLoadedChunks();
-    const origin = playerControls.getPosition();
-    let best = null;
-    chunks.forEach((chunk) => {
-      if (!chunk?.typeData || typeof chunk.typeData.forEach !== 'function') {
-        return;
-      }
-      const matches = [];
-      chunk.typeData.forEach((typeData) => {
-        const entries = typeData?.entries ?? [];
-        entries.forEach((entry) => {
-          if (!entry?.sourceObjectId) {
-            return;
-          }
-          if (entry.sourceObjectId.toLowerCase() !== query) {
-            return;
-          }
-          matches.push(entry);
-        });
-      });
-      if (matches.length === 0) {
-        return;
-      }
-      let minX = Infinity;
-      let minY = Infinity;
-      let minZ = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      let maxZ = -Infinity;
-      matches.forEach((entry) => {
-        const pos = entry.position;
-        if (!pos) {
-          return;
-        }
-        minX = Math.min(minX, pos.x);
-        minY = Math.min(minY, pos.y);
-        minZ = Math.min(minZ, pos.z);
-        maxX = Math.max(maxX, pos.x);
-        maxY = Math.max(maxY, pos.y);
-        maxZ = Math.max(maxZ, pos.z);
-      });
-      if (!Number.isFinite(minX) || !Number.isFinite(minZ)) {
-        return;
-      }
-      const centerX = (minX + maxX) / 2;
-      const centerZ = (minZ + maxZ) / 2;
-      const distanceSq = computeHorizontalDistanceSq(centerX, centerZ, origin);
-      if (!best || distanceSq < best.distanceSq) {
-        best = {
-          chunk,
-          entries: matches,
-          bounds: { minX, minY, minZ, maxX, maxY, maxZ },
-          x: centerX,
-          z: centerZ,
-          distanceSq,
-        };
-      }
-    });
-    if (!best) {
-      throw new Error(`No voxel object with id "${queryRaw}" is present in loaded chunks.`);
-    }
-    const surfaceHint = Number.isFinite(best.bounds?.maxY)
-      ? best.bounds.maxY + 0.5
-      : null;
-    const target = computeStandingPosition({
-      x: best.x,
-      z: best.z,
-      surfaceHint,
-      offset: 0.6,
-    });
-    const announce = `Teleporting near voxel object ${queryRaw} (${best.entries.length} voxels) in chunk (${best.chunk.chunkX}, ${best.chunk.chunkZ}).`;
-    const distance = Math.sqrt(best.distanceSq);
-    const labelParts = [`Horizontal distance ≈${distance.toFixed(1)}m`];
-    if (
-      Number.isFinite(best.bounds?.minY) &&
-      Number.isFinite(best.bounds?.maxY) &&
-      best.bounds.maxY >= best.bounds.minY
-    ) {
-      labelParts.push(
-        `Height span ≈${(best.bounds.maxY - best.bounds.minY).toFixed(2)}`,
-      );
-    }
-    movePlayerTo(target, { announce, label: labelParts.join(' | ') });
   };
 
   const normalizeScanOptions = ({ distance, yaw, pitch } = {}) => {
@@ -1049,35 +551,6 @@ export function registerDeveloperCommands({
       commandConsole.log(
         `Orientation updated — yaw=${yawDegrees.toFixed(2)}°, pitch=${pitchDegrees.toFixed(2)}°`,
       );
-    },
-  });
-
-  registerCommand({
-    name: 'teleport',
-    description:
-      'Teleport relative to your view or jump to nearby biomes, fluids, and voxel objects.',
-    usage:
-      '/teleport <direction(step)> [...] | /teleport biome <id|name> | /teleport fluid <type> | /teleport object <id>',
-    handler: ({ args }) => {
-      if (!args.length) {
-        throw new Error(
-          'Usage: /teleport <direction(step)> [...] | /teleport biome <id|name> | /teleport fluid <type> | /teleport object <id>.',
-        );
-      }
-      const mode = args[0].toLowerCase();
-      if (mode === 'biome') {
-        handleTeleportBiome(args.slice(1));
-        return;
-      }
-      if (mode === 'fluid') {
-        handleTeleportFluid(args.slice(1));
-        return;
-      }
-      if (mode === 'object') {
-        handleTeleportObject(args.slice(1));
-        return;
-      }
-      handleRelativeTeleport(args);
     },
   });
 
@@ -1381,65 +854,4 @@ export function registerDeveloperCommands({
       }
     },
   });
-
-  if (import.meta.env?.DEV && typeof window !== 'undefined') {
-    const debugNamespace = (window.__VOXEL_DEBUG__ = window.__VOXEL_DEBUG__ || {});
-
-    const asciiDebug = {
-      getView: (overrides) =>
-        buildAsciiView({
-          optionsOverride: overrides ? resolveAsciiOptions(overrides) : undefined,
-        }),
-      render: (overrides) => {
-        const view = asciiDebug.getView(overrides);
-        outputAsciiView(view);
-        return view;
-      },
-      on: (listener) => addAsciiListener(listener),
-      off: (listener) => {
-        asciiListeners.delete(listener);
-      },
-      stop: () => stopAsciiWatch(),
-      startFrame: () => startAsciiWatch({ mode: 'frame' }),
-      startInterval: (ms) => {
-        if (typeof ms === 'number') {
-          startAsciiWatch({ mode: 'interval', intervalMs: Math.max(16, Math.round(ms)) });
-        } else {
-          startAsciiWatch({ mode: 'interval', intervalMs: asciiState.watch.intervalMs });
-        }
-      },
-      status: () => ({
-        mode: asciiState.watch.mode,
-        intervalMs:
-          asciiState.watch.mode === 'frame'
-            ? null
-            : asciiState.watch.activeIntervalMs ?? asciiState.watch.intervalMs,
-      }),
-      options: () => ({ ...cloneAsciiOptions() }),
-      setOptions: (overrides = {}) => {
-        asciiState.options = resolveAsciiOptions(overrides);
-        return { ...asciiState.options };
-      },
-      lastView: () => asciiState.lastView,
-      format: (view) => formatAsciiView(view ?? asciiState.lastView),
-    };
-
-    debugNamespace.ascii = Object.assign(debugNamespace.ascii ?? {}, asciiDebug);
-
-    debugNamespace.commandConsole = Object.assign(debugNamespace.commandConsole ?? {}, {
-      execute: (input) => {
-        if (!input || typeof input !== 'string') {
-          throw new Error('commandConsole.execute expects a string.');
-        }
-        const normalized = input.trim().startsWith('/') ? input : `/${input}`;
-        commandConsole.executeCommand(normalized);
-      },
-      list: () =>
-        commandConsole
-          .listCommands()
-          .map(({ name, description, usage }) => ({ name, description, usage })),
-      getEntries: () => commandConsole.getEntries(),
-      onLog: (listener) => commandConsole.addLogListener(listener),
-    });
-  }
 }
