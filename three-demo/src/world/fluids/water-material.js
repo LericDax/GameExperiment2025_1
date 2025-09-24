@@ -20,7 +20,7 @@ export function createHydraWaterMaterial({ THREE }) {
     uAmbientColor: { value: new THREE.Color('#2a3f58') },
     uLightColor: { value: new THREE.Color('#ffffff') },
     uLightDirection: { value: lightDirection },
-    cameraPosition: { value: new THREE.Vector3() },
+
   };
 
   const vertexShader = `
@@ -53,40 +53,63 @@ export function createHydraWaterMaterial({ THREE }) {
     varying float vSurfaceType;
 
     varying vec2 vWorldXZ;
+    varying float vWaveHeight;
+    varying float vCrest;
 
+    vec2 getWaveDirection(int index) {
+      if (index == 0) return normalize(vec2(0.85, 0.18));
+      if (index == 1) return normalize(vec2(-0.52, 0.9));
+      if (index == 2) return normalize(vec2(0.34, -0.94));
+      return normalize(vec2(-0.92, -0.38));
+    }
 
-    float sampleHydraWave(vec2 uv, vec2 flowDir, float flowStrength) {
-      vec2 advected = uv;
-      float time = uTime;
-      vec2 flow = flowDir * (flowStrength * 0.85 + 0.12);
-      advected += flow * time * 0.45;
-      float primary = sin(dot(advected, vec2(0.78, 1.04)) + time * 0.92);
-      float cross = sin(dot(advected, vec2(-1.25, 0.64)) - time * 1.18);
-      float swirl = sin(dot(advected * 1.37, vec2(1.6, -1.1)) + time * 1.65);
-      float micro = sin(dot(advected * 3.4, vec2(0.24, -2.8)) + time * 2.4);
-      return primary * 0.7 + cross * 0.55 + swirl * 0.3 + micro * 0.12;
+    float sampleWaveSet(vec2 uv, vec2 flowDir, float flowStrength) {
+      float total = 0.0;
+      float weight = 0.0;
+      for (int i = 0; i < 4; i++) {
+        float t = float(i) / 3.0;
+        vec2 dir = getWaveDirection(i);
+        float freq = mix(0.35, 1.7, t);
+        float speed = mix(0.4, 1.3, t);
+        float amplitude = mix(1.0, 0.4, t);
+        vec2 advected = uv + flowDir * flowStrength * (0.3 + t * 0.3);
+        float phase = dot(dir, advected) * (freq * 6.28318) + uTime * speed;
+        total += sin(phase) * amplitude;
+        weight += amplitude;
+      }
+      return total / max(weight, 0.0001);
+    }
+
+    float layeredWaves(vec2 uv, vec2 flowDir, float flowStrength) {
+      float macro = sampleWaveSet(uv * 0.45, flowDir, flowStrength);
+      float mid = sampleWaveSet(uv * 1.15, flowDir, flowStrength * 0.7);
+      float detail = sampleWaveSet(uv * 2.4, flowDir, flowStrength * 0.5);
+      return macro * 0.85 + mid * 0.55 + detail * 0.25;
     }
 
     void main() {
       vec3 localPosition = position;
       vec2 flowDir = flowStrength > 0.001 ? normalize(flowDirection) : vec2(0.0);
-      float depthFactor = clamp(depth / max(uFadeDepth, 0.0001), 0.1, 1.6);
+      float depthFactor = clamp(depth / max(uFadeDepth, 0.0001), 0.05, 1.5);
       vec2 uv = position.xz;
 
-      float wave = sampleHydraWave(uv, flowDir, flowStrength);
-      float choppyWave = sin(dot(uv, vec2(1.3, -0.75)) - uTime * 1.4) * uSecondaryScale;
-      float crest = sin(dot(uv, flowDir * 1.9) + uTime * 0.82) * flowStrength * (0.6 + shoreline * 0.45);
-      float waterfallBoost = clamp(surfaceType, 0.0, 1.0) * (shoreline * 1.2 + flowStrength * 0.6);
-      float displacement = (wave * uPrimaryScale + choppyWave + crest) * depthFactor + waterfallBoost * uSecondaryScale;
+      float waveHeight = layeredWaves(uv, flowDir, flowStrength);
+      float displacement = waveHeight * (uPrimaryScale + depthFactor * 0.45);
+      displacement += shoreline * uSecondaryScale * 0.9;
+      displacement += flowStrength * uSecondaryScale * 0.35;
       localPosition.y += displacement;
-      localPosition.xz += flowDir * (flowStrength * uFlowScale) * (0.6 + shoreline * 0.4) * sin(uTime * 0.8 + displacement);
+      localPosition.xz += flowDir * (flowStrength * uFlowScale) * (0.4 + shoreline * 0.5);
 
-      float eps = 0.18;
-      float sampleX = sampleHydraWave(uv + vec2(eps, 0.0), flowDir, flowStrength);
-      float sampleZ = sampleHydraWave(uv + vec2(0.0, eps), flowDir, flowStrength);
-      float choppy = uChoppiness + depthFactor * 0.4;
-      vec3 bentNormal = normalize(vec3(-(sampleX - wave) / eps * choppy, 1.0, -(sampleZ - wave) / eps * choppy));
+      float eps = 0.35;
+      float heightX = layeredWaves(uv + vec2(eps, 0.0), flowDir, flowStrength);
+      float heightZ = layeredWaves(uv + vec2(0.0, eps), flowDir, flowStrength);
+      float slopeX = (heightX - waveHeight) / eps;
+      float slopeZ = (heightZ - waveHeight) / eps;
+      float choppy = uChoppiness + depthFactor * 0.3;
+      vec3 bentNormal = normalize(vec3(-slopeX * choppy, 1.0, -slopeZ * choppy));
       vNormal = normalMatrix * bentNormal;
+      vWaveHeight = waveHeight;
+      vCrest = clamp(length(vec2(slopeX, slopeZ)) * 1.4, 0.0, 1.5);
 
       vec4 worldPosition = modelMatrix * vec4(localPosition, 1.0);
       vWorldPosition = worldPosition.xyz;
@@ -97,7 +120,6 @@ export function createHydraWaterMaterial({ THREE }) {
       vShore = shoreline;
       vSurfaceType = surfaceType;
       vWorldXZ = worldPosition.xz;
-
 
       vec4 mvPosition = viewMatrix * worldPosition;
       gl_Position = projectionMatrix * mvPosition;
@@ -134,68 +156,63 @@ export function createHydraWaterMaterial({ THREE }) {
     varying float vDepth;
     varying float vShore;
     varying float vSurfaceType;
-
     varying vec2 vWorldXZ;
-
+    varying float vWaveHeight;
+    varying float vCrest;
 
     void main() {
       vec3 normal = normalize(vNormal);
       float depthMix = clamp(vDepth / max(uFadeDepth, 0.0001), 0.0, 1.0);
       float shoreMix = clamp(vShore, 0.0, 1.0);
 
-      vec3 shallowTint = mix(vColor, uShallowTint, 0.6);
-      vec3 deepTint = mix(vColor, uDeepTint, 0.85);
-      vec3 tint = mix(shallowTint, deepTint, depthMix);
       float waterfallMask = smoothstep(0.35, 1.0, clamp(vSurfaceType, 0.0, 1.0));
-      vec3 horizonBlend = mix(tint, uHorizonTint, 0.35 * (1.0 - depthMix));
-      tint = mix(horizonBlend, tint, depthMix * 0.7);
-      float altitudeMix = clamp(vWorldPosition.y * 0.02 + 0.5, 0.0, 1.0);
-      tint = mix(tint, mix(uHorizonTint, uShallowTint, altitudeMix), 0.08 * (1.0 - depthMix));
 
-
-      vec2 rippleUv = vWorldXZ * 0.6;
-      float ripplePrimary = sin(rippleUv.x + uTime * 0.9) * 0.5 + 0.5;
-      float rippleSecondary = sin((rippleUv.y * 1.4 - rippleUv.x * 0.75) - uTime * 1.1) * 0.5 + 0.5;
-      float swirl = sin((rippleUv.x + rippleUv.y) * 2.4 + uTime * 0.6) * 0.5 + 0.5;
-      float proceduralSurface = clamp((ripplePrimary * 0.45 + rippleSecondary * 0.35 + swirl * 0.2), 0.0, 1.0);
-
-      float foamNoise = sin(uTime * (uFoamSpeed + length(vFlow) * 0.6) + dot(vFlow, vec2(7.3, -3.1))) * 0.5 + 0.5;
-      float foamMask = smoothstep(
-        0.15,
-        0.9,
-        vFoamEdge * uEdgeFoamBoost + shoreMix * 1.35 + waterfallMask * 0.25 + proceduralSurface * 0.35,
-      );
-
-      vec3 foamColor = uFoamColor * foamMask * (0.65 + foamNoise * 0.4);
+      vec3 shallowTint = mix(vColor, uShallowTint, 0.5);
+      vec3 deepTint = mix(vColor, uDeepTint, 0.8);
+      vec3 scatterTint = mix(shallowTint, deepTint, depthMix);
+      scatterTint = mix(scatterTint, uUnderwaterColor, depthMix * 0.25);
+      float horizonInfluence = (1.0 - depthMix) * 0.4;
+      scatterTint = mix(scatterTint, uHorizonTint, horizonInfluence * 0.5);
 
       vec3 lightDir = normalize(uLightDirection);
       float lambert = max(dot(normal, lightDir), 0.0);
       vec3 lighting = uAmbientColor + uLightColor * lambert;
-      vec3 color = tint * lighting;
 
       vec3 viewDir = normalize(cameraPosition - vWorldPosition);
-      float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
-      color = mix(color, uSurfaceGlintColor, fresnel * 0.25 + length(vFlow) * 0.1);
-      vec3 refractionTint = mix(uUnderwaterColor, tint, clamp(0.25 + depthMix * 0.75, 0.0, 1.0));
-      color = mix(color, refractionTint, uRefractionStrength * (1.0 - depthMix));
+      float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
+      vec3 reflection = mix(uHorizonTint, uSurfaceGlintColor, clamp(fresnel * 1.2, 0.0, 1.0));
+      vec3 base = mix(scatterTint, reflection, clamp(fresnel * 0.75 + 0.15, 0.0, 1.0));
+      base *= lighting;
 
+      vec2 foamUv = vWorldXZ * 1.2;
+      float foamNoiseA = sin(dot(foamUv, vec2(0.82, 1.73)) + uTime * (uFoamSpeed * 0.8 + length(vFlow))) * 0.5 + 0.5;
+      float foamNoiseB = sin(foamUv.x * 2.1 - foamUv.y * 2.4 + uTime * 1.1) * 0.5 + 0.5;
+      float crestFoam = smoothstep(0.18, 0.85, vCrest * (1.1 + shoreMix * 0.5));
+      float flowFoam = smoothstep(0.1, 0.8, length(vFlow) * 1.4 + vFoamEdge * uEdgeFoamBoost + shoreMix * 0.9);
+      float foamMask = clamp(max(crestFoam, flowFoam), 0.0, 1.0);
+      foamMask = mix(foamMask, foamMask * foamNoiseA, 0.55);
+      foamMask = mix(foamMask, foamMask * foamNoiseB, 0.45);
+      foamMask += waterfallMask * 0.35;
+      foamMask = clamp(foamMask, 0.0, 1.2);
 
-      color = mix(color, mix(uFoamColor, uShallowTint, 0.5), proceduralSurface * (1.0 - depthMix) * 0.35);
-      color = mix(color, mix(uFoamColor, tint, 0.4), waterfallMask * 0.3);
+      vec3 foamColor = uFoamColor * foamMask;
 
-      color += foamColor;
-      color += uFoamColor * fresnel * (0.08 + shoreMix * 0.25);
+      float waveHighlight = smoothstep(-0.6, 0.9, vWaveHeight);
+      base = mix(base, mix(uFoamColor, uHorizonTint, 0.5), waveHighlight * (1.0 - depthMix) * 0.25);
+      base = mix(base, uShallowTint, (1.0 - depthMix) * 0.15 + shoreMix * 0.2);
+      base += foamColor;
+      base += uFoamColor * fresnel * (0.08 + shoreMix * 0.2);
 
-      float edgeBoost = smoothstep(0.1, 0.8, foamMask + shoreMix * 0.4 + proceduralSurface * 0.45);
-      float alpha = mix(0.5, 0.98, clamp(depthMix * 0.75 + shoreMix * 0.45 + edgeBoost * 0.35, 0.0, 1.0));
-
-      gl_FragColor = vec4(color, alpha);
+      float alphaBase = clamp(0.6 + depthMix * 0.25, 0.0, 1.0);
+      float alpha = clamp(alphaBase + foamMask * 0.25 + waterfallMask * 0.15, 0.0, 1.0);
+      gl_FragColor = vec4(base, alpha);
 
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
       #include <fog_fragment>
     }
   `;
+
 
   const material = new THREE.ShaderMaterial({
     name: 'HydraWaterMaterial',
