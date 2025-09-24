@@ -14,8 +14,11 @@ import { registerDeveloperCommands } from './player/dev-commands.js'
 import { initializeMusicSystem } from './audio/music-system.js'
 import {
   initializeFluidRegistry,
+  getFluidFallbackStates,
+  getFluidMaterial,
   updateFluids,
 } from './world/fluids/fluid-registry.js'
+import { runHydraVisibilityProbe } from './world/fluids/hydra-visibility-probe.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -115,6 +118,7 @@ const statusElement = hud.querySelector('#hud-status')
 let lastHudState = null
 let hudStatusOverride = null
 let hudStatusOverrideIsError = false
+let hydraFallbackNoticeTimeout = null
 
 function renderHudStatus(message, isError = false) {
   if (!statusElement) {
@@ -193,18 +197,63 @@ try {
       return
     }
     const warnings = chunkManager.getFluidVisibilityWarnings?.() ?? []
-    if (!warnings.length) {
+    const fallbackStates = getFluidFallbackStates()
+    if (!warnings.length && !fallbackStates.length) {
       fluidWarningBanner.textContent = ''
       fluidWarningBanner.classList.remove('visible')
       return
     }
-    const summary = warnings
+    const entries = []
+    const warningEntries = warnings
       .slice(0, 3)
       .map((warning) => `${warning.fluidType}×${warning.columnCount} @ ${warning.chunkKey}`)
-      .join(' • ')
-    const overflow = warnings.length > 3 ? ` (+${warnings.length - 3} more)` : ''
-    fluidWarningBanner.textContent = `Fluid fallback active: ${summary}${overflow}`
+    entries.push(...warningEntries)
+    if (warnings.length > 3) {
+      entries.push(`+${warnings.length - 3} more chunk issue(s)`)
+    }
+    const fallbackSummaries = fallbackStates.slice(0, 2).map((state) => {
+      const reason = state.reason ?? 'fallback active'
+      const trimmedReason = reason.length > 70 ? `${reason.slice(0, 67)}…` : reason
+      const metrics = state.metrics ?? {}
+      const metricParts = []
+      if (typeof metrics.brightness === 'number') {
+        metricParts.push(`b=${metrics.brightness.toFixed(2)}`)
+      }
+      if (typeof metrics.alpha === 'number') {
+        metricParts.push(`a=${metrics.alpha.toFixed(2)}`)
+      }
+      const metricSuffix = metricParts.length ? ` (${metricParts.join(', ')})` : ''
+      return `${state.type} fallback: ${trimmedReason}${metricSuffix}`
+    })
+    entries.push(...fallbackSummaries)
+    if (fallbackStates.length > 2) {
+      entries.push(`+${fallbackStates.length - 2} more fallback notice(s)`)
+    }
+    fluidWarningBanner.textContent = `Fluid visibility notice: ${entries.join(' • ')}`
     fluidWarningBanner.classList.add('visible')
+  }
+
+  getFluidMaterial('water')
+  const hydraProbeResult = runHydraVisibilityProbe({
+    THREE,
+    renderer,
+    onFallback: ({ reason }) => {
+      if (hydraFallbackNoticeTimeout) {
+        clearTimeout(hydraFallbackNoticeTimeout)
+      }
+      setHudStatusOverride(reason ?? 'Hydra water fallback active')
+      hydraFallbackNoticeTimeout = setTimeout(() => {
+        setHudStatusOverride(null)
+        hydraFallbackNoticeTimeout = null
+      }, 6000)
+      updateFluidWarningBanner()
+    },
+  })
+  if (import.meta.env.DEV) {
+    console.info('[hydra] visibility probe result', hydraProbeResult)
+  }
+  if (hydraProbeResult?.ok) {
+    updateFluidWarningBanner()
   }
 
   updateFluidWarningBanner()
