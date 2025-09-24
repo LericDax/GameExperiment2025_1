@@ -542,4 +542,5 @@ export function createHydraWaterMaterial({ THREE }) {
       hydraWaterInstance.update({ delta, surfaces, context });
     },
   };
+
 }
