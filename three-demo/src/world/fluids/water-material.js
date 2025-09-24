@@ -236,6 +236,12 @@ gHydraShoreMix = shoreMix;
         `,
       )
       .replace(
+        'vec3 totalDiffuse = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;',
+        `vec3 totalDiffuse = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;
+vec3 hydraBaseDiffuse = totalDiffuse;
+`
+      )
+      .replace(
         'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
         `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
 
@@ -250,17 +256,22 @@ outgoingLight += uFoamColor * fresnel * (0.08 + gHydraShoreMix * 0.25);
       );
 
     shader.fragmentShader = shader.fragmentShader.replace(
-      'totalDiffuse = mix( totalDiffuse, transmitted.rgb, material.transmission );',
-      `vec3 refractedTint = mix(transmitted.rgb, gHydraTint, 0.7);
+      '#include <transmission_fragment>',
+      `#include <transmission_fragment>
+#ifdef USE_TRANSMISSION
+vec3 refractedTint = mix(transmitted.rgb, gHydraTint, 0.7);
 vec3 abyss = mix(uUnderwaterColor, gHydraTint, clamp(gHydraDepthMix * 0.85 + 0.1, 0.0, 1.0));
-totalDiffuse = mix(totalDiffuse, refractedTint, material.transmission);
+totalDiffuse = mix(hydraBaseDiffuse, refractedTint, material.transmission);
 totalDiffuse += abyss * (0.2 + (1.0 - material.transmission) * 0.4);
+#endif
 
-`,
+`
     );
   };
 
-  material.customProgramCacheKey = () => 'HydraWaterMaterial_v3';
+
+  material.customProgramCacheKey = () => 'HydraWaterMaterial_v4';
+
 
   const update = (delta) => {
     uniforms.uTime.value += delta;
