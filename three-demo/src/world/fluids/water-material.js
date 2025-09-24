@@ -51,7 +51,9 @@ export function createHydraWaterMaterial({ THREE }) {
     varying float vDepth;
     varying float vShore;
     varying float vSurfaceType;
+
     varying vec2 vWorldXZ;
+
 
     float sampleHydraWave(vec2 uv, vec2 flowDir, float flowStrength) {
       vec2 advected = uv;
@@ -96,6 +98,7 @@ export function createHydraWaterMaterial({ THREE }) {
       vSurfaceType = surfaceType;
       vWorldXZ = worldPosition.xz;
 
+
       vec4 mvPosition = viewMatrix * worldPosition;
       gl_Position = projectionMatrix * mvPosition;
       #include <fog_vertex>
@@ -131,7 +134,9 @@ export function createHydraWaterMaterial({ THREE }) {
     varying float vDepth;
     varying float vShore;
     varying float vSurfaceType;
+
     varying vec2 vWorldXZ;
+
 
     void main() {
       vec3 normal = normalize(vNormal);
@@ -147,6 +152,7 @@ export function createHydraWaterMaterial({ THREE }) {
       float altitudeMix = clamp(vWorldPosition.y * 0.02 + 0.5, 0.0, 1.0);
       tint = mix(tint, mix(uHorizonTint, uShallowTint, altitudeMix), 0.08 * (1.0 - depthMix));
 
+
       vec2 rippleUv = vWorldXZ * 0.6;
       float ripplePrimary = sin(rippleUv.x + uTime * 0.9) * 0.5 + 0.5;
       float rippleSecondary = sin((rippleUv.y * 1.4 - rippleUv.x * 0.75) - uTime * 1.1) * 0.5 + 0.5;
@@ -159,6 +165,7 @@ export function createHydraWaterMaterial({ THREE }) {
         0.9,
         vFoamEdge * uEdgeFoamBoost + shoreMix * 1.35 + waterfallMask * 0.25 + proceduralSurface * 0.35,
       );
+
       vec3 foamColor = uFoamColor * foamMask * (0.65 + foamNoise * 0.4);
 
       vec3 lightDir = normalize(uLightDirection);
@@ -172,6 +179,7 @@ export function createHydraWaterMaterial({ THREE }) {
       vec3 refractionTint = mix(uUnderwaterColor, tint, clamp(0.25 + depthMix * 0.75, 0.0, 1.0));
       color = mix(color, refractionTint, uRefractionStrength * (1.0 - depthMix));
 
+
       color = mix(color, mix(uFoamColor, uShallowTint, 0.5), proceduralSurface * (1.0 - depthMix) * 0.35);
       color = mix(color, mix(uFoamColor, tint, 0.4), waterfallMask * 0.3);
 
@@ -180,6 +188,7 @@ export function createHydraWaterMaterial({ THREE }) {
 
       float edgeBoost = smoothstep(0.1, 0.8, foamMask + shoreMix * 0.4 + proceduralSurface * 0.45);
       float alpha = mix(0.5, 0.98, clamp(depthMix * 0.75 + shoreMix * 0.45 + edgeBoost * 0.35, 0.0, 1.0));
+
       gl_FragColor = vec4(color, alpha);
 
       #include <tonemapping_fragment>
