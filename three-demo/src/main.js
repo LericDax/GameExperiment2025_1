@@ -65,7 +65,6 @@ document.body.appendChild(renderer.domElement)
 
 const clock = new THREE.Clock()
 const diagnosticOverlayCallbacks = new Set()
-let fluidWarningOverlayDisposer = null
 
 function registerDiagnosticOverlay(callback) {
   if (typeof callback !== 'function') {
@@ -97,13 +96,6 @@ hud.innerHTML = `
   <div id="hud-status" role="status" aria-live="polite"></div>
 `
 document.body.appendChild(hud)
-
-const fluidWarningBanner = document.createElement('div')
-fluidWarningBanner.id = 'fluid-warning-banner'
-fluidWarningBanner.className = 'fluid-warning-banner'
-fluidWarningBanner.setAttribute('role', 'status')
-fluidWarningBanner.setAttribute('aria-live', 'polite')
-document.body.appendChild(fluidWarningBanner)
 
 const musicSystem = initializeMusicSystem({ overlay, root: document.body })
 
@@ -187,30 +179,6 @@ try {
 
   chunkManager.update(playerControls.getPosition())
   updateHud(playerControls.getState())
-
-  const updateFluidWarningBanner = () => {
-    if (!fluidWarningBanner) {
-      return
-    }
-    const warnings = chunkManager.getFluidVisibilityWarnings?.() ?? []
-    if (!warnings.length) {
-      fluidWarningBanner.textContent = ''
-      fluidWarningBanner.classList.remove('visible')
-      return
-    }
-    const summary = warnings
-      .slice(0, 3)
-      .map((warning) => `${warning.fluidType}×${warning.columnCount} @ ${warning.chunkKey}`)
-      .join(' • ')
-    const overflow = warnings.length > 3 ? ` (+${warnings.length - 3} more)` : ''
-    fluidWarningBanner.textContent = `Fluid fallback active: ${summary}${overflow}`
-    fluidWarningBanner.classList.add('visible')
-  }
-
-  updateFluidWarningBanner()
-  fluidWarningOverlayDisposer = registerDiagnosticOverlay(() => {
-    updateFluidWarningBanner()
-  })
 
   if (import.meta.env.DEV) {
     const debugNamespace = (window.__VOXEL_DEBUG__ = window.__VOXEL_DEBUG__ || {})
@@ -314,7 +282,5 @@ if (!initializationError) {
     playerControls.dispose()
     chunkManager.dispose()
     musicSystem?.dispose()
-    fluidWarningOverlayDisposer?.()
-    fluidWarningOverlayDisposer = null
   })
 }
