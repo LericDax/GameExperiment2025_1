@@ -1,70 +1,95 @@
-export function createHydraWaterMaterial({ THREE }) {
+import { setBiomeCausticsConfig } from '../../rendering/biome-tint-material.js';
 
-  const material = new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#1c6dd9'),
-    roughness: 0.08,
-    metalness: 0.02,
-    transmission: 0.68,
-    thickness: 2.1,
-    attenuationDistance: 2.75,
-    attenuationColor: new THREE.Color('#2ca7ff'),
-    transparent: true,
-    opacity: 1,
-    ior: 1.333,
-    reflectivity: 0.52,
-    clearcoat: 0.38,
-    clearcoatRoughness: 0.15,
+const SIMULATION_VERTEX_SHADER = `
+varying vec2 vUv;
 
-    vertexColors: true,
-  });
+void main() {
+  vUv = position.xy * 0.5 + 0.5;
+  gl_Position = vec4(position.xyz, 1.0);
+}
+`;
 
-  material.side = THREE.DoubleSide;
-  material.depthWrite = false;
+const SIMULATION_DROP_FRAGMENT_SHADER = `
+precision highp float;
+precision highp int;
 
-  material.envMapIntensity = 0.82;
+uniform sampler2D texture;
+uniform vec2 center;
+uniform float radius;
+uniform float strength;
+varying vec2 vUv;
 
-  const uniforms = {
-    uTime: { value: 0 },
-    uPrimaryScale: { value: 0.42 },
-    uSecondaryScale: { value: 0.18 },
-    uChoppiness: { value: 0.55 },
-    uFlowScale: { value: 0.16 },
-    uFoamSpeed: { value: 1.1 },
-    uFadeDepth: { value: 7.5 },
-    uRefractionStrength: { value: 0.42 },
-    uEdgeFoamBoost: { value: 1.35 },
-    uShallowTint: { value: new THREE.Color('#5ddfff') },
-    uDeepTint: { value: new THREE.Color('#0a2a63') },
-    uFoamColor: { value: new THREE.Color('#c4f4ff') },
-    uHorizonTint: { value: new THREE.Color('#7bd4ff') },
-    uUnderwaterColor: { value: new THREE.Color('#052946') },
-    uSurfaceGlintColor: { value: new THREE.Color('#66e0ff') },
+void main() {
+  vec4 info = texture2D(texture, vUv);
+  float drop = max(0.0, 1.0 - length(center * 0.5 + 0.5 - vUv) / radius);
+  drop = 0.5 - cos(drop * 3.141592653589793) * 0.5;
+  info.r += drop * strength;
+  gl_FragColor = info;
+}
+`;
 
-  };
+const SIMULATION_UPDATE_FRAGMENT_SHADER = `
+precision highp float;
+precision highp int;
 
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = uniforms.uTime;
+uniform sampler2D texture;
+uniform vec2 delta;
+varying vec2 vUv;
 
-    shader.uniforms.uPrimaryScale = uniforms.uPrimaryScale;
-    shader.uniforms.uSecondaryScale = uniforms.uSecondaryScale;
-    shader.uniforms.uChoppiness = uniforms.uChoppiness;
-    shader.uniforms.uFlowScale = uniforms.uFlowScale;
-    shader.uniforms.uFoamSpeed = uniforms.uFoamSpeed;
-    shader.uniforms.uFadeDepth = uniforms.uFadeDepth;
-    shader.uniforms.uRefractionStrength = uniforms.uRefractionStrength;
-    shader.uniforms.uEdgeFoamBoost = uniforms.uEdgeFoamBoost;
-    shader.uniforms.uShallowTint = uniforms.uShallowTint;
-    shader.uniforms.uDeepTint = uniforms.uDeepTint;
-    shader.uniforms.uFoamColor = uniforms.uFoamColor;
-    shader.uniforms.uHorizonTint = uniforms.uHorizonTint;
-    shader.uniforms.uUnderwaterColor = uniforms.uUnderwaterColor;
-    shader.uniforms.uSurfaceGlintColor = uniforms.uSurfaceGlintColor;
+void main() {
+  vec4 info = texture2D(texture, vUv);
+  vec2 dx = vec2(delta.x, 0.0);
+  vec2 dy = vec2(0.0, delta.y);
+  float average = (
+    texture2D(texture, vUv - dx).r +
+    texture2D(texture, vUv - dy).r +
+    texture2D(texture, vUv + dx).r +
+    texture2D(texture, vUv + dy).r
+  ) * 0.25;
+  info.g += (average - info.r) * 2.0;
+  info.g *= 0.995;
+  info.r += info.g;
+  vec3 ddx = vec3(delta.x, texture2D(texture, vec2(vUv.x + delta.x, vUv.y)).r - info.r, 0.0);
+  vec3 ddy = vec3(0.0, texture2D(texture, vec2(vUv.x, vUv.y + delta.y)).r - info.r, delta.y);
+  info.ba = normalize(cross(ddy, ddx)).xz;
+  gl_FragColor = info;
+}
+`;
 
+const CAUSTICS_VERTEX_SHADER = `
+varying vec2 vUv;
 
-    shader.vertexShader = shader.vertexShader
-      .replace(
-        '#include <common>',
-        `#include <common>
+void main() {
+  vUv = position.xy * 0.5 + 0.5;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+
+const CAUSTICS_FRAGMENT_SHADER = `
+precision highp float;
+precision highp int;
+
+uniform sampler2D water;
+uniform vec2 texelSize;
+uniform float strength;
+varying vec2 vUv;
+
+void main() {
+  float center = texture2D(water, vUv).r;
+  float sampleRight = texture2D(water, vUv + vec2(texelSize.x, 0.0)).r;
+  float sampleLeft = texture2D(water, vUv - vec2(texelSize.x, 0.0)).r;
+  float sampleUp = texture2D(water, vUv + vec2(0.0, texelSize.y)).r;
+  float sampleDown = texture2D(water, vUv - vec2(0.0, texelSize.y)).r;
+  vec2 gradient = vec2(sampleRight - sampleLeft, sampleUp - sampleDown);
+  float focus = max(0.0, 1.0 - dot(gradient, gradient) * strength);
+  focus = pow(focus, 4.0);
+  gl_FragColor = vec4(vec3(focus), 1.0);
+}
+`;
+
+const WATER_VERTEX_SHADER = `
+#include <fog_pars_vertex>
+
 attribute float surfaceType;
 attribute vec2 flowDirection;
 attribute float flowStrength;
@@ -72,200 +97,449 @@ attribute float edgeFoam;
 attribute float depth;
 attribute float shoreline;
 
-uniform float uTime;
-
-uniform float uPrimaryScale;
-uniform float uSecondaryScale;
-uniform float uChoppiness;
-uniform float uFlowScale;
-uniform float uFoamSpeed;
-uniform float uFadeDepth;
-
-varying float vSurfaceType;
-varying vec2 vFlow;
-varying float vFoamEdge;
-varying float vDepth;
-varying float vShore;
-varying vec3 vDisplacedNormal;
-varying vec3 vWorldPosition;
-
-float sampleHydraWave(vec2 uv, vec2 flowDir, float flowStrength) {
-  vec2 advected = uv;
-  float time = uTime;
-  vec2 flow = flowDir * (flowStrength * 0.85 + 0.12);
-  advected += flow * time * 0.45;
-  float primary = sin(dot(advected, vec2(0.78, 1.04)) + time * 0.92);
-  float cross = sin(dot(advected, vec2(-1.25, 0.64)) - time * 1.18);
-  float swirl = sin(dot(advected * 1.37, vec2(1.6, -1.1)) + time * 1.65);
-  float micro = sin(dot(advected * 3.4, vec2(0.24, -2.8)) + time * 2.4);
-  return primary * 0.7 + cross * 0.55 + swirl * 0.3 + micro * 0.12;
-}
-
-vec2 sampleHydraSlope(vec2 uv, vec2 flowDir, float flowStrength) {
-  float eps = 0.18;
-  float center = sampleHydraWave(uv, flowDir, flowStrength);
-  float offsetX = sampleHydraWave(uv + vec2(eps, 0.0), flowDir, flowStrength);
-  float offsetZ = sampleHydraWave(uv + vec2(0.0, eps), flowDir, flowStrength);
-  return vec2(offsetX - center, offsetZ - center) / eps;
-
-}
-
-        `,
-      )
-      .replace(
-        '#include <beginnormal_vertex>',
-        `#include <beginnormal_vertex>
-
-vec2 hydraSlope = sampleHydraSlope(position.xz, flowDirection, flowStrength);
-float depthAttenuation = clamp(depth / max(uFadeDepth, 0.001), 0.0, 1.0);
-float choppy = uChoppiness + depthAttenuation * 0.4;
-vec3 bentNormal = normalize(vec3(-hydraSlope.x * choppy, 1.0, -hydraSlope.y * choppy));
-objectNormal = bentNormal;
-vDisplacedNormal = normalMatrix * bentNormal;
-
-
-        `,
-      )
-      .replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
-
-vec3 transformed = vec3(position);
-float surfaceMask = clamp(surfaceType, 0.0, 1.0);
-float depthFactor = clamp(depth / max(uFadeDepth, 0.0001), 0.1, 1.6);
-float wave = sampleHydraWave(position.xz, flowDirection, flowStrength);
-float choppyWave = sin(dot(position.xz, vec2(1.3, -0.75)) - uTime * 1.4) * uSecondaryScale;
-float crest = sin(dot(position.xz, flowDirection * 1.9) + uTime * 0.82) * flowStrength * (0.6 + shoreline * 0.45);
-float waterfallBoost = surfaceMask * (shoreline * 1.2 + flowStrength * 0.6);
-float displacement = (wave * uPrimaryScale + choppyWave + crest) * depthFactor + waterfallBoost * uSecondaryScale;
-transformed.y += displacement;
-transformed.xz += flowDirection * (flowStrength * uFlowScale) * (0.6 + shoreline * 0.4) * sin(uTime * 0.8 + displacement);
-vSurfaceType = surfaceMask;
-vFlow = flowDirection * flowStrength;
-vFoamEdge = edgeFoam;
-vDepth = depth;
-vShore = shoreline;
-vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
-vWorldPosition = worldPosition.xyz;
-
-
-        `,
-      );
-
-    shader.fragmentShader = shader.fragmentShader
-      .replace(
-        '#include <common>',
-        `#include <common>
-
-uniform float uTime;
-uniform float uFadeDepth;
-uniform float uRefractionStrength;
-uniform float uFoamSpeed;
-uniform float uEdgeFoamBoost;
-uniform vec3 uShallowTint;
-uniform vec3 uDeepTint;
-uniform vec3 uFoamColor;
-uniform vec3 uHorizonTint;
-uniform vec3 uUnderwaterColor;
-uniform vec3 uSurfaceGlintColor;
-
-varying float vSurfaceType;
-varying vec2 vFlow;
-varying float vFoamEdge;
-varying float vDepth;
-varying float vShore;
-varying vec3 vDisplacedNormal;
-varying vec3 vWorldPosition;
-
-vec3 gHydraTint;
-vec3 gFoamColor;
-float gHydraDepthMix;
-float gHydraShoreMix;
-
-        `,
-      )
-      .replace(
-        '#include <normal_fragment_begin>',
-        `#include <normal_fragment_begin>
-normal = normalize(vDisplacedNormal);
-geometryNormal = normal;
-
-
-        `,
-      )
-      .replace(
-        '#include <color_fragment>',
-        `#include <color_fragment>
-
-#ifdef USE_COLOR_ALPHA
-diffuseColor *= vColor;
-#elif defined( USE_COLOR )
-diffuseColor.rgb *= vColor;
+#ifdef USE_COLOR
+attribute vec3 color;
 #endif
-float depthMix = clamp(vDepth / max(uFadeDepth, 0.0001), 0.0, 1.0);
-float shoreMix = clamp(vShore, 0.0, 1.0);
-vec3 shallowTint = mix(diffuseColor.rgb, uShallowTint, 0.6);
-vec3 deepTint = mix(diffuseColor.rgb, uDeepTint, 0.85);
-vec3 tint = mix(shallowTint, deepTint, depthMix);
-float waterfallMask = smoothstep(0.35, 1.0, vSurfaceType);
-vec3 horizonBlend = mix(tint, uHorizonTint, 0.35 * (1.0 - depthMix));
-diffuseColor.rgb = mix(horizonBlend, tint, depthMix * 0.7);
-float altitudeMix = clamp(vWorldPosition.y * 0.02 + 0.5, 0.0, 1.0);
-diffuseColor.rgb = mix(
-  diffuseColor.rgb,
-  mix(uHorizonTint, uShallowTint, altitudeMix),
-  0.08 * (1.0 - depthMix),
-);
-float glint = clamp(length(vFlow) * 0.45 + shoreMix * 0.2 + waterfallMask * 0.2, 0.0, 1.0);
-diffuseColor.rgb = mix(diffuseColor.rgb, uSurfaceGlintColor, glint * 0.25);
-float foamNoise = sin(uTime * (uFoamSpeed + length(vFlow) * 0.6) + dot(vFlow, vec2(7.3, -3.1))) * 0.5 + 0.5;
-float foamMask = smoothstep(0.15, 0.9, vFoamEdge * uEdgeFoamBoost + shoreMix * 1.35 + waterfallMask * 0.25);
-vec3 foamColor = uFoamColor * foamMask * (0.65 + foamNoise * 0.4);
-float minAlpha = 0.45;
-float maxAlpha = 0.95;
-diffuseColor.a = mix(minAlpha, maxAlpha, clamp(depthMix * 0.85 + shoreMix * 0.35, 0.0, 1.0));
-gHydraTint = tint;
-gFoamColor = foamColor;
-gHydraDepthMix = depthMix;
-gHydraShoreMix = shoreMix;
 
+uniform sampler2D heightTexture;
+uniform vec2 heightmapScale;
+uniform float displacementScale;
+uniform float secondaryWaveScale;
+uniform float flowWaveStrength;
+uniform float time;
 
-        `,
-      )
-      .replace(
-        'vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;',
-        `vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
+varying vec3 vWorldPosition;
+varying vec3 vNormal;
+varying vec3 vViewDirection;
+varying float vSurfaceMask;
+varying vec2 vFlow;
+varying float vFoamEdge;
+varying float vDepth;
+varying float vShoreline;
+varying vec3 vVertexColor;
 
-outgoingLight += gFoamColor;
-vec3 viewDir = normalize(-vViewPosition);
-float fresnel = pow(1.0 - max(dot(normalize(vDisplacedNormal), viewDir), 0.0), 3.0);
-vec3 refractionTint = mix(uUnderwaterColor, gHydraTint, clamp(0.25 + gHydraDepthMix * 0.75, 0.0, 1.0));
-outgoingLight = mix(outgoingLight, refractionTint, uRefractionStrength * (1.0 - gHydraDepthMix));
-outgoingLight += uFoamColor * fresnel * (0.08 + gHydraShoreMix * 0.25);
+void main() {
+  vec3 transformedPosition = position;
+  vec3 baseNormal = normal;
+#ifdef USE_COLOR
+  vVertexColor = color;
+#else
+  vVertexColor = vec3(1.0);
+#endif
 
-        `,
-      );
+  float mask = 1.0 - clamp(surfaceType, 0.0, 1.0);
+  vec2 sampleUv = position.xz * heightmapScale;
+  vec4 info = texture2D(heightTexture, sampleUv);
+  float height = info.r * displacementScale;
+  float secondaryWave = sin(dot(position.xz, vec2(0.74, -0.61)) + time * 0.9) * secondaryWaveScale;
+  float flowWave = sin(time * 1.6 + dot(position.xz, flowDirection * 2.2)) * flowWaveStrength;
+  transformedPosition.y += mask * (height + secondaryWave + flowWave);
 
-    shader.fragmentShader = shader.fragmentShader.replace(
-      'totalDiffuse = mix( totalDiffuse, transmitted.rgb, material.transmission );',
-      `vec3 refractedTint = mix(transmitted.rgb, gHydraTint, 0.7);
-vec3 abyss = mix(uUnderwaterColor, gHydraTint, clamp(gHydraDepthMix * 0.85 + 0.1, 0.0, 1.0));
-totalDiffuse = mix(totalDiffuse, refractedTint, material.transmission);
-totalDiffuse += abyss * (0.2 + (1.0 - material.transmission) * 0.4);
+  vec2 drift = flowDirection * flowStrength * (0.05 + flowWaveStrength * 1.5) *
+    sin(time * 0.6 + position.x * 0.5 + position.z * 0.35);
+  transformedPosition.xz += drift * mask;
 
-`,
+  vec3 simNormal = normalize(vec3(
+    info.b,
+    sqrt(max(0.0, 1.0 - dot(info.ba, info.ba))),
+    info.a
+  ));
+  vec3 blendedNormal = normalize(mix(baseNormal, simNormal, mask));
+  vec3 worldNormal = normalize(normalMatrix * blendedNormal);
+
+  vec4 worldPosition = modelMatrix * vec4(transformedPosition, 1.0);
+
+  vWorldPosition = worldPosition.xyz;
+  vNormal = worldNormal;
+  vViewDirection = cameraPosition - worldPosition.xyz;
+  vSurfaceMask = mask;
+  vFlow = flowDirection * flowStrength;
+  vFoamEdge = edgeFoam;
+  vDepth = depth;
+  vShoreline = shoreline;
+
+  gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  #include <fog_vertex>
+}
+`;
+
+const WATER_FRAGMENT_SHADER = `
+precision highp float;
+
+#include <fog_pars_fragment>
+
+uniform vec3 shallowColor;
+uniform vec3 deepColor;
+uniform vec3 surfaceColor;
+uniform vec3 foamColor;
+uniform float opacity;
+uniform vec3 lightDirection;
+uniform float specularStrength;
+uniform float fresnelStrength;
+uniform float fresnelPower;
+uniform float time;
+uniform sampler2D causticsMap;
+uniform vec2 causticsScale;
+uniform vec2 causticsOffset;
+uniform vec2 causticsHeight;
+uniform float causticsIntensity;
+
+varying vec3 vWorldPosition;
+varying vec3 vNormal;
+varying vec3 vViewDirection;
+varying float vSurfaceMask;
+varying vec2 vFlow;
+varying float vFoamEdge;
+varying float vDepth;
+varying float vShoreline;
+varying vec3 vVertexColor;
+
+void main() {
+  vec3 normal = normalize(vNormal);
+  vec3 viewDir = normalize(vViewDirection);
+
+  float depthMix = clamp(vDepth / 6.0, 0.0, 1.0);
+  vec3 shallowTint = mix(shallowColor, surfaceColor, 0.35);
+  vec3 baseColor = mix(shallowTint, deepColor, depthMix);
+  baseColor *= mix(vec3(1.0), vVertexColor, 0.25 * vSurfaceMask);
+
+  float foamNoise = sin(time * 1.4 + dot(vWorldPosition.xz, vFlow * 6.0)) * 0.5 + 0.5;
+  float foamMask = smoothstep(0.2, 0.92, vFoamEdge * 0.85 + vShoreline * 0.7 + foamNoise * 0.25);
+  vec3 foam = foamColor * foamMask * vSurfaceMask;
+
+  vec3 lightDir = normalize(lightDirection);
+  float diffuse = clamp(dot(normal, -lightDir), 0.0, 1.0);
+  vec3 lighting = baseColor * (0.45 + diffuse * 0.6);
+
+  float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), fresnelPower);
+  lighting = mix(lighting, surfaceColor, fresnel * fresnelStrength * vSurfaceMask);
+
+  float specular = pow(max(dot(reflect(lightDir, normal), viewDir), 0.0), 24.0);
+  lighting += specular * specularStrength * vSurfaceMask;
+
+  if (causticsIntensity > 0.0001) {
+    vec2 causticsUv = vWorldPosition.xz * causticsScale + causticsOffset;
+    float causticSample = texture2D(causticsMap, causticsUv).r;
+    float heightMask = smoothstep(
+      causticsHeight.x + causticsHeight.y,
+      causticsHeight.x - causticsHeight.y,
+      vWorldPosition.y
     );
-  };
+    float causticsFactor = causticSample * heightMask * causticsIntensity;
+    lighting += shallowColor * causticsFactor * 0.6;
+  }
 
-  material.customProgramCacheKey = () => 'HydraWaterMaterial_v1';
+  lighting += foam;
 
-  const update = (delta) => {
-    uniforms.uTime.value += delta;
-    if (uniforms.uTime.value > 10000) {
+  float finalOpacity = opacity * mix(0.45, 1.0, 1.0 - depthMix) * vSurfaceMask +
+    (1.0 - vSurfaceMask);
 
-      uniforms.uTime.value = 0;
+  gl_FragColor = vec4(lighting, clamp(finalOpacity, 0.05, 1.0));
+  if (gl_FragColor.a <= 0.01) {
+    discard;
+  }
+  #include <fog_fragment>
+}
+`;
+
+class HydraWaterCausticsManager {
+  constructor({ THREE }) {
+    this.THREE = THREE;
+    this.size = 256;
+    this.renderer = null;
+    this.sunDirection = new THREE.Vector3(-0.35, -1, -0.25).normalize();
+    this.simulationStep = 1 / 60;
+    this.accumulator = 0;
+    this.elapsed = 0;
+    this.dropTimer = 0;
+    this.dropInterval = 0.9;
+    this.causticsFade = 6;
+    this.waterHeight = 0;
+    this.tempVector = new THREE.Vector3();
+    this.causticsOffset = new THREE.Vector2(0, 0);
+    this.causticsScale = new THREE.Vector2(0.12, 0.12);
+    this.causticsColor = new THREE.Color('#9deaff');
+
+    const targetOptions = {
+      type: THREE.FloatType,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      wrapS: THREE.RepeatWrapping,
+      wrapT: THREE.RepeatWrapping,
+      depthBuffer: false,
+      stencilBuffer: false,
+    };
+
+    this.targets = [
+      new THREE.WebGLRenderTarget(this.size, this.size, targetOptions),
+      new THREE.WebGLRenderTarget(this.size, this.size, targetOptions),
+    ];
+    this.currentTargetIndex = 0;
+
+    this.simulationScene = new THREE.Scene();
+    this.simulationCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.quadGeometry = new THREE.PlaneGeometry(2, 2);
+
+    this.updateMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        texture: { value: null },
+        delta: { value: new THREE.Vector2(1 / this.size, 1 / this.size) },
+      },
+      vertexShader: SIMULATION_VERTEX_SHADER,
+      fragmentShader: SIMULATION_UPDATE_FRAGMENT_SHADER,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.NoBlending,
+    });
+
+    this.dropMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        texture: { value: null },
+        center: { value: new THREE.Vector2(0, 0) },
+        radius: { value: 0.05 },
+        strength: { value: 0.35 },
+      },
+      vertexShader: SIMULATION_VERTEX_SHADER,
+      fragmentShader: SIMULATION_DROP_FRAGMENT_SHADER,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.NoBlending,
+    });
+
+    this.simulationMesh = new THREE.Mesh(this.quadGeometry, this.updateMaterial);
+    this.simulationMesh.frustumCulled = false;
+    this.simulationScene.add(this.simulationMesh);
+
+    this.causticsMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        water: { value: this.getHeightTexture() },
+        texelSize: { value: new THREE.Vector2(1 / this.size, 1 / this.size) },
+        strength: { value: 3.2 },
+      },
+      vertexShader: CAUSTICS_VERTEX_SHADER,
+      fragmentShader: CAUSTICS_FRAGMENT_SHADER,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.NoBlending,
+    });
+
+    this.causticsMesh = new THREE.Mesh(this.quadGeometry, this.causticsMaterial);
+    this.causticsMesh.frustumCulled = false;
+
+    this.causticsScene = new THREE.Scene();
+    this.causticsScene.add(this.causticsMesh);
+
+    this.causticsTarget = new THREE.WebGLRenderTarget(this.size, this.size, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      wrapS: THREE.RepeatWrapping,
+      wrapT: THREE.RepeatWrapping,
+      depthBuffer: false,
+      stencilBuffer: false,
+    });
+
+    this.waterUniforms = {
+      time: { value: 0 },
+      heightTexture: { value: this.getHeightTexture() },
+      heightmapScale: { value: new THREE.Vector2(0.065, 0.065) },
+      displacementScale: { value: 0.55 },
+      secondaryWaveScale: { value: 0.1 },
+      flowWaveStrength: { value: 0.07 },
+      lightDirection: { value: this.sunDirection.clone() },
+      shallowColor: { value: new THREE.Color('#3ad6ff') },
+      deepColor: { value: new THREE.Color('#071c3c') },
+      surfaceColor: { value: new THREE.Color('#7be8ff') },
+      foamColor: { value: new THREE.Color('#eefcff') },
+      opacity: { value: 0.86 },
+      specularStrength: { value: 0.55 },
+      fresnelStrength: { value: 0.22 },
+      fresnelPower: { value: 3.2 },
+      causticsMap: { value: this.causticsTarget.texture },
+      causticsScale: { value: this.causticsScale.clone() },
+      causticsOffset: { value: this.causticsOffset.clone() },
+      causticsHeight: { value: new THREE.Vector2(this.waterHeight, this.causticsFade) },
+      causticsIntensity: { value: 0 },
+    };
+
+    this.material = new THREE.ShaderMaterial({
+      uniforms: this.waterUniforms,
+      vertexShader: WATER_VERTEX_SHADER,
+      fragmentShader: WATER_FRAGMENT_SHADER,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      fog: true,
+    });
+    this.material.name = 'HydraWaterCausticsMaterial';
+    this.material.customProgramCacheKey = () => 'HydraWaterCaustics_v1';
+    this.material.vertexColors = true;
+
+    setBiomeCausticsConfig({
+      texture: this.causticsTarget.texture,
+      intensity: 0,
+      color: this.causticsColor,
+      scale: this.waterUniforms.causticsScale.value,
+      offset: this.waterUniforms.causticsOffset.value,
+      height: this.waterUniforms.causticsHeight.value,
+    });
+  }
+
+  get materialInstance() {
+    return this.material;
+  }
+
+  getHeightTexture() {
+    return this.targets[this.currentTargetIndex].texture;
+  }
+
+  renderSimulationPass(material) {
+    if (!this.renderer) {
+      return;
     }
-  };
+    const renderer = this.renderer;
+    const source = this.targets[this.currentTargetIndex];
+    const destination = this.targets[1 - this.currentTargetIndex];
+    if (material.uniforms.texture) {
+      material.uniforms.texture.value = source.texture;
+    }
+    this.simulationMesh.material = material;
+    renderer.setRenderTarget(destination);
+    renderer.render(this.simulationScene, this.simulationCamera);
+    renderer.setRenderTarget(null);
+    this.currentTargetIndex = 1 - this.currentTargetIndex;
+    this.simulationMesh.material = this.updateMaterial;
+  }
 
-  return { material, update };
+  stepSimulation() {
+    this.renderSimulationPass(this.updateMaterial);
+  }
+
+  addRandomDrop() {
+    const center = this.dropMaterial.uniforms.center.value;
+    center.set(Math.random() * 2 - 1, Math.random() * 2 - 1);
+    this.dropMaterial.uniforms.radius.value = 0.03 + Math.random() * 0.08;
+    const strength = (Math.random() * 0.35 + 0.15) * (Math.random() > 0.55 ? -1 : 1);
+    this.dropMaterial.uniforms.strength.value = strength;
+    this.renderSimulationPass(this.dropMaterial);
+  }
+
+  generateCaustics() {
+    if (!this.renderer) {
+      return;
+    }
+    this.causticsMaterial.uniforms.water.value = this.getHeightTexture();
+    const renderer = this.renderer;
+    renderer.setRenderTarget(this.causticsTarget);
+    renderer.render(this.causticsScene, this.simulationCamera);
+    renderer.setRenderTarget(null);
+  }
+
+  updateWaterHeight(surfaces) {
+    if (!surfaces || surfaces.size === 0) {
+      return;
+    }
+    for (const mesh of surfaces) {
+      const positionAttr = mesh.geometry?.getAttribute('position');
+      const surfaceAttr = mesh.geometry?.getAttribute('surfaceType');
+      if (!positionAttr || !surfaceAttr) {
+        continue;
+      }
+      mesh.updateMatrixWorld(true);
+      let total = 0;
+      let samples = 0;
+      for (let i = 0; i < positionAttr.count; i++) {
+        if (surfaceAttr.getX(i) > 0.5) {
+          continue;
+        }
+        this.tempVector.fromBufferAttribute(positionAttr, i);
+        this.tempVector.applyMatrix4(mesh.matrixWorld);
+        total += this.tempVector.y;
+        samples++;
+        if (samples >= 80) {
+          break;
+        }
+      }
+      if (samples > 0) {
+        this.waterHeight = total / samples;
+        return;
+      }
+    }
+  }
+
+  updateBiomeCausticsState(intensity) {
+    this.waterUniforms.causticsIntensity.value = intensity;
+    setBiomeCausticsConfig({
+      texture: this.causticsTarget.texture,
+      intensity,
+      color: this.causticsColor,
+      scale: this.waterUniforms.causticsScale.value,
+      offset: this.waterUniforms.causticsOffset.value,
+      height: this.waterUniforms.causticsHeight.value,
+    });
+  }
+
+  update({ delta, surfaces, context }) {
+    if (!surfaces || surfaces.size === 0) {
+      this.updateBiomeCausticsState(0);
+      return;
+    }
+
+    if (context?.renderer) {
+      this.renderer = context.renderer;
+    }
+    if (!this.renderer) {
+      return;
+    }
+
+    if (context?.sun && typeof context.sun.getWorldDirection === 'function') {
+      context.sun.getWorldDirection(this.sunDirection).normalize();
+      this.waterUniforms.lightDirection.value.copy(this.sunDirection);
+    }
+
+    this.elapsed += delta;
+    this.waterUniforms.time.value = this.elapsed;
+
+    this.accumulator += delta;
+    let steps = 0;
+    while (this.accumulator >= this.simulationStep && steps < 8) {
+      this.stepSimulation();
+      this.accumulator -= this.simulationStep;
+      steps++;
+      this.dropTimer += this.simulationStep;
+      if (this.dropTimer >= this.dropInterval) {
+        this.addRandomDrop();
+        this.dropTimer = 0;
+      }
+    }
+
+    this.generateCaustics();
+    this.waterUniforms.heightTexture.value = this.getHeightTexture();
+
+    this.causticsOffset.x += delta * 0.07;
+    this.causticsOffset.y += delta * 0.045;
+    this.waterUniforms.causticsOffset.value.copy(this.causticsOffset);
+
+    this.updateWaterHeight(surfaces);
+    this.waterUniforms.causticsHeight.value.set(this.waterHeight, this.causticsFade);
+
+    const causticsIntensity = 0.8;
+    this.updateBiomeCausticsState(causticsIntensity);
+  }
+}
+
+let hydraWaterInstance = null;
+
+export function createHydraWaterMaterial({ THREE }) {
+  if (!THREE) {
+    throw new Error('createHydraWaterMaterial requires a THREE instance');
+  }
+  if (!hydraWaterInstance) {
+    hydraWaterInstance = new HydraWaterCausticsManager({ THREE });
+  }
+  return {
+    material: hydraWaterInstance.materialInstance,
+    update: (delta, surfaces, context) => {
+      hydraWaterInstance.update({ delta, surfaces, context });
+    },
+  };
 }
