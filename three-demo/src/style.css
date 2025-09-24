@@ -175,32 +175,6 @@ button:focus-visible {
 
 }
 
-.fluid-warning-banner {
-  position: fixed;
-  top: 1rem;
-  left: 1rem;
-  padding: 0.65rem 0.9rem;
-  background: rgba(14, 20, 34, 0.78);
-  color: #ffe4a3;
-  border: 1px solid rgba(255, 208, 120, 0.3);
-  border-radius: 8px;
-  font-family: 'Fira Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    'Liberation Mono', 'Courier New', monospace;
-  font-size: 0.85rem;
-  max-width: min(360px, 40vw);
-  pointer-events: none;
-  opacity: 0;
-  transform: translateY(-8px);
-  transition: opacity 160ms ease, transform 160ms ease;
-  z-index: 75;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-}
-
-.fluid-warning-banner.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;

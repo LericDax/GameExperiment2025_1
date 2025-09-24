@@ -6,7 +6,21 @@ import {
   resolveFluidPresence,
 } from './fluids/fluid-registry.js';
 import { buildFluidGeometry } from './fluids/fluid-geometry.js';
-import { shouldRenderFluidsAsBlocks } from './fluids/fluid-render-mode.js';
+
+const DEV_FORCE_FLUID_BLOCKS = (() => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('fluidBlocks')) {
+    return true;
+  }
+  try {
+    return window.localStorage?.getItem('fluidRender') === 'blocks';
+  } catch (error) {
+    return false;
+  }
+})();
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -107,14 +121,12 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   if (!blockGeometry) {
     blockGeometry = new THREE.BoxGeometry(1, 1, 1);
   }
-  const renderFluidsAsBlocks = shouldRenderFluidsAsBlocks();
   const instancedData = new Map();
   const solidBlockKeys = new Set();
   const softBlockKeys = new Set();
   const waterColumnKeys = new Set();
   const fluidColumnsByType = new Map();
   const fluidSurfaces = [];
-  const forcedFluidFallbackTypes = new Set();
   const matrix = new THREE.Matrix4();
   const defaultQuaternion = new THREE.Quaternion();
   const reusablePosition = new THREE.Vector3();
@@ -295,21 +307,11 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     tintColor,
     tintOverride,
   }) => {
-    const minY =
-      typeof column.minY === 'number'
-        ? column.minY
-        : typeof column.bottomY === 'number'
-        ? column.bottomY
-        : (column.surfaceY ?? 0) - 0.5;
-    const maxY =
-      typeof column.maxY === 'number'
-        ? column.maxY
-        : typeof column.surfaceY === 'number'
-        ? column.surfaceY
-        : minY + 0.05;
-    const columnDepth = Math.max(0.05, maxY - minY);
-    const fallbackScale = new THREE.Vector3(1, columnDepth, 1);
-    const centerY = minY + columnDepth / 2;
+    if (!DEV_FORCE_FLUID_BLOCKS) {
+      return null;
+    }
+    const fallbackScale = new THREE.Vector3(1, 1, 1);
+    const centerY = column.maxY - 0.5;
     const fallbackMatrix = new THREE.Matrix4();
     fallbackMatrix.compose(
       new THREE.Vector3(column.x, centerY, column.z),
@@ -472,7 +474,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       column.fallbackPaletteColor = paletteColor;
       column.fallbackTintColor = tintColor;
       column.fallbackTintOverride = tintOverride;
-      if (renderFluidsAsBlocks) {
+      if (DEV_FORCE_FLUID_BLOCKS) {
         upsertFluidFallbackEntry({
           column,
           type,
@@ -664,65 +666,31 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       THREE,
       columns: Array.from(columns.values()),
     });
-    const positionAttribute = geometry.getAttribute('position');
-    if (!positionAttribute || positionAttribute.count === 0) {
-      console.warn(
-        `[fluid warning] ${type} geometry produced no vertices for chunk (${chunkX}, ${chunkZ}). Falling back to instanced meshes.`,
-      );
-      forcedFluidFallbackTypes.add(type);
-      columns.forEach((column) => {
-        const fallbackBiome = column.fallbackBiome ?? column.biome ?? null;
-        const fallbackPalette = column.fallbackPaletteColor ?? column.color ?? null;
-        const fallbackTint =
-          column.fallbackTintColor ?? fallbackPalette ?? column.color ?? null;
-        const fallbackTintOverride = column.fallbackTintOverride ?? null;
-        column.fallbackBiome = fallbackBiome;
-        column.fallbackPaletteColor = fallbackPalette;
-        column.fallbackTintColor = fallbackTint;
-        column.fallbackTintOverride = fallbackTintOverride;
-        upsertFluidFallbackEntry({
-          column,
-          type,
-          biome: fallbackBiome,
-          paletteColor: fallbackPalette,
-          tintColor: fallbackTint,
-          tintOverride: fallbackTintOverride,
+    if (!geometry.getAttribute('position') || geometry.getAttribute('position').count === 0) {
+      if (type === 'water') {
+        console.log('[fluid debug] water geometry has no vertices');
+      }
+      if (DEV_FORCE_FLUID_BLOCKS) {
+        columns.forEach((column) => {
+          const fallbackBiome = column.fallbackBiome ?? column.biome ?? null;
+          const fallbackPalette = column.fallbackPaletteColor ?? column.color ?? null;
+          const fallbackTint =
+            column.fallbackTintColor ?? fallbackPalette ?? column.color ?? null;
+          const fallbackTintOverride = column.fallbackTintOverride ?? null;
+          column.fallbackBiome = fallbackBiome;
+          column.fallbackPaletteColor = fallbackPalette;
+          column.fallbackTintColor = fallbackTint;
+          column.fallbackTintOverride = fallbackTintOverride;
+          upsertFluidFallbackEntry({
+            column,
+            type,
+            biome: fallbackBiome,
+            paletteColor: fallbackPalette,
+            tintColor: fallbackTint,
+            tintOverride: fallbackTintOverride,
+          });
         });
-        const planeGeometry = new THREE.PlaneGeometry(1, 1);
-        planeGeometry.rotateX(-Math.PI / 2);
-        const tintColor =
-          fallbackTint instanceof THREE.Color
-            ? fallbackTint.clone()
-            : new THREE.Color(fallbackTint ?? '#3a79c5');
-        const planeMaterial = new THREE.MeshBasicMaterial({
-          color: tintColor,
-          transparent: true,
-          opacity: 0.8,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-        });
-        const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-        const fallbackMinY =
-          typeof column.minY === 'number'
-            ? column.minY
-            : typeof column.bottomY === 'number'
-            ? column.bottomY
-            : typeof column.surfaceY === 'number'
-            ? column.surfaceY - 0.5
-            : -0.5;
-        const fallbackMaxY =
-          typeof column.surfaceY === 'number'
-            ? column.surfaceY
-            : typeof column.maxY === 'number'
-            ? column.maxY
-            : fallbackMinY + 0.05;
-        plane.position.set(column.x, fallbackMaxY + 0.002, column.z);
-        plane.userData.type = `fluid:${type}`;
-        plane.userData.fluidType = type;
-        plane.userData.safetyFallback = true;
-        fluidSurfaces.push(plane);
-      });
-      geometry.dispose();
+      }
       return;
     }
     const surface = createFluidSurface({ type, geometry });
@@ -745,11 +713,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
   const group = new THREE.Group();
   instancedData.forEach((entries, type) => {
-    if (
-      isFluidType(type) &&
-      !renderFluidsAsBlocks &&
-      !forcedFluidFallbackTypes.has(type)
-    ) {
+    if (isFluidType(type) && !DEV_FORCE_FLUID_BLOCKS) {
       return;
     }
     if (entries.length === 0) {

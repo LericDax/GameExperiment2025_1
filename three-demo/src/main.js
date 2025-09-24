@@ -68,7 +68,6 @@ document.body.appendChild(renderer.domElement)
 
 const clock = new THREE.Clock()
 const diagnosticOverlayCallbacks = new Set()
-let fluidWarningOverlayDisposer = null
 
 function registerDiagnosticOverlay(callback) {
   if (typeof callback !== 'function') {
@@ -100,13 +99,6 @@ hud.innerHTML = `
   <div id="hud-status" role="status" aria-live="polite"></div>
 `
 document.body.appendChild(hud)
-
-const fluidWarningBanner = document.createElement('div')
-fluidWarningBanner.id = 'fluid-warning-banner'
-fluidWarningBanner.className = 'fluid-warning-banner'
-fluidWarningBanner.setAttribute('role', 'status')
-fluidWarningBanner.setAttribute('aria-live', 'polite')
-document.body.appendChild(fluidWarningBanner)
 
 const musicSystem = initializeMusicSystem({ overlay, root: document.body })
 
@@ -192,97 +184,6 @@ try {
   chunkManager.update(playerControls.getPosition())
   updateHud(playerControls.getState())
 
-  getFluidMaterial('water')
-  const hydraProbeResult = runHydraVisibilityProbe({
-    THREE,
-    renderer,
-    onFallback: ({ reason }) => {
-      if (hydraFallbackNoticeTimeout) {
-        clearTimeout(hydraFallbackNoticeTimeout)
-      }
-      setHudStatusOverride(reason ?? 'Hydra water fallback active')
-      hydraFallbackNoticeTimeout = setTimeout(() => {
-        setHudStatusOverride(null)
-        hydraFallbackNoticeTimeout = null
-      }, 6000)
-      updateFluidWarningBanner()
-    },
-  })
-  if (import.meta.env.DEV) {
-    console.info('[hydra] visibility probe result', hydraProbeResult)
-  }
-  if (hydraProbeResult?.ok) {
-    updateFluidWarningBanner()
-  }
-
-  const updateFluidWarningBanner = () => {
-    if (!fluidWarningBanner) {
-      return
-    }
-    const warnings = chunkManager.getFluidVisibilityWarnings?.() ?? []
-    const fallbackStates = getFluidFallbackStates()
-    if (!warnings.length && !fallbackStates.length) {
-      fluidWarningBanner.textContent = ''
-      fluidWarningBanner.classList.remove('visible')
-      return
-    }
-    const entries = []
-    const warningEntries = warnings
-      .slice(0, 3)
-      .map((warning) => `${warning.fluidType}×${warning.columnCount} @ ${warning.chunkKey}`)
-    entries.push(...warningEntries)
-    if (warnings.length > 3) {
-      entries.push(`+${warnings.length - 3} more chunk issue(s)`)
-    }
-    const fallbackSummaries = fallbackStates.slice(0, 2).map((state) => {
-      const reason = state.reason ?? 'fallback active'
-      const trimmedReason = reason.length > 70 ? `${reason.slice(0, 67)}…` : reason
-      const metrics = state.metrics ?? {}
-      const metricParts = []
-      if (typeof metrics.brightness === 'number') {
-        metricParts.push(`b=${metrics.brightness.toFixed(2)}`)
-      }
-      if (typeof metrics.alpha === 'number') {
-        metricParts.push(`a=${metrics.alpha.toFixed(2)}`)
-      }
-      const metricSuffix = metricParts.length ? ` (${metricParts.join(', ')})` : ''
-      return `${state.type} fallback: ${trimmedReason}${metricSuffix}`
-    })
-    entries.push(...fallbackSummaries)
-    if (fallbackStates.length > 2) {
-      entries.push(`+${fallbackStates.length - 2} more fallback notice(s)`)
-    }
-    fluidWarningBanner.textContent = `Fluid visibility notice: ${entries.join(' • ')}`
-    fluidWarningBanner.classList.add('visible')
-  }
-
-  getFluidMaterial('water')
-  const hydraProbeResult = runHydraVisibilityProbe({
-    THREE,
-    renderer,
-    onFallback: ({ reason }) => {
-      if (hydraFallbackNoticeTimeout) {
-        clearTimeout(hydraFallbackNoticeTimeout)
-      }
-      setHudStatusOverride(reason ?? 'Hydra water fallback active')
-      hydraFallbackNoticeTimeout = setTimeout(() => {
-        setHudStatusOverride(null)
-        hydraFallbackNoticeTimeout = null
-      }, 6000)
-      updateFluidWarningBanner()
-    },
-  })
-  if (import.meta.env.DEV) {
-    console.info('[hydra] visibility probe result', hydraProbeResult)
-  }
-  if (hydraProbeResult?.ok) {
-    updateFluidWarningBanner()
-  }
-
-  updateFluidWarningBanner()
-  fluidWarningOverlayDisposer = registerDiagnosticOverlay(() => {
-    updateFluidWarningBanner()
-  })
 
   if (import.meta.env.DEV) {
     const debugNamespace = (window.__VOXEL_DEBUG__ = window.__VOXEL_DEBUG__ || {})
@@ -386,7 +287,5 @@ if (!initializationError) {
     playerControls.dispose()
     chunkManager.dispose()
     musicSystem?.dispose()
-    fluidWarningOverlayDisposer?.()
-    fluidWarningOverlayDisposer = null
   })
 }

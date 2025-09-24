@@ -1,11 +1,6 @@
 import { renderAsciiViewport } from '../devtools/ascii-viewport.js';
 import { createHeadlessScanner } from '../devtools/headless-scanner.js';
 import { sampleBiomeAt, terrainHeight, worldConfig } from '../world/generation.js';
-import {
-  FLUID_RENDER_MODES,
-  getFluidRenderMode,
-  setFluidRenderMode,
-} from '../world/fluids/fluid-render-mode.js';
 
 export function registerDeveloperCommands({
   commandConsole,
@@ -1105,42 +1100,6 @@ export function registerDeveloperCommands({
       commandConsole.log(
         `Position set to X=${position.x.toFixed(2)} Y=${position.y.toFixed(2)} Z=${position.z.toFixed(2)}.`,
       );
-    },
-  });
-
-  registerCommand({
-    name: 'fluidrender',
-    description: 'Switch between Hydra fluid surfaces and block-based fallback rendering.',
-    usage: '/fluidrender [hydra|blocks]',
-    handler: ({ args }) => {
-      if (!chunkManager?.refreshChunks) {
-        commandConsole.log(
-          'Chunk manager does not support runtime fluid renderer changes in this build.',
-        );
-        return;
-      }
-      if (args.length === 0) {
-        commandConsole.log(
-          `Fluid renderer is currently set to "${getFluidRenderMode()}". Use /fluidrender hydra or /fluidrender blocks to switch.`,
-        );
-        return;
-      }
-      const mode = args[0].toLowerCase();
-      if (!Object.values(FLUID_RENDER_MODES).includes(mode)) {
-        throw new Error('Usage: /fluidrender [hydra|blocks].');
-      }
-      const previous = getFluidRenderMode();
-      const next = setFluidRenderMode(mode);
-      if (previous === next) {
-        commandConsole.log(`Fluid renderer already set to "${next}".`);
-        return;
-      }
-      commandConsole.log(
-        `Fluid renderer switched to "${next}". Reloading visible chunks to apply the change...`,
-      );
-      chunkManager.refreshChunks();
-      const position = playerControls.getPosition();
-      chunkManager.update(position);
     },
   });
 
