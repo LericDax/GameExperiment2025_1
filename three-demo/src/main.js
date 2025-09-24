@@ -192,6 +192,29 @@ try {
   chunkManager.update(playerControls.getPosition())
   updateHud(playerControls.getState())
 
+  getFluidMaterial('water')
+  const hydraProbeResult = runHydraVisibilityProbe({
+    THREE,
+    renderer,
+    onFallback: ({ reason }) => {
+      if (hydraFallbackNoticeTimeout) {
+        clearTimeout(hydraFallbackNoticeTimeout)
+      }
+      setHudStatusOverride(reason ?? 'Hydra water fallback active')
+      hydraFallbackNoticeTimeout = setTimeout(() => {
+        setHudStatusOverride(null)
+        hydraFallbackNoticeTimeout = null
+      }, 6000)
+      updateFluidWarningBanner()
+    },
+  })
+  if (import.meta.env.DEV) {
+    console.info('[hydra] visibility probe result', hydraProbeResult)
+  }
+  if (hydraProbeResult?.ok) {
+    updateFluidWarningBanner()
+  }
+
   const updateFluidWarningBanner = () => {
     if (!fluidWarningBanner) {
       return
