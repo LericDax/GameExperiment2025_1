@@ -64,6 +64,17 @@ renderer.toneMappingExposure = 1.1
 document.body.appendChild(renderer.domElement)
 
 const clock = new THREE.Clock()
+const diagnosticOverlayCallbacks = new Set()
+
+function registerDiagnosticOverlay(callback) {
+  if (typeof callback !== 'function') {
+    throw new Error('registerDiagnosticOverlay expects a callback function')
+  }
+  diagnosticOverlayCallbacks.add(callback)
+  return () => {
+    diagnosticOverlayCallbacks.delete(callback)
+  }
+}
 
 const hud = document.createElement('div')
 hud.id = 'hud'
@@ -178,6 +189,7 @@ try {
       setYawPitch: (yaw, pitch) => playerControls.setYawPitch(yaw, pitch),
       getYawPitch: () => playerControls.getYawPitch(),
     }
+    debugNamespace.registerDiagnosticOverlay = registerDiagnosticOverlay
   }
 
   const commandConsole = createCommandConsole({
@@ -201,6 +213,10 @@ try {
   registerDeveloperCommands({
     commandConsole,
     playerControls,
+    chunkManager,
+    scene,
+    THREE,
+    registerDiagnosticOverlay,
   })
 
   commandConsole.log(
@@ -234,10 +250,28 @@ if (!initializationError) {
   function animate() {
     requestAnimationFrame(animate)
     const delta = Math.min(clock.getDelta(), 0.05)
+    const elapsedTime = clock.elapsedTime
 
     chunkManager.update(playerControls.getPosition())
     playerControls.update(delta)
     updateFluids(delta)
+
+    if (diagnosticOverlayCallbacks.size > 0) {
+      const callbacks = Array.from(diagnosticOverlayCallbacks)
+      callbacks.forEach((callback) => {
+        try {
+          callback({
+            delta,
+            elapsedTime,
+            playerControls,
+            scene,
+            camera,
+          })
+        } catch (error) {
+          console.error('Diagnostic overlay callback failed:', error)
+        }
+      })
+    }
 
     renderer.render(scene, camera)
   }

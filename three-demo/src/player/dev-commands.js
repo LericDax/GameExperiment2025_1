@@ -1,15 +1,29 @@
 import { renderAsciiViewport } from '../devtools/ascii-viewport.js';
-import { sampleBiomeAt } from '../world/generation.js';
+import { createHeadlessScanner } from '../devtools/headless-scanner.js';
+import { sampleBiomeAt, worldConfig } from '../world/generation.js';
 
 export function registerDeveloperCommands({
   commandConsole,
   playerControls,
+  chunkManager,
+  scene,
+  THREE,
+  registerDiagnosticOverlay,
 }) {
   if (!commandConsole) {
     throw new Error('registerDeveloperCommands requires a commandConsole instance.');
   }
   if (!playerControls) {
     throw new Error('registerDeveloperCommands requires playerControls.');
+  }
+  if (!chunkManager) {
+    throw new Error('registerDeveloperCommands requires a chunkManager instance.');
+  }
+  if (!scene) {
+    throw new Error('registerDeveloperCommands requires the active scene.');
+  }
+  if (!THREE) {
+    throw new Error('registerDeveloperCommands requires the THREE module.');
   }
 
   const { registerCommand } = commandConsole;
@@ -29,6 +43,17 @@ export function registerDeveloperCommands({
       intervalId: null,
     },
     lastErrorMessage: null,
+  };
+
+  const headlessScanner = createHeadlessScanner({ THREE, scene, chunkManager });
+  const scanEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  const scanDirection = new THREE.Vector3(0, 0, -1);
+  const scanOrigin = new THREE.Vector3();
+  const DEFAULT_SCAN_DISTANCE = 12;
+  const scanWatchState = {
+    disposer: null,
+    options: null,
+    lastKey: null,
   };
 
   const getDebugSnapshot = () => window.__VOXEL_DEBUG__?.chunkSnapshot?.();
@@ -279,6 +304,340 @@ export function registerDeveloperCommands({
     renderOnce(true);
     commandConsole.log(`ASCII watch enabled (every ${effectiveInterval} ms).`);
   };
+
+  const parseDistance = (value) => {
+    if (value === undefined) {
+      return undefined;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      throw new Error('Distance must be a finite number.');
+    }
+    if (numeric <= 0) {
+      throw new Error('Distance must be greater than zero.');
+    }
+    return numeric;
+  };
+
+  const parseCoordinate = (value, label) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      throw new Error(`${label} must be a finite number.`);
+    }
+    return numeric;
+  };
+
+  const parseAngle = (value, label) => {
+    if (value === undefined) {
+      return undefined;
+    }
+    const raw = String(value).trim();
+    if (!raw) {
+      throw new Error(`${label} must be a valid number.`);
+    }
+    const normalized = raw.toLowerCase();
+    let unit = 'deg';
+    let numericText = normalized;
+    if (normalized.endsWith('rad')) {
+      unit = 'rad';
+      numericText = normalized.slice(0, -3);
+    } else if (normalized.endsWith('deg')) {
+      unit = 'deg';
+      numericText = normalized.slice(0, -3);
+    } else if (normalized.endsWith('°')) {
+      unit = 'deg';
+      numericText = normalized.slice(0, -1);
+    }
+    const numeric = Number(numericText);
+    if (!Number.isFinite(numeric)) {
+      throw new Error(`${label} must be numeric (optionally suffixed with deg or rad).`);
+    }
+    return unit === 'rad' ? numeric : THREE.MathUtils.degToRad(numeric);
+  };
+
+  const normalizeScanOptions = ({ distance, yaw, pitch } = {}) => {
+    const orientation = playerControls.getYawPitch();
+    const normalizedDistance = Number.isFinite(distance)
+      ? Math.max(0.01, distance)
+      : DEFAULT_SCAN_DISTANCE;
+    const yawProvided = Number.isFinite(yaw);
+    const pitchProvided = Number.isFinite(pitch);
+    return {
+      distance: normalizedDistance,
+      yaw: yawProvided ? yaw : orientation.yaw,
+      pitch: pitchProvided ? pitch : orientation.pitch,
+      followYaw: !yawProvided,
+      followPitch: !pitchProvided,
+    };
+  };
+
+  const performScan = (options, { collectAll = false } = {}) => {
+    const originVector = playerControls.getPosition();
+    scanOrigin.copy(originVector);
+    const orientation = playerControls.getYawPitch();
+    const yaw = options.followYaw ? orientation.yaw : options.yaw;
+    const pitch = options.followPitch ? orientation.pitch : options.pitch;
+    scanEuler.set(pitch, yaw, 0, 'YXZ');
+    scanDirection.set(0, 0, -1);
+    scanDirection.applyEuler(scanEuler);
+    return headlessScanner.cast({
+      origin: scanOrigin,
+      direction: scanDirection,
+      maxDistance: options.distance,
+      collectAll,
+    });
+  };
+
+  const buildHitSummary = (hit) => {
+    if (!hit) {
+      return {
+        key: 'no-hit',
+        headline: null,
+        detail: null,
+        visible: false,
+      };
+    }
+    const { block, distance, diagnostics, point } = hit;
+    const position = block.position ?? { x: 0, y: 0, z: 0 };
+    const pointData = point ?? { x: position.x, y: position.y, z: position.z };
+    const blockKey = block.key ?? block.coordinateKey ?? 'n/a';
+    const typeLabel = block.type ?? 'unknown';
+    const headline = `block=${typeLabel} key=${blockKey} position=(${position.x.toFixed(
+      2,
+    )}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}) distance=${distance.toFixed(2)} point=(${pointData.x.toFixed(
+      2,
+    )}, ${pointData.y.toFixed(2)}, ${pointData.z.toFixed(2)})`;
+    const detail = `flags: meshVisible=${diagnostics.meshVisible}, materialVisible=${diagnostics.materialVisible}, instanceInRange=${diagnostics.instanceInRange}, chunkVisible=${diagnostics.chunkVisible}, chunkKey=${diagnostics.chunkKey ??
+      'n/a'}, instance=${diagnostics.instanceId ?? 'n/a'}/${
+      diagnostics.meshCount ?? 'n/a'
+    }`;
+    const summaryKey = JSON.stringify({
+      block: blockKey,
+      position: {
+        x: Number(position.x.toFixed(3)),
+        y: Number(position.y.toFixed(3)),
+        z: Number(position.z.toFixed(3)),
+      },
+      distance: Number(distance.toFixed(3)),
+      meshVisible: diagnostics.meshVisible,
+      materialVisible: diagnostics.materialVisible,
+      instanceInRange: diagnostics.instanceInRange,
+      chunkVisible: diagnostics.chunkVisible,
+    });
+    const allVisible =
+      diagnostics.meshVisible &&
+      diagnostics.materialVisible &&
+      diagnostics.instanceInRange &&
+      diagnostics.chunkVisible;
+    return {
+      key: summaryKey,
+      headline,
+      detail,
+      visible: allVisible,
+    };
+  };
+
+  const logScanResult = (result, { label = 'scan' } = {}) => {
+    if (!result) {
+      commandConsole.log(`[${label}] Unable to perform scan.`);
+      return null;
+    }
+    const summary = buildHitSummary(result.hit);
+    if (!result.hit) {
+      commandConsole.log(
+        `[${label}] No blocks detected within ${result.maxDistance.toFixed(2)} units.`,
+      );
+      return summary;
+    }
+    commandConsole.log(`[${label}] ${summary.headline}`);
+    if (summary.detail) {
+      commandConsole.log(`[${label}] ${summary.detail}`);
+    }
+    return summary;
+  };
+
+  const stopScanWatch = ({ silent = false } = {}) => {
+    if (scanWatchState.disposer) {
+      const dispose = scanWatchState.disposer;
+      scanWatchState.disposer = null;
+      try {
+        dispose();
+      } catch (error) {
+        console.error('Failed to dispose scan watch callback:', error);
+      }
+    }
+    scanWatchState.options = null;
+    scanWatchState.lastKey = null;
+    if (!silent) {
+      commandConsole.log('Scan watch disabled.');
+    }
+  };
+
+  const startScanWatch = (options) => {
+    if (typeof registerDiagnosticOverlay !== 'function') {
+      commandConsole.log('Diagnostic overlay loop is unavailable; cannot start scan watch.');
+      return;
+    }
+    const normalized = normalizeScanOptions(options);
+    stopScanWatch({ silent: true });
+    const initialResult = performScan(normalized);
+    const initialSummary = logScanResult(initialResult, { label: 'scan watch' });
+    if (!initialResult.hit) {
+      commandConsole.log('[scan watch] Nothing intersected — watch not started.');
+      return;
+    }
+    if (!initialSummary?.visible) {
+      commandConsole.log('[scan watch] Target is already invisible; watch not started.');
+      return;
+    }
+    scanWatchState.options = normalized;
+    scanWatchState.lastKey = initialSummary.key;
+    scanWatchState.disposer = registerDiagnosticOverlay(() => {
+      if (!scanWatchState.options) {
+        return;
+      }
+      const result = performScan(scanWatchState.options);
+      const summary = buildHitSummary(result.hit);
+      if (!summary) {
+        return;
+      }
+      if (summary.key !== scanWatchState.lastKey) {
+        scanWatchState.lastKey = summary.key;
+        if (!result.hit) {
+          commandConsole.log('[scan watch] Target lost.');
+        } else {
+          commandConsole.log(`[scan watch] ${summary.headline}`);
+          if (summary.detail) {
+            commandConsole.log(`[scan watch] ${summary.detail}`);
+          }
+        }
+      }
+      if (!result.hit || !summary.visible) {
+        commandConsole.log('[scan watch] Stopping watch — visibility criteria failed.');
+        stopScanWatch({ silent: true });
+      }
+    });
+    commandConsole.log('Scan watch enabled. Use /scan watch stop to disable.');
+  };
+
+  const scanColumn = (x, z) => {
+    const playerY = playerControls.getPosition().y;
+    const startY = Math.max(worldConfig.maxHeight + 32, playerY + 16);
+    scanOrigin.set(x, startY, z);
+    scanDirection.set(0, -1, 0);
+    const maxDistance = startY + worldConfig.maxHeight + 64;
+    return headlessScanner.cast({
+      origin: scanOrigin,
+      direction: scanDirection,
+      maxDistance,
+      collectAll: true,
+    });
+  };
+
+  registerCommand({
+    name: 'look',
+    description:
+      'Set the camera yaw and pitch (degrees by default; append rad for radians).',
+    usage: '/look <yaw> <pitch>',
+    handler: ({ args }) => {
+      if (args.length < 2) {
+        throw new Error('Usage: /look <yaw> <pitch>.');
+      }
+      const yaw = parseAngle(args[0], 'Yaw');
+      const pitch = parseAngle(args[1], 'Pitch');
+      const orientation = playerControls.setYawPitch(yaw, pitch);
+      const yawDegrees = THREE.MathUtils.radToDeg(orientation.yaw);
+      const pitchDegrees = THREE.MathUtils.radToDeg(orientation.pitch);
+      commandConsole.log(
+        `Orientation updated — yaw=${yawDegrees.toFixed(2)}°, pitch=${pitchDegrees.toFixed(2)}°`,
+      );
+    },
+  });
+
+  registerCommand({
+    name: 'goto',
+    description: 'Teleport the player to the specified world coordinates.',
+    usage: '/goto <x> <y> <z>',
+    handler: ({ args }) => {
+      if (args.length < 3) {
+        throw new Error('Usage: /goto <x> <y> <z>.');
+      }
+      const x = parseCoordinate(args[0], 'X coordinate');
+      const y = parseCoordinate(args[1], 'Y coordinate');
+      const z = parseCoordinate(args[2], 'Z coordinate');
+      const moved = playerControls.setPosition({ x, y, z });
+      if (!moved) {
+        throw new Error('Unable to move to target position — location is obstructed.');
+      }
+      const position = playerControls.getPosition();
+      commandConsole.log(
+        `Position set to X=${position.x.toFixed(2)} Y=${position.y.toFixed(2)} Z=${position.z.toFixed(2)}.`,
+      );
+    },
+  });
+
+  registerCommand({
+    name: 'scan',
+    description:
+      'Cast a diagnostic ray and report the hit block with render visibility checks.',
+    usage:
+      '/scan [distance] [yaw] [pitch] | /scan column <x> <z> | /scan watch [stop|distance [yaw] [pitch]]',
+    handler: ({ args }) => {
+      if (args.length > 0) {
+        const mode = args[0].toLowerCase();
+        if (mode === 'column') {
+          if (args.length < 3) {
+            throw new Error('Usage: /scan column <x> <z>.');
+          }
+          const x = parseCoordinate(args[1], 'Column X coordinate');
+          const z = parseCoordinate(args[2], 'Column Z coordinate');
+          const result = scanColumn(x, z);
+          if (!result || result.hits.length === 0) {
+            commandConsole.log(
+              `[scan column] No blocks detected at column (${x.toFixed(2)}, ${z.toFixed(2)}).`,
+            );
+            return;
+          }
+          commandConsole.log(
+            `[scan column] ${result.hits.length} block(s) detected at column (${x.toFixed(2)}, ${z.toFixed(2)}).`,
+          );
+          result.hits.forEach((hit, index) => {
+            const summary = buildHitSummary(hit);
+            commandConsole.log(`[scan column] #${index + 1}: ${summary.headline}`);
+            if (summary.detail) {
+              commandConsole.log(`  ${summary.detail}`);
+            }
+          });
+          return;
+        }
+        if (mode === 'watch') {
+          if (args.length > 1 && args[1].toLowerCase() === 'stop') {
+            if (!scanWatchState.disposer) {
+              commandConsole.log('Scan watch is not currently active.');
+              return;
+            }
+            stopScanWatch();
+            return;
+          }
+          const distance = args.length > 1 ? parseDistance(args[1]) : undefined;
+          const yaw = args.length > 2 ? parseAngle(args[2], 'Yaw') : undefined;
+          const pitch = args.length > 3 ? parseAngle(args[3], 'Pitch') : undefined;
+          startScanWatch({ distance, yaw, pitch });
+          return;
+        }
+      }
+
+      if (args.length > 3) {
+        throw new Error('Usage: /scan [distance] [yaw] [pitch].');
+      }
+      const distance = args.length > 0 ? parseDistance(args[0]) : undefined;
+      const yaw = args.length > 1 ? parseAngle(args[1], 'Yaw') : undefined;
+      const pitch = args.length > 2 ? parseAngle(args[2], 'Pitch') : undefined;
+      const options = normalizeScanOptions({ distance, yaw, pitch });
+      const result = performScan(options);
+      logScanResult(result, { label: 'scan' });
+    },
+  });
 
   registerCommand({
     name: 'godmode',
