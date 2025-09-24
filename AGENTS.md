@@ -47,3 +47,4 @@
 
 ## Extending These Rules
 - If a subdirectory needs more specific guidance later, add another `AGENTS.md` within that folder. Nested instructions override the broader rules above for files in their subtree.
+- Always consult `README.md` for additional instructions, available commands, and project context before making changes.
