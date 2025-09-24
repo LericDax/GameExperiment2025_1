@@ -34,6 +34,10 @@
   npm run dev
   ```
   This serves the app at `http://localhost:5173/` by default.
+- For remote or headless QA sessions, expose the dev server on all interfaces:
+  ```sh
+  npm run dev -- --host 0.0.0.0
+  ```
 - Before submitting changes, ensure the demo still builds:
   ```sh
   npm run build
