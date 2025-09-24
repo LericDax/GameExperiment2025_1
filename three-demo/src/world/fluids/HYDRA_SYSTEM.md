@@ -62,4 +62,3 @@ for experimentation.
 - Fallback activations are exposed through the fluid warning banner (`Fluid visibility notice`) and
   can be cleared programmatically via `clearFluidMaterialFallback` once Hydra renders correctly
   again.
-
