@@ -286,7 +286,6 @@ class HydraWaterPipeline {
     #include <common>
     #include <fog_pars_fragment>
     #include <tonemapping_pars_fragment>
-    #include <colorspace_pars_fragment>
 
     uniform float uTime;
     uniform float uFadeDepth;
