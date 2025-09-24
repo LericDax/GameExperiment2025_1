@@ -17,6 +17,80 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
   const waterColumns = new Set();
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   let lastCenterKey = null;
+  const fluidVisibilityWarnings = new Map();
+
+  const extractFluidType = (type) => {
+    if (typeof type !== 'string') {
+      return null;
+    }
+    if (!type.startsWith('fluid:')) {
+      return null;
+    }
+    const segments = type.split(':');
+    return segments[1] ?? null;
+  };
+
+  const countColumns = (columns) => {
+    if (!columns) {
+      return 0;
+    }
+    if (columns instanceof Map) {
+      return columns.size;
+    }
+    if (Array.isArray(columns)) {
+      return columns.length;
+    }
+    if (typeof columns === 'object') {
+      return Object.keys(columns).length;
+    }
+    return 0;
+  };
+
+  const updateFluidWarningsForChunk = (chunk) => {
+    if (!chunk) {
+      return;
+    }
+    const fluidColumnsByType =
+      chunk?.fluidColumns instanceof Map
+        ? chunk.fluidColumns
+        : chunk?.fluidColumnsByType instanceof Map
+        ? chunk.fluidColumnsByType
+        : null;
+    const surfacesByType = new Map();
+    (chunk.fluidSurfaces ?? []).forEach((surface) => {
+      const type = extractFluidType(surface.userData?.type);
+      if (!type) {
+        return;
+      }
+      surfacesByType.set(type, (surfacesByType.get(type) ?? 0) + 1);
+    });
+    const warnings = [];
+    if (fluidColumnsByType instanceof Map) {
+      fluidColumnsByType.forEach((columns, fluidType) => {
+        const columnCount = countColumns(columns);
+        if (columnCount === 0) {
+          return;
+        }
+        const surfaceCount = surfacesByType.get(fluidType) ?? 0;
+        if (surfaceCount === 0) {
+          warnings.push({
+            chunkKey: chunk.key,
+            fluidType,
+            columnCount,
+          });
+          console.warn(
+            `[fluid warning] Chunk ${chunk.key} has ${columnCount} ${fluidType} column(s) but no rendered surfaces.`,
+          );
+        }
+      });
+    }
+    chunk.fluidWarnings = warnings;
+    if (warnings.length > 0) {
+      fluidVisibilityWarnings.set(chunk.key, warnings);
+    } else {
+      fluidVisibilityWarnings.delete(chunk.key);
+    }
+  };
 
   function ensureChunk(chunkX, chunkZ) {
     const key = chunkKey(chunkX, chunkZ);
@@ -44,6 +118,7 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
     (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.add(column));
     loadedChunks.set(key, chunk);
+    updateFluidWarningsForChunk(chunk);
   }
 
   function disposeChunk(key) {
@@ -54,12 +129,16 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
 
     scene.remove(chunk.group);
     (chunk.fluidSurfaces ?? []).forEach((surface) => {
+      if (surface.userData?.safetyFallback && surface.material?.dispose) {
+        surface.material.dispose();
+      }
       surface.geometry?.dispose?.();
       disposeFluidSurface(surface);
     });
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.delete(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.delete(block));
     (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.delete(column));
+    fluidVisibilityWarnings.delete(key);
     loadedChunks.delete(key);
   }
 
@@ -96,8 +175,21 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
   }
 
+  function refreshChunks() {
+    Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
+    lastCenterKey = null;
+  }
+
   function getLoadedChunks() {
     return Array.from(loadedChunks.values());
+  }
+
+  function getFluidVisibilityWarnings() {
+    const aggregated = [];
+    fluidVisibilityWarnings.forEach((warnings) => {
+      aggregated.push(...warnings);
+    });
+    return aggregated;
   }
 
   function computeMaterialVisibility(material) {
@@ -115,6 +207,7 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     : () => {
         const chunks = [];
         let totalBlocks = 0;
+        const warnings = [];
 
         loadedChunks.forEach((chunk, key) => {
           const blocks = [];
@@ -221,12 +314,17 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
           }
 
           totalBlocks += blocks.length;
+          const chunkWarnings = chunk.fluidWarnings ?? fluidVisibilityWarnings.get(key) ?? [];
+          if (chunkWarnings.length > 0) {
+            warnings.push(...chunkWarnings);
+          }
           chunks.push({
             key,
             chunkX: chunk.chunkX,
             chunkZ: chunk.chunkZ,
             blockCount: blocks.length,
             blocks,
+            warnings: chunkWarnings,
           });
         });
 
@@ -235,6 +333,7 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
           chunkCount: chunks.length,
           totalBlocks,
           chunks,
+          fluidWarnings: warnings,
         };
       };
 
@@ -490,10 +589,12 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
   return {
     update,
     dispose,
+    refreshChunks,
     solidBlocks,
     softBlocks,
     waterColumns,
     getLoadedChunks,
+    getFluidVisibilityWarnings,
     getBlockFromIntersection,
     removeBlockInstance,
     ...(debugSnapshot ? { debugSnapshot } : {}),
