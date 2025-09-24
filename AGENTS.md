@@ -7,6 +7,15 @@
 - When modifying code under `three-demo/src/`, make sure it continues to work with the Vite tooling (dev server and build output).
 - Ambient audio, music systems, and other sound features are allowed. Keep audio assets under `three-demo/src/sounds/` (or its subdirectories) so they can be picked up by Vite.
 
+## Headless playtesting tools
+- A suite of headless QA helpers is available while the app runs in dev mode (`import.meta.env.DEV`): `/asciimap`, `/asciiwatch`, `/asciioptions`, `/scan`, `/goto`, `/look`, and scan watch commands.
+- Tooling lives in `three-demo/src/devtools/` with command wiring in `three-demo/src/player/dev-commands.js`.
+- Access the debug namespace via `window.__VOXEL_DEBUG__` in the browser console for manual experimentation with the commands and helpers.
+- Recommended usage:
+  - Launch the Vite dev server (`npm run dev`) to ensure `import.meta.env.DEV` is true.
+  - Use `/asciioptions` to configure the ASCII renderer, `/asciimap` or `/asciiwatch` to monitor level state, and `/scan`/`/goto`/`/look` (plus scan watch variants) to navigate and inspect.
+- Limitations: utilities are only wired up in dev builds and are not bundled for production; automated QA scripts should guard against `window.__VOXEL_DEBUG__` being undefined in prod.
+
 ## Code Style
 - Use modern ES modules everywhere (`import`/`export` syntax, no CommonJS).
 - Prefer named exports when possible; default exports are reserved for module entry points.
