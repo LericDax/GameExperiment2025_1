@@ -56,7 +56,7 @@ export function registerDeveloperCommands({
     lastKey: null,
   };
 
-  const getDebugSnapshot = () => window.__VOXEL_DEBUG__?.chunkSnapshot?.();
+  const getDebugSnapshot = () => window.__VOXEL_DEBUG__?.chunkSnapshot;
 
   const cloneAsciiOptions = (source = asciiState.options) => ({
     radius: Math.max(1, Math.round(source.radius ?? 16)),
