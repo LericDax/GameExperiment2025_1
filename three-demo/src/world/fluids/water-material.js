@@ -20,6 +20,7 @@ export function createHydraWaterMaterial({ THREE }) {
     uAmbientColor: { value: new THREE.Color('#2a3f58') },
     uLightColor: { value: new THREE.Color('#ffffff') },
     uLightDirection: { value: lightDirection },
+
   };
 
   const vertexShader = `
@@ -50,6 +51,7 @@ export function createHydraWaterMaterial({ THREE }) {
     varying float vDepth;
     varying float vShore;
     varying float vSurfaceType;
+
     varying vec2 vWorldXZ;
     varying float vWaveHeight;
     varying float vCrest;
@@ -210,6 +212,7 @@ export function createHydraWaterMaterial({ THREE }) {
       #include <fog_fragment>
     }
   `;
+
 
   const material = new THREE.ShaderMaterial({
     name: 'HydraWaterMaterial',
