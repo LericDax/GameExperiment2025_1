@@ -269,7 +269,9 @@ totalDiffuse += abyss * (0.2 + (1.0 - material.transmission) * 0.4);
     );
   };
 
+
   material.customProgramCacheKey = () => 'HydraWaterMaterial_v4';
+
 
   const update = (delta) => {
     uniforms.uTime.value += delta;
