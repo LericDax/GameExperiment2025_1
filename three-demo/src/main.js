@@ -256,6 +256,29 @@ try {
     fluidWarningBanner.classList.add('visible')
   }
 
+  getFluidMaterial('water')
+  const hydraProbeResult = runHydraVisibilityProbe({
+    THREE,
+    renderer,
+    onFallback: ({ reason }) => {
+      if (hydraFallbackNoticeTimeout) {
+        clearTimeout(hydraFallbackNoticeTimeout)
+      }
+      setHudStatusOverride(reason ?? 'Hydra water fallback active')
+      hydraFallbackNoticeTimeout = setTimeout(() => {
+        setHudStatusOverride(null)
+        hydraFallbackNoticeTimeout = null
+      }, 6000)
+      updateFluidWarningBanner()
+    },
+  })
+  if (import.meta.env.DEV) {
+    console.info('[hydra] visibility probe result', hydraProbeResult)
+  }
+  if (hydraProbeResult?.ok) {
+    updateFluidWarningBanner()
+  }
+
   updateFluidWarningBanner()
   fluidWarningOverlayDisposer = registerDiagnosticOverlay(() => {
     updateFluidWarningBanner()
