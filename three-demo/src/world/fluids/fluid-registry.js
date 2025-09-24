@@ -22,36 +22,6 @@ let debugBasicMaterial = null;
 
 const fluidDefinitions = new Map();
 const fluidRuntime = new Map();
-const fluidFallbackStates = new Map();
-
-function ensureColor(value) {
-  if (!THREERef) {
-    return null;
-  }
-  const color = value instanceof THREERef.Color ? value : new THREERef.Color(value ?? '#3a79c5');
-  return color;
-}
-
-function ensureFallbackMaterial(runtime, { color, opacity } = {}) {
-  const fallbackColor = ensureColor(color ?? runtime.fallbackColor ?? '#3a79c5');
-  const fallbackOpacity = typeof opacity === 'number' ? opacity : runtime.fallbackOpacity ?? 0.82;
-  if (!runtime.fallbackMaterial) {
-    runtime.fallbackMaterial = new THREERef.MeshBasicMaterial({
-      color: fallbackColor.clone(),
-      transparent: true,
-      opacity: fallbackOpacity,
-      depthWrite: false,
-      side: THREERef.DoubleSide,
-      vertexColors: true,
-    });
-  } else {
-    runtime.fallbackMaterial.color.copy(fallbackColor);
-    runtime.fallbackMaterial.opacity = fallbackOpacity;
-  }
-  runtime.fallbackColor = `#${runtime.fallbackMaterial.color.getHexString()}`;
-  runtime.fallbackOpacity = runtime.fallbackMaterial.opacity;
-  return runtime.fallbackMaterial;
-}
 
 export function initializeFluidRegistry({ THREE }) {
   if (!THREE) {
@@ -132,19 +102,14 @@ function ensureRuntime(id) {
   if (typeof materialFactory !== 'function') {
     throw new Error(`Fluid type "${id}" is missing a createMaterial() factory.`);
   }
-  const { material, update, pipeline } = materialFactory({ THREE: THREERef, definition });
+  const { material, update } = materialFactory({ THREE: THREERef, definition });
   material.depthWrite = false;
   material.transparent = true;
   runtime = {
     definition,
     material,
     update: typeof update === 'function' ? update : null,
-    pipeline: pipeline ?? null,
     surfaces: new Set(),
-    forcedFallbackActive: false,
-    fallbackMaterial: null,
-    fallbackColor: '#3a79c5',
-    fallbackOpacity: 0.82,
   };
   fluidRuntime.set(id, runtime);
   return runtime;
@@ -152,25 +117,14 @@ function ensureRuntime(id) {
 
 export function createFluidSurface({ type, geometry }) {
   const runtime = ensureRuntime(type);
-  let material;
-  if (runtime.forcedFallbackActive) {
-    material = ensureFallbackMaterial(runtime);
-  } else if (DEV_USE_BASIC_FLUID_MATERIAL) {
-    material = getDebugBasicMaterial(runtime.material);
-  } else {
-    material = runtime.material;
-  }
+  const material = DEV_USE_BASIC_FLUID_MATERIAL
+    ? getDebugBasicMaterial(runtime.material)
+    : runtime.material;
   const mesh = new THREERef.Mesh(geometry, material);
   mesh.castShadow = false;
   mesh.receiveShadow = true;
   mesh.userData.fluidType = type;
-  if (runtime.forcedFallbackActive) {
-    mesh.userData.safetyFallback = true;
-  }
   runtime.surfaces.add(mesh);
-  if (runtime.pipeline) {
-    runtime.pipeline.validateSurfaces(runtime.surfaces);
-  }
   return mesh;
 }
 
@@ -247,63 +201,4 @@ export function resolveFluidPresence({ type, x, z, sampleColumnHeight, worldConf
     surfaceY,
     bottomY: surfaceY,
   };
-}
-
-export function isFluidFallbackActive(type) {
-  if (!fluidDefinitions.has(type)) {
-    return false;
-  }
-  const runtime = ensureRuntime(type);
-  return Boolean(runtime.forcedFallbackActive);
-}
-
-export function forceFluidMaterialFallback(
-  type,
-  { color, opacity, reason = 'Hydra visibility probe triggered fallback', metrics = null } = {},
-) {
-  const runtime = ensureRuntime(type);
-  const fallbackMaterial = ensureFallbackMaterial(runtime, { color, opacity });
-  runtime.forcedFallbackActive = true;
-  const state = {
-    type,
-    reason,
-    color: runtime.fallbackColor,
-    opacity: runtime.fallbackOpacity,
-    activatedAt: Date.now(),
-    metrics,
-  };
-  fluidFallbackStates.set(type, state);
-  runtime.surfaces.forEach((mesh) => {
-    if (mesh.material !== fallbackMaterial) {
-      mesh.material = fallbackMaterial;
-    }
-    mesh.userData = mesh.userData || {};
-    mesh.userData.safetyFallback = true;
-  });
-  console.warn(`[hydra] Forced ${type} fluid fallback: ${reason}`);
-  return state;
-}
-
-export function getFluidFallbackStates() {
-  return Array.from(fluidFallbackStates.values()).sort((a, b) => a.activatedAt - b.activatedAt);
-}
-
-export function clearFluidMaterialFallback(type) {
-  if (!fluidDefinitions.has(type)) {
-    return;
-  }
-  const runtime = ensureRuntime(type);
-  if (!runtime.forcedFallbackActive) {
-    return;
-  }
-  runtime.forcedFallbackActive = false;
-  fluidFallbackStates.delete(type);
-  runtime.surfaces.forEach((mesh) => {
-    mesh.material = DEV_USE_BASIC_FLUID_MATERIAL
-      ? getDebugBasicMaterial(runtime.material)
-      : runtime.material;
-    if (mesh.userData) {
-      delete mesh.userData.safetyFallback;
-    }
-  });
 }

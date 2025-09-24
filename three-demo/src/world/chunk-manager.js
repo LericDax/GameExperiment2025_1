@@ -38,7 +38,6 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
       surface.userData = surface.userData || {};
       surface.userData.chunkKey = key;
     });
-    chunk.key = key;
     scene.add(chunk.group);
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.add(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
@@ -96,10 +95,6 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
   }
 
-  function getLoadedChunks() {
-    return Array.from(loadedChunks.values());
-  }
-
   function computeMaterialVisibility(material) {
     if (!material) {
       return true;
@@ -150,76 +145,6 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
             });
           }
 
-          const fluidColumnsByType =
-            chunk?.fluidColumns ?? chunk?.fluidColumnsByType ?? null;
-          if (fluidColumnsByType instanceof Map) {
-            fluidColumnsByType.forEach((columns, fluidType) => {
-              if (!columns) {
-                return;
-              }
-              const iterateColumns =
-                columns instanceof Map
-                  ? columns.values()
-                  : Array.isArray(columns)
-                  ? columns
-                  : Object.values(columns);
-              for (const column of iterateColumns) {
-                if (!column) {
-                  continue;
-                }
-                const columnKey = column.key ?? `${column.x}|${column.z}`;
-                const surfaceY =
-                  typeof column.surfaceY === 'number'
-                    ? column.surfaceY
-                    : typeof column.maxY === 'number'
-                    ? column.maxY
-                    : null;
-                const bottomY =
-                  typeof column.bottomY === 'number'
-                    ? column.bottomY
-                    : typeof column.minY === 'number'
-                    ? column.minY
-                    : null;
-                const representativeY =
-                  surfaceY !== null
-                    ? surfaceY - 0.5
-                    : bottomY !== null
-                    ? bottomY + 0.5
-                    : 0;
-                const colorHex =
-                  column?.color && typeof column.color.getHexString === 'function'
-                    ? `#${column.color.getHexString()}`
-                    : column?.color ?? null;
-                blocks.push({
-                  key: `fluid:${fluidType}:${columnKey}`,
-                  type: `fluid:${fluidType}`,
-                  position: {
-                    x: column.x ?? 0,
-                    y: representativeY,
-                    z: column.z ?? 0,
-                  },
-                  isSolid: false,
-                  isWater: fluidType === 'water',
-                  collisionMode: 'liquid',
-                  meshVisible: true,
-                  materialVisible: true,
-                  fluid: {
-                    surfaceY,
-                    bottomY,
-                    depth:
-                      typeof column.depth === 'number'
-                        ? column.depth
-                        : surfaceY !== null && bottomY !== null
-                        ? Math.max(0, surfaceY - bottomY)
-                        : null,
-                    color: colorHex,
-                    shoreline: column?.shoreline ?? null,
-                  },
-                });
-              }
-            });
-          }
-
           totalBlocks += blocks.length;
           chunks.push({
             key,
@@ -239,7 +164,7 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
       };
 
   function getChunkForMesh(mesh) {
-    if (!mesh) {
+    if (!mesh?.isInstancedMesh) {
       return null;
     }
     const key = mesh.userData?.chunkKey;
@@ -250,158 +175,35 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
   }
 
   function getBlockFromIntersection(intersection) {
-    if (!intersection) {
+    if (!intersection || typeof intersection.instanceId !== 'number') {
       return null;
     }
     const mesh = intersection.object;
+    if (!mesh?.isInstancedMesh) {
+      return null;
+    }
     const chunk = getChunkForMesh(mesh);
     if (!chunk) {
       return null;
     }
     const { type } = mesh.userData || {};
-    const instanceId = typeof intersection.instanceId === 'number' ? intersection.instanceId : null;
-
-    if (mesh.isInstancedMesh && instanceId !== null) {
-      if (!type) {
-        return null;
-      }
-      const typeData = chunk.typeData?.get(type);
-      if (!typeData) {
-        return null;
-      }
-      const entry = typeData.entries[instanceId];
-      if (!entry) {
-        return null;
-      }
-      return {
-        chunk,
-        type,
-        instanceId,
-        entry,
-      };
+    if (!type) {
+      return null;
     }
-
-    if (typeof type === 'string' && type.startsWith('fluid:')) {
-      const fluidType = type.slice('fluid:'.length);
-      const fluidColumnsByType =
-        chunk?.fluidColumns instanceof Map
-          ? chunk.fluidColumns
-          : chunk?.fluidColumnsByType instanceof Map
-          ? chunk.fluidColumnsByType
-          : null;
-      if (!fluidColumnsByType) {
-        return null;
-      }
-      const columns = fluidColumnsByType.get(fluidType);
-      if (!(columns instanceof Map) || columns.size === 0) {
-        return null;
-      }
-      const point = intersection.point ?? null;
-      const rounded = (value) =>
-        Number.isFinite(value) ? Math.floor(value + 0.5) : null;
-      const columnX = point ? rounded(point.x) : null;
-      const columnZ = point ? rounded(point.z) : null;
-      let columnKey = null;
-      let column = null;
-      if (columnX !== null && columnZ !== null) {
-        columnKey = `${columnX}|${columnZ}`;
-        column = columns.get(columnKey) ?? null;
-      }
-      if (!column) {
-        for (const candidate of columns.values()) {
-          if (
-            candidate &&
-            (candidate.x === columnX || columnX === null) &&
-            (candidate.z === columnZ || columnZ === null)
-          ) {
-            columnKey = candidate.key ?? `${candidate.x}|${candidate.z}`;
-            column = candidate;
-            break;
-          }
-        }
-      }
-      if (!column) {
-        return null;
-      }
-
-      const surfaceY =
-        typeof column.surfaceY === 'number'
-          ? column.surfaceY
-          : typeof column.maxY === 'number'
-          ? column.maxY
-          : null;
-      const bottomY =
-        typeof column.bottomY === 'number'
-          ? column.bottomY
-          : typeof column.minY === 'number'
-          ? column.minY
-          : null;
-      const depth =
-        typeof column.depth === 'number'
-          ? column.depth
-          : surfaceY !== null && bottomY !== null
-          ? Math.max(0, surfaceY - bottomY)
-          : null;
-      const representativeY =
-        surfaceY !== null
-          ? surfaceY - 0.5
-          : bottomY !== null
-          ? bottomY + 0.5
-          : point && Number.isFinite(point.y)
-          ? point.y
-          : 0;
-      const colorHex =
-        column?.color && typeof column.color.getHexString === 'function'
-          ? `#${column.color.getHexString()}`
-          : column?.color ?? null;
-      const flowDirection =
-        column?.flowDirection && typeof column.flowDirection.x === 'number'
-          ? {
-              x: column.flowDirection.x,
-              z:
-                typeof column.flowDirection.y === 'number'
-                  ? column.flowDirection.y
-                  : typeof column.flowDirection.z === 'number'
-                  ? column.flowDirection.z
-                  : 0,
-            }
-          : null;
-
-      const resolvedKey = columnKey ?? column.key ?? `${column.x}|${column.z}`;
-      const entry = {
-        key: `fluid:${fluidType}:${resolvedKey}`,
-        coordinateKey: resolvedKey,
-        type: `fluid:${fluidType}`,
-        position: {
-          x: column.x ?? columnX ?? 0,
-          y: representativeY,
-          z: column.z ?? columnZ ?? 0,
-        },
-        isSolid: false,
-        isWater: fluidType === 'water',
-        collisionMode: 'liquid',
-        fluid: {
-          type: fluidType,
-          surfaceY,
-          bottomY,
-          depth,
-          color: colorHex,
-          shoreline: column?.shoreline ?? null,
-          flowStrength: column?.flowStrength ?? null,
-          flowDirection,
-          neighbors: column?.neighbors ?? null,
-        },
-      };
-
-      return {
-        chunk,
-        type: entry.type,
-        instanceId: null,
-        entry,
-      };
+    const typeData = chunk.typeData?.get(type);
+    if (!typeData) {
+      return null;
     }
-
-    return null;
+    const entry = typeData.entries[intersection.instanceId];
+    if (!entry) {
+      return null;
+    }
+    return {
+      chunk,
+      type,
+      instanceId: intersection.instanceId,
+      entry,
+    };
   }
 
   function removeBlockInstance({ chunk, type, instanceId }) {
@@ -493,7 +295,6 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     solidBlocks,
     softBlocks,
     waterColumns,
-    getLoadedChunks,
     getBlockFromIntersection,
     removeBlockInstance,
     ...(debugSnapshot ? { debugSnapshot } : {}),

@@ -14,11 +14,8 @@ import { registerDeveloperCommands } from './player/dev-commands.js'
 import { initializeMusicSystem } from './audio/music-system.js'
 import {
   initializeFluidRegistry,
-  getFluidFallbackStates,
-  getFluidMaterial,
   updateFluids,
 } from './world/fluids/fluid-registry.js'
-import { runHydraVisibilityProbe } from './world/fluids/hydra-visibility-probe.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -110,7 +107,6 @@ const statusElement = hud.querySelector('#hud-status')
 let lastHudState = null
 let hudStatusOverride = null
 let hudStatusOverrideIsError = false
-let hydraFallbackNoticeTimeout = null
 
 function renderHudStatus(message, isError = false) {
   if (!statusElement) {
@@ -183,7 +179,6 @@ try {
 
   chunkManager.update(playerControls.getPosition())
   updateHud(playerControls.getState())
-
 
   if (import.meta.env.DEV) {
     const debugNamespace = (window.__VOXEL_DEBUG__ = window.__VOXEL_DEBUG__ || {})

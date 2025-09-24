@@ -118,18 +118,6 @@ export function createCommandConsole(options = {}) {
   container.appendChild(form);
   document.body.appendChild(container);
 
-  const logListeners = new Set();
-
-  function notifyLogListeners(entry) {
-    logListeners.forEach((listener) => {
-      try {
-        listener(entry);
-      } catch (error) {
-        console.error('Command console log listener failed:', error);
-      }
-    });
-  }
-
   function appendLog(message, level = 'info') {
     const entry = createElement('div', `command-console-entry level-${level}`);
     entry.textContent = message;
@@ -138,11 +126,6 @@ export function createCommandConsole(options = {}) {
       logElement.removeChild(logElement.firstChild);
     }
     logElement.scrollTop = logElement.scrollHeight;
-    notifyLogListeners({
-      level,
-      message,
-      timestamp: Date.now(),
-    });
   }
 
   function clearHistoryNavigation() {
@@ -222,30 +205,6 @@ export function createCommandConsole(options = {}) {
     return Array.from(commandMap.values()).sort((a, b) =>
       a.name.localeCompare(b.name),
     );
-  }
-
-  function getLogEntries() {
-    return Array.from(logElement.children).map((child) => {
-      const entry = child;
-      const levelClass = Array.from(entry.classList).find((className) =>
-        className.startsWith('level-'),
-      );
-      const level = levelClass ? levelClass.slice('level-'.length) : 'info';
-      return {
-        level,
-        message: entry.textContent ?? '',
-      };
-    });
-  }
-
-  function addLogListener(listener) {
-    if (typeof listener !== 'function') {
-      throw new Error('addLogListener expects a function.');
-    }
-    logListeners.add(listener);
-    return () => {
-      logListeners.delete(listener);
-    };
   }
 
   function executeCommand(rawInput) {
@@ -431,14 +390,11 @@ export function createCommandConsole(options = {}) {
     registerCommand,
     registerCommands: (commands) => commands.forEach(registerCommand),
     executeCommand,
-    listCommands,
     open: () => setOpen(true),
     close: () => setOpen(false),
     isOpen: () => isOpen,
     dispose,
     log: appendLog,
-    getEntries: getLogEntries,
-    addLogListener,
   };
 }
 
