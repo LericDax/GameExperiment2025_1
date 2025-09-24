@@ -97,7 +97,7 @@ export function createHeadlessScanner({ THREE, scene, chunkManager }) {
     const hits = [];
 
     for (const intersection of intersections) {
-      if (!intersection || typeof intersection.instanceId !== 'number') {
+      if (!intersection) {
         continue;
       }
       const blockInfo = chunkManager.getBlockFromIntersection(intersection);
