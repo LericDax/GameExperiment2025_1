@@ -19,7 +19,9 @@ export function createHydraWaterMaterial({ THREE }) {
   material.side = THREE.DoubleSide;
   material.depthWrite = false;
 
+
   material.userData.hydraWaterVersion = 'simple-blue-v1';
+
 
   return { material, update: null };
 }
