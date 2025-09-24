@@ -102,13 +102,14 @@ function ensureRuntime(id) {
   if (typeof materialFactory !== 'function') {
     throw new Error(`Fluid type "${id}" is missing a createMaterial() factory.`);
   }
-  const { material, update } = materialFactory({ THREE: THREERef, definition });
+  const { material, update, pipeline } = materialFactory({ THREE: THREERef, definition });
   material.depthWrite = false;
   material.transparent = true;
   runtime = {
     definition,
     material,
     update: typeof update === 'function' ? update : null,
+    pipeline: pipeline ?? null,
     surfaces: new Set(),
   };
   fluidRuntime.set(id, runtime);
@@ -125,6 +126,9 @@ export function createFluidSurface({ type, geometry }) {
   mesh.receiveShadow = true;
   mesh.userData.fluidType = type;
   runtime.surfaces.add(mesh);
+  if (runtime.pipeline) {
+    runtime.pipeline.validateSurfaces(runtime.surfaces);
+  }
   return mesh;
 }
 
