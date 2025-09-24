@@ -52,3 +52,14 @@ warnings and allows the debug material toggle to step in without a hard crash.
 
 These layers combine to deliver the "Hydra" water presentation while keeping the system malleable
 for experimentation.
+
+
+## Visibility diagnostics & fallback
+
+- `runHydraVisibilityProbe` renders a synthetic patch through the active Hydra material during
+  initialization. If the captured pixel brightness/alpha is near zero, the registry promotes a
+  tinted `MeshBasicMaterial` fallback so players still perceive the fluid surface.
+- Fallback activations are exposed through the fluid warning banner (`Fluid visibility notice`) and
+  can be cleared programmatically via `clearFluidMaterialFallback` once Hydra renders correctly
+  again.
+
