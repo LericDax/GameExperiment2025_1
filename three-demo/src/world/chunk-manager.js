@@ -96,6 +96,10 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
   }
 
+  function getLoadedChunks() {
+    return Array.from(loadedChunks.values());
+  }
+
   function computeMaterialVisibility(material) {
     if (!material) {
       return true;
@@ -489,6 +493,7 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
     solidBlocks,
     softBlocks,
     waterColumns,
+    getLoadedChunks,
     getBlockFromIntersection,
     removeBlockInstance,
     ...(debugSnapshot ? { debugSnapshot } : {}),
