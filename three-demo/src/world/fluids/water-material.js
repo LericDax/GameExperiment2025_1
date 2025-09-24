@@ -149,9 +149,10 @@ vShore = shoreline;
       );
 
     shader.vertexShader = shader.vertexShader.replace(
-      '#include <project_vertex>',
-      `vHydraWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
-#include <project_vertex>`
+      '#include <worldpos_vertex>',
+      `#include <worldpos_vertex>
+vHydraWorldPosition = worldPosition.xyz;
+`
     );
 
     shader.fragmentShader = shader.fragmentShader
@@ -259,7 +260,7 @@ totalDiffuse += abyss * (0.2 + (1.0 - material.transmission) * 0.4);
     );
   };
 
-  material.customProgramCacheKey = () => 'HydraWaterMaterial_v2';
+  material.customProgramCacheKey = () => 'HydraWaterMaterial_v3';
 
   const update = (delta) => {
     uniforms.uTime.value += delta;
