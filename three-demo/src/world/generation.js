@@ -619,6 +619,20 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
   group.userData.biomes = biomes;
 
+  const fluidColumns = new Map();
+  fluidColumnsByType.forEach((columns, type) => {
+    if (!columns) {
+      return;
+    }
+    const columnMap = columns instanceof Map ? new Map(columns) : new Map();
+    if (!(columns instanceof Map)) {
+      Object.entries(columns).forEach(([key, value]) => {
+        columnMap.set(key, value);
+      });
+    }
+    fluidColumns.set(type, columnMap);
+  });
+
   return {
     chunkX,
     chunkZ,
@@ -627,6 +641,8 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     softBlockKeys,
     waterColumnKeys,
     fluidSurfaces,
+    fluidColumns,
+    fluidColumnsByType: fluidColumns,
     blockLookup,
     typeData,
     biomes,

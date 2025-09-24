@@ -145,6 +145,76 @@ export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) 
             });
           }
 
+          const fluidColumnsByType =
+            chunk?.fluidColumns ?? chunk?.fluidColumnsByType ?? null;
+          if (fluidColumnsByType instanceof Map) {
+            fluidColumnsByType.forEach((columns, fluidType) => {
+              if (!columns) {
+                return;
+              }
+              const iterateColumns =
+                columns instanceof Map
+                  ? columns.values()
+                  : Array.isArray(columns)
+                  ? columns
+                  : Object.values(columns);
+              for (const column of iterateColumns) {
+                if (!column) {
+                  continue;
+                }
+                const columnKey = column.key ?? `${column.x}|${column.z}`;
+                const surfaceY =
+                  typeof column.surfaceY === 'number'
+                    ? column.surfaceY
+                    : typeof column.maxY === 'number'
+                    ? column.maxY
+                    : null;
+                const bottomY =
+                  typeof column.bottomY === 'number'
+                    ? column.bottomY
+                    : typeof column.minY === 'number'
+                    ? column.minY
+                    : null;
+                const representativeY =
+                  surfaceY !== null
+                    ? surfaceY - 0.5
+                    : bottomY !== null
+                    ? bottomY + 0.5
+                    : 0;
+                const colorHex =
+                  column?.color && typeof column.color.getHexString === 'function'
+                    ? `#${column.color.getHexString()}`
+                    : column?.color ?? null;
+                blocks.push({
+                  key: `fluid:${fluidType}:${columnKey}`,
+                  type: `fluid:${fluidType}`,
+                  position: {
+                    x: column.x ?? 0,
+                    y: representativeY,
+                    z: column.z ?? 0,
+                  },
+                  isSolid: false,
+                  isWater: fluidType === 'water',
+                  collisionMode: 'liquid',
+                  meshVisible: true,
+                  materialVisible: true,
+                  fluid: {
+                    surfaceY,
+                    bottomY,
+                    depth:
+                      typeof column.depth === 'number'
+                        ? column.depth
+                        : surfaceY !== null && bottomY !== null
+                        ? Math.max(0, surfaceY - bottomY)
+                        : null,
+                    color: colorHex,
+                    shoreline: column?.shoreline ?? null,
+                  },
+                });
+              }
+            });
+          }
+
           totalBlocks += blocks.length;
           chunks.push({
             key,
