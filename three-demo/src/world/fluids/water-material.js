@@ -1,29 +1,182 @@
-export function createHydraWaterMaterial({ THREE }) {
-  const lightDirection = new THREE.Vector3(-0.35, 1, 0.25).normalize();
+/**
+ * Hydra is our high-fidelity water rendering pipeline. Historically the module exported a
+ * function that returned a ShaderMaterial and a bare update loop. As the open world systems
+ * matured we needed a place to keep environment metadata, validate incoming geometry, and tune
+ * the wave model without duplicating logic across call sites. This file therefore now exposes
+ * a small pipeline class that encapsulates shader creation, configuration, and diagnostics.
+ */
 
-  const uniforms = {
-    uTime: { value: 0 },
-    uPrimaryScale: { value: 0.42 },
-    uSecondaryScale: { value: 0.18 },
-    uChoppiness: { value: 0.55 },
-    uFlowScale: { value: 0.16 },
-    uFoamSpeed: { value: 1.1 },
-    uFadeDepth: { value: 7.5 },
-    uRefractionStrength: { value: 0.42 },
-    uEdgeFoamBoost: { value: 1.35 },
-    uShallowTint: { value: new THREE.Color('#5ddfff') },
-    uDeepTint: { value: new THREE.Color('#0a2a63') },
-    uFoamColor: { value: new THREE.Color('#c4f4ff') },
-    uHorizonTint: { value: new THREE.Color('#7bd4ff') },
-    uUnderwaterColor: { value: new THREE.Color('#052946') },
-    uSurfaceGlintColor: { value: new THREE.Color('#66e0ff') },
-    uAmbientColor: { value: new THREE.Color('#2a3f58') },
-    uLightColor: { value: new THREE.Color('#ffffff') },
-    uLightDirection: { value: lightDirection },
+const DEFAULT_WAVE_PROFILE = {
+  primaryScale: 0.42,
+  secondaryScale: 0.18,
+  choppiness: 0.55,
+  flowScale: 0.16,
+  foamSpeed: 1.1,
+  fadeDepth: 7.5,
+  refractionStrength: 0.42,
+  edgeFoamBoost: 1.35,
+};
 
+const DEFAULT_COLORS = {
+  shallowTint: '#5ddfff',
+  deepTint: '#0a2a63',
+  foamColor: '#c4f4ff',
+  horizonTint: '#7bd4ff',
+  underwaterColor: '#052946',
+  surfaceGlintColor: '#66e0ff',
+  ambientColor: '#2a3f58',
+  lightColor: '#ffffff',
+};
+
+function sanitizeNumber(value, fallback) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return value;
+}
+
+function sanitizePositiveNumber(value, fallback, { min = 0 } = {}) {
+  const sanitized = sanitizeNumber(value, fallback);
+  return Math.max(min, sanitized);
+}
+
+function createColor(THREE, value, fallback) {
+  if (value instanceof THREE.Color) {
+    return value.clone();
+  }
+  if (typeof value === 'string' || Array.isArray(value)) {
+    try {
+      return new THREE.Color(value);
+    } catch (error) {
+      console.warn('[hydra] Failed to parse color value, using fallback.', value, error);
+    }
+  }
+  if (typeof value === 'object' && value !== null) {
+    const { r, g, b } = value;
+    if ([r, g, b].every((component) => typeof component === 'number')) {
+      return new THREE.Color(r, g, b);
+    }
+  }
+  return new THREE.Color(fallback);
+}
+
+function normalizeWaveProfile(profile = {}) {
+  return {
+    primaryScale: sanitizePositiveNumber(profile.primaryScale, DEFAULT_WAVE_PROFILE.primaryScale, {
+      min: 0.01,
+    }),
+    secondaryScale: sanitizePositiveNumber(
+      profile.secondaryScale,
+      DEFAULT_WAVE_PROFILE.secondaryScale,
+      { min: 0 },
+    ),
+    choppiness: sanitizePositiveNumber(profile.choppiness, DEFAULT_WAVE_PROFILE.choppiness, {
+      min: 0.01,
+    }),
+    flowScale: sanitizePositiveNumber(profile.flowScale, DEFAULT_WAVE_PROFILE.flowScale, {
+      min: 0,
+    }),
+    foamSpeed: sanitizePositiveNumber(profile.foamSpeed, DEFAULT_WAVE_PROFILE.foamSpeed, {
+      min: 0,
+    }),
+    fadeDepth: sanitizePositiveNumber(profile.fadeDepth, DEFAULT_WAVE_PROFILE.fadeDepth, {
+      min: 0.01,
+    }),
+    refractionStrength: sanitizePositiveNumber(
+      profile.refractionStrength,
+      DEFAULT_WAVE_PROFILE.refractionStrength,
+      { min: 0 },
+    ),
+    edgeFoamBoost: sanitizePositiveNumber(
+      profile.edgeFoamBoost,
+      DEFAULT_WAVE_PROFILE.edgeFoamBoost,
+      { min: 0 },
+    ),
   };
+}
 
-  const vertexShader = `
+class HydraWaterPipeline {
+  constructor({ THREE, definition = {} }) {
+    this.THREE = THREE;
+    this.timeScale = 1;
+    this.diagnosticAccumulator = 0;
+    this.diagnosticInterval = 1.5;
+    this.lastValidationSignature = new WeakMap();
+
+    this.uniforms = this.createUniforms(definition);
+    this.vertexShader = this.createVertexShader();
+    this.fragmentShader = this.createFragmentShader();
+    this.material = new THREE.ShaderMaterial({
+      name: 'HydraWaterMaterial',
+      uniforms: this.uniforms,
+      vertexShader: this.vertexShader,
+      fragmentShader: this.fragmentShader,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      fog: true,
+    });
+  }
+
+  createUniforms(definition) {
+    const THREE = this.THREE;
+    const lightDirection = new THREE.Vector3(-0.35, 1, 0.25).normalize();
+    const waveProfile = normalizeWaveProfile(definition?.waveProfile ?? {});
+
+    const uniforms = {
+      uTime: { value: 0 },
+      uPrimaryScale: { value: waveProfile.primaryScale },
+      uSecondaryScale: { value: waveProfile.secondaryScale },
+      uChoppiness: { value: waveProfile.choppiness },
+      uFlowScale: { value: waveProfile.flowScale },
+      uFoamSpeed: { value: waveProfile.foamSpeed },
+      uFadeDepth: { value: waveProfile.fadeDepth },
+      uRefractionStrength: { value: waveProfile.refractionStrength },
+      uEdgeFoamBoost: { value: waveProfile.edgeFoamBoost },
+      uShallowTint: {
+        value: createColor(THREE, definition?.palette?.shallowTint, DEFAULT_COLORS.shallowTint),
+      },
+      uDeepTint: {
+        value: createColor(THREE, definition?.palette?.deepTint, DEFAULT_COLORS.deepTint),
+      },
+      uFoamColor: {
+        value: createColor(THREE, definition?.palette?.foamColor, DEFAULT_COLORS.foamColor),
+      },
+      uHorizonTint: {
+        value: createColor(THREE, definition?.palette?.horizonTint, DEFAULT_COLORS.horizonTint),
+      },
+      uUnderwaterColor: {
+        value: createColor(
+          THREE,
+          definition?.palette?.underwaterColor,
+          DEFAULT_COLORS.underwaterColor,
+        ),
+      },
+      uSurfaceGlintColor: {
+        value: createColor(
+          THREE,
+          definition?.palette?.surfaceGlintColor,
+          DEFAULT_COLORS.surfaceGlintColor,
+        ),
+      },
+      uAmbientColor: {
+        value: createColor(THREE, definition?.lighting?.ambientColor, DEFAULT_COLORS.ambientColor),
+      },
+      uLightColor: {
+        value: createColor(THREE, definition?.lighting?.lightColor, DEFAULT_COLORS.lightColor),
+      },
+      uLightDirection: {
+        value: (definition?.lighting?.direction instanceof THREE.Vector3
+          ? definition.lighting.direction.clone()
+          : lightDirection
+        ).normalize(),
+      },
+    };
+    return uniforms;
+  }
+
+  createVertexShader() {
+    return `
     #include <common>
     #include <fog_pars_vertex>
 
@@ -126,12 +279,13 @@ export function createHydraWaterMaterial({ THREE }) {
       #include <fog_vertex>
     }
   `;
+  }
 
-  const fragmentShader = `
+  createFragmentShader() {
+    return `
     #include <common>
     #include <fog_pars_fragment>
     #include <tonemapping_pars_fragment>
-    #include <colorspace_pars_fragment>
 
     uniform float uTime;
     uniform float uFadeDepth;
@@ -212,25 +366,149 @@ export function createHydraWaterMaterial({ THREE }) {
       #include <fog_fragment>
     }
   `;
+  }
 
+  applyWaveProfile(profile) {
+    const normalized = normalizeWaveProfile(profile);
+    this.uniforms.uPrimaryScale.value = normalized.primaryScale;
+    this.uniforms.uSecondaryScale.value = normalized.secondaryScale;
+    this.uniforms.uChoppiness.value = normalized.choppiness;
+    this.uniforms.uFlowScale.value = normalized.flowScale;
+    this.uniforms.uFoamSpeed.value = normalized.foamSpeed;
+    this.uniforms.uFadeDepth.value = normalized.fadeDepth;
+    this.uniforms.uRefractionStrength.value = normalized.refractionStrength;
+    this.uniforms.uEdgeFoamBoost.value = normalized.edgeFoamBoost;
+  }
 
-  const material = new THREE.ShaderMaterial({
-    name: 'HydraWaterMaterial',
-    uniforms,
-    vertexShader,
-    fragmentShader,
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    fog: true,
-  });
-
-  const update = (delta) => {
-    uniforms.uTime.value += delta;
-    if (uniforms.uTime.value > 10000) {
-      uniforms.uTime.value = 0;
+  applyEnvironment(environment = {}) {
+    const { THREE } = this;
+    if (environment.lightDirection) {
+      const next = environment.lightDirection instanceof THREE.Vector3
+        ? environment.lightDirection.clone()
+        : new THREE.Vector3().fromArray(environment.lightDirection);
+      if (next.lengthSq() > 0.0001) {
+        this.uniforms.uLightDirection.value.copy(next.normalize());
+      }
     }
-  };
+    if (environment.lightColor) {
+      this.uniforms.uLightColor.value.copy(
+        createColor(THREE, environment.lightColor, DEFAULT_COLORS.lightColor),
+      );
+    }
+    if (environment.ambientColor) {
+      this.uniforms.uAmbientColor.value.copy(
+        createColor(THREE, environment.ambientColor, DEFAULT_COLORS.ambientColor),
+      );
+    }
+    if (environment.horizonTint) {
+      this.uniforms.uHorizonTint.value.copy(
+        createColor(THREE, environment.horizonTint, DEFAULT_COLORS.horizonTint),
+      );
+    }
+  }
 
-  return { material, update };
+  applyPalette(palette = {}) {
+    const { THREE } = this;
+    const applyColor = (uniformKey, value, fallbackKey) => {
+      if (value === undefined) {
+        return;
+      }
+      this.uniforms[uniformKey].value.copy(createColor(THREE, value, DEFAULT_COLORS[fallbackKey]));
+    };
+    applyColor('uShallowTint', palette.shallowTint, 'shallowTint');
+    applyColor('uDeepTint', palette.deepTint, 'deepTint');
+    applyColor('uFoamColor', palette.foamColor, 'foamColor');
+    applyColor('uHorizonTint', palette.horizonTint, 'horizonTint');
+    applyColor('uUnderwaterColor', palette.underwaterColor, 'underwaterColor');
+    applyColor('uSurfaceGlintColor', palette.surfaceGlintColor, 'surfaceGlintColor');
+  }
+
+  setTimeScale(scale) {
+    if (typeof scale === 'number' && Number.isFinite(scale) && scale > 0.001) {
+      this.timeScale = scale;
+    } else {
+      console.warn('[hydra] Ignoring invalid time scale value.', scale);
+    }
+  }
+
+  update(delta, surfaces = new Set()) {
+    if (typeof delta !== 'number' || !Number.isFinite(delta) || delta <= 0) {
+      return;
+    }
+    const scaledDelta = delta * this.timeScale;
+    this.uniforms.uTime.value += scaledDelta;
+    if (this.uniforms.uTime.value > 10000) {
+      this.uniforms.uTime.value = 0;
+    }
+
+    this.diagnosticAccumulator += scaledDelta;
+    if (this.diagnosticAccumulator >= this.diagnosticInterval) {
+      this.diagnosticAccumulator = 0;
+      this.validateSurfaces(surfaces);
+    }
+  }
+
+  validateSurfaces(surfaces) {
+    if (!surfaces || surfaces.size === 0) {
+      return;
+    }
+    surfaces.forEach((mesh) => {
+      if (!mesh || !mesh.geometry) {
+        return;
+      }
+      const geometry = mesh.geometry;
+      const lastSignature = this.lastValidationSignature.get(geometry);
+      const signature = geometry.uuid;
+      if (lastSignature === signature) {
+        return;
+      }
+      const requiredAttributes = [
+        'position',
+        'normal',
+        'uv',
+        'color',
+        'surfaceType',
+        'flowDirection',
+        'flowStrength',
+        'edgeFoam',
+        'depth',
+        'shoreline',
+      ];
+      const missing = requiredAttributes.filter((name) => !geometry.getAttribute(name));
+      if (missing.length > 0) {
+        console.warn(
+          '[hydra] Fluid geometry is missing expected attributes. Falling back to debug render.',
+          missing,
+          mesh,
+        );
+        return;
+      }
+      const positionAttribute = geometry.getAttribute('position');
+      if (positionAttribute.count === 0) {
+        console.warn('[hydra] Fluid geometry contains zero vertices.', mesh);
+        return;
+      }
+      this.lastValidationSignature.set(geometry, signature);
+    });
+  }
+}
+
+export function createHydraWaterMaterial({ THREE, definition }) {
+  const pipeline = new HydraWaterPipeline({ THREE, definition });
+  if (definition?.waveProfile?.timeScale !== undefined) {
+    pipeline.setTimeScale(
+      sanitizePositiveNumber(definition.waveProfile.timeScale, 1, { min: 0.001 }),
+    );
+  }
+  if (definition?.palette) {
+    pipeline.applyPalette(definition.palette);
+  }
+  if (definition?.lighting) {
+    pipeline.applyEnvironment(definition.lighting);
+  }
+  return {
+    material: pipeline.material,
+    update: (delta, surfaces) => pipeline.update(delta, surfaces),
+    pipeline,
+  };
 }
