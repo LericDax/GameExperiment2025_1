@@ -102,7 +102,10 @@ function ensureRuntime(id) {
   if (typeof materialFactory !== 'function') {
     throw new Error(`Fluid type "${id}" is missing a createMaterial() factory.`);
   }
-  const { material, update } = materialFactory({ THREE: THREERef, definition });
+  const { material, update, onSurfaceCreated, onSurfaceDisposed } = materialFactory({
+    THREE: THREERef,
+    definition,
+  });
   material.depthWrite = false;
   material.transparent = true;
   runtime = {
@@ -110,6 +113,10 @@ function ensureRuntime(id) {
     material,
     update: typeof update === 'function' ? update : null,
     surfaces: new Set(),
+    handleSurfaceCreated:
+      typeof onSurfaceCreated === 'function' ? onSurfaceCreated : null,
+    handleSurfaceDisposed:
+      typeof onSurfaceDisposed === 'function' ? onSurfaceDisposed : null,
   };
   fluidRuntime.set(id, runtime);
   return runtime;
@@ -125,6 +132,9 @@ export function createFluidSurface({ type, geometry }) {
   mesh.receiveShadow = true;
   mesh.userData.fluidType = type;
   runtime.surfaces.add(mesh);
+  if (runtime.handleSurfaceCreated) {
+    runtime.handleSurfaceCreated(mesh);
+  }
   return mesh;
 }
 
@@ -158,6 +168,9 @@ export function disposeFluidSurface(mesh) {
     return;
   }
   runtime.surfaces.delete(mesh);
+  if (runtime.handleSurfaceDisposed) {
+    runtime.handleSurfaceDisposed(mesh);
+  }
 }
 
 export function updateFluids(delta) {
