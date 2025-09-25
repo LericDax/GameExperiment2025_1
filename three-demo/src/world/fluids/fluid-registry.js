@@ -1,8 +1,6 @@
 import { createHydraWaterMaterial } from './water-material.js';
 
 let THREERef = null;
-let rendererRef = null;
-let sunLightRef = null;
 
 // Developer toggle to inspect fluid geometry using a plain material.
 const DEV_USE_BASIC_FLUID_MATERIAL = (() => {
@@ -32,8 +30,6 @@ export function initializeFluidRegistry({ THREE }) {
   THREERef = THREE;
   fluidDefinitions.clear();
   fluidRuntime.clear();
-  rendererRef = null;
-  sunLightRef = null;
 
   registerFluidType('water', {
     label: 'Water',
@@ -61,15 +57,6 @@ export function initializeFluidRegistry({ THREE }) {
       };
     },
   });
-}
-
-export function setFluidEnvironment({ renderer, sun } = {}) {
-  if (renderer !== undefined) {
-    rendererRef = renderer ?? null;
-  }
-  if (sun !== undefined) {
-    sunLightRef = sun ?? null;
-  }
 }
 
 export function registerFluidType(id, definition) {
@@ -179,10 +166,7 @@ export function updateFluids(delta) {
   }
   fluidRuntime.forEach((runtime) => {
     if (typeof runtime.update === 'function') {
-      runtime.update(delta, runtime.surfaces, {
-        renderer: rendererRef,
-        sun: sunLightRef,
-      });
+      runtime.update(delta, runtime.surfaces);
     }
   });
 }
