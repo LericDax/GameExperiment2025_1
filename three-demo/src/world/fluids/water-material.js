@@ -1,5 +1,8 @@
 import { createMeshMorpher } from '../../rendering/mesh-morpher.js';
 
+import { SURFACE_ROLES } from './fluid-geometry.js';
+
+
 const WAVE_SETTINGS = {
   amplitude: 0.18,
   baseFrequency: 0.45,
@@ -122,13 +125,14 @@ export function createHydraWaterMaterial({ THREE }) {
       const flowDir = effectMesh.geometry.getAttribute('flowDirection');
       const flowStrength = effectMesh.geometry.getAttribute('flowStrength');
 
+      const surfaceRole = effectMesh.geometry.getAttribute('surfaceRole');
+
+
       const vertexCount = positionAttribute.count;
       for (let index = 0; index < vertexCount; index += 1) {
         const baseOffset = index * 3;
         const baseNormalY = baseNormals[baseOffset + 1];
-        if (baseNormalY < 0.5) {
-          continue;
-        }
+
 
         const x = basePositions[baseOffset];
         const y = basePositions[baseOffset + 1];
@@ -147,15 +151,33 @@ export function createHydraWaterMaterial({ THREE }) {
           flowStrength: flowAmount,
         });
 
+
+        const role = surfaceRole
+          ? surfaceRole.array[index]
+          : baseNormalY >= 0.5
+            ? SURFACE_ROLES.SURFACE
+            : SURFACE_ROLES.EDGE_BOTTOM;
+
+        if (role === SURFACE_ROLES.EDGE_BOTTOM) {
+          continue;
+        }
+
         positionAttribute.array[baseOffset + 1] = y + value;
 
-        const normalX = -derivativeX;
-        const normalY = 1;
-        const normalZ = -derivativeZ;
-        const normalization = 1 / Math.hypot(normalX, normalY, normalZ);
-        normalAttribute.array[baseOffset] = normalX * normalization;
-        normalAttribute.array[baseOffset + 1] = normalY * normalization;
-        normalAttribute.array[baseOffset + 2] = normalZ * normalization;
+        if (role === SURFACE_ROLES.SURFACE) {
+          const normalX = -derivativeX;
+          const normalY = 1;
+          const normalZ = -derivativeZ;
+          const normalization = 1 / Math.hypot(normalX, normalY, normalZ);
+          normalAttribute.array[baseOffset] = normalX * normalization;
+          normalAttribute.array[baseOffset + 1] = normalY * normalization;
+          normalAttribute.array[baseOffset + 2] = normalZ * normalization;
+        } else {
+          normalAttribute.array[baseOffset] = baseNormals[baseOffset];
+          normalAttribute.array[baseOffset + 1] = baseNormals[baseOffset + 1];
+          normalAttribute.array[baseOffset + 2] = baseNormals[baseOffset + 2];
+        }
+
       }
     };
 

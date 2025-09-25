@@ -1,3 +1,9 @@
+export const SURFACE_ROLES = {
+  SURFACE: 0,
+  EDGE_TOP: 1,
+  EDGE_BOTTOM: 2,
+};
+
 const FACE_DIRECTIONS = [
   { key: 'px', dx: 1, dz: 0, normal: [1, 0, 0] },
   { key: 'nx', dx: -1, dz: 0, normal: [-1, 0, 0] },
@@ -11,6 +17,7 @@ export function buildFluidGeometry({ THREE, columns }) {
   const uvs = [];
   const colors = [];
   const surfaceTypes = [];
+  const surfaceRoles = [];
   const flowDirections = [];
   const flowStrengths = [];
   const edgeFoam = [];
@@ -28,12 +35,14 @@ export function buildFluidGeometry({ THREE, columns }) {
     foam,
     depthValue,
     shorelineValue,
+    surfaceRole,
   ) => {
     positions.push(vertex.x, vertex.y, vertex.z);
     normals.push(normal.x, normal.y, normal.z);
     uvs.push(uv.x, uv.y);
     colors.push(color.r, color.g, color.b);
     surfaceTypes.push(surfaceType);
+    surfaceRoles.push(surfaceRole);
     flowDirections.push(flowDir.x, flowDir.y);
     flowStrengths.push(flowStrength);
     edgeFoam.push(foam);
@@ -69,6 +78,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.SURFACE,
     );
     pushVertex(
       new THREE.Vector3(right, surfaceY, back),
@@ -81,6 +91,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.SURFACE,
     );
     pushVertex(
       new THREE.Vector3(right, surfaceY, front),
@@ -93,6 +104,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.SURFACE,
     );
 
     pushVertex(
@@ -106,6 +118,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.SURFACE,
     );
     pushVertex(
       new THREE.Vector3(right, surfaceY, front),
@@ -118,6 +131,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.SURFACE,
     );
     pushVertex(
       new THREE.Vector3(left, surfaceY, front),
@@ -130,6 +144,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.SURFACE,
     );
   };
 
@@ -150,7 +165,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       return;
     }
 
-    const sideColor = tempColor.copy(color).lerp(new THREE.Color('#5bd5ff'), 0.2);
+    const sideColor = tempColor.copy(color);
     const normal = new THREE.Vector3(...direction.normal);
     const half = 0.5;
     let verts = [];
@@ -207,6 +222,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.EDGE_TOP,
     );
     pushVertex(
       verts[1],
@@ -219,6 +235,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.EDGE_BOTTOM,
     );
     pushVertex(
       verts[2],
@@ -231,6 +248,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.EDGE_BOTTOM,
     );
 
     pushVertex(
@@ -244,6 +262,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.EDGE_TOP,
     );
     pushVertex(
       verts[2],
@@ -256,6 +275,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.EDGE_BOTTOM,
     );
     pushVertex(
       verts[3],
@@ -268,6 +288,7 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      SURFACE_ROLES.EDGE_TOP,
     );
   };
 
@@ -295,6 +316,10 @@ export function buildFluidGeometry({ THREE, columns }) {
   geometry.setAttribute(
     'surfaceType',
     new THREE.Float32BufferAttribute(surfaceTypes, 1),
+  );
+  geometry.setAttribute(
+    'surfaceRole',
+    new THREE.Float32BufferAttribute(surfaceRoles, 1),
   );
   geometry.setAttribute(
     'flowDirection',
