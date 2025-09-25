@@ -2,27 +2,55 @@ import { createMeshMorpher } from '../../rendering/mesh-morpher.js';
 
 import { SURFACE_ROLES } from './fluid-geometry.js';
 
-
 const WAVE_SETTINGS = {
-  amplitude: 0.18,
+  mainAmplitude: 0.18,
+
   baseFrequency: 0.45,
   baseSpeed: 0.9,
   crossFrequency: 0.16,
   crossSpeed: 1.35,
   flowFrequency: 0.52,
   flowSpeed: 1.4,
+
+  rippleAmplitude: 0.05,
+  rippleFrequency: 1.3,
+  rippleSpeed: 1.65,
+  rippleSkew: 0.78,
+  rippleDrift: 1.12,
+  detailAmplitude: 0.035,
+  detailFrequency: 2.1,
+  detailSpeed: 1.05,
 };
 
+const EDGE_TINT_SETTINGS = {
+  saturationBoost: 0.22,
+  minOpacity: 0.9,
+};
+
+const getWavePadding = () => {
+  const { mainAmplitude, rippleAmplitude, detailAmplitude } = WAVE_SETTINGS;
+  return (mainAmplitude + rippleAmplitude + detailAmplitude) * 1.2;
+};
 
 function sampleWave({ x, z, time, flowX, flowZ, flowStrength }) {
   const {
-    amplitude,
+    mainAmplitude,
+
     baseFrequency,
     baseSpeed,
     crossFrequency,
     crossSpeed,
     flowFrequency,
     flowSpeed,
+    rippleAmplitude,
+    rippleFrequency,
+    rippleSpeed,
+    rippleSkew,
+    rippleDrift,
+    detailAmplitude,
+    detailFrequency,
+    detailSpeed,
+
   } = WAVE_SETTINGS;
 
   const primaryPhase = x * baseFrequency + time * baseSpeed;
@@ -33,29 +61,56 @@ function sampleWave({ x, z, time, flowX, flowZ, flowStrength }) {
   let derivativeX = 0;
   let derivativeZ = 0;
 
-  value += 0.6 * Math.sin(primaryPhase);
-  derivativeX += 0.6 * Math.cos(primaryPhase) * baseFrequency;
 
-  value += 0.4 * Math.cos(secondaryPhase);
-  derivativeZ += -0.4 * Math.sin(secondaryPhase) * (baseFrequency * 0.85);
+  value += mainAmplitude * 0.6 * Math.sin(primaryPhase);
+  derivativeX += mainAmplitude * 0.6 * Math.cos(primaryPhase) * baseFrequency;
 
-  value += 0.35 * Math.sin(crossPhase);
-  const crossDerivative = Math.cos(crossPhase) * crossFrequency * 0.35;
+  value += mainAmplitude * 0.4 * Math.cos(secondaryPhase);
+  derivativeZ +=
+    mainAmplitude * -0.4 * Math.sin(secondaryPhase) * (baseFrequency * 0.85);
+
+  value += mainAmplitude * 0.35 * Math.sin(crossPhase);
+  const crossDerivative = Math.cos(crossPhase) * crossFrequency * 0.35 * mainAmplitude;
+
   derivativeX += crossDerivative;
   derivativeZ += crossDerivative;
 
   if (flowStrength > 0.001) {
     const flowPhase = (flowX * x + flowZ * z) * flowFrequency + time * flowSpeed;
-    value += flowStrength * 0.5 * Math.sin(flowPhase);
-    const flowDerivative = Math.cos(flowPhase) * flowFrequency * 0.5 * flowStrength;
+
+    const flowAmplitude = mainAmplitude * flowStrength * 0.5;
+    value += flowAmplitude * Math.sin(flowPhase);
+    const flowDerivative = Math.cos(flowPhase) * flowFrequency * flowAmplitude;
+
     derivativeX += flowDerivative * flowX;
     derivativeZ += flowDerivative * flowZ;
   }
 
+
+  if (rippleAmplitude > 0) {
+    const ripplePhaseX = x * rippleFrequency + time * rippleSpeed;
+    const ripplePhaseZ = z * (rippleFrequency * rippleSkew) + time * (rippleSpeed * rippleDrift);
+    const rippleValue = Math.sin(ripplePhaseX) * Math.cos(ripplePhaseZ);
+    value += rippleAmplitude * rippleValue;
+
+    derivativeX += rippleAmplitude * Math.cos(ripplePhaseX) * rippleFrequency * Math.cos(ripplePhaseZ);
+    derivativeZ +=
+      rippleAmplitude * Math.sin(ripplePhaseX) * -Math.sin(ripplePhaseZ) * (rippleFrequency * rippleSkew);
+  }
+
+  if (detailAmplitude > 0) {
+    const detailPhase = (x - z) * detailFrequency + time * detailSpeed;
+    const detailCos = Math.cos(detailPhase);
+    value += detailAmplitude * Math.sin(detailPhase);
+    derivativeX += detailAmplitude * detailCos * detailFrequency;
+    derivativeZ += detailAmplitude * detailCos * -detailFrequency;
+  }
+
   return {
-    value: value * amplitude,
-    derivativeX: derivativeX * amplitude,
-    derivativeZ: derivativeZ * amplitude,
+    value,
+    derivativeX,
+    derivativeZ,
+
   };
 }
 
@@ -80,6 +135,36 @@ export function createHydraWaterMaterial({ THREE }) {
   material.side = THREE.DoubleSide;
   material.depthWrite = false;
 
+
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.edgeSaturationBoost = { value: EDGE_TINT_SETTINGS.saturationBoost };
+    shader.uniforms.edgeMinOpacity = { value: EDGE_TINT_SETTINGS.minOpacity };
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `#include <common>\nattribute float surfaceType;\nvarying float vSurfaceType;`,
+    );
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>\nvSurfaceType = surfaceType;`,
+    );
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `#include <common>\nvarying float vSurfaceType;\nuniform float edgeSaturationBoost;\nuniform float edgeMinOpacity;`,
+    );
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>\nfloat edgeMask = smoothstep(0.5, 1.5, vSurfaceType);\nfloat tintMultiplier = 1.0 + edgeSaturationBoost * edgeMask;\ndiffuseColor.rgb = min(diffuseColor.rgb * tintMultiplier, vec3(1.0));\ndiffuseColor.a = mix(diffuseColor.a, max(diffuseColor.a, edgeMinOpacity), edgeMask);`,
+    );
+  };
+
+  material.customProgramCacheKey = () =>
+    `hydra-water-edge-tint-${EDGE_TINT_SETTINGS.saturationBoost}-${EDGE_TINT_SETTINGS.minOpacity}`;
+
+
   const morpher = createMeshMorpher({ THREE });
   const cleanupHandlers = new Map();
   let elapsedTime = 0;
@@ -96,12 +181,16 @@ export function createHydraWaterMaterial({ THREE }) {
       geometry.computeBoundingSphere();
     }
     if (geometry.boundingBox) {
-      const padding = WAVE_SETTINGS.amplitude * 1.2;
+
+      const padding = getWavePadding();
+
       geometry.boundingBox.max.y += padding;
       geometry.boundingBox.min.y -= padding;
     }
     if (geometry.boundingSphere) {
-      geometry.boundingSphere.radius += WAVE_SETTINGS.amplitude * 1.2;
+
+      geometry.boundingSphere.radius += getWavePadding();
+
     }
   };
 
@@ -133,7 +222,6 @@ export function createHydraWaterMaterial({ THREE }) {
       for (let index = 0; index < vertexCount; index += 1) {
         const baseOffset = index * 3;
         const baseNormalY = baseNormals[baseOffset + 1];
-
 
         const x = basePositions[baseOffset];
         const y = basePositions[baseOffset + 1];
@@ -200,7 +288,9 @@ export function createHydraWaterMaterial({ THREE }) {
     }
   };
 
-  material.userData.hydraWaterVersion = 'simple-blue-waves-v1';
+
+  material.userData.hydraWaterVersion = 'layered-wave-undulation-v1';
+
 
   return {
     material,
