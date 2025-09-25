@@ -13,6 +13,7 @@ const WAVE_SETTINGS = {
   flowSpeed: 1.4,
 };
 
+
 function sampleWave({ x, z, time, flowX, flowZ, flowStrength }) {
   const {
     amplitude,
@@ -151,7 +152,6 @@ export function createHydraWaterMaterial({ THREE }) {
           flowStrength: flowAmount,
         });
 
-
         const role = surfaceRole
           ? surfaceRole.array[index]
           : baseNormalY >= 0.5
@@ -177,7 +177,6 @@ export function createHydraWaterMaterial({ THREE }) {
           normalAttribute.array[baseOffset + 1] = baseNormals[baseOffset + 1];
           normalAttribute.array[baseOffset + 2] = baseNormals[baseOffset + 2];
         }
-
       }
     };
 
