@@ -198,6 +198,201 @@ function toSize(value, fallback = { x: 1, y: 1, z: 1 }) {
   return { ...fallback };
 }
 
+function toLocalVector(value, fallback = { right: 0, up: 0, forward: 0 }) {
+  if (typeof value === 'number') {
+    return { right: value, up: value, forward: value };
+  }
+  if (Array.isArray(value)) {
+    const [right = fallback.right, up = fallback.up, forward = fallback.forward] = value;
+    return { right, up, forward };
+  }
+  if (value && typeof value === 'object') {
+    const numeric = (candidate, fallbackValue) =>
+      typeof candidate === 'number' && !Number.isNaN(candidate) ? candidate : fallbackValue;
+    const right = numeric(value.right ?? value.x, fallback.right);
+    const up = numeric(value.up ?? value.y, fallback.up);
+    const forward = numeric(value.forward ?? value.z, fallback.forward);
+    return { right, up, forward };
+  }
+  return { ...fallback };
+}
+
+function resolveAngle(primary, turns, degrees, fallback) {
+  const numeric = (candidate) =>
+    typeof candidate === 'number' && !Number.isNaN(candidate) ? candidate : null;
+  const primaryValue = numeric(primary);
+  if (primaryValue !== null) {
+    return primaryValue;
+  }
+  const degreeValue = numeric(degrees);
+  if (degreeValue !== null) {
+    return (degreeValue * Math.PI) / 180;
+  }
+  const turnValue = numeric(turns);
+  if (turnValue !== null) {
+    return turnValue * Math.PI * 2;
+  }
+  return fallback;
+}
+
+function normalizeNanovoxelEntry(value) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  if (value.enabled === false) {
+    return null;
+  }
+  if (typeof value.id !== 'string' || value.id.length === 0) {
+    return null;
+  }
+
+  const numeric = (candidate, fallbackValue = null) =>
+    typeof candidate === 'number' && !Number.isNaN(candidate) ? candidate : fallbackValue;
+
+  const count = Math.max(1, Math.min(64, Math.round(numeric(value.count, 1) ?? 1)));
+  const radius = Math.max(0, numeric(value.radius, 0) ?? 0);
+  const radiusRight = Math.max(
+    0,
+    numeric(value.radiusRight ?? value.radiusX, null) ?? radius,
+  );
+  const radiusUp = Math.max(0, numeric(value.radiusUp ?? value.radiusY, null) ?? radius);
+  const arc = resolveAngle(
+    value.arc ?? value.spread,
+    value.arcTurns ?? value.spreadTurns,
+    value.arcDegrees ?? value.spreadDegrees,
+    Math.PI * 2,
+  );
+  const phase = resolveAngle(
+    value.phase ?? value.rotation,
+    value.phaseTurns ?? value.rotationTurns,
+    value.phaseDegrees ?? value.rotationDegrees,
+    0,
+  );
+  const offset = toLocalVector(value.offset ?? value.anchor ?? 0, {
+    right: 0,
+    up: 0,
+    forward: 0,
+  });
+  offset.right += numeric(value.offsetRight ?? value.anchorRight, 0) ?? 0;
+  offset.up += numeric(value.offsetUp ?? value.anchorUp, 0) ?? 0;
+  offset.forward += numeric(value.offsetForward ?? value.anchorForward, 0) ?? 0;
+
+  const baseScale = toLocalVector(value.scale ?? value.scaling ?? 1, {
+    right: 1,
+    up: 1,
+    forward: 1,
+  });
+  const scaleMultiplier = numeric(value.scaleMultiplier ?? value.scaleAll, 1) ?? 1;
+  const scaleRight = numeric(value.scaleRight ?? value.scaleX, null);
+  const scaleUp = numeric(value.scaleUp ?? value.scaleY, null);
+  const scaleForward = numeric(value.scaleForward ?? value.scaleZ, null);
+  const scale = {
+    right: (scaleRight ?? baseScale.right) * scaleMultiplier,
+    up: (scaleUp ?? baseScale.up) * scaleMultiplier,
+    forward: (scaleForward ?? baseScale.forward) * scaleMultiplier,
+  };
+
+  const jitter = Math.max(0, numeric(value.jitter ?? value.noise ?? value.wobble, 0) ?? 0);
+  const length = Math.max(0, numeric(value.length ?? value.span ?? value.forwardLength, 0) ?? 0);
+  const distribution =
+    typeof value.distribution === 'string' ? value.distribution.toLowerCase() : 'auto';
+  const axis = value.axis || value.direction ? toVector3(value.axis ?? value.direction, null) : null;
+  const up = value.up || value.upHint ? toVector3(value.up ?? value.upHint, null) : null;
+  const tint = typeof value.tint === 'string' ? value.tint : null;
+  const accentTint = typeof value.accentTint === 'string' ? value.accentTint : null;
+  const accentStrength = numeric(value.accentStrength ?? value.accentMix, null);
+  const inheritTint = value.inheritTint === false ? false : true;
+  const inheritTintStrength = numeric(value.inheritTintStrength, null);
+  let minProgress = numeric(value.minProgress ?? value.progressMin, null);
+  let maxProgress = numeric(value.maxProgress ?? value.progressMax, null);
+  if (minProgress !== null) {
+    minProgress = Math.max(0, Math.min(1, minProgress));
+  }
+  if (maxProgress !== null) {
+    maxProgress = Math.max(0, Math.min(1, maxProgress));
+  }
+  if (minProgress !== null && maxProgress !== null && minProgress > maxProgress) {
+    const temp = minProgress;
+    minProgress = maxProgress;
+    maxProgress = temp;
+  }
+  const seed =
+    typeof value.seed === 'string'
+      ? value.seed
+      : typeof value.seed === 'number'
+      ? String(value.seed)
+      : null;
+  const scaleJitter = Math.max(0, numeric(value.scaleJitter ?? value.scaleNoise, 0) ?? 0);
+  const type = typeof value.type === 'string' ? value.type : null;
+  const scatter = Math.max(0, numeric(value.scatter ?? value.cluster, 0) ?? 0);
+  const growth = Math.max(0, numeric(value.growth, 0) ?? 0);
+  const progressMode =
+    typeof value.progressMode === 'string' ? value.progressMode.toLowerCase() : null;
+
+  return {
+    id: value.id,
+    count,
+    radiusRight,
+    radiusUp,
+    arc,
+    phase,
+    offset,
+    scale,
+    jitter,
+    length,
+    distribution,
+    axis,
+    up,
+    tint,
+    accentTint,
+    accentStrength:
+      accentStrength !== null ? Math.max(0, Math.min(1, accentStrength)) : null,
+    inheritTint,
+    inheritTintStrength:
+      inheritTintStrength !== null
+        ? Math.max(0, Math.min(1, inheritTintStrength))
+        : null,
+    minProgress: minProgress !== null ? minProgress : 0,
+    maxProgress: maxProgress !== null ? maxProgress : 1,
+    seed,
+    scaleJitter,
+    type,
+    scatter,
+    growth,
+    progressMode,
+  };
+}
+
+function normalizeNanovoxelList(source) {
+  if (!source) {
+    return [];
+  }
+  const list = Array.isArray(source) ? source : [source];
+  const result = [];
+  list.forEach((item) => {
+    const normalized = normalizeNanovoxelEntry(item);
+    if (normalized) {
+      result.push(normalized);
+    }
+  });
+  return result;
+}
+
+function appendNanovoxelDescriptor(metadata, descriptor) {
+  if (!descriptor) {
+    return metadata;
+  }
+  const visual = { ...(metadata?.visual ?? {}) };
+  const existing = Array.isArray(visual.nanovoxels)
+    ? [...visual.nanovoxels]
+    : visual.nanovoxels
+    ? [visual.nanovoxels]
+    : [];
+  existing.push(descriptor);
+  visual.nanovoxels = existing;
+  return { ...(metadata ?? {}), visual };
+}
+
 function normalizeVoxelConfig(voxel, fallback = null) {
   const source = voxel || fallback;
   if (!source || typeof source.type !== 'string') {
@@ -317,6 +512,12 @@ export function generateNodeGrowthVoxels(object, config) {
     config.smoothing ?? config.visual?.smoothing ?? null,
   );
 
+  const baseNodeNanovoxels = normalizeNanovoxelList(
+    config.nodeNanovoxels ?? config.nanovoxels ?? null,
+  );
+  const baseSegmentNanovoxels = normalizeNanovoxelList(config.segmentNanovoxels ?? null);
+
+
   (config.nodes || []).forEach((node) => {
     if (!node || typeof node.id !== 'string') {
       return;
@@ -355,6 +556,22 @@ export function generateNodeGrowthVoxels(object, config) {
         };
         metadata = { ...(metadata ?? {}), visual };
       }
+
+      const nodeNanovoxels = [
+        ...baseNodeNanovoxels,
+        ...normalizeNanovoxelList(node.nanovoxels ?? null),
+      ];
+      if (nodeNanovoxels.length > 0) {
+        metadata = appendNanovoxelDescriptor(metadata, {
+          type: 'node',
+          entries: nodeNanovoxels,
+          context: {
+            nodeId: node.id,
+            position,
+          },
+        });
+      }
+
       addVoxel(voxels, usedKeys, {
         ...nodeVoxelConfig,
         position,
@@ -493,6 +710,26 @@ export function generateNodeGrowthVoxels(object, config) {
         };
         metadata = { ...(metadata ?? {}), visual };
       }
+
+
+      const segmentNanovoxels = [
+        ...baseSegmentNanovoxels,
+        ...normalizeNanovoxelList(segment.nanovoxels ?? null),
+      ];
+      if (segmentNanovoxels.length > 0) {
+        metadata = appendNanovoxelDescriptor(metadata, {
+          type: 'segment',
+          entries: segmentNanovoxels,
+          context: {
+            from: segment.from,
+            to: segment.to,
+            length,
+            stepLength,
+            steps,
+          },
+        });
+      }
+
 
       addVoxel(voxels, usedKeys, {
         ...segmentVoxel,

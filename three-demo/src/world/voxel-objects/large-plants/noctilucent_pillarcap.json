@@ -51,7 +51,22 @@
         {
           "id": "mid",
           "position": [0.18, 2.8, -0.1],
-          "smoothing": { "featherLayers": 1, "featherRadius": 0.26, "microJitter": 0.12 }
+
+          "smoothing": { "featherLayers": 1, "featherRadius": 0.26, "microJitter": 0.12 },
+          "nanovoxels": [
+            {
+              "id": "halo-spark",
+              "count": 8,
+              "radius": 0.6,
+              "arcTurns": 1,
+              "offset": [0, 0.12, 0.1],
+              "scale": [0.78, 0.78, 0.78],
+              "jitter": 0.08,
+              "accentTint": "#bff7ff",
+              "accentStrength": 0.5
+            }
+          ]
+
         },
         {
           "id": "crown",
@@ -64,7 +79,34 @@
             "embed": 0.1,
             "featherTint": "#d6f8ff"
           },
-          "voxel": { "type": "log", "size": [1.0, 0.8, 1.0], "tint": "#735694", "isSolid": true }
+
+          "voxel": { "type": "log", "size": [1.0, 0.8, 1.0], "tint": "#735694", "isSolid": true },
+          "nanovoxels": [
+            {
+              "id": "petal-cluster",
+              "count": 9,
+              "radius": 0.82,
+              "arcTurns": 1,
+              "offset": [0, 0.2, 0.32],
+              "scale": [1.18, 1.04, 1.36],
+              "jitter": 0.08,
+              "accentTint": "#dffcff",
+              "accentStrength": 0.45,
+              "tint": "#d6f8ff"
+            },
+            {
+              "id": "halo-spark",
+              "count": 14,
+              "radius": 1.2,
+              "arcTurns": 1,
+              "offset": [0, 0.28, 0.12],
+              "scale": [0.9, 0.9, 0.9],
+              "jitter": 0.12,
+              "accentTint": "#ffffff",
+              "accentStrength": 0.55
+            }
+          ]
+
         }
       ],
       "segments": [
@@ -84,7 +126,28 @@
             "microJitter": 0.16,
             "featherTint": "#8ad8ff",
             "embed": 0.12
-          }
+
+          },
+          "nanovoxels": [
+            {
+              "id": "feather-frond",
+              "count": 5,
+              "radius": 0.34,
+              "arcTurns": 1,
+              "length": 0.62,
+              "offset": [0, 0.12, 0.08],
+              "scale": [0.82, 0.92, 0.88],
+              "distribution": "line",
+              "jitter": 0.06,
+              "accentTint": "#8ad8ff",
+              "accentStrength": 0.35,
+              "minProgress": 0.05,
+              "maxProgress": 0.85,
+              "progressMode": "center"
+            }
+          ]
+=======
+
         },
         {
           "from": "mid",
@@ -102,7 +165,26 @@
             "microJitter": 0.2,
             "featherTint": "#c7f6ff",
             "embed": 0.14
-          }
+
+          },
+          "nanovoxels": [
+            {
+              "id": "coral-frill",
+              "count": 6,
+              "radius": 0.48,
+              "arcTurns": 1,
+              "length": 0.92,
+              "offset": [0, 0.24, 0.12],
+              "scale": [0.94, 1.04, 1],
+              "distribution": "line",
+              "jitter": 0.08,
+              "accentTint": "#c7f6ff",
+              "accentStrength": 0.42,
+              "minProgress": 0.1,
+              "maxProgress": 0.95
+            }
+          ]
+
         }
       ]
     }

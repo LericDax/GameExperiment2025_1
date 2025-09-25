@@ -3,6 +3,7 @@ import {
   isVoxelObjectAllowedInBiome,
 } from './voxel-object-library.js';
 import { resolveVoxelObjectVoxels } from './voxel-object-processor.js';
+import { getNanovoxelDefinition } from './procedural/nanovoxel-palette.js';
 import {
   getSectorPlacementsForColumn,
   markPlacementCompleted,
@@ -78,19 +79,26 @@ function addVectors(a, b) {
   return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
 }
 
-function createLocalFrame(direction) {
+
+function createLocalFrame(direction, customUpHint = null) {
+
   const forward = normalizeVector(direction);
   if (!forward) {
     return null;
   }
-  const upHint = Math.abs(forward.y) < 0.999 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
-  let right = normalizeVector(crossVectors(upHint, forward));
+
+  const preferredUp =
+    (customUpHint && normalizeVector(customUpHint)) ||
+    (Math.abs(forward.y) < 0.999 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 });
+  let right = normalizeVector(crossVectors(preferredUp, forward));
   if (!right) {
-    right = { x: 1, y: 0, z: 0 };
+    const fallback = Math.abs(forward.y) < 0.999 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 0, z: 1 };
+    right = normalizeVector(crossVectors(fallback, forward)) ?? fallback;
   }
   let up = normalizeVector(crossVectors(forward, right));
   if (!up) {
-    up = { x: 0, y: 1, z: 0 };
+    up = preferredUp;
+
   }
   return { forward, right, up };
 }
@@ -98,6 +106,12 @@ function createLocalFrame(direction) {
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
 }
+
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 
 function parseHexColor(hex) {
   if (typeof hex !== 'string') {
@@ -130,6 +144,325 @@ function blendTint(baseHex, accentHex, mix) {
     g: base.g + (accent.g - base.g) * mixValue,
     b: base.b + (accent.b - base.b) * mixValue,
   });
+}
+
+
+const DEFAULT_FRAME = {
+  forward: { x: 0, y: 1, z: 0 },
+  right: { x: 1, y: 0, z: 0 },
+  up: { x: 0, y: 0, z: 1 },
+};
+
+function ensureFrame(direction, upHint) {
+  return createLocalFrame(direction, upHint) ?? DEFAULT_FRAME;
+}
+
+function convertLocalToWorld(frame, local, voxelScale) {
+  return {
+    x:
+      frame.forward.x * local.forward * voxelScale +
+      frame.right.x * local.right * voxelScale +
+      frame.up.x * local.up * voxelScale,
+    y:
+      frame.forward.y * local.forward * voxelScale +
+      frame.right.y * local.right * voxelScale +
+      frame.up.y * local.up * voxelScale,
+    z:
+      frame.forward.z * local.forward * voxelScale +
+      frame.right.z * local.right * voxelScale +
+      frame.up.z * local.up * voxelScale,
+  };
+}
+
+function resolveNanovoxelTint(definition, entry, element, baseTint) {
+  const allowInherit =
+    (definition.inheritTint ?? true) && entry.inheritTint !== false && element.inheritTint !== false;
+  const inheritStrength = allowInherit
+    ? element.inheritTintStrength ?? entry.inheritTintStrength ?? definition.inheritTintStrength ?? 0.35
+    : 0;
+
+  let tint =
+    element.tint ?? entry.tint ?? definition.defaultTint ?? baseTint ?? '#ffffff';
+
+  if (allowInherit && baseTint && inheritStrength > 0) {
+    tint = blendTint(tint, baseTint, clamp01(inheritStrength));
+  }
+
+  const accentTint =
+    element.accentTint ?? entry.accentTint ?? definition.accentTint ?? null;
+  const accentStrength =
+    element.accentStrength ?? entry.accentStrength ?? definition.accentStrength ?? 0;
+  if (accentTint && accentStrength > 0) {
+    tint = blendTint(tint, accentTint, clamp01(accentStrength));
+  }
+
+  return tint;
+}
+
+function computeNanovoxelPlacementsForDescriptor(
+  voxel,
+  basePlacement,
+  object,
+  descriptor,
+  descriptorIndex,
+) {
+  if (!descriptor || !Array.isArray(descriptor.entries) || descriptor.entries.length === 0) {
+    return [];
+  }
+
+  const placements = [];
+  const smoothing = voxel?.metadata?.visual?.smoothing;
+  const baseOffset =
+    basePlacement.visualOffset === ZERO_OFFSET
+      ? ZERO_OFFSET
+      : cloneOffset(basePlacement.visualOffset);
+  const baseTint = basePlacement.tint;
+  const context = descriptor.context ?? {};
+
+  descriptor.entries.forEach((entry, entryIndex) => {
+    const definition = getNanovoxelDefinition(entry.id);
+    if (!definition) {
+      return;
+    }
+
+    const distribution =
+      entry.distribution && entry.distribution !== 'auto'
+        ? entry.distribution
+        : descriptor.type === 'segment'
+        ? 'line'
+        : 'ring';
+
+    if (
+      descriptor.type === 'segment' &&
+      (entry.minProgress > (smoothing?.progress ?? 0) ||
+        entry.maxProgress < (smoothing?.progress ?? 0))
+    ) {
+      return;
+    }
+
+    const direction =
+      descriptor.type === 'segment'
+        ? smoothing?.direction ?? ZERO_OFFSET
+        : entry.axis ?? context.axis ?? { x: 0, y: 1, z: 0 };
+    const upHint = entry.up ?? context.up ?? null;
+    const frame = ensureFrame(direction, upHint);
+
+    const progress = smoothing?.progress ?? 0;
+    let growthProgress = 1;
+    if (descriptor.type === 'segment' && entry.growth > 0) {
+      let factor = progress;
+      if (entry.progressMode === 'end' || entry.progressMode === 'fromend') {
+        factor = 1 - progress;
+      } else if (entry.progressMode === 'center') {
+        factor = 1 - Math.abs(progress - 0.5) * 2;
+      }
+      growthProgress = 1 + entry.growth * clamp01(factor);
+    }
+
+    const entryScale = {
+      right: entry.scale.right * growthProgress,
+      up: entry.scale.up * growthProgress,
+      forward: entry.scale.forward * growthProgress,
+    };
+
+    const count = Math.max(1, entry.count);
+    const arc = entry.arc;
+    const radiusRight = entry.radiusRight;
+    const radiusUp = entry.radiusUp;
+    const jitterStrength = entry.jitter * object.voxelScale;
+    const scatterRadius = entry.scatter * object.voxelScale;
+    const baseSeed = [
+      object.id ?? 'object',
+      voxel.index ?? 0,
+      descriptorIndex,
+      entryIndex,
+      entry.seed ?? entry.id,
+    ];
+
+    for (let copyIndex = 0; copyIndex < count; copyIndex += 1) {
+      const ratio =
+        distribution === 'line' && count > 1 ? copyIndex / (count - 1) : count <= 1 ? 0 : copyIndex / count;
+
+      const local = {
+        right: entry.offset.right,
+        up: entry.offset.up,
+        forward: entry.offset.forward,
+      };
+
+      if (distribution === 'line') {
+        const angle = entry.phase + ratio * arc;
+        local.forward += (ratio - 0.5) * entry.length;
+        local.right += Math.cos(angle) * radiusRight;
+        local.up += Math.sin(angle) * radiusUp;
+      } else if (distribution === 'cluster' || distribution === 'spray') {
+        const theta = seededRandom(...baseSeed, copyIndex, 'theta') * Math.PI * 2;
+        const phi = seededRandom(...baseSeed, copyIndex, 'phi') * Math.PI;
+        const magnitude = seededRandom(...baseSeed, copyIndex, 'mag');
+        local.right += Math.cos(theta) * Math.sin(phi) * radiusRight * magnitude;
+        local.up += Math.sin(theta) * Math.sin(phi) * radiusUp * magnitude;
+        local.forward += Math.cos(phi) * entry.length * magnitude * 0.5;
+      } else {
+        const effectiveRatio = distribution === 'fan' ? ratio : copyIndex / count;
+        const angle = entry.phase + effectiveRatio * arc;
+        local.right += Math.cos(angle) * radiusRight;
+        local.up += Math.sin(angle) * radiusUp;
+        if (distribution === 'fan') {
+          local.forward += (effectiveRatio - 0.5) * entry.length;
+        }
+      }
+
+      const scaledLocal = {
+        right: local.right * entryScale.right,
+        up: local.up * entryScale.up,
+        forward: local.forward * entryScale.forward,
+      };
+
+      let anchorOffset = convertLocalToWorld(frame, scaledLocal, object.voxelScale);
+
+      if (scatterRadius > 0) {
+        const theta = seededRandom(...baseSeed, copyIndex, 'scatter-theta') * Math.PI * 2;
+        const phi = seededRandom(...baseSeed, copyIndex, 'scatter-phi') * Math.PI;
+        const magnitude = seededRandom(...baseSeed, copyIndex, 'scatter-mag');
+        const scatterOffset = {
+          x: Math.cos(theta) * Math.sin(phi) * scatterRadius * magnitude,
+          y: Math.sin(theta) * Math.sin(phi) * scatterRadius * magnitude,
+          z: Math.cos(phi) * scatterRadius * magnitude,
+        };
+        anchorOffset = addVectors(anchorOffset, scatterOffset);
+      }
+
+      if (jitterStrength > 0) {
+        const jitter = {
+          x: seededRandomCentered(...baseSeed, copyIndex, 'jx') * jitterStrength,
+          y: seededRandomCentered(...baseSeed, copyIndex, 'jy') * jitterStrength,
+          z: seededRandomCentered(...baseSeed, copyIndex, 'jz') * jitterStrength,
+        };
+        anchorOffset = addVectors(anchorOffset, jitter);
+      }
+
+      definition.elements.forEach((element, elementIndex) => {
+        const elementOffset = element.offset
+          ? {
+              right: element.offset.right ?? 0,
+              up: element.offset.up ?? 0,
+              forward: element.offset.forward ?? 0,
+            }
+          : { right: 0, up: 0, forward: 0 };
+        const elementScaleLocal = element.scale
+          ? {
+              right: element.scale.right ?? 1,
+              up: element.scale.up ?? 1,
+              forward: element.scale.forward ?? 1,
+            }
+          : { right: 1, up: 1, forward: 1 };
+
+        const elementSeed = [...baseSeed, copyIndex, elementIndex];
+
+        const scaledElementOffset = {
+          right: elementOffset.right * entryScale.right,
+          up: elementOffset.up * entryScale.up,
+          forward: elementOffset.forward * entryScale.forward,
+        };
+        let elementWorldOffset = convertLocalToWorld(
+          frame,
+          scaledElementOffset,
+          object.voxelScale,
+        );
+
+        const elementJitterStrength = Math.max(0, element.jitter ?? 0) * object.voxelScale;
+        if (elementJitterStrength > 0) {
+          const elementJitter = {
+            x: seededRandomCentered(...elementSeed, 'ejx') * elementJitterStrength,
+            y: seededRandomCentered(...elementSeed, 'ejy') * elementJitterStrength,
+            z: seededRandomCentered(...elementSeed, 'ejz') * elementJitterStrength,
+          };
+          elementWorldOffset = addVectors(elementWorldOffset, elementJitter);
+        }
+
+        const combinedOffset = addVectors(anchorOffset, elementWorldOffset);
+
+        const finalOffset =
+          baseOffset === ZERO_OFFSET ? combinedOffset : addVectors(baseOffset, combinedOffset);
+
+        const scaleJitter = entry.scaleJitter;
+        const jitterMultiplier = scaleJitter > 0
+          ? {
+              right: 1 + seededRandomCentered(...elementSeed, 'sr') * scaleJitter,
+              up: 1 + seededRandomCentered(...elementSeed, 'su') * scaleJitter,
+              forward: 1 + seededRandomCentered(...elementSeed, 'sf') * scaleJitter,
+            }
+          : { right: 1, up: 1, forward: 1 };
+
+        const scale = {
+          x: Math.max(
+            0.01,
+            definition.baseScale.x *
+              entryScale.right *
+              elementScaleLocal.right *
+              jitterMultiplier.right *
+              object.voxelScale,
+          ),
+          y: Math.max(
+            0.01,
+            definition.baseScale.y *
+              entryScale.up *
+              elementScaleLocal.up *
+              jitterMultiplier.up *
+              object.voxelScale,
+          ),
+          z: Math.max(
+            0.01,
+            definition.baseScale.z *
+              entryScale.forward *
+              elementScaleLocal.forward *
+              jitterMultiplier.forward *
+              object.voxelScale,
+          ),
+        };
+
+        const tint = resolveNanovoxelTint(definition, entry, element, baseTint);
+
+        const key = `${basePlacement.key}|nano-${descriptorIndex}-${entryIndex}-${copyIndex}-${elementIndex}`;
+
+        placements.push({
+          type: element.type ?? entry.type ?? definition.baseType,
+          worldX: basePlacement.worldX,
+          worldY: basePlacement.worldY,
+          worldZ: basePlacement.worldZ,
+          options: {
+            scale,
+            visualScale: scale,
+            visualOffset: finalOffset,
+            tint,
+            collisionMode: 'none',
+            isSolid: false,
+            destructible: basePlacement.destructible,
+            sourceObjectId: object.id,
+            voxelIndex: voxel.index,
+            metadata: basePlacement.metadata,
+            key,
+          },
+        });
+      });
+    }
+  });
+
+  return placements;
+}
+
+function computeNanovoxelPlacements(voxel, basePlacement, object) {
+  const descriptor = voxel?.metadata?.visual?.nanovoxels;
+  if (!descriptor) {
+    return [];
+  }
+  const descriptors = Array.isArray(descriptor) ? descriptor : [descriptor];
+  const placements = [];
+  descriptors.forEach((entry, index) => {
+    placements.push(
+      ...computeNanovoxelPlacementsForDescriptor(voxel, basePlacement, object, entry, index),
+    );
+  });
+  return placements;
 }
 
 function computeSegmentVisualAdjustments(voxel, smoothing, scale, object) {
@@ -546,6 +879,20 @@ export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
         biome,
         placement.options,
       );
+
+    });
+
+    const nanovoxelPlacements = computeNanovoxelPlacements(voxel, basePlacement, object);
+    nanovoxelPlacements.forEach((placement) => {
+      addBlock(
+        placement.type,
+        placement.worldX,
+        placement.worldY,
+        placement.worldZ,
+        biome,
+        placement.options,
+      );
+
     });
   });
 }
