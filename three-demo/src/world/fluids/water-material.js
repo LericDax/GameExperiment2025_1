@@ -1,5 +1,6 @@
 import { setBiomeCausticsConfig } from '../../rendering/biome-tint-material.js';
 
+
 const WATER_VERTEX_SHADER = `
 #include <fog_pars_vertex>
 
@@ -13,6 +14,7 @@ attribute float edgeFoam;
 #ifdef USE_COLOR
 attribute vec3 color;
 #endif
+
 
 uniform float uTime;
 uniform float uPrimaryScale;
@@ -47,7 +49,31 @@ vec3 computeNormal(vec2 uv) {
   vec3 bent = vec3((center - offsetX) / eps, 1.0, (center - offsetZ) / eps);
   bent.xz *= uChoppiness;
   return normalize(bent);
+
 }
+`;
+
+const WATER_FRAGMENT_SHADER = `
+precision highp float;
+
+#include <fog_pars_fragment>
+
+uniform vec3 shallowColor;
+uniform vec3 deepColor;
+uniform vec3 surfaceColor;
+uniform vec3 foamColor;
+uniform float opacity;
+uniform vec3 lightDirection;
+uniform float specularStrength;
+uniform float fresnelStrength;
+uniform float fresnelPower;
+uniform float time;
+uniform sampler2D causticsMap;
+uniform vec2 causticsScale;
+uniform vec2 causticsOffset;
+uniform vec2 causticsHeight;
+uniform float causticsIntensity;
+
 
 void main() {
   vec3 transformed = position;
@@ -205,8 +231,54 @@ export function createHydraWaterMaterial({ THREE }) {
     uniforms.uTime.value += delta;
     if (uniforms.uTime.value > 1e6) {
       uniforms.uTime.value = 0;
+
     }
+
+    this.elapsed += delta;
+    this.waterUniforms.time.value = this.elapsed;
+
+    this.accumulator += delta;
+    let steps = 0;
+    while (this.accumulator >= this.simulationStep && steps < 8) {
+      this.stepSimulation();
+      this.accumulator -= this.simulationStep;
+      steps++;
+      this.dropTimer += this.simulationStep;
+      if (this.dropTimer >= this.dropInterval) {
+        this.addRandomDrop();
+        this.dropTimer = 0;
+      }
+    }
+
+    this.generateCaustics();
+    this.waterUniforms.heightTexture.value = this.getHeightTexture();
+
+    this.causticsOffset.x += delta * 0.07;
+    this.causticsOffset.y += delta * 0.045;
+    this.waterUniforms.causticsOffset.value.copy(this.causticsOffset);
+
+    this.updateWaterHeight(surfaces);
+    this.waterUniforms.causticsHeight.value.set(this.waterHeight, this.causticsFade);
+
+    const causticsIntensity = 0.8;
+    this.updateBiomeCausticsState(causticsIntensity);
+  }
+}
+
+let hydraWaterInstance = null;
+
+export function createHydraWaterMaterial({ THREE }) {
+  if (!THREE) {
+    throw new Error('createHydraWaterMaterial requires a THREE instance');
+  }
+  if (!hydraWaterInstance) {
+    hydraWaterInstance = new HydraWaterCausticsManager({ THREE });
+  }
+  return {
+    material: hydraWaterInstance.materialInstance,
+    update: (delta, surfaces, context) => {
+      hydraWaterInstance.update({ delta, surfaces, context });
+    },
   };
 
-  return { material, update };
 }
