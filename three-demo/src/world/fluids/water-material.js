@@ -1,14 +1,17 @@
 import { createMeshMorpher } from '../../rendering/mesh-morpher.js';
+
 import { SURFACE_ROLES } from './fluid-geometry.js';
 
 const WAVE_SETTINGS = {
   mainAmplitude: 0.18,
+
   baseFrequency: 0.45,
   baseSpeed: 0.9,
   crossFrequency: 0.16,
   crossSpeed: 1.35,
   flowFrequency: 0.52,
   flowSpeed: 1.4,
+
   rippleAmplitude: 0.05,
   rippleFrequency: 1.3,
   rippleSpeed: 1.65,
@@ -32,6 +35,7 @@ const getWavePadding = () => {
 function sampleWave({ x, z, time, flowX, flowZ, flowStrength }) {
   const {
     mainAmplitude,
+
     baseFrequency,
     baseSpeed,
     crossFrequency,
@@ -46,6 +50,7 @@ function sampleWave({ x, z, time, flowX, flowZ, flowStrength }) {
     detailAmplitude,
     detailFrequency,
     detailSpeed,
+
   } = WAVE_SETTINGS;
 
   const primaryPhase = x * baseFrequency + time * baseSpeed;
@@ -56,6 +61,7 @@ function sampleWave({ x, z, time, flowX, flowZ, flowStrength }) {
   let derivativeX = 0;
   let derivativeZ = 0;
 
+
   value += mainAmplitude * 0.6 * Math.sin(primaryPhase);
   derivativeX += mainAmplitude * 0.6 * Math.cos(primaryPhase) * baseFrequency;
 
@@ -65,17 +71,21 @@ function sampleWave({ x, z, time, flowX, flowZ, flowStrength }) {
 
   value += mainAmplitude * 0.35 * Math.sin(crossPhase);
   const crossDerivative = Math.cos(crossPhase) * crossFrequency * 0.35 * mainAmplitude;
+
   derivativeX += crossDerivative;
   derivativeZ += crossDerivative;
 
   if (flowStrength > 0.001) {
     const flowPhase = (flowX * x + flowZ * z) * flowFrequency + time * flowSpeed;
+
     const flowAmplitude = mainAmplitude * flowStrength * 0.5;
     value += flowAmplitude * Math.sin(flowPhase);
     const flowDerivative = Math.cos(flowPhase) * flowFrequency * flowAmplitude;
+
     derivativeX += flowDerivative * flowX;
     derivativeZ += flowDerivative * flowZ;
   }
+
 
   if (rippleAmplitude > 0) {
     const ripplePhaseX = x * rippleFrequency + time * rippleSpeed;
@@ -100,6 +110,7 @@ function sampleWave({ x, z, time, flowX, flowZ, flowStrength }) {
     value,
     derivativeX,
     derivativeZ,
+
   };
 }
 
@@ -123,6 +134,7 @@ export function createHydraWaterMaterial({ THREE }) {
 
   material.side = THREE.DoubleSide;
   material.depthWrite = false;
+
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.edgeSaturationBoost = { value: EDGE_TINT_SETTINGS.saturationBoost };
@@ -152,6 +164,7 @@ export function createHydraWaterMaterial({ THREE }) {
   material.customProgramCacheKey = () =>
     `hydra-water-edge-tint-${EDGE_TINT_SETTINGS.saturationBoost}-${EDGE_TINT_SETTINGS.minOpacity}`;
 
+
   const morpher = createMeshMorpher({ THREE });
   const cleanupHandlers = new Map();
   let elapsedTime = 0;
@@ -168,12 +181,16 @@ export function createHydraWaterMaterial({ THREE }) {
       geometry.computeBoundingSphere();
     }
     if (geometry.boundingBox) {
+
       const padding = getWavePadding();
+
       geometry.boundingBox.max.y += padding;
       geometry.boundingBox.min.y -= padding;
     }
     if (geometry.boundingSphere) {
+
       geometry.boundingSphere.radius += getWavePadding();
+
     }
   };
 
@@ -197,7 +214,9 @@ export function createHydraWaterMaterial({ THREE }) {
       const baseNormals = normalData.base;
       const flowDir = effectMesh.geometry.getAttribute('flowDirection');
       const flowStrength = effectMesh.geometry.getAttribute('flowStrength');
+
       const surfaceRole = effectMesh.geometry.getAttribute('surfaceRole');
+
 
       const vertexCount = positionAttribute.count;
       for (let index = 0; index < vertexCount; index += 1) {
@@ -269,7 +288,9 @@ export function createHydraWaterMaterial({ THREE }) {
     }
   };
 
+
   material.userData.hydraWaterVersion = 'layered-wave-undulation-v1';
+
 
   return {
     material,
