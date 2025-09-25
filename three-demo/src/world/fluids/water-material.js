@@ -1,5 +1,7 @@
 import { createMeshMorpher } from '../../rendering/mesh-morpher.js';
+
 import { SURFACE_ROLES } from './fluid-geometry.js';
+
 
 const WAVE_SETTINGS = {
   amplitude: 0.18,
@@ -11,10 +13,6 @@ const WAVE_SETTINGS = {
   flowSpeed: 1.4,
 };
 
-const EDGE_TINT_SETTINGS = {
-  saturationBoost: 0.22,
-  minOpacity: 0.9,
-};
 
 function sampleWave({ x, z, time, flowX, flowZ, flowStrength }) {
   const {
@@ -82,34 +80,6 @@ export function createHydraWaterMaterial({ THREE }) {
   material.side = THREE.DoubleSide;
   material.depthWrite = false;
 
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.edgeSaturationBoost = { value: EDGE_TINT_SETTINGS.saturationBoost };
-    shader.uniforms.edgeMinOpacity = { value: EDGE_TINT_SETTINGS.minOpacity };
-
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <common>',
-      `#include <common>\nattribute float surfaceType;\nvarying float vSurfaceType;`,
-    );
-
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      `#include <begin_vertex>\nvSurfaceType = surfaceType;`,
-    );
-
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <common>',
-      `#include <common>\nvarying float vSurfaceType;\nuniform float edgeSaturationBoost;\nuniform float edgeMinOpacity;`,
-    );
-
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <color_fragment>',
-      `#include <color_fragment>\nfloat edgeMask = smoothstep(0.5, 1.5, vSurfaceType);\nfloat tintMultiplier = 1.0 + edgeSaturationBoost * edgeMask;\ndiffuseColor.rgb = min(diffuseColor.rgb * tintMultiplier, vec3(1.0));\ndiffuseColor.a = mix(diffuseColor.a, max(diffuseColor.a, edgeMinOpacity), edgeMask);`,
-    );
-  };
-
-  material.customProgramCacheKey = () =>
-    `hydra-water-edge-tint-${EDGE_TINT_SETTINGS.saturationBoost}-${EDGE_TINT_SETTINGS.minOpacity}`;
-
   const morpher = createMeshMorpher({ THREE });
   const cleanupHandlers = new Map();
   let elapsedTime = 0;
@@ -155,12 +125,15 @@ export function createHydraWaterMaterial({ THREE }) {
       const baseNormals = normalData.base;
       const flowDir = effectMesh.geometry.getAttribute('flowDirection');
       const flowStrength = effectMesh.geometry.getAttribute('flowStrength');
+
       const surfaceRole = effectMesh.geometry.getAttribute('surfaceRole');
+
 
       const vertexCount = positionAttribute.count;
       for (let index = 0; index < vertexCount; index += 1) {
         const baseOffset = index * 3;
         const baseNormalY = baseNormals[baseOffset + 1];
+
 
         const x = basePositions[baseOffset];
         const y = basePositions[baseOffset + 1];
