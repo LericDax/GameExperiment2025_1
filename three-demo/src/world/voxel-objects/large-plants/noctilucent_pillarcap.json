@@ -22,20 +22,48 @@
       "smoothing": {
         "segmentOverlap": 0.5,
         "segmentEndPadding": 0.45,
-        "segmentSubdivisions": 2,
-        "nodeInflate": 0.22
+
+        "segmentSubdivisions": 3,
+        "nodeInflate": 0.22,
+        "embed": 0.12,
+        "featherLayers": 3,
+        "featherRadius": 0.45,
+        "featherSpacing": 0.28,
+        "featherScale": 0.22,
+        "microJitter": 0.18,
+        "featherTint": "#bdfbff"
+
       },
       "defaultVoxel": { "type": "log", "isSolid": true, "tint": "#6a4d84" },
       "nodes": [
         {
           "id": "base",
           "position": [0, 0, 0],
+          "smoothing": {
+            "featherLayers": 2,
+            "featherRadius": 0.32,
+            "microJitter": 0.14,
+            "embed": 0.08,
+            "featherTint": "#86d0ff"
+          },
           "voxel": { "type": "log", "size": [1.3, 0.6, 1.3], "tint": "#6a4d84", "isSolid": true }
         },
-        { "id": "mid", "position": [0.18, 2.8, -0.1] },
+        {
+          "id": "mid",
+          "position": [0.18, 2.8, -0.1],
+          "smoothing": { "featherLayers": 1, "featherRadius": 0.26, "microJitter": 0.12 }
+        },
         {
           "id": "crown",
           "position": [-0.12, 5.8, 0.16],
+          "smoothing": {
+            "featherLayers": 4,
+            "featherRadius": 0.5,
+            "featherScale": 0.3,
+            "microJitter": 0.24,
+            "embed": 0.1,
+            "featherTint": "#d6f8ff"
+          },
           "voxel": { "type": "log", "size": [1.0, 0.8, 1.0], "tint": "#735694", "isSolid": true }
         }
       ],
@@ -45,14 +73,36 @@
           "to": "mid",
           "voxel": { "type": "log", "tint": "#6f558d", "isSolid": true },
           "startSize": [1.25, 1.2, 1.25],
-          "endSize": [1.1, 1.1, 1.1]
+          "endSize": [1.1, 1.1, 1.1],
+          "smoothing": {
+            "segmentOverlap": 0.6,
+            "segmentEndPadding": 0.52,
+            "featherLayers": 2,
+            "featherRadius": 0.32,
+            "featherSpacing": 0.22,
+            "featherScale": 0.18,
+            "microJitter": 0.16,
+            "featherTint": "#8ad8ff",
+            "embed": 0.12
+          }
         },
         {
           "from": "mid",
           "to": "crown",
           "voxel": { "type": "log", "tint": "#735694", "isSolid": true },
           "startSize": [1.1, 1.05, 1.1],
-          "endSize": [0.95, 0.95, 0.95]
+          "endSize": [0.95, 0.95, 0.95],
+          "smoothing": {
+            "segmentOverlap": 0.65,
+            "segmentEndPadding": 0.6,
+            "featherLayers": 4,
+            "featherRadius": 0.42,
+            "featherSpacing": 0.3,
+            "featherScale": 0.24,
+            "microJitter": 0.2,
+            "featherTint": "#c7f6ff",
+            "embed": 0.14
+          }
         }
       ]
     }
