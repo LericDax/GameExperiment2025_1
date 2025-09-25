@@ -27,6 +27,104 @@ function resolveScaleVector({ size }, voxelScale) {
 }
 
 
+const ZERO_OFFSET = { x: 0, y: 0, z: 0 };
+
+function cloneScale(scale) {
+  return { x: scale.x, y: scale.y, z: scale.z };
+}
+
+function computeSegmentVisualAdjustments(smoothing, scale, object) {
+  const direction = smoothing.direction ?? ZERO_OFFSET;
+  const length = Math.hypot(direction.x, direction.y, direction.z);
+  if (length === 0) {
+    return { visualScale: cloneScale(scale), visualOffset: ZERO_OFFSET };
+  }
+
+  const unit = {
+    x: direction.x / length,
+    y: direction.y / length,
+    z: direction.z / length,
+  };
+
+  const stepLength = Math.max(0, smoothing.stepLength ?? 0) * object.voxelScale;
+  const overlapRatio = Math.max(0, smoothing.overlap ?? 0);
+  const extendWorld = stepLength * overlapRatio;
+
+  const startPadding = Math.max(0, smoothing.startPadding ?? 0) * object.voxelScale;
+  const endPadding = Math.max(0, smoothing.endPadding ?? 0) * object.voxelScale;
+  const distanceFromStart =
+    Math.max(0, smoothing.distanceFromStart ?? 0) * object.voxelScale;
+  const distanceFromEnd =
+    Math.max(0, smoothing.distanceFromEnd ?? 0) * object.voxelScale;
+
+  const startAllowance = distanceFromStart + startPadding;
+  const endAllowance = distanceFromEnd + endPadding;
+  const startBias = Math.max(0, startPadding - distanceFromStart);
+  const endBias = Math.max(0, endPadding - distanceFromEnd);
+  const halfExtend = extendWorld / 2;
+
+  const computeExtend = (allowance, bias) => {
+    if (allowance <= 0 && bias <= 0 && halfExtend <= 0) {
+      return 0;
+    }
+    const desired = halfExtend + bias;
+    if (desired <= 0) {
+      return 0;
+    }
+    return Math.min(allowance, desired);
+  };
+
+  const backExtend = computeExtend(startAllowance, startBias);
+  const forwardExtend = computeExtend(endAllowance, endBias);
+  const actualExtend = backExtend + forwardExtend;
+
+  const visualScale = cloneScale(scale);
+  if (actualExtend > 0) {
+    visualScale.x += Math.abs(unit.x) * actualExtend;
+    visualScale.y += Math.abs(unit.y) * actualExtend;
+    visualScale.z += Math.abs(unit.z) * actualExtend;
+  }
+
+  const offsetAlong = (forwardExtend - backExtend) / 2;
+  if (offsetAlong === 0) {
+    return { visualScale, visualOffset: ZERO_OFFSET };
+  }
+
+  return {
+    visualScale,
+    visualOffset: {
+      x: unit.x * offsetAlong,
+      y: unit.y * offsetAlong,
+      z: unit.z * offsetAlong,
+    },
+  };
+}
+
+function computeVisualAdjustments(voxel, scale, object) {
+  const smoothing = voxel?.metadata?.visual?.smoothing;
+  if (!smoothing) {
+    return { visualScale: cloneScale(scale), visualOffset: ZERO_OFFSET };
+  }
+
+  if (smoothing.type === 'node') {
+    const inflate = Math.max(0, smoothing.inflate ?? 0) * object.voxelScale;
+    const visualScale = cloneScale(scale);
+    if (inflate > 0) {
+      visualScale.x += inflate;
+      visualScale.y += inflate;
+      visualScale.z += inflate;
+    }
+    return { visualScale, visualOffset: ZERO_OFFSET };
+  }
+
+  if (smoothing.type === 'segment') {
+    return computeSegmentVisualAdjustments(smoothing, scale, object);
+  }
+
+  return { visualScale: cloneScale(scale), visualOffset: ZERO_OFFSET };
+}
+
+
 function resolveCollisionMode(voxel, object) {
   if (voxel?.collisionMode) {
     return voxel.collisionMode;
@@ -54,13 +152,15 @@ export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
     z: base.z,
   };
 
-  const defaultSolidOverride = object.voxelScale < 1;
-
-
   const voxels = resolveVoxelObjectVoxels(object);
 
   voxels.forEach((voxel) => {
     const scale = resolveScaleVector(voxel, object.voxelScale);
+    const { visualScale, visualOffset } = computeVisualAdjustments(
+      voxel,
+      scale,
+      object,
+    );
     const worldX = anchor.x + voxel.position.x * object.voxelScale;
     const worldY = anchor.y + voxel.position.y * object.voxelScale + scale.y / 2;
     const worldZ = anchor.z + voxel.position.z * object.voxelScale;
@@ -69,6 +169,8 @@ export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
 
     addBlock(voxel.type, worldX, worldY, worldZ, biome, {
       scale,
+      visualScale,
+      visualOffset,
       collisionMode,
       isSolid: collisionMode === 'solid',
 

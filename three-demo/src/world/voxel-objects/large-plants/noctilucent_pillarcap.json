@@ -19,6 +19,12 @@
   "procedural": {
     "nodeGrowth": {
       "step": 0.4,
+      "smoothing": {
+        "segmentOverlap": 0.5,
+        "segmentEndPadding": 0.45,
+        "segmentSubdivisions": 2,
+        "nodeInflate": 0.22
+      },
       "defaultVoxel": { "type": "log", "isSolid": true, "tint": "#6a4d84" },
       "nodes": [
         {

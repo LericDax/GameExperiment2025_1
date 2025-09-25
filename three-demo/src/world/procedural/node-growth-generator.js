@@ -1,8 +1,81 @@
 const DEFAULT_STEP = 0.5;
 const MIN_STEP = 0.05;
 
+const DEFAULT_SMOOTHING = {
+  nodeInflate: 0,
+  segmentOverlap: 0,
+  segmentEndPadding: 0,
+  segmentSubdivisions: 1,
+  embed: 0,
+};
+
 function lerp(a, b, t) {
   return a + (b - a) * t;
+}
+
+function normalizeSmoothingConfig(value, fallback = DEFAULT_SMOOTHING) {
+  const base = {
+    nodeInflate:
+      typeof fallback?.nodeInflate === 'number'
+        ? fallback.nodeInflate
+        : DEFAULT_SMOOTHING.nodeInflate,
+    segmentOverlap:
+      typeof fallback?.segmentOverlap === 'number'
+        ? fallback.segmentOverlap
+        : DEFAULT_SMOOTHING.segmentOverlap,
+    segmentEndPadding:
+      typeof fallback?.segmentEndPadding === 'number'
+        ? fallback.segmentEndPadding
+        : DEFAULT_SMOOTHING.segmentEndPadding,
+    segmentSubdivisions:
+      typeof fallback?.segmentSubdivisions === 'number'
+        ? fallback.segmentSubdivisions
+        : DEFAULT_SMOOTHING.segmentSubdivisions,
+    embed:
+      typeof fallback?.embed === 'number'
+        ? fallback.embed
+        : DEFAULT_SMOOTHING.embed,
+  };
+
+  if (!value || typeof value !== 'object') {
+    return { ...base };
+  }
+
+  const numeric = (candidate) =>
+    typeof candidate === 'number' && !Number.isNaN(candidate) ? candidate : null;
+
+  const nodeInflate = numeric(value.nodeInflate ?? value.nodePadding);
+  if (nodeInflate !== null) {
+    base.nodeInflate = Math.max(0, nodeInflate);
+  }
+
+  const segmentOverlap = numeric(
+    value.segmentOverlap ?? value.overlap ?? value.segmentVisualOverlap,
+  );
+  if (segmentOverlap !== null) {
+    base.segmentOverlap = Math.max(0, segmentOverlap);
+  }
+
+  const segmentEndPadding = numeric(
+    value.segmentEndPadding ?? value.endPadding ?? value.padding ?? value.nodeBlendPadding,
+  );
+  if (segmentEndPadding !== null) {
+    base.segmentEndPadding = Math.max(0, segmentEndPadding);
+  }
+
+  const segmentSubdivisions = numeric(
+    value.segmentSubdivisions ?? value.subdivisions ?? value.segmentLerpSteps,
+  );
+  if (segmentSubdivisions !== null) {
+    base.segmentSubdivisions = Math.max(1, Math.floor(segmentSubdivisions));
+  }
+
+  const embed = numeric(value.embed ?? value.segmentEmbed ?? value.segmentInset);
+  if (embed !== null) {
+    base.embed = Math.max(0, embed);
+  }
+
+  return { ...base };
 }
 
 function clampStep(step) {
@@ -158,21 +231,38 @@ export function generateNodeGrowthVoxels(object, config) {
     config.defaultVoxel,
   );
 
+  const baseSmoothing = normalizeSmoothingConfig(
+    config.smoothing ?? config.visual?.smoothing ?? null,
+  );
+
   (config.nodes || []).forEach((node) => {
     if (!node || typeof node.id !== 'string') {
       return;
     }
     const position = toVector3(node.position);
-    nodes.set(node.id, { ...node, position });
+    const nodeSmoothing = normalizeSmoothingConfig(node.smoothing, baseSmoothing);
+    nodes.set(node.id, { ...node, position, smoothing: nodeSmoothing });
     const nodeVoxelConfig = normalizeVoxelConfig(node.voxel, defaultNodeVoxel);
     if (nodeVoxelConfig) {
       const size = toSize(
         node.voxel?.size ?? config.nodeSize ?? config.segmentSize ?? 1,
       );
+      let metadata = nodeVoxelConfig.metadata ? { ...nodeVoxelConfig.metadata } : null;
+      if (nodeSmoothing.nodeInflate > 0 || nodeSmoothing.embed > 0) {
+        const visual = { ...(metadata?.visual ?? {}) };
+        visual.smoothing = {
+          ...(visual.smoothing ?? {}),
+          type: 'node',
+          inflate: nodeSmoothing.nodeInflate,
+          embed: nodeSmoothing.embed,
+        };
+        metadata = { ...(metadata ?? {}), visual };
+      }
       addVoxel(voxels, usedKeys, {
         ...nodeVoxelConfig,
         position,
         size,
+        metadata,
       });
     }
   });
@@ -205,9 +295,12 @@ export function generateNodeGrowthVoxels(object, config) {
     }
 
     const stepSize = clampStep(segment.step ?? config.step ?? DEFAULT_STEP);
-    const steps = segment.steps
+    const segmentSmoothing = normalizeSmoothingConfig(segment.smoothing, baseSmoothing);
+    const subdivisions = Math.max(1, segmentSmoothing.segmentSubdivisions);
+    const steps = (segment.steps
       ? Math.max(1, Math.floor(segment.steps))
-      : Math.max(1, Math.ceil(length / stepSize));
+      : Math.max(1, Math.ceil(length / stepSize))) * subdivisions;
+    const stepLength = length / steps;
 
     const startSize = toSize(
       segment.startSize ?? segment.size ?? config.segmentSize ?? 1,
@@ -226,6 +319,26 @@ export function generateNodeGrowthVoxels(object, config) {
 
     const includeStart = segment.includeStart ?? false;
     const includeEnd = segment.includeEnd ?? true;
+
+    const direction = {
+      x: delta.x / length,
+      y: delta.y / length,
+      z: delta.z / length,
+    };
+    const startPaddingValue = Math.max(
+      segmentSmoothing.segmentEndPadding,
+      fromNode.smoothing?.nodeInflate ?? 0,
+    );
+    const endPaddingValue = Math.max(
+      segmentSmoothing.segmentEndPadding,
+      toNode.smoothing?.nodeInflate ?? 0,
+    );
+
+    const smoothingActive =
+      segmentSmoothing.segmentOverlap > 0 ||
+      startPaddingValue > 0 ||
+      endPaddingValue > 0 ||
+      segmentSmoothing.embed > 0;
 
     for (let i = 0; i <= steps; i += 1) {
       if (i === 0 && !includeStart) {
@@ -252,11 +365,32 @@ export function generateNodeGrowthVoxels(object, config) {
         tint = mixed ? tintToHex(mixed) : tint;
       }
 
+      let metadata = segmentVoxel.metadata ? { ...segmentVoxel.metadata } : null;
+      if (smoothingActive) {
+        const visual = { ...(metadata?.visual ?? {}) };
+        visual.smoothing = {
+          ...(visual.smoothing ?? {}),
+          type: 'segment',
+          overlap: segmentSmoothing.segmentOverlap,
+          stepLength,
+          direction: { ...direction },
+          distanceFromStart: length * t,
+          distanceFromEnd: length * (1 - t),
+          startPadding: startPaddingValue,
+          endPadding: endPaddingValue,
+          embed: segmentSmoothing.embed,
+          progress: t,
+          steps,
+        };
+        metadata = { ...(metadata ?? {}), visual };
+      }
+
       addVoxel(voxels, usedKeys, {
         ...segmentVoxel,
         position,
         size,
         tint,
+        metadata,
       });
     }
   });

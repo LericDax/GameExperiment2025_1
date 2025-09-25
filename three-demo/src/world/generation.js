@@ -219,6 +219,44 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     return new THREE.Vector3(1, 1, 1);
   };
 
+  const resolveOffsetVector = (offsetOption) => {
+    if (!offsetOption && offsetOption !== 0) {
+      return new THREE.Vector3(0, 0, 0);
+    }
+    if (offsetOption.isVector3) {
+      return offsetOption.clone();
+    }
+    if (typeof offsetOption === 'number') {
+      return new THREE.Vector3(offsetOption, offsetOption, offsetOption);
+    }
+    if (Array.isArray(offsetOption)) {
+      const [ox = 0, oy = 0, oz = 0] = offsetOption;
+      return new THREE.Vector3(ox, oy, oz);
+    }
+    if (typeof offsetOption === 'object') {
+      const ox =
+        typeof offsetOption.x === 'number'
+          ? offsetOption.x
+          : typeof offsetOption.offsetX === 'number'
+          ? offsetOption.offsetX
+          : 0;
+      const oy =
+        typeof offsetOption.y === 'number'
+          ? offsetOption.y
+          : typeof offsetOption.offsetY === 'number'
+          ? offsetOption.offsetY
+          : 0;
+      const oz =
+        typeof offsetOption.z === 'number'
+          ? offsetOption.z
+          : typeof offsetOption.offsetZ === 'number'
+          ? offsetOption.offsetZ
+          : 0;
+      return new THREE.Vector3(ox, oy, oz);
+    }
+    return new THREE.Vector3(0, 0, 0);
+  };
+
   const parseTintOverride = (value) => {
     if (typeof value !== 'string') {
       return null;
@@ -233,7 +271,14 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
   const addBlock = (type, x, y, z, biome, options = {}) => {
     const scaleVector = resolveScaleVector(options.scale);
-    matrix.compose(reusablePosition.set(x, y, z), defaultQuaternion, scaleVector);
+    const visualScaleVector = resolveScaleVector(
+      options.visualScale ?? options.scale,
+    );
+    const visualOffsetVector = resolveOffsetVector(options.visualOffset);
+    const visualPosition = reusablePosition
+      .set(x, y, z)
+      .add(visualOffsetVector);
+    matrix.compose(visualPosition, defaultQuaternion, visualScaleVector);
     if (!instancedData.has(type)) {
       instancedData.set(type, []);
     }
@@ -345,6 +390,8 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       paletteColor,
       tintColor,
       scale: scaleVector.clone(),
+      visualScale: visualScaleVector.clone(),
+      visualOffset: visualOffsetVector.clone(),
       sourceObjectId: options.sourceObjectId ?? null,
       voxelIndex: options.voxelIndex ?? null,
       metadata: options.metadata ?? null,
