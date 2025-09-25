@@ -34,6 +34,7 @@ function cloneScale(scale) {
   return { x: scale.x, y: scale.y, z: scale.z };
 }
 
+
 function cloneOffset(offset) {
   return { x: offset.x, y: offset.y, z: offset.z };
 }
@@ -78,11 +79,14 @@ function addVectors(a, b) {
   return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
 }
 
+
 function createLocalFrame(direction, customUpHint = null) {
+
   const forward = normalizeVector(direction);
   if (!forward) {
     return null;
   }
+
   const preferredUp =
     (customUpHint && normalizeVector(customUpHint)) ||
     (Math.abs(forward.y) < 0.999 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 });
@@ -94,6 +98,7 @@ function createLocalFrame(direction, customUpHint = null) {
   let up = normalizeVector(crossVectors(forward, right));
   if (!up) {
     up = preferredUp;
+
   }
   return { forward, right, up };
 }
@@ -102,9 +107,11 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, value));
 }
 
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
+
 
 function parseHexColor(hex) {
   if (typeof hex !== 'string') {
@@ -138,6 +145,7 @@ function blendTint(baseHex, accentHex, mix) {
     b: base.b + (accent.b - base.b) * mixValue,
   });
 }
+
 
 const DEFAULT_FRAME = {
   forward: { x: 0, y: 1, z: 0 },
@@ -458,6 +466,7 @@ function computeNanovoxelPlacements(voxel, basePlacement, object) {
 }
 
 function computeSegmentVisualAdjustments(voxel, smoothing, scale, object) {
+
   const direction = smoothing.direction ?? ZERO_OFFSET;
   const length = Math.hypot(direction.x, direction.y, direction.z);
   if (length === 0) {
@@ -508,6 +517,7 @@ function computeSegmentVisualAdjustments(voxel, smoothing, scale, object) {
     visualScale.y += Math.abs(unit.y) * actualExtend;
     visualScale.z += Math.abs(unit.z) * actualExtend;
   }
+
 
   let visualOffset = ZERO_OFFSET;
   const offsetAlong = (forwardExtend - backExtend) / 2;
@@ -564,6 +574,7 @@ function computeSegmentVisualAdjustments(voxel, smoothing, scale, object) {
   }
 
   return { visualScale, visualOffset };
+
 }
 
 function computeVisualAdjustments(voxel, scale, object) {
@@ -580,6 +591,7 @@ function computeVisualAdjustments(voxel, scale, object) {
       visualScale.y += inflate;
       visualScale.z += inflate;
     }
+
     const embed = Math.max(0, smoothing.embed ?? 0) * object.voxelScale;
     if (embed > 0) {
       visualScale.x = Math.max(0.01, visualScale.x - embed);
@@ -609,6 +621,7 @@ function computeVisualAdjustments(voxel, scale, object) {
 
   if (smoothing.type === 'segment') {
     return computeSegmentVisualAdjustments(voxel, smoothing, scale, object);
+
   }
 
   return { visualScale: cloneScale(scale), visualOffset: ZERO_OFFSET };
@@ -866,6 +879,7 @@ export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
         biome,
         placement.options,
       );
+
     });
 
     const nanovoxelPlacements = computeNanovoxelPlacements(voxel, basePlacement, object);
@@ -878,6 +892,7 @@ export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
         biome,
         placement.options,
       );
+
     });
   });
 }

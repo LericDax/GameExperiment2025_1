@@ -22,6 +22,7 @@
       "smoothing": {
         "segmentOverlap": 0.5,
         "segmentEndPadding": 0.45,
+
         "segmentSubdivisions": 3,
         "nodeInflate": 0.22,
         "embed": 0.12,
@@ -31,6 +32,7 @@
         "featherScale": 0.22,
         "microJitter": 0.18,
         "featherTint": "#bdfbff"
+
       },
       "defaultVoxel": { "type": "log", "isSolid": true, "tint": "#6a4d84" },
       "nodes": [
@@ -49,6 +51,7 @@
         {
           "id": "mid",
           "position": [0.18, 2.8, -0.1],
+
           "smoothing": { "featherLayers": 1, "featherRadius": 0.26, "microJitter": 0.12 },
           "nanovoxels": [
             {
@@ -63,6 +66,7 @@
               "accentStrength": 0.5
             }
           ]
+
         },
         {
           "id": "crown",
@@ -75,6 +79,7 @@
             "embed": 0.1,
             "featherTint": "#d6f8ff"
           },
+
           "voxel": { "type": "log", "size": [1.0, 0.8, 1.0], "tint": "#735694", "isSolid": true },
           "nanovoxels": [
             {
@@ -101,6 +106,7 @@
               "accentStrength": 0.55
             }
           ]
+
         }
       ],
       "segments": [
@@ -120,6 +126,7 @@
             "microJitter": 0.16,
             "featherTint": "#8ad8ff",
             "embed": 0.12
+
           },
           "nanovoxels": [
             {
@@ -139,6 +146,8 @@
               "progressMode": "center"
             }
           ]
+=======
+
         },
         {
           "from": "mid",
@@ -156,6 +165,7 @@
             "microJitter": 0.2,
             "featherTint": "#c7f6ff",
             "embed": 0.14
+
           },
           "nanovoxels": [
             {
@@ -174,6 +184,7 @@
               "maxProgress": 0.95
             }
           ]
+
         }
       ]
     }
