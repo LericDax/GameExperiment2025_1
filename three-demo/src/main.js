@@ -15,7 +15,6 @@ import { initializeMusicSystem } from './audio/music-system.js'
 import {
   initializeFluidRegistry,
   updateFluids,
-  setFluidEnvironment,
 } from './world/fluids/fluid-registry.js'
 
 const overlay = document.getElementById('overlay')
@@ -246,8 +245,6 @@ sun.shadow.mapSize.set(2048, 2048)
 sun.shadow.camera.near = 0.5
 sun.shadow.camera.far = 200
 scene.add(sun)
-
-setFluidEnvironment({ renderer, sun })
 
 if (!initializationError) {
   function animate() {
