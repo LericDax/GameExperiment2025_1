@@ -1,5 +1,7 @@
 import { createMeshMorpher } from '../../rendering/mesh-morpher.js';
+
 import { SURFACE_ROLES } from './fluid-geometry.js';
+
 
 const WAVE_SETTINGS = {
   amplitude: 0.18,
@@ -122,12 +124,15 @@ export function createHydraWaterMaterial({ THREE }) {
       const baseNormals = normalData.base;
       const flowDir = effectMesh.geometry.getAttribute('flowDirection');
       const flowStrength = effectMesh.geometry.getAttribute('flowStrength');
+
       const surfaceRole = effectMesh.geometry.getAttribute('surfaceRole');
+
 
       const vertexCount = positionAttribute.count;
       for (let index = 0; index < vertexCount; index += 1) {
         const baseOffset = index * 3;
         const baseNormalY = baseNormals[baseOffset + 1];
+
 
         const x = basePositions[baseOffset];
         const y = basePositions[baseOffset + 1];
@@ -145,6 +150,7 @@ export function createHydraWaterMaterial({ THREE }) {
           flowZ,
           flowStrength: flowAmount,
         });
+
 
         const role = surfaceRole
           ? surfaceRole.array[index]
@@ -171,6 +177,7 @@ export function createHydraWaterMaterial({ THREE }) {
           normalAttribute.array[baseOffset + 1] = baseNormals[baseOffset + 1];
           normalAttribute.array[baseOffset + 2] = baseNormals[baseOffset + 2];
         }
+
       }
     };
 
