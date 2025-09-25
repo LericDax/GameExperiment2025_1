@@ -22,6 +22,7 @@
       "smoothing": {
         "segmentOverlap": 0.5,
         "segmentEndPadding": 0.45,
+
         "segmentSubdivisions": 3,
         "nodeInflate": 0.22,
         "embed": 0.12,
@@ -31,6 +32,7 @@
         "featherScale": 0.22,
         "microJitter": 0.18,
         "featherTint": "#bdfbff"
+
       },
       "defaultVoxel": { "type": "log", "isSolid": true, "tint": "#6a4d84" },
       "nodes": [

@@ -33,6 +33,7 @@ function cloneScale(scale) {
   return { x: scale.x, y: scale.y, z: scale.z };
 }
 
+
 function cloneOffset(offset) {
   return { x: offset.x, y: offset.y, z: offset.z };
 }
@@ -132,6 +133,7 @@ function blendTint(baseHex, accentHex, mix) {
 }
 
 function computeSegmentVisualAdjustments(voxel, smoothing, scale, object) {
+
   const direction = smoothing.direction ?? ZERO_OFFSET;
   const length = Math.hypot(direction.x, direction.y, direction.z);
   if (length === 0) {
@@ -182,6 +184,7 @@ function computeSegmentVisualAdjustments(voxel, smoothing, scale, object) {
     visualScale.y += Math.abs(unit.y) * actualExtend;
     visualScale.z += Math.abs(unit.z) * actualExtend;
   }
+
 
   let visualOffset = ZERO_OFFSET;
   const offsetAlong = (forwardExtend - backExtend) / 2;
@@ -238,6 +241,7 @@ function computeSegmentVisualAdjustments(voxel, smoothing, scale, object) {
   }
 
   return { visualScale, visualOffset };
+
 }
 
 function computeVisualAdjustments(voxel, scale, object) {
@@ -254,6 +258,7 @@ function computeVisualAdjustments(voxel, scale, object) {
       visualScale.y += inflate;
       visualScale.z += inflate;
     }
+
     const embed = Math.max(0, smoothing.embed ?? 0) * object.voxelScale;
     if (embed > 0) {
       visualScale.x = Math.max(0.01, visualScale.x - embed);
@@ -283,6 +288,7 @@ function computeVisualAdjustments(voxel, scale, object) {
 
   if (smoothing.type === 'segment') {
     return computeSegmentVisualAdjustments(voxel, smoothing, scale, object);
+
   }
 
   return { visualScale: cloneScale(scale), visualOffset: ZERO_OFFSET };

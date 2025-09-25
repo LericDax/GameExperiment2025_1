@@ -7,12 +7,14 @@ const DEFAULT_SMOOTHING = {
   segmentEndPadding: 0,
   segmentSubdivisions: 1,
   embed: 0,
+
   featherLayers: 0,
   featherRadius: 0,
   featherSpacing: 0.25,
   featherScale: 0.15,
   featherTint: null,
   microJitter: 0,
+
 };
 
 function lerp(a, b, t) {
@@ -41,6 +43,7 @@ function normalizeSmoothingConfig(value, fallback = DEFAULT_SMOOTHING) {
       typeof fallback?.embed === 'number'
         ? fallback.embed
         : DEFAULT_SMOOTHING.embed,
+
     featherLayers:
       typeof fallback?.featherLayers === 'number'
         ? fallback.featherLayers
@@ -65,6 +68,7 @@ function normalizeSmoothingConfig(value, fallback = DEFAULT_SMOOTHING) {
       typeof fallback?.microJitter === 'number'
         ? fallback.microJitter
         : DEFAULT_SMOOTHING.microJitter,
+
   };
 
   if (!value || typeof value !== 'object') {
@@ -76,6 +80,7 @@ function normalizeSmoothingConfig(value, fallback = DEFAULT_SMOOTHING) {
 
   const stringValue = (candidate) =>
     typeof candidate === 'string' && candidate.length > 0 ? candidate : null;
+
 
   const nodeInflate = numeric(value.nodeInflate ?? value.nodePadding);
   if (nodeInflate !== null) {
@@ -107,6 +112,7 @@ function normalizeSmoothingConfig(value, fallback = DEFAULT_SMOOTHING) {
   if (embed !== null) {
     base.embed = Math.max(0, embed);
   }
+
 
   const featherLayers = numeric(
     value.featherLayers ?? value.layers ?? value.feather ?? value.featherCount,
@@ -149,6 +155,7 @@ function normalizeSmoothingConfig(value, fallback = DEFAULT_SMOOTHING) {
   if (featherTint !== null) {
     base.featherTint = featherTint;
   }
+
 
   return { ...base };
 }
@@ -323,24 +330,28 @@ export function generateNodeGrowthVoxels(object, config) {
         node.voxel?.size ?? config.nodeSize ?? config.segmentSize ?? 1,
       );
       let metadata = nodeVoxelConfig.metadata ? { ...nodeVoxelConfig.metadata } : null;
+
       const nodeSmoothingActive =
         nodeSmoothing.nodeInflate > 0 ||
         nodeSmoothing.embed > 0 ||
         nodeSmoothing.featherLayers > 0 ||
         nodeSmoothing.microJitter > 0;
       if (nodeSmoothingActive) {
+
         const visual = { ...(metadata?.visual ?? {}) };
         visual.smoothing = {
           ...(visual.smoothing ?? {}),
           type: 'node',
           inflate: nodeSmoothing.nodeInflate,
           embed: nodeSmoothing.embed,
+
           featherLayers: nodeSmoothing.featherLayers,
           featherRadius: nodeSmoothing.featherRadius,
           featherSpacing: nodeSmoothing.featherSpacing,
           featherScale: nodeSmoothing.featherScale,
           featherTint: nodeSmoothing.featherTint,
           microJitter: nodeSmoothing.microJitter,
+
         };
         metadata = { ...(metadata ?? {}), visual };
       }
@@ -424,9 +435,11 @@ export function generateNodeGrowthVoxels(object, config) {
       segmentSmoothing.segmentOverlap > 0 ||
       startPaddingValue > 0 ||
       endPaddingValue > 0 ||
+
       segmentSmoothing.embed > 0 ||
       segmentSmoothing.featherLayers > 0 ||
       segmentSmoothing.microJitter > 0;
+
 
     for (let i = 0; i <= steps; i += 1) {
       if (i === 0 && !includeStart) {
@@ -467,12 +480,14 @@ export function generateNodeGrowthVoxels(object, config) {
           startPadding: startPaddingValue,
           endPadding: endPaddingValue,
           embed: segmentSmoothing.embed,
+
           featherLayers: segmentSmoothing.featherLayers,
           featherRadius: segmentSmoothing.featherRadius,
           featherSpacing: segmentSmoothing.featherSpacing,
           featherScale: segmentSmoothing.featherScale,
           featherTint: segmentSmoothing.featherTint,
           microJitter: segmentSmoothing.microJitter,
+
           progress: t,
           steps,
         };
