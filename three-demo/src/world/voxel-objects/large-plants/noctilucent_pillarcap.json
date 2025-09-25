@@ -33,6 +33,7 @@
         "featherScale": 0.22,
         "microJitter": 0.18,
         "featherTint": "#bdfbff"
+
       },
       "defaultVoxel": {
         "type": "log",
@@ -47,6 +48,7 @@
             0,
             0
           ],
+
           "smoothing": {
             "featherLayers": 2,
             "featherRadius": 0.32,
@@ -54,6 +56,7 @@
             "embed": 0.08,
             "featherTint": "#86d0ff"
           },
+
           "voxel": {
             "type": "log",
             "size": [
@@ -106,6 +109,7 @@
             5.8,
             0.16
           ],
+
           "smoothing": {
             "featherLayers": 4,
             "featherRadius": 0.5,
@@ -114,6 +118,7 @@
             "embed": 0.1,
             "featherTint": "#d6f8ff"
           },
+
           "voxel": {
             "type": "log",
             "size": [
@@ -124,12 +129,14 @@
             "tint": "#735694",
             "isSolid": true
           },
+
           "nanovoxels": [
             {
               "id": "petal-cluster",
               "count": 9,
               "radius": 0.82,
               "arcTurns": 1,
+
               "offset": [
                 0,
                 0.2,
@@ -140,6 +147,7 @@
                 1.04,
                 1.36
               ],
+
               "jitter": 0.08,
               "accentTint": "#dffcff",
               "accentStrength": 0.45,
@@ -150,6 +158,7 @@
               "count": 14,
               "radius": 1.2,
               "arcTurns": 1,
+
               "offset": [
                 0,
                 0.28,
@@ -160,17 +169,20 @@
                 0.9,
                 0.9
               ],
+
               "jitter": 0.12,
               "accentTint": "#ffffff",
               "accentStrength": 0.55
             }
           ]
+
         }
       ],
       "segments": [
         {
           "from": "base",
           "to": "mid",
+
           "voxel": {
             "type": "log",
             "tint": "#6f558d",
@@ -186,6 +198,7 @@
             1.1,
             1.1
           ],
+
           "smoothing": {
             "segmentOverlap": 0.6,
             "segmentEndPadding": 0.52,
@@ -196,6 +209,7 @@
             "microJitter": 0.16,
             "featherTint": "#8ad8ff",
             "embed": 0.12
+
           },
           "nanovoxels": [
             {
@@ -204,6 +218,7 @@
               "radius": 0.34,
               "arcTurns": 1,
               "length": 0.62,
+
               "offset": [
                 0,
                 0.12,
@@ -214,6 +229,7 @@
                 0.92,
                 0.88
               ],
+
               "distribution": "line",
               "jitter": 0.06,
               "accentTint": "#8ad8ff",
@@ -223,10 +239,12 @@
               "progressMode": "center"
             }
           ]
+
         },
         {
           "from": "mid",
           "to": "crown",
+
           "voxel": {
             "type": "log",
             "tint": "#735694",
@@ -242,6 +260,7 @@
             0.95,
             0.95
           ],
+
           "smoothing": {
             "segmentOverlap": 0.65,
             "segmentEndPadding": 0.6,
@@ -252,6 +271,7 @@
             "microJitter": 0.2,
             "featherTint": "#c7f6ff",
             "embed": 0.14
+
           },
           "nanovoxels": [
             {
@@ -260,6 +280,7 @@
               "radius": 0.48,
               "arcTurns": 1,
               "length": 0.92,
+
               "offset": [
                 0,
                 0.24,
@@ -270,6 +291,7 @@
                 1.04,
                 1
               ],
+
               "distribution": "line",
               "jitter": 0.08,
               "accentTint": "#c7f6ff",
@@ -278,6 +300,7 @@
               "maxProgress": 0.95
             }
           ]
+
         }
       ]
     }
