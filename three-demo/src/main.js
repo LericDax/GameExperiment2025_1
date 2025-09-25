@@ -45,23 +45,30 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0xa9d6ff)
 scene.fog = new THREE.Fog(0xa9d6ff, 20, 140)
 
-const camera = new THREE.PerspectiveCamera(
-  75,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  500,
-)
+const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 500)
 camera.position.set(0, 25, 30)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setPixelRatio(window.devicePixelRatio)
-renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.outputColorSpace = THREE.SRGBColorSpace
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.1
 document.body.appendChild(renderer.domElement)
+
+const MAX_PIXEL_RATIO = 2
+
+function resizeToViewport() {
+  const width = Math.max(window.innerWidth, 1)
+  const height = Math.max(window.innerHeight, 1)
+  camera.aspect = width / height
+  camera.updateProjectionMatrix()
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO))
+  renderer.setSize(width, height)
+}
+
+resizeToViewport()
+window.addEventListener('resize', resizeToViewport)
 
 const clock = new THREE.Clock()
 const diagnosticOverlayCallbacks = new Set()
@@ -279,6 +286,7 @@ if (!initializationError) {
   animate()
 
   window.addEventListener('beforeunload', () => {
+    window.removeEventListener('resize', resizeToViewport)
     playerControls.dispose()
     chunkManager.dispose()
     musicSystem?.dispose()
