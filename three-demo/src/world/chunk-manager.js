@@ -684,6 +684,159 @@ export function createChunkManager({
     };
   }
 
+  function removeBlockInstancesBulk({ chunk, type, entries: removalEntries }) {
+    if (!chunk || !chunk.typeData) {
+      return [];
+    }
+    const typeData = chunk.typeData.get(type);
+    if (!typeData) {
+      return [];
+    }
+    const { entries, mesh, tintAttribute } = typeData;
+    if (!mesh?.isInstancedMesh || !Array.isArray(entries) || entries.length === 0) {
+      return [];
+    }
+
+    const candidates = Array.isArray(removalEntries) ? removalEntries : [];
+    const indices = [];
+    const seen = new Set();
+
+    candidates.forEach((candidate) => {
+      if (!candidate) {
+        return;
+      }
+      const entry = candidate.entry ?? candidate;
+      if (!entry) {
+        return;
+      }
+      let index = Number.isInteger(candidate.instanceId)
+        ? candidate.instanceId
+        : Number.isInteger(entry.index)
+        ? entry.index
+        : null;
+      if (entry.key && chunk.blockLookup?.has(entry.key)) {
+        const lookup = chunk.blockLookup.get(entry.key);
+        if (Number.isInteger(lookup?.index)) {
+          index = lookup.index;
+        }
+      }
+      if (!Number.isInteger(index)) {
+        return;
+      }
+      if (index < 0 || index >= entries.length) {
+        return;
+      }
+      if (seen.has(index)) {
+        return;
+      }
+      const current = entries[index];
+      if (!current || (entry.key && current.key !== entry.key)) {
+        return;
+      }
+      seen.add(index);
+      indices.push(index);
+    });
+
+    if (indices.length === 0) {
+      return [];
+    }
+
+    indices.sort((a, b) => a - b);
+    const removalSet = new Set(indices);
+    const removedEntries = [];
+    const prototypeRefs = [];
+
+    const writeTint = (index, tintColor) => {
+      if (!tintAttribute) {
+        return;
+      }
+      const tint = tintColor ?? mesh.userData?.defaultTint;
+      if (!tint) {
+        return;
+      }
+      const offset = index * 3;
+      tintAttribute.array[offset] = tint.r;
+      tintAttribute.array[offset + 1] = tint.g;
+      tintAttribute.array[offset + 2] = tint.b;
+    };
+
+    let writeIndex = 0;
+    const totalEntries = entries.length;
+    for (let readIndex = 0; readIndex < totalEntries; readIndex += 1) {
+      const entry = entries[readIndex];
+      if (!entry) {
+        continue;
+      }
+      if (removalSet.has(readIndex)) {
+        removedEntries.push(entry);
+        if (entry.prototypeKey) {
+          prototypeRefs.push({ prototypeKey: entry.prototypeKey, entryKey: entry.key });
+        }
+        if (chunk.blockLookup) {
+          chunk.blockLookup.delete(entry.key);
+          if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+            chunk.blockLookup.delete(entry.coordinateKey);
+          }
+        }
+        if (entry.isSolid) {
+          const coordinateKey = entry.coordinateKey ?? entry.key;
+          chunk.solidBlockKeys.delete(coordinateKey);
+          solidBlocks.delete(coordinateKey);
+        }
+        if (entry.collisionMode === 'soft') {
+          const coordinateKey = entry.coordinateKey ?? entry.key;
+          chunk.softBlockKeys.delete(coordinateKey);
+          softBlocks.delete(coordinateKey);
+        }
+        if (entry.isWater) {
+          const columnKey = `${entry.position.x}|${entry.position.z}`;
+          chunk.waterColumnKeys.delete(columnKey);
+          waterColumns.delete(columnKey);
+        }
+        entry.index = -1;
+        continue;
+      }
+
+      if (writeIndex !== readIndex) {
+        entries[writeIndex] = entry;
+        mesh.setMatrixAt(writeIndex, entry.matrix);
+        writeTint(writeIndex, entry.tintColor);
+      }
+      entry.index = writeIndex;
+      if (chunk.blockLookup) {
+        if (entry.key) {
+          const lookup = chunk.blockLookup.get(entry.key);
+          if (lookup) {
+            lookup.index = writeIndex;
+          }
+        }
+        if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+          const coordinateEntry = chunk.blockLookup.get(entry.coordinateKey);
+          if (coordinateEntry) {
+            coordinateEntry.index = writeIndex;
+          }
+        }
+      }
+      writeIndex += 1;
+    }
+
+    while (entries.length > writeIndex) {
+      entries.pop();
+    }
+
+    mesh.count = entries.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (tintAttribute) {
+      tintAttribute.needsUpdate = true;
+    }
+
+    prototypeRefs.forEach(({ prototypeKey, entryKey }) => {
+      removePrototypePlacement(chunk, prototypeKey, entryKey);
+    });
+
+    return removedEntries;
+  }
+
   function removeBlockInstance({ chunk, type, instanceId }) {
     if (!chunk || typeof instanceId !== 'number' || !chunk.typeData) {
       return null;
@@ -934,35 +1087,66 @@ export function createChunkManager({
     if (!record) {
       return;
     }
+
     prototypeRemovalGuards.add(prototypeKey);
+    try {
+      const grouped = new Map();
+      const blockEntries = Array.isArray(record.blockEntries)
+        ? record.blockEntries
+        : [];
 
-    const blockEntries = Array.isArray(record.blockEntries)
-      ? [...record.blockEntries]
-      : [];
-    blockEntries.forEach(({ type, entry }) => {
-      if (!entry || (skipEntryKey && entry.key === skipEntryKey)) {
-        return;
-      }
-      const lookup = chunk.blockLookup?.get(entry.key);
-      if (!lookup || lookup.index === undefined) {
-        return;
-      }
-      removeBlockInstance({ chunk, type, instanceId: lookup.index });
-    });
-    record.blockEntries = [];
+      blockEntries.forEach((blockEntry) => {
+        if (!blockEntry) {
+          return;
+        }
+        const { type, entry } = blockEntry;
+        if (!type || !entry) {
+          return;
+        }
+        if (skipEntryKey && entry.key === skipEntryKey) {
+          return;
+        }
+        const typeData = chunk.typeData?.get(type);
+        if (!typeData || !Array.isArray(typeData.entries) || typeData.entries.length === 0) {
+          return;
+        }
+        const lookup = entry.key ? chunk.blockLookup?.get(entry.key) : null;
+        const index = Number.isInteger(lookup?.index)
+          ? lookup.index
+          : Number.isInteger(entry.index)
+          ? entry.index
+          : null;
+        if (!Number.isInteger(index) || index < 0) {
+          return;
+        }
+        if (!grouped.has(type)) {
+          grouped.set(type, []);
+        }
+        grouped.get(type).push(entry);
+      });
 
-    const decorationKeys = Array.isArray(record.decorationKeys)
-      ? [...record.decorationKeys]
-      : [];
-    decorationKeys.forEach((groupKey) => {
-      if (groupKey) {
-        removeDecorationGroup(groupKey);
-      }
-    });
-    record.decorationKeys = [];
+      grouped.forEach((entries, type) => {
+        if (!entries || entries.length === 0) {
+          return;
+        }
+        removeBlockInstancesBulk({ chunk, type, entries });
+      });
+      record.blockEntries = [];
 
-    chunk.prototypeInstances.delete(prototypeKey);
-    prototypeRemovalGuards.delete(prototypeKey);
+      const decorationKeys = Array.isArray(record.decorationKeys)
+        ? [...record.decorationKeys]
+        : [];
+      decorationKeys.forEach((groupKey) => {
+        if (groupKey) {
+          removeDecorationGroup(groupKey);
+        }
+      });
+      record.decorationKeys = [];
+
+      chunk.prototypeInstances.delete(prototypeKey);
+    } finally {
+      prototypeRemovalGuards.delete(prototypeKey);
+    }
   }
 
   return {
