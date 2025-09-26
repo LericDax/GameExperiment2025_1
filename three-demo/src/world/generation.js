@@ -113,6 +113,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     blockGeometry = new THREE.BoxGeometry(1, 1, 1);
   }
   const instancedData = new Map();
+  const decorationInstancedData = new Map();
   const solidBlockKeys = new Set();
   const softBlockKeys = new Set();
   const waterColumnKeys = new Set();
@@ -282,17 +283,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
   };
 
-  const addBlock = (type, x, y, z, biome, options = {}) => {
-    const scaleVector = resolveScaleVector(options.scale);
-    const visualScaleVector = resolveScaleVector(
-      options.visualScale ?? options.scale,
-    );
-    const visualOffsetVector = resolveOffsetVector(options.visualOffset);
-    const visualPosition = reusablePosition
-      .set(x, y, z)
-      .add(visualOffsetVector);
-    matrix.compose(visualPosition, defaultQuaternion, visualScaleVector);
-
+  const updateBoundsFromVisual = (visualPosition, visualScaleVector) => {
     const halfScaleX = Math.max(0.01, Math.abs(visualScaleVector.x) * 0.5);
     const halfScaleY = Math.max(0.01, Math.abs(visualScaleVector.y) * 0.5);
     const halfScaleZ = Math.max(0.01, Math.abs(visualScaleVector.z) * 0.5);
@@ -303,9 +294,20 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     minBoundZ = Math.min(minBoundZ, visualPosition.z - halfScaleZ);
     maxBoundZ = Math.max(maxBoundZ, visualPosition.z + halfScaleZ);
     hasBoundData = true;
-    if (!instancedData.has(type)) {
-      instancedData.set(type, []);
-    }
+  };
+
+  const createInstancedEntry = (type, x, y, z, biome, options = {}) => {
+    const scaleVector = resolveScaleVector(options.scale);
+    const visualScaleVector = resolveScaleVector(
+      options.visualScale ?? options.scale,
+    );
+    const visualOffsetVector = resolveOffsetVector(options.visualOffset);
+    const visualPosition = reusablePosition
+      .set(x, y, z)
+      .add(visualOffsetVector);
+    matrix.compose(visualPosition, defaultQuaternion, visualScaleVector);
+
+    updateBoundsFromVisual(visualPosition, visualScaleVector);
 
     const coordinateKey = blockKey(x, y, z);
     const key = options.key ?? coordinateKey;
@@ -346,7 +348,34 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       paletteBlend.multiply(tintOverride);
     }
 
-    const tintColor = paletteBlend;
+    return {
+      key,
+      coordinateKey,
+      matrix: matrix.clone(),
+      position: new THREE.Vector3(x, y, z),
+      type,
+      biomeId: biome?.id ?? null,
+      paletteColor,
+      tintColor: paletteBlend,
+      scale: scaleVector.clone(),
+      visualScale: visualScaleVector.clone(),
+      visualOffset: visualOffsetVector.clone(),
+      sourceObjectId: options.sourceObjectId ?? null,
+      voxelIndex: options.voxelIndex ?? null,
+      metadata: options.metadata ?? null,
+      tintOverride,
+    };
+  };
+
+  const addBlock = (type, x, y, z, biome, options = {}) => {
+    const entry = createInstancedEntry(type, x, y, z, biome, options);
+
+    if (!instancedData.has(type)) {
+      instancedData.set(type, []);
+    }
+
+    const coordinateKey = entry.coordinateKey;
+    const key = entry.key;
 
     const isWater = type === 'water';
     const isFluid = isFluidType(type);
@@ -404,28 +433,12 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       }
       return;
     }
-    const entry = {
-      key,
-      coordinateKey,
-      matrix: matrix.clone(),
-      position: new THREE.Vector3(x, y, z),
-      type,
-      biomeId: biome?.id ?? null,
-      paletteColor,
-      tintColor,
-      scale: scaleVector.clone(),
-      visualScale: visualScaleVector.clone(),
-      visualOffset: visualOffsetVector.clone(),
-      sourceObjectId: options.sourceObjectId ?? null,
-      voxelIndex: options.voxelIndex ?? null,
-      metadata: options.metadata ?? null,
-      tintOverride,
-      isSolid,
-      isWater,
-      destructible,
 
-      collisionMode,
-    };
+    entry.isSolid = isSolid;
+    entry.isWater = isWater;
+    entry.destructible = destructible;
+    entry.collisionMode = collisionMode;
+
     instancedData.get(type).push(entry);
     blockLookup.set(key, entry);
     if (key !== coordinateKey) {
@@ -436,8 +449,70 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
     if (isSoft) {
       softBlockKeys.add(coordinateKey);
-
     }
+  };
+
+  const addDecorationInstance = (type, x, y, z, biome, options = {}) => {
+    const entry = createInstancedEntry(type, x, y, z, biome, options);
+    if (!decorationInstancedData.has(type)) {
+      decorationInstancedData.set(type, []);
+    }
+    decorationInstancedData.get(type).push(entry);
+  };
+
+  const buildInstancedMesh = (entries, type) => {
+    const geometry = blockGeometry.clone();
+    const mesh = new THREE.InstancedMesh(
+      geometry,
+      blockMaterials[type],
+      entries.length,
+    );
+    mesh.userData.defaultTint = new THREE.Color(1, 1, 1);
+
+    const tintArray = new Float32Array(entries.length * 3);
+    const tintAttribute = new THREE.InstancedBufferAttribute(tintArray, 3);
+    tintAttribute.setUsage(THREE.DynamicDrawUsage);
+    mesh.geometry.setAttribute('biomeTint', tintAttribute);
+
+    entries.forEach((entry, index) => {
+      mesh.setMatrixAt(index, entry.matrix);
+      entry.index = index;
+      const tint = entry.tintColor ?? mesh.userData.defaultTint;
+      const offset = index * 3;
+      tintAttribute.array[offset] = tint.r;
+      tintAttribute.array[offset + 1] = tint.g;
+      tintAttribute.array[offset + 2] = tint.b;
+    });
+
+    mesh.count = entries.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    tintAttribute.needsUpdate = true;
+    mesh.castShadow = ['cloud', 'water'].includes(type) ? false : true;
+    mesh.receiveShadow = type !== 'cloud';
+    mesh.frustumCulled = false;
+    mesh.userData.type = type;
+    mesh.userData.biomePalette = true;
+    mesh.userData.biomeTintAttribute = tintAttribute;
+
+    return { mesh, tintAttribute };
+  };
+
+  const addMeshesFromMap = (targetGroup, map, { decoration = false } = {}) => {
+    map.forEach((entries, type) => {
+      if (isFluidType(type)) {
+        return;
+      }
+      if (!entries || entries.length === 0) {
+        return;
+      }
+      const { mesh, tintAttribute } = buildInstancedMesh(entries, type);
+      if (decoration) {
+        mesh.userData.decoration = true;
+      } else {
+        typeData.set(type, { entries, mesh, tintAttribute });
+      }
+      targetGroup.add(mesh);
+    });
   };
 
   for (let lx = 0; lx < chunkSize; lx++) {
@@ -487,6 +562,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
       populateColumnWithVoxelObjects({
         addBlock,
+        addDecorationInstance,
         biome,
         columnSample,
         groundHeight: height,
@@ -622,47 +698,8 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   }
 
   const group = new THREE.Group();
-  instancedData.forEach((entries, type) => {
-    if (isFluidType(type)) {
-      return;
-    }
-    if (entries.length === 0) {
-      return;
-    }
-    const geometry = blockGeometry.clone();
-    const mesh = new THREE.InstancedMesh(
-      geometry,
-      blockMaterials[type],
-      entries.length,
-    );
-    mesh.userData.defaultTint = new THREE.Color(1, 1, 1);
-
-    const tintArray = new Float32Array(entries.length * 3);
-    const tintAttribute = new THREE.InstancedBufferAttribute(tintArray, 3);
-    tintAttribute.setUsage(THREE.DynamicDrawUsage);
-    mesh.geometry.setAttribute('biomeTint', tintAttribute);
-
-    entries.forEach((entry, index) => {
-      mesh.setMatrixAt(index, entry.matrix);
-      entry.index = index;
-      const tint = entry.tintColor ?? mesh.userData.defaultTint;
-      const offset = index * 3;
-      tintAttribute.array[offset] = tint.r;
-      tintAttribute.array[offset + 1] = tint.g;
-      tintAttribute.array[offset + 2] = tint.b;
-    });
-    mesh.count = entries.length;
-    mesh.instanceMatrix.needsUpdate = true;
-    tintAttribute.needsUpdate = true;
-    mesh.castShadow = ['cloud', 'water'].includes(type) ? false : true;
-    mesh.receiveShadow = type !== 'cloud';
-    mesh.frustumCulled = false;
-    mesh.userData.type = type;
-    mesh.userData.biomePalette = true;
-    mesh.userData.biomeTintAttribute = tintAttribute;
-    typeData.set(type, { entries, mesh, tintAttribute });
-    group.add(mesh);
-  });
+  addMeshesFromMap(group, instancedData);
+  addMeshesFromMap(group, decorationInstancedData, { decoration: true });
 
   logFluidDebug('fluid surfaces count before group add', fluidSurfaces.length);
   fluidSurfaces.forEach((surface) => {
