@@ -112,6 +112,13 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const waterColumnKeys = new Set();
   const fluidColumnsByType = new Map();
   const fluidSurfaces = [];
+  let minBoundX = Number.POSITIVE_INFINITY;
+  let minBoundY = Number.POSITIVE_INFINITY;
+  let minBoundZ = Number.POSITIVE_INFINITY;
+  let maxBoundX = Number.NEGATIVE_INFINITY;
+  let maxBoundY = Number.NEGATIVE_INFINITY;
+  let maxBoundZ = Number.NEGATIVE_INFINITY;
+  let hasBoundData = false;
   const matrix = new THREE.Matrix4();
   const defaultQuaternion = new THREE.Quaternion();
   const reusablePosition = new THREE.Vector3();
@@ -279,6 +286,17 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       .set(x, y, z)
       .add(visualOffsetVector);
     matrix.compose(visualPosition, defaultQuaternion, visualScaleVector);
+
+    const halfScaleX = Math.max(0.01, Math.abs(visualScaleVector.x) * 0.5);
+    const halfScaleY = Math.max(0.01, Math.abs(visualScaleVector.y) * 0.5);
+    const halfScaleZ = Math.max(0.01, Math.abs(visualScaleVector.z) * 0.5);
+    minBoundX = Math.min(minBoundX, visualPosition.x - halfScaleX);
+    maxBoundX = Math.max(maxBoundX, visualPosition.x + halfScaleX);
+    minBoundY = Math.min(minBoundY, visualPosition.y - halfScaleY);
+    maxBoundY = Math.max(maxBoundY, visualPosition.y + halfScaleY);
+    minBoundZ = Math.min(minBoundZ, visualPosition.z - halfScaleZ);
+    maxBoundZ = Math.max(maxBoundZ, visualPosition.z + halfScaleZ);
+    hasBoundData = true;
     if (!instancedData.has(type)) {
       instancedData.set(type, []);
     }
@@ -677,6 +695,27 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     blockLookup,
     typeData,
     biomes,
+    bounds: (() => {
+      if (!hasBoundData) {
+        const halfSize = chunkSize / 2;
+        return {
+          minX: chunkX * chunkSize - halfSize - 0.5,
+          maxX: chunkX * chunkSize + halfSize + 0.5,
+          minZ: chunkZ * chunkSize - halfSize - 0.5,
+          maxZ: chunkZ * chunkSize + halfSize + 0.5,
+          minY: -32,
+          maxY: worldConfig.maxHeight + 32,
+        };
+      }
+      return {
+        minX: minBoundX,
+        maxX: maxBoundX,
+        minY: minBoundY,
+        maxY: maxBoundY,
+        minZ: minBoundZ,
+        maxZ: maxBoundZ,
+      };
+    })(),
   };
 }
 

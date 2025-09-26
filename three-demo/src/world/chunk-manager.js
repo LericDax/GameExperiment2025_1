@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 import { generateChunk, worldConfig } from './generation.js';
 import { disposeFluidSurface } from './fluids/fluid-registry.js';
 
@@ -62,12 +64,74 @@ export function createChunkManager({
   const pendingPreloadKeys = new Set();
   let queueDirty = false;
 
+  const chunkCullFrustum = new THREE.Frustum();
+  const chunkCullMatrix = new THREE.Matrix4();
+  const chunkCullPadding = 1.5;
+  let lastCamera = null;
+
+  function applyChunkBounds(chunk) {
+    if (!chunk) {
+      return;
+    }
+
+    const { chunkSize, maxHeight } = worldConfig;
+    const halfSize = chunkSize / 2;
+    const fallbackMinX = chunk.chunkX * chunkSize - halfSize - 0.5;
+    const fallbackMaxX = chunk.chunkX * chunkSize + halfSize + 0.5;
+    const fallbackMinZ = chunk.chunkZ * chunkSize - halfSize - 0.5;
+    const fallbackMaxZ = chunk.chunkZ * chunkSize + halfSize + 0.5;
+    const bounds = chunk.bounds ?? {};
+    const minX = Number.isFinite(bounds.minX) ? bounds.minX : fallbackMinX;
+    const maxX = Number.isFinite(bounds.maxX) ? bounds.maxX : fallbackMaxX;
+    const minZ = Number.isFinite(bounds.minZ) ? bounds.minZ : fallbackMinZ;
+    const maxZ = Number.isFinite(bounds.maxZ) ? bounds.maxZ : fallbackMaxZ;
+    const minY = Number.isFinite(bounds.minY) ? bounds.minY : -32;
+    const maxY = Number.isFinite(bounds.maxY)
+      ? bounds.maxY
+      : maxHeight + 32;
+
+    const box = chunk.boundsBox ?? new THREE.Box3();
+    box.min.set(minX - chunkCullPadding, minY - chunkCullPadding, minZ - chunkCullPadding);
+    box.max.set(maxX + chunkCullPadding, maxY + chunkCullPadding, maxZ + chunkCullPadding);
+    chunk.boundsBox = box;
+  }
+
+  function updateChunkVisibility(camera) {
+    if (!camera) {
+      loadedChunks.forEach((chunk) => {
+        if (chunk?.group) {
+          chunk.group.visible = true;
+        }
+      });
+      return;
+    }
+
+    chunkCullMatrix.multiplyMatrices(
+      camera.projectionMatrix,
+      camera.matrixWorldInverse,
+    );
+    chunkCullFrustum.setFromProjectionMatrix(chunkCullMatrix);
+
+    loadedChunks.forEach((chunk) => {
+      if (!chunk?.group) {
+        return;
+      }
+      const visible = chunk.boundsBox
+        ? chunkCullFrustum.intersectsBox(chunk.boundsBox)
+        : true;
+      chunk.group.visible = visible;
+    });
+  }
+
+
   function ensureChunk(chunkX, chunkZ) {
     const key = chunkKey(chunkX, chunkZ);
     if (loadedChunks.has(key)) {
       return;
     }
     const chunk = generateChunk(blockMaterials, chunkX, chunkZ);
+    chunk.group.frustumCulled = false;
+    applyChunkBounds(chunk);
     chunk.group.children.forEach((child) => {
       if (!child.isInstancedMesh) {
         return;
@@ -103,6 +167,9 @@ export function createChunkManager({
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.delete(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.delete(block));
     (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.delete(column));
+    if (chunk.boundsBox) {
+      chunk.boundsBox.makeEmpty?.();
+    }
     loadedChunks.delete(key);
   }
 
@@ -189,6 +256,13 @@ export function createChunkManager({
     const centerChunkZ = worldToChunk(position.z);
     const centerKey = chunkKey(centerChunkX, centerChunkZ);
 
+
+    if (options.camera) {
+      lastCamera = options.camera;
+    }
+    const camera = options.camera ?? lastCamera;
+    const shouldUpdateVisibility = Boolean(camera);
+
     const desiredViewDistance = Math.max(
       0,
       normalizeDistance(options.viewDistance, currentViewDistance),
@@ -215,6 +289,11 @@ export function createChunkManager({
       !retentionChanged &&
       !queueHasWork
     ) {
+
+      if (shouldUpdateVisibility) {
+        updateChunkVisibility(camera);
+      }
+
       return;
     }
 
@@ -233,6 +312,7 @@ export function createChunkManager({
     for (let dx = -finiteView; dx <= finiteView; dx += 1) {
       for (let dz = -finiteView; dz <= finiteView; dz += 1) {
         ensureChunk(centerChunkX + dx, centerChunkZ + dz);
+
       }
     }
 
@@ -252,6 +332,7 @@ export function createChunkManager({
         }
       }
     }
+
 
     loadedChunks.forEach((chunk, key) => {
       const chunkX =
@@ -273,18 +354,34 @@ export function createChunkManager({
 
     if (preloadBudget === Number.POSITIVE_INFINITY) {
       processPreloadQueue(Number.POSITIVE_INFINITY);
+
+      if (shouldUpdateVisibility) {
+        updateChunkVisibility(camera);
+      }
+
       return;
     }
 
     if (force && preloadBudget === 0) {
       // Ensure at least one chunk is processed when forcing an update.
       processPreloadQueue(maxPreloadPerUpdate);
+
+      if (shouldUpdateVisibility) {
+        updateChunkVisibility(camera);
+      }
+
       return;
     }
 
     if (preloadBudget > 0) {
       processPreloadQueue(preloadBudget);
     }
+
+
+    if (shouldUpdateVisibility) {
+      updateChunkVisibility(camera);
+    }
+
   }
 
   function dispose() {

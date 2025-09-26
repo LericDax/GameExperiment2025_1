@@ -179,7 +179,7 @@ try {
     onStateChange: updateHud,
   })
 
-  chunkManager.update(playerControls.getPosition())
+  chunkManager.update(playerControls.getPosition(), { camera })
   updateHud(playerControls.getState())
 
   if (import.meta.env.DEV) {
@@ -254,7 +254,7 @@ if (!initializationError) {
     const delta = Math.min(clock.getDelta(), 0.05)
     const elapsedTime = clock.elapsedTime
 
-    chunkManager.update(playerControls.getPosition())
+    chunkManager.update(playerControls.getPosition(), { camera })
     playerControls.update(delta)
     updateFluids(delta)
 
