@@ -1141,8 +1141,13 @@ export function createPlayerControls({
       return;
     }
 
-    if (!attackState.target || attackState.target.entry.key !== blockInfo.entry.key) {
-      attackState.target = blockInfo;
+    const placementKey = blockInfo.entry.ownerPlacementKey ?? blockInfo.entry.key;
+
+    if (!attackState.target || attackState.target.placementKey !== placementKey) {
+      attackState.target = {
+        ...blockInfo,
+        placementKey,
+      };
       attackState.progress = 0;
     }
 
