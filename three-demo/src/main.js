@@ -158,6 +158,8 @@ try {
     scene,
     blockMaterials,
     viewDistance: 2,
+    retainDistance: 4,
+    maxPreloadPerUpdate: 3,
   })
 
   playerControls = createPlayerControls({
