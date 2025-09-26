@@ -246,11 +246,19 @@ export function createPlayerControls({
   }
 
   function preloadChunksAround(position) {
-    if (!chunkManager || typeof chunkManager.update !== 'function') {
+    if (!chunkManager) {
       return false;
     }
     try {
-      chunkManager.update(position);
+      const preferredRadius =
+        typeof chunkManager.getRetentionDistance === 'function'
+          ? chunkManager.getRetentionDistance()
+          : undefined;
+      if (typeof chunkManager.preloadAround === 'function') {
+        chunkManager.preloadAround(position, preferredRadius);
+      } else if (typeof chunkManager.update === 'function') {
+        chunkManager.update(position);
+      }
       return true;
     } catch (error) {
       console.error('Failed to update chunks near position:', position, error);
