@@ -63,6 +63,7 @@ export function createChunkManager({
   const preloadQueue = [];
   const pendingPreloadKeys = new Set();
   let queueDirty = false;
+
   const chunkCullFrustum = new THREE.Frustum();
   const chunkCullMatrix = new THREE.Matrix4();
   const chunkCullPadding = 1.5;
@@ -121,6 +122,7 @@ export function createChunkManager({
       chunk.group.visible = visible;
     });
   }
+
 
   function ensureChunk(chunkX, chunkZ) {
     const key = chunkKey(chunkX, chunkZ);
@@ -254,6 +256,7 @@ export function createChunkManager({
     const centerChunkZ = worldToChunk(position.z);
     const centerKey = chunkKey(centerChunkX, centerChunkZ);
 
+
     if (options.camera) {
       lastCamera = options.camera;
     }
@@ -286,9 +289,11 @@ export function createChunkManager({
       !retentionChanged &&
       !queueHasWork
     ) {
+
       if (shouldUpdateVisibility) {
         updateChunkVisibility(camera);
       }
+
       return;
     }
 
@@ -307,6 +312,7 @@ export function createChunkManager({
     for (let dx = -finiteView; dx <= finiteView; dx += 1) {
       for (let dz = -finiteView; dz <= finiteView; dz += 1) {
         ensureChunk(centerChunkX + dx, centerChunkZ + dz);
+
       }
     }
 
@@ -326,6 +332,7 @@ export function createChunkManager({
         }
       }
     }
+
 
     loadedChunks.forEach((chunk, key) => {
       const chunkX =
@@ -347,18 +354,22 @@ export function createChunkManager({
 
     if (preloadBudget === Number.POSITIVE_INFINITY) {
       processPreloadQueue(Number.POSITIVE_INFINITY);
+
       if (shouldUpdateVisibility) {
         updateChunkVisibility(camera);
       }
+
       return;
     }
 
     if (force && preloadBudget === 0) {
       // Ensure at least one chunk is processed when forcing an update.
       processPreloadQueue(maxPreloadPerUpdate);
+
       if (shouldUpdateVisibility) {
         updateChunkVisibility(camera);
       }
+
       return;
     }
 
@@ -366,9 +377,11 @@ export function createChunkManager({
       processPreloadQueue(preloadBudget);
     }
 
+
     if (shouldUpdateVisibility) {
       updateChunkVisibility(camera);
     }
+
   }
 
   function dispose() {
