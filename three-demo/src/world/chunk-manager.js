@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import { generateChunk, worldConfig } from './generation.js';
 import { disposeFluidSurface } from './fluids/fluid-registry.js';
+import { createDecorationMeshBatches } from './voxel-object-decoration-mesh.js';
 
 function chunkKey(x, z) {
   return `${x}|${z}`;
@@ -53,6 +54,8 @@ export function createChunkManager({
   const solidBlocks = new Set();
   const softBlocks = new Set();
   const waterColumns = new Set();
+  const decorationGroupsByKey = new Map();
+  const decorationOwnersIndex = new Map();
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   let lastCenterKey = null;
   let currentViewDistance = normalizeDistance(viewDistance, 1);
@@ -123,6 +126,38 @@ export function createChunkManager({
     });
   }
 
+  function registerDecorationGroup(chunkKey, group) {
+    if (!group || !group.key) {
+      return;
+    }
+    group.chunkKey = chunkKey;
+    decorationGroupsByKey.set(group.key, group);
+    if (group.owner !== null && group.owner !== undefined) {
+      let ownerSet = decorationOwnersIndex.get(group.owner);
+      if (!ownerSet) {
+        ownerSet = new Set();
+        decorationOwnersIndex.set(group.owner, ownerSet);
+      }
+      ownerSet.add(group.key);
+    }
+  }
+
+  function unregisterDecorationGroup(group) {
+    if (!group || !group.key) {
+      return;
+    }
+    decorationGroupsByKey.delete(group.key);
+    if (group.owner !== null && group.owner !== undefined) {
+      const ownerSet = decorationOwnersIndex.get(group.owner);
+      if (ownerSet) {
+        ownerSet.delete(group.key);
+        if (ownerSet.size === 0) {
+          decorationOwnersIndex.delete(group.owner);
+        }
+      }
+    }
+  }
+
 
   function ensureChunk(chunkX, chunkZ) {
     const key = chunkKey(chunkX, chunkZ);
@@ -150,6 +185,15 @@ export function createChunkManager({
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.add(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
     (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.add(column));
+    if (!chunk.decorationGroups) {
+      chunk.decorationGroups = new Map();
+    }
+    if (!chunk.decorationOwnerIndex) {
+      chunk.decorationOwnerIndex = new Map();
+    }
+    chunk.decorationGroups.forEach((group) => {
+      registerDecorationGroup(key, group);
+    });
     loadedChunks.set(key, chunk);
   }
 
@@ -167,6 +211,11 @@ export function createChunkManager({
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.delete(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.delete(block));
     (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.delete(column));
+    if (chunk.decorationGroups) {
+      chunk.decorationGroups.forEach((group) => {
+        unregisterDecorationGroup(group);
+      });
+    }
     if (chunk.boundsBox) {
       chunk.boundsBox.makeEmpty?.();
     }
@@ -648,6 +697,178 @@ export function createChunkManager({
     return removed;
   }
 
+  function removeDecorationGroup(groupKey) {
+    if (!groupKey) {
+      return null;
+    }
+    const group = decorationGroupsByKey.get(groupKey);
+    if (!group) {
+      return null;
+    }
+    const chunkKey = group.chunkKey;
+    const chunk = loadedChunks.get(chunkKey);
+    if (!chunk) {
+      unregisterDecorationGroup(group);
+      return null;
+    }
+    if (!chunk.decorationGroups) {
+      chunk.decorationGroups = new Map();
+    }
+    if (!chunk.decorationData) {
+      chunk.decorationData = new Map();
+    }
+    const type = group.type;
+    const decorationData = chunk.decorationData.get(type);
+    if (!decorationData) {
+      chunk.decorationGroups.delete(group.key);
+      unregisterDecorationGroup(group);
+      chunk.decorationOwnerIndex = new Map();
+      chunk.decorationGroups.forEach((metadata) => {
+        if (metadata.owner === null || metadata.owner === undefined) {
+          return;
+        }
+        let ownerSet = chunk.decorationOwnerIndex.get(metadata.owner);
+        if (!ownerSet) {
+          ownerSet = new Set();
+          chunk.decorationOwnerIndex.set(metadata.owner, ownerSet);
+        }
+        ownerSet.add(metadata.key);
+      });
+      return null;
+    }
+    const { entries, mesh, tintAttribute } = decorationData;
+    if (!mesh || !mesh.isInstancedMesh) {
+      chunk.decorationGroups.delete(group.key);
+      unregisterDecorationGroup(group);
+      return null;
+    }
+    if (!entries || entries.length === 0) {
+      chunk.decorationGroups.delete(group.key);
+      unregisterDecorationGroup(group);
+      return null;
+    }
+
+    const indicesToRemove = new Set(group.instanceIndices || []);
+    if (indicesToRemove.size === 0) {
+      chunk.decorationGroups.delete(group.key);
+      unregisterDecorationGroup(group);
+      return null;
+    }
+
+    const remainingEntries = [];
+    const removedEntries = [];
+    entries.forEach((entry, index) => {
+      if (indicesToRemove.has(index)) {
+        removedEntries.push(entry);
+      } else {
+        remainingEntries.push(entry);
+      }
+    });
+
+    if (removedEntries.length === 0) {
+      return null;
+    }
+
+    decorationData.entries = remainingEntries;
+
+    removedEntries.forEach((entry) => {
+      if (!entry || !chunk.blockLookup) {
+        return;
+      }
+      chunk.blockLookup.delete(entry.key);
+      if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+        chunk.blockLookup.delete(entry.coordinateKey);
+      }
+    });
+
+    remainingEntries.forEach((entry, index) => {
+      mesh.setMatrixAt(index, entry.matrix);
+      entry.index = index;
+      if (tintAttribute) {
+        const tint = entry.tintColor ?? mesh.userData?.defaultTint;
+        if (tint) {
+          const offset = index * 3;
+          tintAttribute.array[offset] = tint.r;
+          tintAttribute.array[offset + 1] = tint.g;
+          tintAttribute.array[offset + 2] = tint.b;
+        }
+      }
+    });
+    mesh.count = remainingEntries.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (tintAttribute) {
+      tintAttribute.needsUpdate = true;
+    }
+
+    const existingTypeGroups = [];
+    chunk.decorationGroups.forEach((existingGroup) => {
+      if (existingGroup.type === type) {
+        existingTypeGroups.push(existingGroup);
+      }
+    });
+
+    existingTypeGroups.forEach((existingGroup) => {
+      chunk.decorationGroups.delete(existingGroup.key);
+      unregisterDecorationGroup(existingGroup);
+    });
+
+    const { groups: rebuiltGroups } = createDecorationMeshBatches(remainingEntries);
+    rebuiltGroups.forEach((info) => {
+      const instanceIndices = info.entryIndices.slice();
+      const metadata = {
+        key: info.key,
+        owner: info.owner ?? null,
+        destructible:
+          typeof info.destructible === 'boolean' ? info.destructible : true,
+        type,
+        mesh,
+        tintAttribute,
+        instanceIndices,
+      };
+      chunk.decorationGroups.set(metadata.key, metadata);
+      registerDecorationGroup(chunkKey, metadata);
+      metadata.instanceIndices.forEach((instanceIndex) => {
+        const entry = remainingEntries[instanceIndex];
+        if (!entry) {
+          return;
+        }
+        entry.decorationGroup = metadata;
+        entry.decorationGroupKey = metadata.key;
+        entry.mesh = mesh;
+        entry.tintAttribute = tintAttribute;
+        entry.isDecoration = true;
+        if (chunk.blockLookup) {
+          chunk.blockLookup.set(entry.key, entry);
+          if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+            chunk.blockLookup.set(entry.coordinateKey, entry);
+          }
+        }
+      });
+    });
+
+    if (!chunk.decorationOwnerIndex) {
+      chunk.decorationOwnerIndex = new Map();
+    }
+    chunk.decorationOwnerIndex.clear();
+    chunk.decorationGroups.forEach((metadata) => {
+      if (metadata.owner === null || metadata.owner === undefined) {
+        return;
+      }
+      let ownerSet = chunk.decorationOwnerIndex.get(metadata.owner);
+      if (!ownerSet) {
+        ownerSet = new Set();
+        chunk.decorationOwnerIndex.set(metadata.owner, ownerSet);
+      }
+      ownerSet.add(metadata.key);
+    });
+
+    return {
+      chunk,
+      groupKey,
+      removedCount: removedEntries.length,
+    };
+  }
+
   return {
     update,
     dispose,
@@ -656,6 +877,7 @@ export function createChunkManager({
     waterColumns,
     getBlockFromIntersection,
     removeBlockInstance,
+    removeDecorationGroup,
     preloadAround,
     setViewDistance,
     setRetentionDistance,
