@@ -9,7 +9,6 @@ import {
   markPlacementCompleted,
 } from './sector-object-planner.js';
 import { ValueNoise2D } from './noise.js';
-import { createDecorationMeshBatches } from './voxel-object-decoration-mesh.js';
 
 const objectDensityField = new ValueNoise2D(9103);
 
@@ -813,11 +812,7 @@ function computeDecorativePlacements(voxel, basePlacement, object) {
   return [];
 }
 
-export function placeVoxelObject(
-  addBlock,
-  object,
-  { origin, biome, addDecorationMesh = null, THREE = null } = {},
-) {
+export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
   if (!object || typeof addBlock !== 'function') {
     return;
   }
@@ -875,38 +870,30 @@ export function placeVoxelObject(
     });
 
     const decorativePlacements = computeDecorativePlacements(voxel, basePlacement, object);
+    decorativePlacements.forEach((placement) => {
+      addBlock(
+        placement.type,
+        placement.worldX,
+        placement.worldY,
+        placement.worldZ,
+        biome,
+        placement.options,
+      );
+
+    });
+
     const nanovoxelPlacements = computeNanovoxelPlacements(voxel, basePlacement, object);
-    const decorationPlacements = [...decorativePlacements, ...nanovoxelPlacements];
-    if (decorationPlacements.length > 0) {
-      const canBatch = typeof addDecorationMesh === 'function' && THREE;
-      if (canBatch) {
-        const batches = createDecorationMeshBatches({
-          THREE,
-          placements: decorationPlacements,
-          origin: { x: worldX, y: worldY, z: worldZ },
-        });
-        batches.forEach((batch) => {
-          addDecorationMesh({
-            type: batch.type,
-            geometry: batch.geometry,
-            origin: batch.origin,
-            biome,
-            segments: batch.segments,
-          });
-        });
-      } else {
-        decorationPlacements.forEach((placement) => {
-          addBlock(
-            placement.type,
-            placement.worldX,
-            placement.worldY,
-            placement.worldZ,
-            biome,
-            placement.options,
-          );
-        });
-      }
-    }
+    nanovoxelPlacements.forEach((placement) => {
+      addBlock(
+        placement.type,
+        placement.worldX,
+        placement.worldY,
+        placement.worldZ,
+        biome,
+        placement.options,
+      );
+
+    });
   });
 }
 
@@ -924,8 +911,6 @@ function selectObject(category, biome, randomSource, randomOffset) {
 
 export function populateColumnWithVoxelObjects({
   addBlock,
-  addDecorationMesh = null,
-  THREE = null,
   biome,
   columnSample,
   groundHeight,
@@ -1125,12 +1110,7 @@ export function populateColumnWithVoxelObjects({
         y: groundHeight + (object.attachment?.groundOffset ?? object.voxelScale),
         z: baseZ + Math.sin(angle) * radius,
       };
-      placeVoxelObject(addBlock, object, {
-        origin,
-        biome,
-        addDecorationMesh,
-        THREE,
-      });
+      placeVoxelObject(addBlock, object, { origin, biome });
     }
     return true;
   };
