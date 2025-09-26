@@ -10,36 +10,13 @@ function worldToChunk(value) {
   return Math.floor((value + halfSize) / worldConfig.chunkSize);
 }
 
-function normalizeDistance(value, fallback) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return Math.max(0, Math.floor(fallback ?? 0));
-  }
-  return Math.max(0, Math.floor(numeric));
-}
-
-export function createChunkManager({
-  scene,
-  blockMaterials,
-  viewDistance = 1,
-  retainDistance: initialRetainDistance,
-  maxPreloadPerUpdate = 4,
-}) {
+export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) {
   const loadedChunks = new Map();
   const solidBlocks = new Set();
   const softBlocks = new Set();
   const waterColumns = new Set();
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   let lastCenterKey = null;
-  let currentViewDistance = normalizeDistance(viewDistance, 1);
-  let retentionDistance = Math.max(
-    currentViewDistance,
-    normalizeDistance(initialRetainDistance, currentViewDistance)
-  );
-  const preloadQueue = [];
-  const pendingPreloadKeys = new Set();
-  let queueDirty = false;
-  let lastImmediateRadius = currentViewDistance;
 
   function ensureChunk(chunkX, chunkZ) {
     const key = chunkKey(chunkX, chunkZ);
@@ -85,141 +62,37 @@ export function createChunkManager({
     loadedChunks.delete(key);
   }
 
-  function schedulePreload(chunkX, chunkZ, priority) {
-    const key = chunkKey(chunkX, chunkZ);
-    if (loadedChunks.has(key) || pendingPreloadKeys.has(key)) {
-      return;
-    }
-    pendingPreloadKeys.add(key);
-    preloadQueue.push({ key, chunkX, chunkZ, priority });
-    queueDirty = true;
-  }
-
-  function processPreloadQueue(limit) {
-    if (preloadQueue.length === 0) {
-      return 0;
-    }
-    if (queueDirty) {
-      preloadQueue.sort((a, b) => a.priority - b.priority);
-      queueDirty = false;
-    }
-    let processed = 0;
-    while (preloadQueue.length > 0 && processed < limit) {
-      const next = preloadQueue.shift();
-      pendingPreloadKeys.delete(next.key);
-      if (loadedChunks.has(next.key)) {
-        continue;
-      }
-      ensureChunk(next.chunkX, next.chunkZ);
-      processed += 1;
-    }
-    return processed;
-  }
-
-  function update(position, options = {}) {
-    const {
-      loadRadius,
-      skipUnload = false,
-      force = false,
-      maxPreloadPerFrame,
-    } = options ?? {};
+  function update(position) {
     const centerChunkX = worldToChunk(position.x);
     const centerChunkZ = worldToChunk(position.z);
     const centerKey = chunkKey(centerChunkX, centerChunkZ);
 
-    const desiredRadius = Math.max(
-      retentionDistance,
-      currentViewDistance,
-      normalizeDistance(loadRadius, 0)
-    );
-
-    const immediateRadius = Math.max(
-      currentViewDistance,
-      normalizeDistance(loadRadius, currentViewDistance)
-    );
-
-    const centerChanged = centerKey !== lastCenterKey;
-    const radiusReduced = immediateRadius < lastImmediateRadius;
-    if ((centerChanged || radiusReduced) && preloadQueue.length > 0) {
-      let removedAny = false;
-      for (let i = preloadQueue.length - 1; i >= 0; i -= 1) {
-        const entry = preloadQueue[i];
-        const distanceX = Math.abs(entry.chunkX - centerChunkX);
-        const distanceZ = Math.abs(entry.chunkZ - centerChunkZ);
-        if (distanceX > desiredRadius || distanceZ > desiredRadius) {
-          preloadQueue.splice(i, 1);
-          pendingPreloadKeys.delete(entry.key);
-          removedAny = true;
-        }
-      }
-      if (removedAny) {
-        queueDirty = true;
-      }
-    }
-    const shouldProcess =
-      force || centerChanged || radiusReduced || preloadQueue.length > 0;
-    if (!shouldProcess && loadedChunks.size > 0) {
+    if (centerKey === lastCenterKey && loadedChunks.size > 0) {
       return;
     }
 
-    for (let dx = -immediateRadius; dx <= immediateRadius; dx++) {
-      for (let dz = -immediateRadius; dz <= immediateRadius; dz++) {
-        ensureChunk(centerChunkX + dx, centerChunkZ + dz);
+    const needed = new Set();
+    for (let dx = -viewDistance; dx <= viewDistance; dx++) {
+      for (let dz = -viewDistance; dz <= viewDistance; dz++) {
+        const chunkX = centerChunkX + dx;
+        const chunkZ = centerChunkZ + dz;
+        const key = chunkKey(chunkX, chunkZ);
+        needed.add(key);
+        ensureChunk(chunkX, chunkZ);
       }
     }
 
-    if (desiredRadius > immediateRadius) {
-      for (let dx = -desiredRadius; dx <= desiredRadius; dx++) {
-        for (let dz = -desiredRadius; dz <= desiredRadius; dz++) {
-          const maxDistance = Math.max(Math.abs(dx), Math.abs(dz));
-          if (maxDistance <= immediateRadius) {
-            continue;
-          }
-          const chunkX = centerChunkX + dx;
-          const chunkZ = centerChunkZ + dz;
-          const priority = dx * dx + dz * dz;
-          schedulePreload(chunkX, chunkZ, priority);
-        }
+    Array.from(loadedChunks.keys()).forEach((key) => {
+      if (!needed.has(key)) {
+        disposeChunk(key);
       }
-    }
-
-    const preloadLimit = Math.max(
-      1,
-      normalizeDistance(
-        maxPreloadPerFrame,
-        normalizeDistance(maxPreloadPerUpdate, maxPreloadPerUpdate)
-      )
-    );
-    processPreloadQueue(preloadLimit);
-
-    if (!skipUnload) {
-      const unloadRadius = desiredRadius;
-      loadedChunks.forEach((chunk, key) => {
-        const chunkX =
-          typeof chunk?.chunkX === 'number'
-            ? chunk.chunkX
-            : Number.parseInt(key.split('|')[0], 10);
-        const chunkZ =
-          typeof chunk?.chunkZ === 'number'
-            ? chunk.chunkZ
-            : Number.parseInt(key.split('|')[1], 10);
-        const distanceX = Math.abs(chunkX - centerChunkX);
-        const distanceZ = Math.abs(chunkZ - centerChunkZ);
-        if (distanceX > unloadRadius || distanceZ > unloadRadius) {
-          disposeChunk(key);
-        }
-      });
-    }
+    });
 
     lastCenterKey = centerKey;
-    lastImmediateRadius = immediateRadius;
   }
 
   function dispose() {
     Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
-    preloadQueue.length = 0;
-    pendingPreloadKeys.clear();
-    queueDirty = false;
   }
 
   function computeMaterialVisibility(material) {
@@ -416,43 +289,6 @@ export function createChunkManager({
     return removed;
   }
 
-  function preloadAround(position, distance) {
-    const preloadRadius = Math.max(
-      currentViewDistance,
-      normalizeDistance(distance, retentionDistance)
-    );
-    setRetentionDistance(preloadRadius);
-    update(position, {
-      loadRadius: currentViewDistance,
-      skipUnload: true,
-      force: true,
-    });
-  }
-
-  function setViewDistance(distance) {
-    currentViewDistance = normalizeDistance(distance, currentViewDistance);
-    if (retentionDistance < currentViewDistance) {
-      retentionDistance = currentViewDistance;
-    }
-    lastImmediateRadius = Math.min(lastImmediateRadius, currentViewDistance);
-  }
-
-  function setRetentionDistance(distance) {
-    retentionDistance = Math.max(
-      currentViewDistance,
-      normalizeDistance(distance, retentionDistance)
-    );
-    lastImmediateRadius = Math.min(lastImmediateRadius, currentViewDistance);
-  }
-
-  function getViewDistance() {
-    return currentViewDistance;
-  }
-
-  function getRetentionDistance() {
-    return retentionDistance;
-  }
-
   return {
     update,
     dispose,
@@ -461,11 +297,6 @@ export function createChunkManager({
     waterColumns,
     getBlockFromIntersection,
     removeBlockInstance,
-    preloadAround,
-    setViewDistance,
-    setRetentionDistance,
-    getViewDistance,
-    getRetentionDistance,
     ...(debugSnapshot ? { debugSnapshot } : {}),
   };
 }
