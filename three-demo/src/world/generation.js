@@ -113,8 +113,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     blockGeometry = new THREE.BoxGeometry(1, 1, 1);
   }
   const instancedData = new Map();
-  const decorationEntries = [];
-  const decorationMeshes = [];
   const solidBlockKeys = new Set();
   const softBlockKeys = new Set();
   const waterColumnKeys = new Set();
@@ -284,44 +282,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
   };
 
-  const computeTintColor = ({ type, y, biome, tintOverride = null, paletteColor = null }) => {
-    const tintStrength = clamp(biome?.shader?.tintStrength ?? 1, 0, 1);
-    const paletteBlend = new THREE.Color(1, 1, 1);
-    const resolvedPaletteColor = paletteColor ?? engine.getBlockColor(biome, type);
-    if (resolvedPaletteColor) {
-      paletteBlend.lerp(resolvedPaletteColor, tintStrength);
-    }
-
-    if (biome?.shader?.tintColor) {
-      const biomeTintBlend = new THREE.Color(1, 1, 1);
-      biomeTintBlend.lerp(biome.shader.tintColor, tintStrength * 0.65);
-      paletteBlend.multiply(biomeTintBlend);
-    }
-
-    if (biome?.climate) {
-      const dryness = clamp(1 - biome.climate.moisture, 0, 1);
-      const climateBlend = new THREE.Color(1, 1, 1);
-      climateBlend.lerp(new THREE.Color(1.02, 0.98, 0.92), dryness * 0.35);
-      paletteBlend.multiply(climateBlend);
-    }
-
-    const altitudeRange = Math.max(1, worldConfig.maxHeight - waterLevel + 6);
-    const altitude = clamp((y - waterLevel + 2) / altitudeRange, -0.25, 1);
-    const altitudeBlend = new THREE.Color(1, 1, 1);
-    if (altitude > 0) {
-      altitudeBlend.lerp(new THREE.Color(0.95, 0.98, 1.04), altitude * 0.3);
-    } else if (altitude < 0) {
-      altitudeBlend.lerp(new THREE.Color(1.04, 1.01, 0.94), Math.abs(altitude) * 0.25);
-    }
-    paletteBlend.multiply(altitudeBlend);
-
-    if (tintOverride) {
-      paletteBlend.multiply(tintOverride);
-    }
-
-    return paletteBlend;
-  };
-
   const addBlock = (type, x, y, z, biome, options = {}) => {
     const scaleVector = resolveScaleVector(options.scale);
     const visualScaleVector = resolveScaleVector(
@@ -350,15 +310,43 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     const coordinateKey = blockKey(x, y, z);
     const key = options.key ?? coordinateKey;
 
-    const tintOverride = parseTintOverride(options.tint);
     const paletteColor = engine.getBlockColor(biome, type);
-    const tintColor = computeTintColor({
-      type,
-      y,
-      biome,
-      tintOverride,
-      paletteColor,
-    });
+    const tintStrength = clamp(biome?.shader?.tintStrength ?? 1, 0, 1);
+
+    const paletteBlend = new THREE.Color(1, 1, 1);
+    if (paletteColor) {
+      paletteBlend.lerp(paletteColor, tintStrength);
+    }
+
+    if (biome?.shader?.tintColor) {
+      const biomeTintBlend = new THREE.Color(1, 1, 1);
+      biomeTintBlend.lerp(biome.shader.tintColor, tintStrength * 0.65);
+      paletteBlend.multiply(biomeTintBlend);
+    }
+
+    if (biome?.climate) {
+      const dryness = clamp(1 - biome.climate.moisture, 0, 1);
+      const climateBlend = new THREE.Color(1, 1, 1);
+      climateBlend.lerp(new THREE.Color(1.02, 0.98, 0.92), dryness * 0.35);
+      paletteBlend.multiply(climateBlend);
+    }
+
+    const altitudeRange = Math.max(1, worldConfig.maxHeight - waterLevel + 6);
+    const altitude = clamp((y - waterLevel + 2) / altitudeRange, -0.25, 1);
+    const altitudeBlend = new THREE.Color(1, 1, 1);
+    if (altitude > 0) {
+      altitudeBlend.lerp(new THREE.Color(0.95, 0.98, 1.04), altitude * 0.3);
+    } else if (altitude < 0) {
+      altitudeBlend.lerp(new THREE.Color(1.04, 1.01, 0.94), Math.abs(altitude) * 0.25);
+    }
+    paletteBlend.multiply(altitudeBlend);
+
+    const tintOverride = parseTintOverride(options.tint);
+    if (tintOverride) {
+      paletteBlend.multiply(tintOverride);
+    }
+
+    const tintColor = paletteBlend;
 
     const isWater = type === 'water';
     const isFluid = isFluidType(type);
@@ -452,29 +440,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
   };
 
-  const addDecorationMesh = ({
-    type,
-    geometry,
-    origin,
-    biome,
-    segments = [],
-  } = {}) => {
-    if (!type || !geometry) {
-      return;
-    }
-    const positionAttribute = geometry.getAttribute('position');
-    if (!positionAttribute || positionAttribute.count === 0) {
-      return;
-    }
-    decorationEntries.push({
-      type,
-      geometry,
-      origin: new THREE.Vector3(origin?.x ?? 0, origin?.y ?? 0, origin?.z ?? 0),
-      biome,
-      segments,
-    });
-  };
-
   for (let lx = 0; lx < chunkSize; lx++) {
     const worldX = minX + lx;
     for (let lz = 0; lz < chunkSize; lz++) {
@@ -522,8 +487,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
       populateColumnWithVoxelObjects({
         addBlock,
-        addDecorationMesh,
-        THREE,
         biome,
         columnSample,
         groundHeight: height,
@@ -701,61 +664,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     group.add(mesh);
   });
 
-  decorationEntries.forEach((entry) => {
-    const material = blockMaterials[entry.type];
-    if (!material) {
-      return;
-    }
-    const geometry = entry.geometry.clone();
-    const tintAttribute = geometry.getAttribute('biomeTint');
-    if (tintAttribute) {
-      const array = tintAttribute.array;
-      const paletteColor = engine.getBlockColor(entry.biome, entry.type);
-      entry.segments.forEach((segment) => {
-        const tintOverride = parseTintOverride(segment.tint);
-        const tintColor = computeTintColor({
-          type: entry.type,
-          y: segment.worldPosition?.y ?? entry.origin.y,
-          biome: entry.biome,
-          tintOverride,
-          paletteColor,
-        });
-        const start = segment.vertexStart * 3;
-        const end = start + segment.vertexCount * 3;
-        for (let i = start; i < end; i += 3) {
-          array[i] = tintColor.r;
-          array[i + 1] = tintColor.g;
-          array[i + 2] = tintColor.b;
-        }
-      });
-      tintAttribute.needsUpdate = true;
-    }
-
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.copy(entry.origin);
-    mesh.castShadow = !['cloud', 'water'].includes(entry.type);
-    mesh.receiveShadow = entry.type !== 'cloud';
-    mesh.frustumCulled = false;
-    mesh.userData.type = entry.type;
-    mesh.userData.biomePalette = true;
-    mesh.userData.biomeTintAttribute = geometry.getAttribute('biomeTint');
-    decorationMeshes.push(mesh);
-    group.add(mesh);
-
-    geometry.computeBoundingBox();
-    if (geometry.boundingBox) {
-      const min = geometry.boundingBox.min.clone().add(mesh.position);
-      const max = geometry.boundingBox.max.clone().add(mesh.position);
-      minBoundX = Math.min(minBoundX, min.x);
-      maxBoundX = Math.max(maxBoundX, max.x);
-      minBoundY = Math.min(minBoundY, min.y);
-      maxBoundY = Math.max(maxBoundY, max.y);
-      minBoundZ = Math.min(minBoundZ, min.z);
-      maxBoundZ = Math.max(maxBoundZ, max.z);
-      hasBoundData = true;
-    }
-  });
-
   logFluidDebug('fluid surfaces count before group add', fluidSurfaces.length);
   fluidSurfaces.forEach((surface) => {
     if (surface.userData?.type === 'fluid:water') {
@@ -789,7 +697,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     fluidSurfaces,
     blockLookup,
     typeData,
-    decorationMeshes,
     biomes,
     bounds: (() => {
       if (!hasBoundData) {
