@@ -18,7 +18,6 @@ import {
 } from './world/fluids/fluid-registry.js'
 
 const overlay = document.getElementById('overlay')
-const viewport = document.getElementById('viewport')
 const overlayStatus = overlay?.querySelector('#overlay-status')
 
 function setOverlayStatus(message, { isError = false, revealOverlay = true } = {}) {
@@ -55,21 +54,7 @@ renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.1
-;(viewport ?? document.body).appendChild(renderer.domElement)
-
-const MAX_PIXEL_RATIO = 2
-
-function resizeToViewport() {
-  const width = Math.max(window.innerWidth, 1)
-  const height = Math.max(window.innerHeight, 1)
-  camera.aspect = width / height
-  camera.updateProjectionMatrix()
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO))
-  renderer.setSize(width, height)
-}
-
-resizeToViewport()
-window.addEventListener('resize', resizeToViewport)
+document.body.appendChild(renderer.domElement)
 
 const MAX_PIXEL_RATIO = 2
 
@@ -205,8 +190,6 @@ try {
   if (import.meta.env.DEV) {
     const debugNamespace = (window.__VOXEL_DEBUG__ = window.__VOXEL_DEBUG__ || {})
     debugNamespace.chunkSnapshot = () => chunkManager.debugSnapshot?.()
-    debugNamespace.scene = scene
-    debugNamespace.renderer = renderer
     debugNamespace.player = {
       controls: playerControls,
       setPosition: (position) => playerControls.setPosition(position),
