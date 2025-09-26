@@ -137,6 +137,8 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const blockLookup = new Map();
   const typeData = new Map();
   const biomePresence = new Map();
+  const prototypeInstances = new Map();
+  let prototypeInstanceCounter = 0;
 
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
   const { chunkSize, waterLevel } = worldConfig;
@@ -457,6 +459,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     if (isSoft) {
       softBlockKeys.add(coordinateKey);
     }
+    return entry;
   };
 
   const addDecorationInstance = (type, x, y, z, biome, options = {}) => {
@@ -465,6 +468,180 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       decorationInstancedData.set(type, []);
     }
     decorationInstancedData.get(type).push(entry);
+    return entry;
+  };
+
+  const toVector3 = (value, defaultValue = 0) => {
+    if (!value && value !== 0) {
+      return new THREE.Vector3(defaultValue, defaultValue, defaultValue);
+    }
+    if (value.isVector3) {
+      return value.clone();
+    }
+    if (Array.isArray(value)) {
+      const [x = defaultValue, y = defaultValue, z = defaultValue] = value;
+      return new THREE.Vector3(x, y, z);
+    }
+    if (typeof value === 'number') {
+      return new THREE.Vector3(value, value, value);
+    }
+    if (typeof value === 'object') {
+      const vx =
+        typeof value.x === 'number'
+          ? value.x
+          : typeof value.width === 'number'
+          ? value.width
+          : defaultValue;
+      const vy =
+        typeof value.y === 'number'
+          ? value.y
+          : typeof value.height === 'number'
+          ? value.height
+          : defaultValue;
+      const vz =
+        typeof value.z === 'number'
+          ? value.z
+          : typeof value.depth === 'number'
+          ? value.depth
+          : defaultValue;
+      return new THREE.Vector3(vx, vy, vz);
+    }
+    return new THREE.Vector3(defaultValue, defaultValue, defaultValue);
+  };
+
+  const resolveInstanceScale = (value) => toVector3(value, 1);
+
+  const resolveInstanceRotation = (value) => {
+    if (value?.isQuaternion) {
+      return value.clone();
+    }
+    const quaternion = new THREE.Quaternion();
+    if (!value && value !== 0) {
+      return quaternion;
+    }
+    if (value?.isEuler) {
+      return quaternion.setFromEuler(value);
+    }
+    if (Array.isArray(value)) {
+      const [rx = 0, ry = 0, rz = 0] = value;
+      return quaternion.setFromEuler(new THREE.Euler(rx, ry, rz));
+    }
+    if (typeof value === 'number') {
+      return quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), value);
+    }
+    if (typeof value === 'object') {
+      const { x = 0, y = 0, z = 0, w } = value;
+      if (typeof w === 'number') {
+        return new THREE.Quaternion(x, y, z, w);
+      }
+      return quaternion.setFromEuler(new THREE.Euler(x, y, z));
+    }
+    return quaternion;
+  };
+
+  const addPrototypeInstance = (prototype, options = {}) => {
+    if (!prototype) {
+      return null;
+    }
+
+    const anchor = options.anchor ?? { x: 0, y: 0, z: 0 };
+    const basePosition = new THREE.Vector3(
+      anchor.x ?? 0,
+      anchor.y ?? 0,
+      anchor.z ?? 0,
+    );
+    const instanceScale = resolveInstanceScale(options.scale);
+    const rotation = resolveInstanceRotation(options.rotation);
+    const biome = options.biome ?? null;
+    const instanceKey =
+      options.instanceKey ??
+      `${prototype.id ?? 'prototype'}|${chunkX}|${chunkZ}|${prototypeInstanceCounter++}`;
+
+    const record = {
+      key: instanceKey,
+      prototypeId: prototype.id ?? null,
+      blockEntries: [],
+      decorationKeys: [],
+    };
+    prototypeInstances.set(instanceKey, record);
+
+    const blocks = prototype.blocks ?? [];
+    blocks.forEach((block, index) => {
+      const relativePosition = toVector3(block.position, 0)
+        .multiply(instanceScale)
+        .applyQuaternion(rotation);
+      const worldPosition = relativePosition.add(basePosition.clone());
+
+      const blockScale = toVector3(block.scale, 1).multiply(instanceScale);
+      const visualScale = toVector3(block.visualScale, 1).multiply(instanceScale);
+      const visualOffset = toVector3(block.visualOffset, 0)
+        .multiply(instanceScale)
+        .applyQuaternion(rotation);
+
+      const entry = addBlock(block.type, worldPosition.x, worldPosition.y, worldPosition.z, biome, {
+        scale: blockScale,
+        visualScale,
+        visualOffset,
+        collisionMode: block.collisionMode,
+        isSolid: block.collisionMode === 'solid',
+        destructible: block.destructible,
+        tint: block.tint,
+        sourceObjectId: block.sourceObjectId ?? prototype.id ?? null,
+        voxelIndex: block.voxelIndex,
+        metadata: block.metadata,
+        key: `${instanceKey}|${block.key ?? `voxel-${index}`}|${worldPosition.x}|${worldPosition.y}|${worldPosition.z}`,
+      });
+
+      if (entry) {
+        entry.prototypeKey = instanceKey;
+        entry.prototypeLocalKey = block.key ?? `voxel-${index}`;
+        record.blockEntries.push({ type: block.type, entry });
+      }
+    });
+
+    const decorations = prototype.decorations ?? [];
+    decorations.forEach((decoration, index) => {
+      const relativePosition = toVector3(decoration.position, 0)
+        .multiply(instanceScale)
+        .applyQuaternion(rotation);
+      const worldPosition = relativePosition.add(basePosition.clone());
+
+      const baseOptions = decoration.options ?? {};
+      const optionsClone = {
+        ...baseOptions,
+        scale: baseOptions.scale
+          ? toVector3(baseOptions.scale, 1).multiply(instanceScale)
+          : baseOptions.scale,
+        visualScale: baseOptions.visualScale
+          ? toVector3(baseOptions.visualScale, 1).multiply(instanceScale)
+          : baseOptions.visualScale,
+        visualOffset: baseOptions.visualOffset
+          ? toVector3(baseOptions.visualOffset, 0)
+              .multiply(instanceScale)
+              .applyQuaternion(rotation)
+          : baseOptions.visualOffset,
+      };
+
+      const fallbackKey = `${instanceKey}|decor|${index}`;
+      const keyBase = optionsClone.key ?? fallbackKey;
+      optionsClone.key = `${keyBase}|${worldPosition.x}|${worldPosition.y}|${worldPosition.z}`;
+
+      const entry = addDecorationInstance(
+        decoration.type,
+        worldPosition.x,
+        worldPosition.y,
+        worldPosition.z,
+        biome,
+        optionsClone,
+      );
+
+      if (entry) {
+        entry.prototypeKey = instanceKey;
+        record.decorationKeys.push(entry.key);
+      }
+    });
+
+    return instanceKey;
   };
 
   const buildInstancedMesh = (entries, type) => {
@@ -626,6 +803,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       populateColumnWithVoxelObjects({
         addBlock,
         addDecorationInstance,
+        addPrototypeInstance,
         biome,
         columnSample,
         groundHeight: height,
@@ -804,6 +982,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     decorationOwnerIndex,
     decorationTypeIndex,
     biomes,
+    prototypeInstances,
     bounds: (() => {
       if (!hasBoundData) {
         const halfSize = chunkSize / 2;
