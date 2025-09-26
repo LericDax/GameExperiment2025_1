@@ -925,12 +925,37 @@ export function createChunkManager({
   }
 
   function removeDecorationGroupsBulk({ chunk, type, groups }) {
-    if (!chunk || !chunk.typeData || !type) {
+    if (!chunk || !type) {
       return [];
     }
 
-    const typeData = chunk.typeData.get(type);
-    if (!typeData) {
+    const decorationStore = chunk.decorationData;
+    const decorationRecord =
+      decorationStore instanceof Map
+        ? decorationStore.get(type)
+        : decorationStore && typeof decorationStore === 'object'
+        ? decorationStore[type]
+        : null;
+
+    let mesh = decorationRecord?.mesh ?? null;
+    const entries = decorationRecord?.entries ?? null;
+    let tintAttribute = decorationRecord?.tintAttribute ?? null;
+
+    if (!mesh && Array.isArray(groups)) {
+      for (let i = 0; i < groups.length; i += 1) {
+        const metadata = groups[i];
+        if (!metadata || (metadata.type && metadata.type !== type)) {
+          continue;
+        }
+        if (metadata.mesh?.isInstancedMesh) {
+          mesh = metadata.mesh;
+          tintAttribute = metadata.tintAttribute ?? mesh.userData?.biomeTintAttribute ?? null;
+          break;
+        }
+      }
+    }
+
+    if (!mesh) {
       (Array.isArray(groups) ? groups : []).forEach((group) => {
         if (group) {
           unregisterDecorationGroup(group);
@@ -939,8 +964,7 @@ export function createChunkManager({
       return [];
     }
 
-    const { mesh, entries, tintAttribute } = typeData;
-    if (!mesh?.isInstancedMesh || !Array.isArray(entries) || entries.length === 0) {
+    if (!mesh.isInstancedMesh || !Array.isArray(entries) || entries.length === 0) {
       (Array.isArray(groups) ? groups : []).forEach((group) => {
         if (group) {
           unregisterDecorationGroup(group);
