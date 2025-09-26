@@ -55,6 +55,7 @@ export function createChunkManager({
   const waterColumns = new Set();
   const decorationGroupsByKey = new Map();
   const decorationOwnersIndex = new Map();
+  const prototypeRemovalGuards = new Set();
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   let lastCenterKey = null;
   let currentViewDistance = normalizeDistance(viewDistance, 1);
@@ -254,6 +255,11 @@ export function createChunkManager({
         }
         typeBucket.add(metadata);
       });
+    }
+    if (!chunk.prototypeInstances) {
+      chunk.prototypeInstances = new Map();
+    } else if (!(chunk.prototypeInstances instanceof Map)) {
+      chunk.prototypeInstances = new Map(chunk.prototypeInstances);
     }
     chunk.decorationGroups.forEach((group) => {
       registerDecorationGroup(key, group, chunk);
@@ -758,6 +764,10 @@ export function createChunkManager({
       waterColumns.delete(`${removed.position.x}|${removed.position.z}`);
     }
 
+    if (removed.prototypeKey) {
+      removePrototypePlacement(chunk, removed.prototypeKey, removed.key);
+    }
+
     return removed;
   }
 
@@ -911,6 +921,48 @@ export function createChunkManager({
       groupKey,
       removedCount: removedEntries.length,
     };
+  }
+
+  function removePrototypePlacement(chunk, prototypeKey, skipEntryKey = null) {
+    if (!chunk || !chunk.prototypeInstances || !prototypeKey) {
+      return;
+    }
+    if (prototypeRemovalGuards.has(prototypeKey)) {
+      return;
+    }
+    const record = chunk.prototypeInstances.get(prototypeKey);
+    if (!record) {
+      return;
+    }
+    prototypeRemovalGuards.add(prototypeKey);
+
+    const blockEntries = Array.isArray(record.blockEntries)
+      ? [...record.blockEntries]
+      : [];
+    blockEntries.forEach(({ type, entry }) => {
+      if (!entry || (skipEntryKey && entry.key === skipEntryKey)) {
+        return;
+      }
+      const lookup = chunk.blockLookup?.get(entry.key);
+      if (!lookup || lookup.index === undefined) {
+        return;
+      }
+      removeBlockInstance({ chunk, type, instanceId: lookup.index });
+    });
+    record.blockEntries = [];
+
+    const decorationKeys = Array.isArray(record.decorationKeys)
+      ? [...record.decorationKeys]
+      : [];
+    decorationKeys.forEach((groupKey) => {
+      if (groupKey) {
+        removeDecorationGroup(groupKey);
+      }
+    });
+    record.decorationKeys = [];
+
+    chunk.prototypeInstances.delete(prototypeKey);
+    prototypeRemovalGuards.delete(prototypeKey);
   }
 
   return {
