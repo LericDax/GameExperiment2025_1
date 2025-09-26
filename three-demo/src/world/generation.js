@@ -6,6 +6,12 @@ import {
   resolveFluidPresence,
 } from './fluids/fluid-registry.js';
 import { buildFluidGeometry } from './fluids/fluid-geometry.js';
+import {
+  initializeFluidDebug,
+  logFluidDebug,
+} from './fluids/fluid-debug.js';
+
+initializeFluidDebug({ defaultEnabled: false, persistDefault: true, forceDefault: true });
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -509,10 +515,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
 
     if (type === 'water') {
-      console.log(
-        '[fluid debug] processing water columns',
-        columns.size,
-      );
+      logFluidDebug('processing water columns', columns.size);
     }
 
     columns.forEach((column) => {
@@ -596,13 +599,13 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     });
     if (!geometry.getAttribute('position') || geometry.getAttribute('position').count === 0) {
       if (type === 'water') {
-        console.log('[fluid debug] water geometry has no vertices');
+        logFluidDebug('water geometry has no vertices');
       }
       return;
     }
     const surface = createFluidSurface({ type, geometry });
     if (type === 'water') {
-      console.log('[fluid debug] created water surface', surface?.uuid);
+      logFluidDebug('created water surface', surface?.uuid);
     }
     surface.userData.type = `fluid:${type}`;
     fluidSurfaces.push(surface);
@@ -661,10 +664,10 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     group.add(mesh);
   });
 
-  console.log('[fluid debug] fluid surfaces count before group add', fluidSurfaces.length);
+  logFluidDebug('fluid surfaces count before group add', fluidSurfaces.length);
   fluidSurfaces.forEach((surface) => {
     if (surface.userData?.type === 'fluid:water') {
-      console.log('[fluid debug] adding water surface to group', surface.uuid);
+      logFluidDebug('adding water surface to group', surface.uuid);
     }
     group.add(surface);
   });
