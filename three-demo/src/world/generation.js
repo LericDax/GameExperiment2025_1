@@ -118,6 +118,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const decorationData = new Map();
   const decorationGroups = new Map();
   const decorationOwnerIndex = new Map();
+  const decorationTypeIndex = new Map();
   const solidBlockKeys = new Set();
   const softBlockKeys = new Set();
   const waterColumnKeys = new Set();
@@ -542,13 +543,20 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       decorationGroups.set(metadata.key, metadata);
       const owner = metadata.owner;
       if (owner !== null && owner !== undefined) {
-        let ownerSet = decorationOwnerIndex.get(owner);
-        if (!ownerSet) {
-          ownerSet = new Set();
-          decorationOwnerIndex.set(owner, ownerSet);
+        let ownerGroups = decorationOwnerIndex.get(owner);
+        if (!ownerGroups) {
+          ownerGroups = new Map();
+          decorationOwnerIndex.set(owner, ownerGroups);
         }
-        ownerSet.add(metadata.key);
+        ownerGroups.set(metadata.key, metadata);
       }
+
+      let typeGroup = decorationTypeIndex.get(type);
+      if (!typeGroup) {
+        typeGroup = new Set();
+        decorationTypeIndex.set(type, typeGroup);
+      }
+      typeGroup.add(metadata);
 
       metadata.instanceIndices.forEach((instanceIndex) => {
         const entry = entries[instanceIndex];
@@ -794,6 +802,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     decorationData,
     decorationGroups,
     decorationOwnerIndex,
+    decorationTypeIndex,
     biomes,
     bounds: (() => {
       if (!hasBoundData) {

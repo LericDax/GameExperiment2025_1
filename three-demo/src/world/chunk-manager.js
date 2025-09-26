@@ -2,7 +2,6 @@ import * as THREE from 'three';
 
 import { generateChunk, worldConfig } from './generation.js';
 import { disposeFluidSurface } from './fluids/fluid-registry.js';
-import { createDecorationMeshBatches } from './voxel-object-decoration-mesh.js';
 
 function chunkKey(x, z) {
   return `${x}|${z}`;
@@ -126,19 +125,48 @@ export function createChunkManager({
     });
   }
 
-  function registerDecorationGroup(chunkKey, group) {
+  function registerDecorationGroup(chunkKey, group, chunkOverride = null) {
     if (!group || !group.key) {
       return;
     }
     group.chunkKey = chunkKey;
     decorationGroupsByKey.set(group.key, group);
-    if (group.owner !== null && group.owner !== undefined) {
-      let ownerSet = decorationOwnersIndex.get(group.owner);
-      if (!ownerSet) {
-        ownerSet = new Set();
-        decorationOwnersIndex.set(group.owner, ownerSet);
+    const chunk = chunkOverride ?? loadedChunks.get(chunkKey);
+    if (chunk) {
+      if (!chunk.decorationGroups) {
+        chunk.decorationGroups = new Map();
       }
-      ownerSet.add(group.key);
+      chunk.decorationGroups.set(group.key, group);
+      if (!chunk.decorationTypeIndex) {
+        chunk.decorationTypeIndex = new Map();
+      }
+      if (group.type) {
+        let typeBucket = chunk.decorationTypeIndex.get(group.type);
+        if (!typeBucket) {
+          typeBucket = new Set();
+          chunk.decorationTypeIndex.set(group.type, typeBucket);
+        }
+        typeBucket.add(group);
+      }
+      if (group.owner !== null && group.owner !== undefined) {
+        if (!chunk.decorationOwnerIndex) {
+          chunk.decorationOwnerIndex = new Map();
+        }
+        let ownerGroups = chunk.decorationOwnerIndex.get(group.owner);
+        if (!ownerGroups) {
+          ownerGroups = new Map();
+          chunk.decorationOwnerIndex.set(group.owner, ownerGroups);
+        }
+        ownerGroups.set(group.key, group);
+      }
+    }
+    if (group.owner !== null && group.owner !== undefined) {
+      let ownerGroups = decorationOwnersIndex.get(group.owner);
+      if (!ownerGroups) {
+        ownerGroups = new Map();
+        decorationOwnersIndex.set(group.owner, ownerGroups);
+      }
+      ownerGroups.set(group.key, group);
     }
   }
 
@@ -148,11 +176,33 @@ export function createChunkManager({
     }
     decorationGroupsByKey.delete(group.key);
     if (group.owner !== null && group.owner !== undefined) {
-      const ownerSet = decorationOwnersIndex.get(group.owner);
-      if (ownerSet) {
-        ownerSet.delete(group.key);
-        if (ownerSet.size === 0) {
+      const ownerGroups = decorationOwnersIndex.get(group.owner);
+      if (ownerGroups) {
+        ownerGroups.delete(group.key);
+        if (ownerGroups.size === 0) {
           decorationOwnersIndex.delete(group.owner);
+        }
+      }
+    }
+    const chunk = group.chunkKey ? loadedChunks.get(group.chunkKey) : null;
+    if (chunk) {
+      chunk.decorationGroups?.delete(group.key);
+      if (group.owner !== null && group.owner !== undefined) {
+        const ownerGroups = chunk.decorationOwnerIndex?.get(group.owner);
+        if (ownerGroups) {
+          ownerGroups.delete(group.key);
+          if (ownerGroups.size === 0) {
+            chunk.decorationOwnerIndex?.delete(group.owner);
+          }
+        }
+      }
+      if (group.type && chunk.decorationTypeIndex) {
+        const typeBucket = chunk.decorationTypeIndex.get(group.type);
+        if (typeBucket) {
+          typeBucket.delete(group);
+          if (typeBucket.size === 0) {
+            chunk.decorationTypeIndex.delete(group.type);
+          }
         }
       }
     }
@@ -191,8 +241,22 @@ export function createChunkManager({
     if (!chunk.decorationOwnerIndex) {
       chunk.decorationOwnerIndex = new Map();
     }
+    if (!chunk.decorationTypeIndex) {
+      chunk.decorationTypeIndex = new Map();
+      chunk.decorationGroups.forEach((metadata) => {
+        if (!metadata || !metadata.type) {
+          return;
+        }
+        let typeBucket = chunk.decorationTypeIndex.get(metadata.type);
+        if (!typeBucket) {
+          typeBucket = new Set();
+          chunk.decorationTypeIndex.set(metadata.type, typeBucket);
+        }
+        typeBucket.add(metadata);
+      });
+    }
     chunk.decorationGroups.forEach((group) => {
-      registerDecorationGroup(key, group);
+      registerDecorationGroup(key, group, chunk);
     });
     loadedChunks.set(key, chunk);
   }
@@ -212,7 +276,7 @@ export function createChunkManager({
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.delete(block));
     (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.delete(column));
     if (chunk.decorationGroups) {
-      chunk.decorationGroups.forEach((group) => {
+      Array.from(chunk.decorationGroups.values()).forEach((group) => {
         unregisterDecorationGroup(group);
       });
     }
@@ -717,59 +781,58 @@ export function createChunkManager({
     if (!chunk.decorationData) {
       chunk.decorationData = new Map();
     }
+    if (!chunk.decorationTypeIndex) {
+      chunk.decorationTypeIndex = new Map();
+    }
     const type = group.type;
     const decorationData = chunk.decorationData.get(type);
     if (!decorationData) {
-      chunk.decorationGroups.delete(group.key);
       unregisterDecorationGroup(group);
-      chunk.decorationOwnerIndex = new Map();
-      chunk.decorationGroups.forEach((metadata) => {
-        if (metadata.owner === null || metadata.owner === undefined) {
-          return;
-        }
-        let ownerSet = chunk.decorationOwnerIndex.get(metadata.owner);
-        if (!ownerSet) {
-          ownerSet = new Set();
-          chunk.decorationOwnerIndex.set(metadata.owner, ownerSet);
-        }
-        ownerSet.add(metadata.key);
-      });
       return null;
     }
     const { entries, mesh, tintAttribute } = decorationData;
     if (!mesh || !mesh.isInstancedMesh) {
-      chunk.decorationGroups.delete(group.key);
       unregisterDecorationGroup(group);
       return null;
     }
     if (!entries || entries.length === 0) {
-      chunk.decorationGroups.delete(group.key);
       unregisterDecorationGroup(group);
       return null;
     }
 
-    const indicesToRemove = new Set(group.instanceIndices || []);
-    if (indicesToRemove.size === 0) {
-      chunk.decorationGroups.delete(group.key);
+    const indicesToRemove = Array.from(new Set(group.instanceIndices || []))
+      .filter((index) => Number.isInteger(index) && index >= 0)
+      .sort((a, b) => a - b);
+    if (indicesToRemove.length === 0) {
       unregisterDecorationGroup(group);
       return null;
     }
 
-    const remainingEntries = [];
+    const removalSet = new Set(indicesToRemove);
+    const peers = chunk.decorationTypeIndex?.get(type)
+      ? Array.from(chunk.decorationTypeIndex.get(type)).filter(
+          (metadata) => metadata !== group,
+        )
+      : Array.from(chunk.decorationGroups.values()).filter(
+          (metadata) => metadata !== group && metadata.type === type,
+        );
+
     const removedEntries = [];
-    entries.forEach((entry, index) => {
-      if (indicesToRemove.has(index)) {
-        removedEntries.push(entry);
-      } else {
-        remainingEntries.push(entry);
+    for (let i = indicesToRemove.length - 1; i >= 0; i -= 1) {
+      const index = indicesToRemove[i];
+      if (index < 0 || index >= entries.length) {
+        continue;
       }
-    });
+      const [removedEntry] = entries.splice(index, 1);
+      if (removedEntry) {
+        removedEntries.push(removedEntry);
+      }
+    }
 
     if (removedEntries.length === 0) {
+      unregisterDecorationGroup(group);
       return null;
     }
-
-    decorationData.entries = remainingEntries;
 
     removedEntries.forEach((entry) => {
       if (!entry || !chunk.blockLookup) {
@@ -781,7 +844,35 @@ export function createChunkManager({
       }
     });
 
-    remainingEntries.forEach((entry, index) => {
+    const adjustIndex = (index) => {
+      let offset = 0;
+      for (let i = 0; i < indicesToRemove.length; i += 1) {
+        if (indicesToRemove[i] < index) {
+          offset += 1;
+        } else {
+          break;
+        }
+      }
+      return index - offset;
+    };
+
+    peers.forEach((metadata) => {
+      if (!Array.isArray(metadata.instanceIndices)) {
+        return;
+      }
+      const updated = [];
+      metadata.instanceIndices.forEach((instanceIndex) => {
+        if (removalSet.has(instanceIndex)) {
+          return;
+        }
+        updated.push(adjustIndex(instanceIndex));
+      });
+      metadata.instanceIndices = updated;
+    });
+
+    const firstAffectedIndex = indicesToRemove[0] ?? 0;
+    for (let index = firstAffectedIndex; index < entries.length; index += 1) {
+      const entry = entries[index];
       mesh.setMatrixAt(index, entry.matrix);
       entry.index = index;
       if (tintAttribute) {
@@ -793,74 +884,27 @@ export function createChunkManager({
           tintAttribute.array[offset + 2] = tint.b;
         }
       }
-    });
-    mesh.count = remainingEntries.length;
+    }
+    mesh.count = entries.length;
     mesh.instanceMatrix.needsUpdate = true;
     if (tintAttribute) {
       tintAttribute.needsUpdate = true;
     }
 
-    const existingTypeGroups = [];
-    chunk.decorationGroups.forEach((existingGroup) => {
-      if (existingGroup.type === type) {
-        existingTypeGroups.push(existingGroup);
-      }
-    });
+    unregisterDecorationGroup(group);
 
-    existingTypeGroups.forEach((existingGroup) => {
-      chunk.decorationGroups.delete(existingGroup.key);
-      unregisterDecorationGroup(existingGroup);
-    });
-
-    const { groups: rebuiltGroups } = createDecorationMeshBatches(remainingEntries);
-    rebuiltGroups.forEach((info) => {
-      const instanceIndices = info.entryIndices.slice();
-      const metadata = {
-        key: info.key,
-        owner: info.owner ?? null,
-        destructible:
-          typeof info.destructible === 'boolean' ? info.destructible : true,
-        type,
-        mesh,
-        tintAttribute,
-        instanceIndices,
-      };
-      chunk.decorationGroups.set(metadata.key, metadata);
-      registerDecorationGroup(chunkKey, metadata);
-      metadata.instanceIndices.forEach((instanceIndex) => {
-        const entry = remainingEntries[instanceIndex];
-        if (!entry) {
-          return;
-        }
-        entry.decorationGroup = metadata;
-        entry.decorationGroupKey = metadata.key;
-        entry.mesh = mesh;
-        entry.tintAttribute = tintAttribute;
-        entry.isDecoration = true;
-        if (chunk.blockLookup) {
-          chunk.blockLookup.set(entry.key, entry);
-          if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
-            chunk.blockLookup.set(entry.coordinateKey, entry);
-          }
-        }
+    if (
+      isDevBuild &&
+      import.meta.env?.VITE_DEBUG_DECORATION_REMOVAL !== undefined
+    ) {
+      console.debug('[chunk-manager] decoration removal', {
+        groupKey,
+        removed: removedEntries.length,
+        peersProcessed: peers.length,
+        firstAffectedIndex,
+        remainingCount: entries.length,
       });
-    });
-
-    if (!chunk.decorationOwnerIndex) {
-      chunk.decorationOwnerIndex = new Map();
     }
-    chunk.decorationOwnerIndex.clear();
-    chunk.decorationGroups.forEach((metadata) => {
-      if (metadata.owner === null || metadata.owner === undefined) {
-        return;
-      }
-      let ownerSet = chunk.decorationOwnerIndex.get(metadata.owner);
-      if (!ownerSet) {
-        ownerSet = new Set();
-        chunk.decorationOwnerIndex.set(metadata.owner, ownerSet);
-      }
-      ownerSet.add(metadata.key);
-    });
 
     return {
       chunk,
