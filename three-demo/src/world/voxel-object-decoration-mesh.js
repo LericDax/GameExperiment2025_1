@@ -1,5 +1,158 @@
 const DEFAULT_OWNER = null;
 
+// Decoration mesh templates are cached per voxel object definition so the
+// expensive nanovoxel placement math only runs once. The key combines the
+// object id with any known seed modifiers (future procedural variants can
+// extend this without changing the cache layout).
+const decorationMeshCache = new WeakMap();
+
+function extractSeedModifier(object) {
+  if (!object || typeof object !== 'object') {
+    return null;
+  }
+  if (typeof object.seedModifier === 'string' || typeof object.seedModifier === 'number') {
+    return object.seedModifier;
+  }
+  if (typeof object.seed === 'string' || typeof object.seed === 'number') {
+    return object.seed;
+  }
+  const raw = object.raw ?? null;
+  if (raw && (typeof raw.seedModifier === 'string' || typeof raw.seedModifier === 'number')) {
+    return raw.seedModifier;
+  }
+  if (raw && (typeof raw.seed === 'string' || typeof raw.seed === 'number')) {
+    return raw.seed;
+  }
+  return null;
+}
+
+function buildCacheKey(object) {
+  const id = typeof object?.id === 'string' && object.id.length > 0 ? object.id : 'object';
+  const seed = extractSeedModifier(object);
+  return seed !== null && seed !== undefined ? `${id}|${seed}` : id;
+}
+
+function cloneVectorLike(value, fallback = 0) {
+  if (!value || typeof value !== 'object') {
+    return { x: fallback, y: fallback, z: fallback };
+  }
+  const x = typeof value.x === 'number' ? value.x : fallback;
+  const y = typeof value.y === 'number' ? value.y : fallback;
+  const z = typeof value.z === 'number' ? value.z : fallback;
+  return { x, y, z };
+}
+
+export function cloneDecorationOptions(options = {}) {
+  const cloned = { ...options };
+  if (options.scale && typeof options.scale === 'object') {
+    cloned.scale = { ...options.scale };
+  }
+  if (options.visualScale && typeof options.visualScale === 'object') {
+    cloned.visualScale = { ...options.visualScale };
+  }
+  if (options.visualOffset && typeof options.visualOffset === 'object') {
+    cloned.visualOffset = { ...options.visualOffset };
+  }
+  if (options.metadata && typeof options.metadata === 'object') {
+    cloned.metadata = { ...options.metadata };
+  }
+  return cloned;
+}
+
+function cloneBlockPlacement(block) {
+  if (!block) {
+    return null;
+  }
+  return {
+    type: block.type,
+    position: cloneVectorLike(block.position, 0),
+    scale: cloneVectorLike(block.scale, 1),
+    visualScale: cloneVectorLike(block.visualScale ?? block.scale, 1),
+    visualOffset: cloneVectorLike(block.visualOffset, 0),
+    tint: block.tint ?? null,
+    destructible: block.destructible,
+    metadata: block.metadata ? { ...block.metadata } : null,
+    collisionMode: block.collisionMode,
+    voxelIndex: block.voxelIndex,
+    sourceObjectId: block.sourceObjectId ?? null,
+    key: block.key ?? null,
+  };
+}
+
+function cloneDecorationPlacement(decoration, index, cacheKey) {
+  if (!decoration) {
+    return null;
+  }
+  const options = cloneDecorationOptions(decoration.options ?? {});
+  const fallbackKey = `${cacheKey}|decor|${index}`;
+  const baseKey =
+    typeof options.key === 'string' && options.key.length > 0 ? options.key : fallbackKey;
+
+  return {
+    type: decoration.type,
+    position: cloneVectorLike(decoration.position, 0),
+    options,
+    baseKey,
+  };
+}
+
+function buildDecorationMeshTemplate(object, placements) {
+  if (!placements) {
+    return null;
+  }
+
+  const cacheKey = buildCacheKey(object);
+  const blocks = Array.isArray(placements.blocks)
+    ? placements.blocks
+        .map((block) => cloneBlockPlacement(block))
+        .filter((block) => block !== null)
+    : [];
+  const decorations = Array.isArray(placements.decorations)
+    ? placements.decorations
+        .map((decoration, index) => cloneDecorationPlacement(decoration, index, cacheKey))
+        .filter((entry) => entry !== null)
+    : [];
+
+  return {
+    cacheKey,
+    placements: {
+      id: placements.id ?? object?.id ?? null,
+      groundOffset: placements.groundOffset,
+      blocks,
+      decorations,
+    },
+    decorations,
+  };
+}
+
+export function getDecorationMeshTemplate(object, placementsFactory) {
+  if (!object) {
+    return null;
+  }
+  if (decorationMeshCache.has(object)) {
+    return decorationMeshCache.get(object);
+  }
+  if (typeof placementsFactory !== 'function') {
+    return null;
+  }
+  const placements = placementsFactory();
+  if (!placements) {
+    return null;
+  }
+  const template = buildDecorationMeshTemplate(object, placements);
+  if (template) {
+    decorationMeshCache.set(object, template);
+  }
+  return template;
+}
+
+export function invalidateDecorationMeshCache(object) {
+  if (!object) {
+    return;
+  }
+  decorationMeshCache.delete(object);
+}
+
 function resolveOwner(entry, decorationMeta, metadata) {
   if (decorationMeta && decorationMeta.owner !== undefined) {
     return decorationMeta.owner;

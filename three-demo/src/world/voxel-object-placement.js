@@ -14,6 +14,10 @@ import {
   markPlacementCompleted,
 } from './sector-object-planner.js';
 import { ValueNoise2D } from './noise.js';
+import {
+  cloneDecorationOptions,
+  getDecorationMeshTemplate,
+} from './voxel-object-decoration-mesh.js';
 
 const objectDensityField = new ValueNoise2D(9103);
 
@@ -25,7 +29,7 @@ function ensureRandomSource(randomSource) {
 }
 
 export function placeVoxelObject(
-  { addBlock, addDecorationInstance, addPrototypeInstance } = {},
+  { addBlock, addDecorationInstance, addPrototypeInstance, addDecorationMesh } = {},
   object,
   { origin, biome } = {},
 ) {
@@ -62,12 +66,17 @@ export function placeVoxelObject(
     }
   }
 
-  const placements = computeVoxelObjectPlacements(object);
+  const decorationTemplate = getDecorationMeshTemplate(object, () =>
+    computeVoxelObjectPlacements(object),
+  );
+  const placements = decorationTemplate?.placements ?? computeVoxelObjectPlacements(object);
   if (!placements) {
     return;
   }
 
-  placements.blocks.forEach((block, index) => {
+  const blockPlacements = Array.isArray(placements.blocks) ? placements.blocks : [];
+
+  blockPlacements.forEach((block, index) => {
     const worldX = anchor.x + block.position.x;
     const worldY = anchor.y + block.position.y;
     const worldZ = anchor.z + block.position.z;
@@ -88,24 +97,27 @@ export function placeVoxelObject(
     });
   });
 
-  placements.decorations.forEach((decoration, index) => {
+  const decorationEntries = decorationTemplate?.decorations ?? placements.decorations ?? [];
+  let decorationsHandled = false;
+  if (
+    decorationTemplate &&
+    typeof addDecorationMesh === 'function' &&
+    decorationEntries.length > 0
+  ) {
+    decorationsHandled = addDecorationMesh(decorationTemplate, { anchor, biome, object });
+  }
+
+  if (decorationsHandled) {
+    return;
+  }
+
+  decorationEntries.forEach((decoration, index) => {
     const worldX = anchor.x + decoration.position.x;
     const worldY = anchor.y + decoration.position.y;
     const worldZ = anchor.z + decoration.position.z;
-    const baseOptions = decoration.options ?? {};
-    const options = {
-      ...baseOptions,
-      scale: baseOptions.scale ? cloneScale(baseOptions.scale) : baseOptions.scale,
-      visualScale: baseOptions.visualScale
-        ? cloneScale(baseOptions.visualScale)
-        : baseOptions.visualScale,
-      visualOffset: baseOptions.visualOffset
-        ? cloneOffset(baseOptions.visualOffset)
-        : baseOptions.visualOffset,
-    };
-
+    const options = cloneDecorationOptions(decoration.options ?? {});
     const fallbackKey = `${object.id ?? 'object'}|decor|${index}`;
-    const keyBase = options.key ?? fallbackKey;
+    const keyBase = decoration.baseKey ?? options.key ?? fallbackKey;
     options.key = `${keyBase}|${worldX}|${worldY}|${worldZ}`;
 
     decorationCollector(decoration.type, worldX, worldY, worldZ, biome, options);
@@ -127,6 +139,7 @@ export function populateColumnWithVoxelObjects({
   addBlock,
   addDecorationInstance,
   addPrototypeInstance,
+  addDecorationMesh,
   biome,
   columnSample,
   groundHeight,
@@ -326,7 +339,11 @@ export function populateColumnWithVoxelObjects({
         y: groundHeight + (object.attachment?.groundOffset ?? object.voxelScale),
         z: baseZ + Math.sin(angle) * radius,
       };
-      placeVoxelObject({ addBlock, addDecorationInstance, addPrototypeInstance }, object, { origin, biome });
+      placeVoxelObject(
+        { addBlock, addDecorationInstance, addPrototypeInstance, addDecorationMesh },
+        object,
+        { origin, biome },
+      );
     }
     return true;
   };
