@@ -134,8 +134,32 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const defaultQuaternion = new THREE.Quaternion();
   const reusablePosition = new THREE.Vector3();
   const blockLookup = new Map();
+  const coordinateLookup = new Map();
   const typeData = new Map();
   const biomePresence = new Map();
+
+  const registerPlacementEntry = (entry) => {
+    if (!entry) {
+      return;
+    }
+    const ownerKey = entry.ownerPlacementKey ?? entry.key;
+    if (!ownerKey) {
+      return;
+    }
+    let entrySet = blockLookup.get(ownerKey);
+    if (!entrySet) {
+      entrySet = new Set();
+      blockLookup.set(ownerKey, entrySet);
+    }
+    entrySet.add(entry);
+  };
+
+  const registerCoordinateEntry = (entry, key) => {
+    if (!entry || !key) {
+      return;
+    }
+    coordinateLookup.set(key, entry);
+  };
 
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
   const { chunkSize, waterLevel } = worldConfig;
@@ -370,6 +394,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       voxelIndex: options.voxelIndex ?? null,
       metadata: options.metadata ?? null,
       tintOverride,
+      ownerPlacementKey: options.ownerPlacementKey ?? null,
     };
   };
 
@@ -446,9 +471,10 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     entry.collisionMode = collisionMode;
 
     instancedData.get(type).push(entry);
-    blockLookup.set(key, entry);
+    registerPlacementEntry(entry);
+    registerCoordinateEntry(entry, coordinateKey);
     if (key !== coordinateKey) {
-      blockLookup.set(coordinateKey, entry);
+      registerCoordinateEntry(entry, key);
     }
     if (isSolid) {
       solidBlockKeys.add(coordinateKey);
@@ -464,6 +490,11 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       decorationInstancedData.set(type, []);
     }
     decorationInstancedData.get(type).push(entry);
+    registerPlacementEntry(entry);
+    registerCoordinateEntry(entry, entry.key);
+    if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+      registerCoordinateEntry(entry, entry.coordinateKey);
+    }
   };
 
   const buildInstancedMesh = (entries, type) => {
@@ -560,9 +591,10 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         entry.mesh = mesh;
         entry.tintAttribute = tintAttribute;
         entry.isDecoration = true;
-        blockLookup.set(entry.key, entry);
+        registerPlacementEntry(entry);
+        registerCoordinateEntry(entry, entry.key);
         if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
-          blockLookup.set(entry.coordinateKey, entry);
+          registerCoordinateEntry(entry, entry.coordinateKey);
         }
       });
     });
@@ -790,6 +822,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     waterColumnKeys,
     fluidSurfaces,
     blockLookup,
+    coordinateLookup,
     typeData,
     decorationData,
     decorationGroups,
