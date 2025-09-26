@@ -924,60 +924,91 @@ export function createChunkManager({
     return removed;
   }
 
-  function removeDecorationGroup(groupKey) {
-    if (!groupKey) {
-      return null;
-    }
-    const group = decorationGroupsByKey.get(groupKey);
-    if (!group) {
-      return null;
-    }
-    const chunkKey = group.chunkKey;
-    const chunk = loadedChunks.get(chunkKey);
-    if (!chunk) {
-      unregisterDecorationGroup(group);
-      return null;
-    }
-    if (!chunk.decorationGroups) {
-      chunk.decorationGroups = new Map();
-    }
-    if (!chunk.decorationData) {
-      chunk.decorationData = new Map();
-    }
-    if (!chunk.decorationTypeIndex) {
-      chunk.decorationTypeIndex = new Map();
-    }
-    const type = group.type;
-    const decorationData = chunk.decorationData.get(type);
-    if (!decorationData) {
-      unregisterDecorationGroup(group);
-      return null;
-    }
-    const { entries, mesh, tintAttribute } = decorationData;
-    if (!mesh || !mesh.isInstancedMesh) {
-      unregisterDecorationGroup(group);
-      return null;
-    }
-    if (!entries || entries.length === 0) {
-      unregisterDecorationGroup(group);
-      return null;
+  function removeDecorationGroupsBulk({ chunk, type, groups }) {
+    if (!chunk || !chunk.typeData || !type) {
+      return [];
     }
 
-    const indicesToRemove = Array.from(new Set(group.instanceIndices || []))
-      .filter((index) => Number.isInteger(index) && index >= 0)
-      .sort((a, b) => a - b);
+    const typeData = chunk.typeData.get(type);
+    if (!typeData) {
+      (Array.isArray(groups) ? groups : []).forEach((group) => {
+        if (group) {
+          unregisterDecorationGroup(group);
+        }
+      });
+      return [];
+    }
+
+    const { mesh, entries, tintAttribute } = typeData;
+    if (!mesh?.isInstancedMesh || !Array.isArray(entries) || entries.length === 0) {
+      (Array.isArray(groups) ? groups : []).forEach((group) => {
+        if (group) {
+          unregisterDecorationGroup(group);
+        }
+      });
+      return [];
+    }
+
+    const uniqueGroups = [];
+    const seenKeys = new Set();
+    (Array.isArray(groups) ? groups : []).forEach((group) => {
+      if (!group || (group.type && group.type !== type)) {
+        return;
+      }
+      const key = group.key ?? group;
+      if (seenKeys.has(key)) {
+        return;
+      }
+      seenKeys.add(key);
+      uniqueGroups.push(group);
+    });
+
+    if (uniqueGroups.length === 0) {
+      return [];
+    }
+
+    const validGroups = [];
+    const removalIndicesSet = new Set();
+    const summaries = [];
+
+    uniqueGroups.forEach((group) => {
+      const sanitized = Array.from(new Set(group.instanceIndices || []))
+        .filter((index) => Number.isInteger(index) && index >= 0 && index < entries.length)
+        .sort((a, b) => a - b);
+      if (sanitized.length === 0) {
+        unregisterDecorationGroup(group);
+        summaries.push({
+          chunk,
+          groupKey: group.key ?? null,
+          removedCount: 0,
+          peersProcessed: 0,
+          firstAffectedIndex: null,
+          remainingCount: entries.length,
+        });
+        return;
+      }
+      validGroups.push({ group, indices: sanitized });
+      sanitized.forEach((index) => removalIndicesSet.add(index));
+    });
+
+    if (validGroups.length === 0) {
+      return summaries;
+    }
+
+    const indicesToRemove = Array.from(removalIndicesSet).sort((a, b) => a - b);
     if (indicesToRemove.length === 0) {
-      unregisterDecorationGroup(group);
-      return null;
+      validGroups.forEach(({ group }) => unregisterDecorationGroup(group));
+      return summaries;
     }
 
     const removalSet = new Set(indicesToRemove);
+    const removalGroupsSet = new Set(validGroups.map(({ group }) => group));
     const peers = chunk.decorationTypeIndex?.get(type)
       ? Array.from(chunk.decorationTypeIndex.get(type)).filter(
-          (metadata) => metadata !== group,
+          (metadata) => !removalGroupsSet.has(metadata),
         )
       : Array.from(chunk.decorationGroups.values()).filter(
-          (metadata) => metadata !== group && metadata.type === type,
+          (metadata) => !removalGroupsSet.has(metadata) && metadata.type === type,
         );
 
     const removedEntries = [];
@@ -988,16 +1019,16 @@ export function createChunkManager({
       }
       const [removedEntry] = entries.splice(index, 1);
       if (removedEntry) {
-        removedEntries.push(removedEntry);
+        removedEntries.push({ entry: removedEntry, index });
       }
     }
 
     if (removedEntries.length === 0) {
-      unregisterDecorationGroup(group);
-      return null;
+      validGroups.forEach(({ group }) => unregisterDecorationGroup(group));
+      return summaries;
     }
 
-    removedEntries.forEach((entry) => {
+    removedEntries.forEach(({ entry }) => {
       if (!entry || !chunk.blockLookup) {
         return;
       }
@@ -1054,26 +1085,68 @@ export function createChunkManager({
       tintAttribute.needsUpdate = true;
     }
 
-    unregisterDecorationGroup(group);
+    const peersProcessed = peers.length;
+    const remainingCount = entries.length;
+
+    validGroups.forEach(({ group }) => {
+      group.instanceIndices = [];
+      unregisterDecorationGroup(group);
+    });
+
+    const removalLookup = new Set(removedEntries.map(({ index }) => index));
+    validGroups.forEach(({ group, indices }) => {
+      const removedCount = indices.filter((index) => removalLookup.has(index)).length;
+      summaries.push({
+        chunk,
+        groupKey: group.key ?? null,
+        removedCount,
+        peersProcessed,
+        firstAffectedIndex,
+        remainingCount,
+      });
+    });
 
     if (
       isDevBuild &&
       import.meta.env?.VITE_DEBUG_DECORATION_REMOVAL !== undefined
     ) {
-      console.debug('[chunk-manager] decoration removal', {
-        groupKey,
-        removed: removedEntries.length,
-        peersProcessed: peers.length,
-        firstAffectedIndex,
-        remainingCount: entries.length,
-      });
+      summaries
+        .filter((summary) => summary.groupKey && summary.removedCount > 0)
+        .forEach((summary) => {
+          console.debug('[chunk-manager] decoration removal', {
+            groupKey: summary.groupKey,
+            removed: summary.removedCount,
+            peersProcessed: summary.peersProcessed,
+            firstAffectedIndex: summary.firstAffectedIndex,
+            remainingCount: summary.remainingCount,
+          });
+        });
     }
 
-    return {
+    return summaries;
+  }
+
+  function removeDecorationGroup(groupKey) {
+    const group = decorationGroupsByKey.get(groupKey);
+    if (!group) {
+      return null;
+    }
+    const chunk = group.chunkKey ? loadedChunks.get(group.chunkKey) : null;
+    if (!chunk || !group.type || !chunk.typeData) {
+      unregisterDecorationGroup(group);
+      return null;
+    }
+
+    const summaries = removeDecorationGroupsBulk({
       chunk,
-      groupKey,
-      removedCount: removedEntries.length,
-    };
+      type: group.type,
+      groups: [group],
+    });
+    return (
+      summaries.find(
+        (summary) => summary.groupKey === group.key && summary.removedCount > 0,
+      ) ?? null
+    );
   }
 
   function removePrototypePlacement(chunk, prototypeKey, skipEntryKey = null) {
@@ -1134,13 +1207,43 @@ export function createChunkManager({
       record.blockEntries = [];
 
       const decorationKeys = Array.isArray(record.decorationKeys)
-        ? [...record.decorationKeys]
+        ? record.decorationKeys.filter(Boolean)
         : [];
-      decorationKeys.forEach((groupKey) => {
-        if (groupKey) {
-          removeDecorationGroup(groupKey);
-        }
-      });
+      if (decorationKeys.length > 0) {
+        const uniqueGroups = new Map();
+        decorationKeys.forEach((groupKey) => {
+          if (uniqueGroups.has(groupKey)) {
+            return;
+          }
+          const group = chunk.decorationGroups?.get(groupKey) ?? null;
+          if (!group) {
+            removeDecorationGroup(groupKey);
+            return;
+          }
+          uniqueGroups.set(groupKey, group);
+        });
+
+        const groupsByType = new Map();
+        uniqueGroups.forEach((group, groupKey) => {
+          if (!group.type) {
+            removeDecorationGroup(groupKey);
+            return;
+          }
+          let bucket = groupsByType.get(group.type);
+          if (!bucket) {
+            bucket = [];
+            groupsByType.set(group.type, bucket);
+          }
+          bucket.push(group);
+        });
+
+        groupsByType.forEach((groups, type) => {
+          if (!groups || groups.length === 0) {
+            return;
+          }
+          removeDecorationGroupsBulk({ chunk, type, groups });
+        });
+      }
       record.decorationKeys = [];
 
       chunk.prototypeInstances.delete(prototypeKey);
