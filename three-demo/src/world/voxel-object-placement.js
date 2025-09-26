@@ -812,17 +812,10 @@ function computeDecorativePlacements(voxel, basePlacement, object) {
   return [];
 }
 
-function formatPlacementCoordinate(value) {
-  if (!Number.isFinite(value)) {
-    return '0';
-  }
-  return value.toFixed(3);
-}
-
 export function placeVoxelObject(
   { addBlock, addDecorationInstance } = {},
   object,
-  { origin, biome, instanceIndex = 0 } = {},
+  { origin, biome } = {},
 ) {
   if (!object || typeof addBlock !== 'function') {
     return;
@@ -836,14 +829,6 @@ export function placeVoxelObject(
     y: base.y - groundAnchorOffset,
     z: base.z,
   };
-
-  const placementKey = [
-    object.id ?? 'object',
-    formatPlacementCoordinate(base.x),
-    formatPlacementCoordinate(base.y),
-    formatPlacementCoordinate(base.z),
-    Number.isFinite(instanceIndex) ? Math.floor(instanceIndex) : 0,
-  ].join('|');
 
   const voxels = resolveVoxelObjectVoxels(object);
 
@@ -873,7 +858,6 @@ export function placeVoxelObject(
       metadata: voxel.metadata,
       collisionMode,
       key: baseKey,
-      ownerPlacementKey: placementKey,
     };
 
     addBlock(voxel.type, worldX, worldY, worldZ, biome, {
@@ -889,7 +873,6 @@ export function placeVoxelObject(
       voxelIndex: voxel.index,
       metadata: voxel.metadata,
       key: baseKey,
-      ownerPlacementKey: placementKey,
     });
 
     const decorativePlacements = computeDecorativePlacements(
@@ -898,10 +881,6 @@ export function placeVoxelObject(
       object,
     );
     decorativePlacements.forEach((placement) => {
-      placement.options = {
-        ...(placement.options ?? {}),
-        ownerPlacementKey: placementKey,
-      };
       decorationCollector(
         placement.type,
         placement.worldX,
@@ -918,10 +897,6 @@ export function placeVoxelObject(
       object,
     );
     nanovoxelPlacements.forEach((placement) => {
-      placement.options = {
-        ...(placement.options ?? {}),
-        ownerPlacementKey: placementKey,
-      };
       decorationCollector(
         placement.type,
         placement.worldX,
@@ -1148,11 +1123,7 @@ export function populateColumnWithVoxelObjects({
         y: groundHeight + (object.attachment?.groundOffset ?? object.voxelScale),
         z: baseZ + Math.sin(angle) * radius,
       };
-      placeVoxelObject({ addBlock, addDecorationInstance }, object, {
-        origin,
-        biome,
-        instanceIndex: i,
-      });
+      placeVoxelObject({ addBlock, addDecorationInstance }, object, { origin, biome });
     }
     return true;
   };
