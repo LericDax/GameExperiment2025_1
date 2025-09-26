@@ -10,32 +10,13 @@ function worldToChunk(value) {
   return Math.floor((value + halfSize) / worldConfig.chunkSize);
 }
 
-function normalizeDistance(value, fallback) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return Math.max(0, Math.floor(fallback ?? 0));
-  }
-  return Math.max(0, Math.floor(numeric));
-}
-
-export function createChunkManager({
-  scene,
-  blockMaterials,
-  viewDistance = 1,
-  retainDistance: initialRetainDistance,
-}) {
+export function createChunkManager({ scene, blockMaterials, viewDistance = 1 }) {
   const loadedChunks = new Map();
   const solidBlocks = new Set();
   const softBlocks = new Set();
   const waterColumns = new Set();
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   let lastCenterKey = null;
-  let lastEffectiveRadius = 0;
-  let currentViewDistance = normalizeDistance(viewDistance, 1);
-  let retentionDistance = Math.max(
-    currentViewDistance,
-    normalizeDistance(initialRetainDistance, currentViewDistance)
-  );
 
   function ensureChunk(chunkX, chunkZ) {
     const key = chunkKey(chunkX, chunkZ);
@@ -81,56 +62,33 @@ export function createChunkManager({
     loadedChunks.delete(key);
   }
 
-  function update(position, options = {}) {
-    const { loadRadius, skipUnload = false, force = false } = options ?? {};
+  function update(position) {
     const centerChunkX = worldToChunk(position.x);
     const centerChunkZ = worldToChunk(position.z);
     const centerKey = chunkKey(centerChunkX, centerChunkZ);
 
-    const desiredRadius = Math.max(
-      retentionDistance,
-      currentViewDistance,
-      normalizeDistance(loadRadius, 0)
-    );
-
-    if (
-      centerKey === lastCenterKey &&
-      loadedChunks.size > 0 &&
-      desiredRadius <= lastEffectiveRadius &&
-      !force
-    ) {
+    if (centerKey === lastCenterKey && loadedChunks.size > 0) {
       return;
     }
 
-    for (let dx = -desiredRadius; dx <= desiredRadius; dx++) {
-      for (let dz = -desiredRadius; dz <= desiredRadius; dz++) {
+    const needed = new Set();
+    for (let dx = -viewDistance; dx <= viewDistance; dx++) {
+      for (let dz = -viewDistance; dz <= viewDistance; dz++) {
         const chunkX = centerChunkX + dx;
         const chunkZ = centerChunkZ + dz;
+        const key = chunkKey(chunkX, chunkZ);
+        needed.add(key);
         ensureChunk(chunkX, chunkZ);
       }
     }
 
-    if (!skipUnload) {
-      const unloadRadius = retentionDistance;
-      loadedChunks.forEach((chunk, key) => {
-        const chunkX =
-          typeof chunk?.chunkX === 'number'
-            ? chunk.chunkX
-            : Number.parseInt(key.split('|')[0], 10);
-        const chunkZ =
-          typeof chunk?.chunkZ === 'number'
-            ? chunk.chunkZ
-            : Number.parseInt(key.split('|')[1], 10);
-        const distanceX = Math.abs(chunkX - centerChunkX);
-        const distanceZ = Math.abs(chunkZ - centerChunkZ);
-        if (distanceX > unloadRadius || distanceZ > unloadRadius) {
-          disposeChunk(key);
-        }
-      });
-    }
+    Array.from(loadedChunks.keys()).forEach((key) => {
+      if (!needed.has(key)) {
+        disposeChunk(key);
+      }
+    });
 
     lastCenterKey = centerKey;
-    lastEffectiveRadius = desiredRadius;
   }
 
   function dispose() {
@@ -331,35 +289,6 @@ export function createChunkManager({
     return removed;
   }
 
-  function preloadAround(position, distance) {
-    const preloadRadius = Math.max(
-      retentionDistance,
-      normalizeDistance(distance, retentionDistance)
-    );
-    update(position, { loadRadius: preloadRadius, skipUnload: true, force: true });
-  }
-
-  function setViewDistance(distance) {
-    currentViewDistance = normalizeDistance(distance, currentViewDistance);
-    lastEffectiveRadius = 0;
-  }
-
-  function setRetentionDistance(distance) {
-    retentionDistance = Math.max(
-      currentViewDistance,
-      normalizeDistance(distance, retentionDistance)
-    );
-    lastEffectiveRadius = 0;
-  }
-
-  function getViewDistance() {
-    return currentViewDistance;
-  }
-
-  function getRetentionDistance() {
-    return retentionDistance;
-  }
-
   return {
     update,
     dispose,
@@ -368,11 +297,6 @@ export function createChunkManager({
     waterColumns,
     getBlockFromIntersection,
     removeBlockInstance,
-    preloadAround,
-    setViewDistance,
-    setRetentionDistance,
-    getViewDistance,
-    getRetentionDistance,
     ...(debugSnapshot ? { debugSnapshot } : {}),
   };
 }
