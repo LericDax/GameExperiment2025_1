@@ -1,4 +1,5 @@
 import generateNodeGrowthVoxels from './procedural/node-growth-generator.js';
+import { invalidateDecorationMeshCache } from './voxel-object-decoration-mesh.js';
 
 const resolvedVoxelCache = new WeakMap();
 
@@ -89,4 +90,5 @@ export function invalidateResolvedVoxelCache(object) {
     return;
   }
   resolvedVoxelCache.delete(object);
+  invalidateDecorationMeshCache(object);
 }

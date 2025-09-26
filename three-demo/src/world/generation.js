@@ -10,7 +10,10 @@ import {
   initializeFluidDebug,
   logFluidDebug,
 } from './fluids/fluid-debug.js';
-import { createDecorationMeshBatches } from './voxel-object-decoration-mesh.js';
+import {
+  cloneDecorationOptions,
+  createDecorationMeshBatches,
+} from './voxel-object-decoration-mesh.js';
 
 initializeFluidDebug({ defaultEnabled: false, persistDefault: true, forceDefault: true });
 
@@ -471,6 +474,31 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     return entry;
   };
 
+  const addDecorationMeshFromTemplate = (template, { anchor, biome }) => {
+    if (!template || !Array.isArray(template.decorations) || template.decorations.length === 0) {
+      return false;
+    }
+
+    const cacheKey = template.cacheKey ?? template.placements?.id ?? 'object';
+
+    template.decorations.forEach((decoration, index) => {
+      if (!decoration) {
+        return;
+      }
+      const worldX = anchor.x + (decoration.position?.x ?? 0);
+      const worldY = anchor.y + (decoration.position?.y ?? 0);
+      const worldZ = anchor.z + (decoration.position?.z ?? 0);
+      const options = cloneDecorationOptions(decoration.options ?? {});
+      const fallbackKey = `${cacheKey}|decor|${index}`;
+      const baseKey = decoration.baseKey ?? options.key ?? fallbackKey;
+      options.key = `${baseKey}|${worldX}|${worldY}|${worldZ}`;
+
+      addDecorationInstance(decoration.type, worldX, worldY, worldZ, biome, options);
+    });
+
+    return true;
+  };
+
   const toVector3 = (value, defaultValue = 0) => {
     if (!value && value !== 0) {
       return new THREE.Vector3(defaultValue, defaultValue, defaultValue);
@@ -804,6 +832,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         addBlock,
         addDecorationInstance,
         addPrototypeInstance,
+        addDecorationMesh: addDecorationMeshFromTemplate,
         biome,
         columnSample,
         groundHeight: height,
