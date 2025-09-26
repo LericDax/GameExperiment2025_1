@@ -1,6 +1,5 @@
 import { createTerrainEngine } from './terrain-engine.js';
 import { populateColumnWithVoxelObjects } from './voxel-object-placement.js';
-import { createDecorationMeshBatches } from './voxel-object-decoration-mesh.js';
 import {
   createFluidSurface,
   isFluidType,
@@ -115,8 +114,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   }
   const instancedData = new Map();
   const decorationInstancedData = new Map();
-  const decorationGroups = new Map();
-  const decorationGroupsByOwner = new Map();
   const solidBlockKeys = new Set();
   const softBlockKeys = new Set();
   const waterColumnKeys = new Set();
@@ -367,13 +364,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       voxelIndex: options.voxelIndex ?? null,
       metadata: options.metadata ?? null,
       tintOverride,
-      destructibilityMode:
-        typeof options.destructibilityMode === 'string'
-          ? options.destructibilityMode
-          : null,
-      ownerKey: options.ownerKey ?? null,
-      destructible:
-        typeof options.destructible === 'boolean' ? options.destructible : undefined,
     };
   };
 
@@ -470,63 +460,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     decorationInstancedData.get(type).push(entry);
   };
 
-  const addDecorationMesh = (targetGroup, type, batch) => {
-    if (!batch?.entries || batch.entries.length === 0) {
-      return null;
-    }
-    const { mesh, tintAttribute } = buildInstancedMesh(batch.entries, type);
-    mesh.userData.decoration = true;
-
-    const placementKeys = Array.isArray(batch.placementKeys)
-      ? [...batch.placementKeys]
-      : [];
-    const ownerKey = batch.ownerKey ?? null;
-    const destructible = batch.destructible !== false;
-
-    const center = new THREE.Vector3();
-    batch.entries.forEach((entry) => {
-      if (entry?.position) {
-        center.add(entry.position);
-      }
-    });
-    if (batch.entries.length > 0) {
-      center.multiplyScalar(1 / batch.entries.length);
-    }
-
-    const metadata = {
-      key: batch.groupKey,
-      type,
-      mesh,
-      tintAttribute,
-      entries: batch.entries,
-      placementKeys,
-      ownerKey,
-      destructible,
-      position: center.clone(),
-    };
-
-    mesh.userData.decorationGroup = {
-      key: metadata.key,
-      type: metadata.type,
-      destructible,
-      ownerKey,
-      placementKeys: placementKeys.slice(),
-      position: metadata.position.clone(),
-    };
-
-    decorationGroups.set(metadata.key, metadata);
-    if (ownerKey) {
-      if (!decorationGroupsByOwner.has(ownerKey)) {
-        decorationGroupsByOwner.set(ownerKey, new Set());
-      }
-      decorationGroupsByOwner.get(ownerKey).add(metadata.key);
-    }
-    blockLookup.set(metadata.key, metadata);
-
-    targetGroup.add(mesh);
-    return metadata;
-  };
-
   const buildInstancedMesh = (entries, type) => {
     const geometry = blockGeometry.clone();
     const mesh = new THREE.InstancedMesh(
@@ -572,23 +505,11 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       if (!entries || entries.length === 0) {
         return;
       }
-      let entryList = entries;
-      if (decoration) {
-        const { instancedEntries, batches } = createDecorationMeshBatches(entries, { type });
-        batches.forEach((batch) => {
-          addDecorationMesh(targetGroup, type, batch);
-        });
-        entryList = instancedEntries;
-        decorationInstancedData.set(type, instancedEntries);
-      }
-      if (!entryList || entryList.length === 0) {
-        return;
-      }
-      const { mesh, tintAttribute } = buildInstancedMesh(entryList, type);
+      const { mesh, tintAttribute } = buildInstancedMesh(entries, type);
       if (decoration) {
         mesh.userData.decoration = true;
       } else {
-        typeData.set(type, { entries: entryList, mesh, tintAttribute });
+        typeData.set(type, { entries, mesh, tintAttribute });
       }
       targetGroup.add(mesh);
     });
@@ -812,8 +733,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     waterColumnKeys,
     fluidSurfaces,
     blockLookup,
-    decorationGroups,
-    decorationGroupsByOwner,
     typeData,
     biomes,
     bounds: (() => {

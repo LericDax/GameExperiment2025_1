@@ -131,8 +131,6 @@ export function createChunkManager({
     }
     const chunk = generateChunk(blockMaterials, chunkX, chunkZ);
     chunk.group.frustumCulled = false;
-    chunk.decorationGroups = chunk.decorationGroups ?? new Map();
-    chunk.decorationGroupsByOwner = chunk.decorationGroupsByOwner ?? new Map();
     applyChunkBounds(chunk);
     chunk.group.children.forEach((child) => {
       if (!child.isInstancedMesh) {
@@ -172,8 +170,6 @@ export function createChunkManager({
     if (chunk.boundsBox) {
       chunk.boundsBox.makeEmpty?.();
     }
-    chunk.decorationGroups?.clear?.();
-    chunk.decorationGroupsByOwner?.clear?.();
     loadedChunks.delete(key);
   }
 
@@ -527,7 +523,7 @@ export function createChunkManager({
       };
 
   function getChunkForMesh(mesh) {
-    if (!mesh) {
+    if (!mesh?.isInstancedMesh) {
       return null;
     }
     const key = mesh.userData?.chunkKey;
@@ -538,35 +534,10 @@ export function createChunkManager({
   }
 
   function getBlockFromIntersection(intersection) {
-    if (!intersection || !intersection.object) {
+    if (!intersection || typeof intersection.instanceId !== 'number') {
       return null;
     }
     const mesh = intersection.object;
-    if (mesh.userData?.decorationGroup) {
-      const chunk = getChunkForMesh(mesh);
-      if (!chunk) {
-        return null;
-      }
-      const groupKey = mesh.userData.decorationGroup.key;
-      if (!groupKey) {
-        return null;
-      }
-      const group = chunk.decorationGroups?.get(groupKey);
-      if (!group) {
-        return null;
-      }
-      return {
-        chunk,
-        type: group.type ?? mesh.userData?.type ?? null,
-        decorationGroup: {
-          ...mesh.userData.decorationGroup,
-          mesh,
-        },
-      };
-    }
-    if (typeof intersection.instanceId !== 'number') {
-      return null;
-    }
     if (!mesh?.isInstancedMesh) {
       return null;
     }
@@ -592,44 +563,6 @@ export function createChunkManager({
       instanceId: intersection.instanceId,
       entry,
     };
-  }
-
-  function removeDecorationGroup({ chunk, groupKey }) {
-    if (!chunk || !groupKey) {
-      return null;
-    }
-    const groups = chunk.decorationGroups;
-    if (!groups || !groups.has(groupKey)) {
-      return null;
-    }
-    const metadata = groups.get(groupKey);
-    const { mesh, placementKeys = [], ownerKey } = metadata ?? {};
-
-    if (mesh?.parent) {
-      mesh.parent.remove(mesh);
-    }
-    mesh?.geometry?.dispose?.();
-    metadata?.tintAttribute?.dispose?.();
-
-    if (chunk.blockLookup) {
-      chunk.blockLookup.delete(groupKey);
-      placementKeys.forEach((key) => {
-        chunk.blockLookup.delete(key);
-      });
-    }
-
-    groups.delete(groupKey);
-    if (chunk.decorationGroupsByOwner && ownerKey) {
-      const ownerSet = chunk.decorationGroupsByOwner.get(ownerKey);
-      if (ownerSet) {
-        ownerSet.delete(groupKey);
-        if (ownerSet.size === 0) {
-          chunk.decorationGroupsByOwner.delete(ownerKey);
-        }
-      }
-    }
-
-    return metadata;
   }
 
   function removeBlockInstance({ chunk, type, instanceId }) {
@@ -712,15 +645,6 @@ export function createChunkManager({
       waterColumns.delete(`${removed.position.x}|${removed.position.z}`);
     }
 
-    if (removed?.key && chunk.decorationGroupsByOwner) {
-      const ownerGroups = chunk.decorationGroupsByOwner.get(removed.key);
-      if (ownerGroups && ownerGroups.size > 0) {
-        Array.from(ownerGroups).forEach((groupKey) => {
-          removeDecorationGroup({ chunk, groupKey });
-        });
-      }
-    }
-
     return removed;
   }
 
@@ -732,7 +656,6 @@ export function createChunkManager({
     waterColumns,
     getBlockFromIntersection,
     removeBlockInstance,
-    removeDecorationGroup,
     preloadAround,
     setViewDistance,
     setRetentionDistance,
