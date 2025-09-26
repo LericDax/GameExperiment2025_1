@@ -71,6 +71,20 @@ function resizeToViewport() {
 resizeToViewport()
 window.addEventListener('resize', resizeToViewport)
 
+const MAX_PIXEL_RATIO = 2
+
+function resizeToViewport() {
+  const width = Math.max(window.innerWidth, 1)
+  const height = Math.max(window.innerHeight, 1)
+  camera.aspect = width / height
+  camera.updateProjectionMatrix()
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO))
+  renderer.setSize(width, height)
+}
+
+resizeToViewport()
+window.addEventListener('resize', resizeToViewport)
+
 const clock = new THREE.Clock()
 const diagnosticOverlayCallbacks = new Set()
 
