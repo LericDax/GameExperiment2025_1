@@ -10,6 +10,7 @@ import {
   initializeFluidDebug,
   logFluidDebug,
 } from './fluids/fluid-debug.js';
+import { createDecorationMeshBatches } from './voxel-object-decoration-mesh.js';
 
 initializeFluidDebug({ defaultEnabled: false, persistDefault: true, forceDefault: true });
 
@@ -114,6 +115,9 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   }
   const instancedData = new Map();
   const decorationInstancedData = new Map();
+  const decorationData = new Map();
+  const decorationGroups = new Map();
+  const decorationOwnerIndex = new Map();
   const solidBlockKeys = new Set();
   const softBlockKeys = new Set();
   const waterColumnKeys = new Set();
@@ -360,6 +364,8 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       scale: scaleVector.clone(),
       visualScale: visualScaleVector.clone(),
       visualOffset: visualOffsetVector.clone(),
+      destructible:
+        typeof options.destructible === 'boolean' ? options.destructible : null,
       sourceObjectId: options.sourceObjectId ?? null,
       voxelIndex: options.voxelIndex ?? null,
       metadata: options.metadata ?? null,
@@ -497,7 +503,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     return { mesh, tintAttribute };
   };
 
-  const addMeshesFromMap = (targetGroup, map, { decoration = false } = {}) => {
+  const addMeshesFromMap = (targetGroup, map) => {
     map.forEach((entries, type) => {
       if (isFluidType(type)) {
         return;
@@ -506,13 +512,62 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         return;
       }
       const { mesh, tintAttribute } = buildInstancedMesh(entries, type);
-      if (decoration) {
-        mesh.userData.decoration = true;
-      } else {
-        typeData.set(type, { entries, mesh, tintAttribute });
-      }
+      typeData.set(type, { entries, mesh, tintAttribute });
       targetGroup.add(mesh);
     });
+  };
+
+  const addDecorationMesh = (targetGroup, type, entries) => {
+    if (!entries || entries.length === 0) {
+      return;
+    }
+    const { mesh, tintAttribute } = buildInstancedMesh(entries, type);
+    mesh.userData.decoration = true;
+    decorationData.set(type, { entries, mesh, tintAttribute });
+
+    const { groups: metadataGroups } = createDecorationMeshBatches(entries);
+
+    metadataGroups.forEach((groupInfo) => {
+      const instanceIndices = groupInfo.entryIndices.slice();
+      const metadata = {
+        key: groupInfo.key,
+        owner: groupInfo.owner ?? null,
+        destructible:
+          typeof groupInfo.destructible === 'boolean' ? groupInfo.destructible : true,
+        type,
+        mesh,
+        tintAttribute,
+        instanceIndices,
+      };
+      decorationGroups.set(metadata.key, metadata);
+      const owner = metadata.owner;
+      if (owner !== null && owner !== undefined) {
+        let ownerSet = decorationOwnerIndex.get(owner);
+        if (!ownerSet) {
+          ownerSet = new Set();
+          decorationOwnerIndex.set(owner, ownerSet);
+        }
+        ownerSet.add(metadata.key);
+      }
+
+      metadata.instanceIndices.forEach((instanceIndex) => {
+        const entry = entries[instanceIndex];
+        if (!entry) {
+          return;
+        }
+        entry.decorationGroup = metadata;
+        entry.decorationGroupKey = metadata.key;
+        entry.mesh = mesh;
+        entry.tintAttribute = tintAttribute;
+        entry.isDecoration = true;
+        blockLookup.set(entry.key, entry);
+        if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+          blockLookup.set(entry.coordinateKey, entry);
+        }
+      });
+    });
+
+    targetGroup.add(mesh);
   };
 
   for (let lx = 0; lx < chunkSize; lx++) {
@@ -699,7 +754,9 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
   const group = new THREE.Group();
   addMeshesFromMap(group, instancedData);
-  addMeshesFromMap(group, decorationInstancedData, { decoration: true });
+  decorationInstancedData.forEach((entries, type) => {
+    addDecorationMesh(group, type, entries);
+  });
 
   logFluidDebug('fluid surfaces count before group add', fluidSurfaces.length);
   fluidSurfaces.forEach((surface) => {
@@ -734,6 +791,9 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     fluidSurfaces,
     blockLookup,
     typeData,
+    decorationData,
+    decorationGroups,
+    decorationOwnerIndex,
     biomes,
     bounds: (() => {
       if (!hasBoundData) {
