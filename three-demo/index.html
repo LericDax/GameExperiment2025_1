@@ -9,26 +9,40 @@
       body {
         margin: 0;
         padding: 0;
-        overflow: hidden;
+        width: 100%;
         height: 100%;
+        overflow: hidden;
         background: #000;
-        font-family: "Segoe UI", sans-serif;
+        font-family: 'Segoe UI', sans-serif;
         color: #fff;
       }
 
-      #overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
+      #app {
+        position: relative;
         width: 100%;
         height: 100%;
+      }
+
+      canvas {
+        position: fixed;
+        inset: 0;
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      #overlay {
+        position: fixed;
+        inset: 0;
         display: flex;
         align-items: center;
         justify-content: center;
         flex-direction: column;
+        padding: clamp(16px, 5vw, 72px);
         background: rgba(0, 0, 0, 0.6);
         cursor: pointer;
         transition: opacity 0.3s ease;
+        z-index: 10;
       }
 
       #overlay.hidden {
@@ -38,13 +52,19 @@
 
       #instructions {
         text-align: center;
-        max-width: 420px;
+        max-width: min(520px, 90vw);
         line-height: 1.6;
+        font-size: clamp(14px, 2vw, 18px);
+      }
+
+      #instructions h1 {
+        margin-bottom: clamp(12px, 3vh, 24px);
+        font-size: clamp(26px, 5vw, 48px);
       }
 
       #overlay-status {
-        margin-top: 18px;
-        font-size: 13px;
+        margin-top: clamp(14px, 2.5vh, 22px);
+        font-size: clamp(13px, 1.6vw, 16px);
         color: rgba(255, 255, 255, 0.85);
         line-height: 1.5;
         opacity: 0;
@@ -60,33 +80,34 @@
       }
 
       #hud {
-        position: absolute;
-        left: 24px;
-        bottom: 24px;
+        position: fixed;
+        left: clamp(16px, 2.6vw, 36px);
+        bottom: clamp(16px, 3vh, 44px);
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: clamp(6px, 1.5vh, 12px);
         pointer-events: none;
-        min-width: 220px;
-        font-size: 14px;
+        min-width: clamp(180px, 26vw, 280px);
+        font-size: clamp(13px, 1.6vw, 16px);
+        z-index: 20;
       }
 
       .hud-bar {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: clamp(8px, 2vw, 16px);
       }
 
       .hud-label {
         text-transform: uppercase;
-        font-size: 11px;
+        font-size: clamp(10px, 1.1vw, 12px);
         letter-spacing: 0.08em;
         color: rgba(255, 255, 255, 0.8);
       }
 
       .hud-track {
         flex: 1;
-        height: 6px;
+        height: clamp(6px, 1vh, 10px);
         background: rgba(255, 255, 255, 0.2);
         border-radius: 6px;
         overflow: hidden;
@@ -105,15 +126,15 @@
 
       .hud-value {
         font-variant-numeric: tabular-nums;
-        font-size: 12px;
+        font-size: clamp(11px, 1.2vw, 14px);
         color: rgba(255, 255, 255, 0.9);
-        min-width: 32px;
+        min-width: clamp(28px, 3vw, 38px);
         text-align: right;
       }
 
       #hud-status {
-        min-height: 18px;
-        font-size: 13px;
+        min-height: clamp(18px, 3vh, 28px);
+        font-size: clamp(12px, 1.5vw, 16px);
         color: #ffe28a;
         opacity: 0;
         transition: opacity 0.3s ease;
@@ -131,19 +152,15 @@
         background: linear-gradient(90deg, #45d0ff, #1b7bff);
       }
 
-      canvas {
-        display: block;
-      }
-
       .volume-widget {
         position: fixed;
-        top: 16px;
-        right: 16px;
-        width: 220px;
-        padding: 10px 12px 12px 12px;
+        top: clamp(12px, 2.6vw, 24px);
+        right: clamp(12px, 2.6vw, 24px);
+        width: min(240px, 80vw);
+        padding: clamp(10px, 2vw, 16px);
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: clamp(6px, 1.4vh, 12px);
         background: rgba(12, 16, 24, 0.78);
         border: 1px solid rgba(132, 160, 220, 0.24);
         border-radius: 12px;
@@ -162,7 +179,7 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        font-size: 12px;
+        font-size: clamp(10px, 1.2vw, 12px);
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: rgba(200, 220, 255, 0.72);
@@ -172,13 +189,13 @@
 
       .volume-widget-title {
         font-weight: 600;
-        font-size: 11px;
+        font-size: clamp(10px, 1.1vw, 12px);
       }
 
       .volume-widget-controls {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: clamp(8px, 2vw, 14px);
       }
 
       .volume-widget button {
@@ -187,8 +204,8 @@
         background: rgba(18, 24, 36, 0.85);
         color: inherit;
         border-radius: 8px;
-        padding: 6px 10px;
-        font-size: 12px;
+        padding: clamp(4px, 1vh, 7px) clamp(8px, 2vw, 12px);
+        font-size: clamp(11px, 1.3vw, 13px);
         line-height: 1;
         cursor: pointer;
         transition: border-color 160ms ease, background 160ms ease;
@@ -206,29 +223,30 @@
       }
 
       .volume-widget-toggle {
-        width: 42px;
+        width: clamp(38px, 12vw, 48px);
       }
 
       .volume-widget-next {
-        width: 42px;
+        width: clamp(38px, 12vw, 48px);
       }
 
       .volume-widget-slider {
         flex: 1;
+        min-width: 0;
         accent-color: #94b9ff;
         cursor: pointer;
       }
 
       .volume-widget-track {
-        min-height: 16px;
-        font-size: 12px;
+        min-height: clamp(14px, 2vh, 18px);
+        font-size: clamp(11px, 1.2vw, 13px);
         line-height: 1.4;
         color: rgba(214, 228, 255, 0.85);
         text-shadow: 0 1px 1px rgba(2, 4, 8, 0.5);
       }
 
       .volume-widget-hint {
-        font-size: 11px;
+        font-size: clamp(10px, 1.1vw, 12px);
         line-height: 1.4;
         color: rgba(255, 190, 140, 0.85);
       }

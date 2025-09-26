@@ -47,21 +47,42 @@ scene.fog = new THREE.Fog(0xa9d6ff, 20, 140)
 
 const camera = new THREE.PerspectiveCamera(
   75,
-  window.innerWidth / window.innerHeight,
+  Math.max(window.innerWidth, 1) / Math.max(window.innerHeight, 1),
   0.1,
   500,
 )
 camera.position.set(0, 25, 30)
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setPixelRatio(window.devicePixelRatio)
-renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.outputColorSpace = THREE.SRGBColorSpace
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.1
+renderer.domElement.id = 'game-canvas'
+renderer.domElement.setAttribute('aria-hidden', 'true')
+renderer.domElement.tabIndex = -1
+renderer.domElement.style.display = 'block'
+renderer.domElement.style.width = '100%'
+renderer.domElement.style.height = '100%'
+renderer.domElement.style.position = 'fixed'
+renderer.domElement.style.inset = '0'
+renderer.domElement.style.touchAction = 'none'
 document.body.appendChild(renderer.domElement)
+
+const MAX_PIXEL_RATIO = 2
+
+function resizeToWindow() {
+  const width = Math.max(window.innerWidth, 1)
+  const height = Math.max(window.innerHeight, 1)
+  camera.aspect = width / height
+  camera.updateProjectionMatrix()
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO))
+  renderer.setSize(width, height)
+}
+
+resizeToWindow()
+window.addEventListener('resize', resizeToWindow)
 
 const clock = new THREE.Clock()
 const diagnosticOverlayCallbacks = new Set()
@@ -183,6 +204,8 @@ try {
   if (import.meta.env.DEV) {
     const debugNamespace = (window.__VOXEL_DEBUG__ = window.__VOXEL_DEBUG__ || {})
     debugNamespace.chunkSnapshot = () => chunkManager.debugSnapshot?.()
+    debugNamespace.scene = scene
+    debugNamespace.renderer = renderer
     debugNamespace.player = {
       controls: playerControls,
       setPosition: (position) => playerControls.setPosition(position),
@@ -279,6 +302,7 @@ if (!initializationError) {
   animate()
 
   window.addEventListener('beforeunload', () => {
+    window.removeEventListener('resize', resizeToWindow)
     playerControls.dispose()
     chunkManager.dispose()
     musicSystem?.dispose()
