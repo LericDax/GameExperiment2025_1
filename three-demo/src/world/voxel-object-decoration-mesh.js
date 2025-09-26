@@ -1,9 +1,6 @@
 const DEFAULT_OWNER = null;
 
 function resolveOwner(entry, decorationMeta, metadata) {
-  if (entry && entry.ownerPlacementKey !== undefined) {
-    return entry.ownerPlacementKey;
-  }
   if (decorationMeta && decorationMeta.owner !== undefined) {
     return decorationMeta.owner;
   }

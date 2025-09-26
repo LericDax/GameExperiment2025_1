@@ -158,54 +158,6 @@ export function createChunkManager({
     }
   }
 
-  function registerChunkEntry(chunk, entry) {
-    if (!chunk || !entry) {
-      return;
-    }
-    const ownerKey = entry.ownerPlacementKey ?? entry.key;
-    if (chunk.blockLookup && ownerKey) {
-      let set = chunk.blockLookup.get(ownerKey);
-      if (!set) {
-        set = new Set();
-        chunk.blockLookup.set(ownerKey, set);
-      }
-      set.add(entry);
-    }
-    if (chunk.coordinateLookup) {
-      if (entry.key) {
-        chunk.coordinateLookup.set(entry.key, entry);
-      }
-      if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
-        chunk.coordinateLookup.set(entry.coordinateKey, entry);
-      }
-    }
-  }
-
-  function unregisterChunkEntry(chunk, entry, { skipPlacement = false } = {}) {
-    if (!chunk || !entry) {
-      return;
-    }
-    if (!skipPlacement && chunk.blockLookup) {
-      const ownerKey = entry.ownerPlacementKey ?? entry.key;
-      if (ownerKey) {
-        const set = chunk.blockLookup.get(ownerKey);
-        if (set) {
-          set.delete(entry);
-          if (set.size === 0) {
-            chunk.blockLookup.delete(ownerKey);
-          }
-        }
-      }
-    }
-    if (chunk.coordinateLookup) {
-      if (entry.key) {
-        chunk.coordinateLookup.delete(entry.key);
-      }
-      if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
-        chunk.coordinateLookup.delete(entry.coordinateKey);
-      }
-    }
-  }
 
   function ensureChunk(chunkX, chunkZ) {
     const key = chunkKey(chunkX, chunkZ);
@@ -215,12 +167,6 @@ export function createChunkManager({
     const chunk = generateChunk(blockMaterials, chunkX, chunkZ);
     chunk.group.frustumCulled = false;
     applyChunkBounds(chunk);
-    if (!chunk.blockLookup) {
-      chunk.blockLookup = new Map();
-    }
-    if (!chunk.coordinateLookup) {
-      chunk.coordinateLookup = new Map();
-    }
     chunk.group.children.forEach((child) => {
       if (!child.isInstancedMesh) {
         return;
@@ -668,14 +614,12 @@ export function createChunkManager({
     };
   }
 
-  function removeBlockEntryByIndex(
-    chunk,
-    typeData,
-    type,
-    instanceId,
-    { skipPlacementCleanup = false } = {},
-  ) {
-    if (!chunk || !typeData) {
+  function removeBlockInstance({ chunk, type, instanceId }) {
+    if (!chunk || typeof instanceId !== 'number' || !chunk.typeData) {
+      return null;
+    }
+    const typeData = chunk.typeData.get(type);
+    if (!typeData) {
       return null;
     }
     const { entries, mesh, tintAttribute } = typeData;
@@ -713,6 +657,12 @@ export function createChunkManager({
       mesh.setMatrixAt(instanceId, swapped.matrix);
       writeTint(instanceId, swapped.tintColor);
       mesh.instanceMatrix.needsUpdate = true;
+      if (chunk.blockLookup) {
+        const swappedInfo = chunk.blockLookup.get(swapped.key);
+        if (swappedInfo) {
+          swappedInfo.index = instanceId;
+        }
+      }
       swapped.index = instanceId;
     }
 
@@ -723,8 +673,12 @@ export function createChunkManager({
       tintAttribute.needsUpdate = true;
     }
 
-    unregisterChunkEntry(chunk, removed, { skipPlacement: skipPlacementCleanup });
-
+    if (chunk.blockLookup) {
+      chunk.blockLookup.delete(removed.key);
+      if (removed.coordinateKey && removed.coordinateKey !== removed.key) {
+        chunk.blockLookup.delete(removed.coordinateKey);
+      }
+    }
     if (removed.isSolid) {
       const coordinateKey = removed.coordinateKey ?? removed.key;
       chunk.solidBlockKeys.delete(coordinateKey);
@@ -743,133 +697,13 @@ export function createChunkManager({
     return removed;
   }
 
-  function removePlacementEntries(chunk, placementKey, fallback) {
-    if (!chunk) {
-      return [];
-    }
-    const removedEntries = [];
-    const placementSet =
-      placementKey && chunk.blockLookup ? chunk.blockLookup.get(placementKey) : null;
-    if (!placementSet || placementSet.size === 0) {
-      if (fallback) {
-        const removed = removeBlockEntryByIndex(
-          chunk,
-          fallback.typeData,
-          fallback.type,
-          fallback.instanceId,
-          { skipPlacementCleanup: false },
-        );
-        if (removed) {
-          removedEntries.push(removed);
-        }
-      }
-      return removedEntries;
-    }
-
-    chunk.blockLookup.delete(placementKey);
-
-    const groupedByType = new Map();
-    placementSet.forEach((entry) => {
-      if (!entry) {
-        return;
-      }
-      const entryType = entry.type;
-      if (!groupedByType.has(entryType)) {
-        groupedByType.set(entryType, []);
-      }
-      groupedByType.get(entryType).push(entry);
-    });
-
-    groupedByType.forEach((entriesForType, entryType) => {
-      const typeData = chunk.typeData?.get(entryType);
-      if (!typeData) {
-        return;
-      }
-      entriesForType
-        .filter((entry) => typeof entry.index === 'number')
-        .sort((a, b) => b.index - a.index)
-        .forEach((entry) => {
-          const removed = removeBlockEntryByIndex(
-            chunk,
-            typeData,
-            entryType,
-            entry.index,
-            { skipPlacementCleanup: true },
-          );
-          if (removed) {
-            removedEntries.push(removed);
-          }
-        });
-    });
-
-    return removedEntries;
-  }
-
-  function removeBlockInstance({ chunk, type, instanceId }) {
-    if (!chunk || typeof instanceId !== 'number' || !chunk.typeData) {
-      return null;
-    }
-    const typeData = chunk.typeData.get(type);
-    if (!typeData) {
-      return null;
-    }
-    const { entries, mesh } = typeData;
-    if (!mesh || !mesh.isInstancedMesh) {
-      return null;
-    }
-    if (instanceId < 0 || instanceId >= entries.length) {
-      return null;
-    }
-
-    const entry = entries[instanceId];
-    if (!entry) {
-      return null;
-    }
-
-    const placementKey = entry.ownerPlacementKey ?? entry.key;
-    const removedEntries = removePlacementEntries(chunk, placementKey, {
-      typeData,
-      type,
-      instanceId,
-    });
-
-    if (removedEntries.length === 0) {
-      return null;
-    }
-
-    if (placementKey) {
-      removeDecorationGroup(placementKey);
-    }
-
-    return {
-      chunk,
-      placementKey,
-      removedEntries,
-    };
-  }
-
   function removeDecorationGroup(groupKey) {
     if (!groupKey) {
       return null;
     }
     const group = decorationGroupsByKey.get(groupKey);
     if (!group) {
-      const ownerGroups = decorationOwnersIndex.get(groupKey);
-      if (!ownerGroups || ownerGroups.size === 0) {
-        return null;
-      }
-      const keys = Array.from(ownerGroups.values());
-      let removedCount = 0;
-      keys.forEach((key) => {
-        const result = removeDecorationGroup(key);
-        if (result && typeof result.removedCount === 'number') {
-          removedCount += result.removedCount;
-        }
-      });
-      return {
-        ownerPlacementKey: groupKey,
-        removedCount,
-      };
+      return null;
     }
     const chunkKey = group.chunkKey;
     const chunk = loadedChunks.get(chunkKey);
@@ -938,7 +772,13 @@ export function createChunkManager({
     decorationData.entries = remainingEntries;
 
     removedEntries.forEach((entry) => {
-      unregisterChunkEntry(chunk, entry);
+      if (!entry || !chunk.blockLookup) {
+        return;
+      }
+      chunk.blockLookup.delete(entry.key);
+      if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+        chunk.blockLookup.delete(entry.coordinateKey);
+      }
     });
 
     remainingEntries.forEach((entry, index) => {
@@ -997,7 +837,12 @@ export function createChunkManager({
         entry.mesh = mesh;
         entry.tintAttribute = tintAttribute;
         entry.isDecoration = true;
-        registerChunkEntry(chunk, entry);
+        if (chunk.blockLookup) {
+          chunk.blockLookup.set(entry.key, entry);
+          if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+            chunk.blockLookup.set(entry.coordinateKey, entry);
+          }
+        }
       });
     });
 
