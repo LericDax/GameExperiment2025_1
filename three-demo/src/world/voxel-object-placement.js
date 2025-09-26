@@ -812,10 +812,16 @@ function computeDecorativePlacements(voxel, basePlacement, object) {
   return [];
 }
 
-export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
+export function placeVoxelObject(
+  { addBlock, addDecorationInstance } = {},
+  object,
+  { origin, biome } = {},
+) {
   if (!object || typeof addBlock !== 'function') {
     return;
   }
+  const decorationCollector =
+    typeof addDecorationInstance === 'function' ? addDecorationInstance : addBlock;
   const base = origin ?? { x: 0, y: 0, z: 0 };
   const groundAnchorOffset = object.attachment?.groundOffset ?? object.voxelScale;
   const anchor = {
@@ -869,9 +875,13 @@ export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
       key: baseKey,
     });
 
-    const decorativePlacements = computeDecorativePlacements(voxel, basePlacement, object);
+    const decorativePlacements = computeDecorativePlacements(
+      voxel,
+      basePlacement,
+      object,
+    );
     decorativePlacements.forEach((placement) => {
-      addBlock(
+      decorationCollector(
         placement.type,
         placement.worldX,
         placement.worldY,
@@ -879,12 +889,15 @@ export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
         biome,
         placement.options,
       );
-
     });
 
-    const nanovoxelPlacements = computeNanovoxelPlacements(voxel, basePlacement, object);
+    const nanovoxelPlacements = computeNanovoxelPlacements(
+      voxel,
+      basePlacement,
+      object,
+    );
     nanovoxelPlacements.forEach((placement) => {
-      addBlock(
+      decorationCollector(
         placement.type,
         placement.worldX,
         placement.worldY,
@@ -892,7 +905,6 @@ export function placeVoxelObject(addBlock, object, { origin, biome } = {}) {
         biome,
         placement.options,
       );
-
     });
   });
 }
@@ -911,6 +923,7 @@ function selectObject(category, biome, randomSource, randomOffset) {
 
 export function populateColumnWithVoxelObjects({
   addBlock,
+  addDecorationInstance,
   biome,
   columnSample,
   groundHeight,
@@ -1110,7 +1123,7 @@ export function populateColumnWithVoxelObjects({
         y: groundHeight + (object.attachment?.groundOffset ?? object.voxelScale),
         z: baseZ + Math.sin(angle) * radius,
       };
-      placeVoxelObject(addBlock, object, { origin, biome });
+      placeVoxelObject({ addBlock, addDecorationInstance }, object, { origin, biome });
     }
     return true;
   };
