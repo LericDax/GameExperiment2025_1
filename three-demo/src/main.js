@@ -157,8 +157,7 @@ try {
   chunkManager = createChunkManager({
     scene,
     blockMaterials,
-    viewDistance: 3,
-    retainDistance: 5,
+    viewDistance: 2,
   })
 
   playerControls = createPlayerControls({
