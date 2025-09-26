@@ -1125,18 +1125,11 @@ export function createPlayerControls({
     const intersections = attackRay.intersectObjects(scene.children, true);
     let blockInfo = null;
     for (const intersection of intersections) {
-      const info = chunkManager.getBlockFromIntersection(intersection);
-      if (!info) {
+      if (!intersection.object?.isInstancedMesh) {
         continue;
       }
-      if (info.decorationGroup) {
-        if (!info.decorationGroup.destructible) {
-          continue;
-        }
-        blockInfo = info;
-        break;
-      }
-      if (!info.entry?.destructible) {
+      const info = chunkManager.getBlockFromIntersection(intersection);
+      if (!info?.entry?.destructible) {
         continue;
       }
       blockInfo = info;
@@ -1148,53 +1141,21 @@ export function createPlayerControls({
       return;
     }
 
-    const targetKey = blockInfo.decorationGroup
-      ? blockInfo.decorationGroup.key
-      : blockInfo.entry?.key;
-
-    if (!targetKey) {
-      decayAttack(delta);
-      return;
-    }
-
-    const targetPosition = blockInfo.entry?.position
-      ? blockInfo.entry.position.clone()
-      : blockInfo.decorationGroup?.position
-      ? blockInfo.decorationGroup.position.clone()
-      : null;
-
-    if (!attackState.target || attackState.target.key !== targetKey) {
-      attackState.target = {
-        key: targetKey,
-        chunk: blockInfo.chunk,
-        type: blockInfo.type,
-        instanceId: blockInfo.instanceId ?? null,
-        entry: blockInfo.entry ?? null,
-        decorationGroup: blockInfo.decorationGroup ?? null,
-        position: targetPosition,
-      };
+    if (!attackState.target || attackState.target.entry.key !== blockInfo.entry.key) {
+      attackState.target = blockInfo;
       attackState.progress = 0;
-    } else if (!attackState.target.position && targetPosition) {
-      attackState.target.position = targetPosition.clone();
     }
 
     if (attackState.swinging) {
-      const type = attackState.target.type;
+      const type = attackState.target.entry.type;
       const durability = blockDurability.get(type) ?? 1.2;
       attackState.progress += delta / Math.max(durability, 0.1);
       if (attackState.progress >= 1) {
-        if (attackState.target.decorationGroup) {
-          chunkManager.removeDecorationGroup({
-            chunk: attackState.target.chunk,
-            groupKey: attackState.target.decorationGroup.key,
-          });
-        } else {
-          chunkManager.removeBlockInstance({
-            chunk: attackState.target.chunk,
-            type: attackState.target.type,
-            instanceId: attackState.target.instanceId,
-          });
-        }
+        chunkManager.removeBlockInstance({
+          chunk: attackState.target.chunk,
+          type: attackState.target.type,
+          instanceId: attackState.target.instanceId,
+        });
         resetAttackProgress();
         return;
       }
@@ -1203,7 +1164,7 @@ export function createPlayerControls({
     }
 
     if (attackState.target && attackState.progress > 0) {
-      showDamageOverlay(attackState.target.position, attackState.progress);
+      showDamageOverlay(attackState.target.entry.position, attackState.progress);
     } else {
       hideDamageOverlay();
     }

@@ -437,11 +437,9 @@ function computeNanovoxelPlacementsForDescriptor(
             collisionMode: 'none',
             isSolid: false,
             destructible: basePlacement.destructible,
-            destructibilityMode: resolveDecorationDestructibility(basePlacement.metadata),
             sourceObjectId: object.id,
             voxelIndex: voxel.index,
             metadata: basePlacement.metadata,
-            ownerKey: basePlacement.key,
             key,
           },
         });
@@ -644,36 +642,6 @@ function resolveCollisionMode(voxel, object) {
   return object.voxelScale < 1 ? 'none' : 'solid';
 }
 
-function resolveDecorationDestructibility(metadata) {
-  const root = metadata ?? {};
-  const decorationMeta =
-    root.decoration && typeof root.decoration === 'object' ? root.decoration : null;
-
-  const candidateModes = [
-    decorationMeta?.destructibilityMode,
-    decorationMeta?.destructibility,
-    root.decorationDestructibility,
-  ];
-
-  for (const mode of candidateModes) {
-    if (typeof mode === 'string') {
-      return mode;
-    }
-  }
-
-  if (decorationMeta?.individualDestruction === true) {
-    return 'individual';
-  }
-  if (decorationMeta?.groupDestructible === false) {
-    return 'individual';
-  }
-  if (root.individualDecorationDestruction === true) {
-    return 'individual';
-  }
-
-  return 'group';
-}
-
 function computeSegmentFeatherPlacements(voxel, basePlacement, object, smoothing) {
   const layerCount = Math.max(0, smoothing.featherLayers ?? 0);
   if (layerCount === 0) {
@@ -742,11 +710,9 @@ function computeSegmentFeatherPlacements(voxel, basePlacement, object, smoothing
         collisionMode: 'none',
         isSolid: false,
         destructible: basePlacement.destructible,
-        destructibilityMode: resolveDecorationDestructibility(basePlacement.metadata),
         sourceObjectId: object.id,
         voxelIndex: voxel.index,
         metadata: basePlacement.metadata,
-        ownerKey: basePlacement.key,
         key: `${basePlacement.key}|layer-${i}`,
       },
     });
@@ -821,11 +787,9 @@ function computeNodeFeatherPlacements(voxel, basePlacement, object, smoothing) {
         collisionMode: 'none',
         isSolid: false,
         destructible: basePlacement.destructible,
-        destructibilityMode: resolveDecorationDestructibility(basePlacement.metadata),
         sourceObjectId: object.id,
         voxelIndex: voxel.index,
         metadata: basePlacement.metadata,
-        ownerKey: basePlacement.key,
         key: `${basePlacement.key}|petal-${i}`,
       },
     });
