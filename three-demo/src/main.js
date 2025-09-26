@@ -192,6 +192,38 @@ try {
       getYawPitch: () => playerControls.getYawPitch(),
     }
     debugNamespace.registerDiagnosticOverlay = registerDiagnosticOverlay
+
+    let perfFlightModulePromise = null
+    const resolvePerfFlightModule = () => {
+      if (!perfFlightModulePromise) {
+        perfFlightModulePromise = import('./devtools/perf-flight-harness.js')
+      }
+      return perfFlightModulePromise
+    }
+
+    const perfFlightNamespace =
+      (debugNamespace.perfFlight = debugNamespace.perfFlight || {})
+    perfFlightNamespace.run = (options = {}) =>
+      resolvePerfFlightModule().then(({ runPerfFlight }) =>
+        runPerfFlight({
+          playerControls,
+          registerDiagnosticOverlay,
+          renderer,
+          chunkManager,
+          ...options,
+        }),
+      )
+
+    const perfFlightMode = new URLSearchParams(window.location.search).get(
+      'perfFlight',
+    )
+    if (perfFlightMode === 'auto') {
+      perfFlightNamespace
+        .run()
+        .catch((error) =>
+          console.error('Perf flight harness failed to complete:', error),
+        )
+    }
   }
 
   const commandConsole = createCommandConsole({
