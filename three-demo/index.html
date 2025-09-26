@@ -21,14 +21,17 @@
         position: relative;
         width: 100%;
         height: 100%;
+
+        overflow: hidden;
       }
 
-      canvas {
+      #viewport {
         position: fixed;
         inset: 0;
-        display: block;
-        width: 100vw;
-        height: 100vh;
+        z-index: 0;
+        background: #000;
+
+
       }
 
       #overlay {
@@ -81,6 +84,7 @@
 
       #hud {
         position: fixed;
+
         left: clamp(16px, 2.6vw, 36px);
         bottom: clamp(16px, 3vh, 44px);
         display: flex;
@@ -90,6 +94,7 @@
         min-width: clamp(180px, 26vw, 280px);
         font-size: clamp(13px, 1.6vw, 16px);
         z-index: 20;
+
       }
 
       .hud-bar {
@@ -150,6 +155,14 @@
 
       #hud.in-water .hud-fill {
         background: linear-gradient(90deg, #45d0ff, #1b7bff);
+      }
+
+      canvas {
+        display: block;
+
+        width: 100%;
+        height: 100%;
+
       }
 
       .volume-widget {
@@ -258,6 +271,7 @@
   </head>
   <body>
     <div id="app">
+      <div id="viewport" aria-hidden="true"></div>
       <div id="overlay" class="hidden" aria-hidden="true">
         <div id="instructions">
           <h1>Procedural Block World</h1>
