@@ -2,6 +2,12 @@ const voxelObjectModules = import.meta.glob('./voxel-objects/**/*.json', {
   eager: true,
 });
 
+const DEFAULT_DESTRUCTION_MODE = 'prototype';
+const ALLOWED_DESTRUCTION_MODES = new Set([
+  'prototype',
+  'per-voxel',
+]);
+
 function asArray(value, dimension, label, path) {
   if (!Array.isArray(value) || value.length !== dimension) {
     throw new Error(
@@ -149,6 +155,17 @@ function normalizeDefinition(path, raw) {
     ? definition.voxels.map((voxel, index) => normalizeVoxel(voxel, index, { path }))
     : [];
 
+  let destructionMode = DEFAULT_DESTRUCTION_MODE;
+  if (typeof definition.destructionMode === 'string') {
+    const normalizedMode = definition.destructionMode.trim().toLowerCase();
+    if (!ALLOWED_DESTRUCTION_MODES.has(normalizedMode)) {
+      throw new Error(
+        `Unsupported destructionMode "${definition.destructionMode}" in voxel object definition at ${path}.`,
+      );
+    }
+    destructionMode = normalizedMode;
+  }
+
   const attachment = {
     groundOffset:
       typeof definition?.attachment?.groundOffset === 'number'
@@ -250,6 +267,7 @@ function normalizeDefinition(path, raw) {
     placement,
     voxels,
     boundingBox,
+    destructionMode,
 
     collision: { mode: normalizedCollision },
 

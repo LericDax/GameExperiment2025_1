@@ -5,6 +5,8 @@
   "author": "system",
   "description": "Compact broadleaf tree built from terrain-scale voxels.",
 
+  "destructionMode": "per-voxel",
+
   "collision": "solid",
 
   "voxelScale": 1,

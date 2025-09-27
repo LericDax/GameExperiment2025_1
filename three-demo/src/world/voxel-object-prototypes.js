@@ -894,6 +894,9 @@ export function clearVoxelObjectPrototypeCache() {
 }
 
 export function buildVoxelObjectPrototype(object) {
+  if (object?.destructionMode === 'per-voxel') {
+    return null;
+  }
   const placements = computeVoxelObjectPlacements(object);
   if (!placements) {
     return null;
@@ -912,6 +915,9 @@ export function buildVoxelObjectPrototype(object) {
 
 export function getVoxelObjectPrototype(object) {
   if (!object) {
+    return null;
+  }
+  if (object.destructionMode === 'per-voxel') {
     return null;
   }
   const cacheKey = object.id;

@@ -48,7 +48,10 @@ export function placeVoxelObject(
     z: base.z,
   };
 
-  if (typeof addPrototypeInstance === 'function') {
+  const usePrototypePlacement =
+    object?.destructionMode !== 'per-voxel' && typeof addPrototypeInstance === 'function';
+
+  if (usePrototypePlacement) {
     const prototype = getVoxelObjectPrototype(object);
     if (prototype) {
       const instanceKey = [
@@ -339,11 +342,18 @@ export function populateColumnWithVoxelObjects({
         y: groundHeight + (object.attachment?.groundOffset ?? object.voxelScale),
         z: baseZ + Math.sin(angle) * radius,
       };
-      placeVoxelObject(
-        { addBlock, addDecorationInstance, addPrototypeInstance, addDecorationMesh },
-        object,
-        { origin, biome },
-      );
+      const placementHandlers = {
+        addBlock,
+        addDecorationInstance,
+        addDecorationMesh,
+      };
+      if (
+        object.destructionMode !== 'per-voxel' &&
+        typeof addPrototypeInstance === 'function'
+      ) {
+        placementHandlers.addPrototypeInstance = addPrototypeInstance;
+      }
+      placeVoxelObject(placementHandlers, object, { origin, biome });
     }
     return true;
   };
