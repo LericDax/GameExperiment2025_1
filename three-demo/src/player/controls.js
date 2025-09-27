@@ -1241,7 +1241,7 @@ export function createPlayerControls({
         continue;
       }
       const info = chunkManager.getBlockFromIntersection(intersection);
-      if (!info?.entry?.destructible) {
+      if (!info?.entry || info.entry.destructible === false) {
         continue;
       }
       blockInfo = info;
@@ -1254,7 +1254,7 @@ export function createPlayerControls({
     }
 
     if (!attackState.target || attackState.target.entry.key !== blockInfo.entry.key) {
-      attackState.target = blockInfo;
+      attackState.target = { ...blockInfo };
       attackState.progress = 0;
     }
 
@@ -1263,11 +1263,20 @@ export function createPlayerControls({
       const durability = blockDurability.get(type) ?? 1.2;
       attackState.progress += delta / Math.max(durability, 0.1);
       if (attackState.progress >= 1) {
-        chunkManager.removeBlockInstance({
-          chunk: attackState.target.chunk,
-          type: attackState.target.type,
-          instanceId: attackState.target.instanceId,
-        });
+        if (attackState.target.isDecoration) {
+          chunkManager.removeDecorationInstance({
+            chunk: attackState.target.chunk,
+            type: attackState.target.type,
+            instanceId: attackState.target.instanceId,
+            entry: attackState.target.entry,
+          });
+        } else {
+          chunkManager.removeBlockInstance({
+            chunk: attackState.target.chunk,
+            type: attackState.target.type,
+            instanceId: attackState.target.instanceId,
+          });
+        }
         resetAttackProgress();
         return;
       }
