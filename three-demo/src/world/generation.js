@@ -124,7 +124,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const decorationTypeIndex = new Map();
   const solidBlockKeys = new Set();
   const softBlockKeys = new Set();
-  const waterColumnKeys = new Set();
+  const waterColumnMetadata = new Map();
   const fluidColumnsByType = new Map();
   const fluidSurfaces = [];
   let minBoundX = Number.POSITIVE_INFINITY;
@@ -441,7 +441,26 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         }
       }
       if (isWater) {
-        waterColumnKeys.add(columnKey);
+        const bottomY = column.minY;
+        const surfaceY = column.maxY;
+        const previous = waterColumnMetadata.get(columnKey);
+        if (previous) {
+          const nextBottom = Number.isFinite(previous.bottomY)
+            ? Math.min(previous.bottomY, bottomY)
+            : bottomY;
+          const nextSurface = Number.isFinite(previous.surfaceY)
+            ? Math.max(previous.surfaceY, surfaceY)
+            : surfaceY;
+          waterColumnMetadata.set(columnKey, {
+            bottomY: nextBottom,
+            surfaceY: nextSurface,
+          });
+        } else {
+          waterColumnMetadata.set(columnKey, {
+            bottomY,
+            surfaceY,
+          });
+        }
       }
       return;
     }
@@ -873,6 +892,33 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       column.depth = Math.max(0.05, column.surfaceY - column.bottomY);
     });
 
+    if (type === 'water') {
+      columns.forEach((column) => {
+        const metadata = waterColumnMetadata.get(column.key);
+        const bottomY = Number.isFinite(column.bottomY)
+          ? column.bottomY
+          : metadata?.bottomY;
+        const surfaceY = Number.isFinite(column.surfaceY)
+          ? column.surfaceY
+          : metadata?.surfaceY;
+        if (!Number.isFinite(bottomY) && !Number.isFinite(surfaceY)) {
+          return;
+        }
+        const normalizedBottom = Number.isFinite(bottomY)
+          ? bottomY
+          : surfaceY;
+        const normalizedSurface = Number.isFinite(surfaceY)
+          ? surfaceY
+          : bottomY;
+        const bottom = Math.min(normalizedBottom, normalizedSurface);
+        const surface = Math.max(normalizedBottom, normalizedSurface);
+        waterColumnMetadata.set(column.key, {
+          bottomY: bottom,
+          surfaceY: surface,
+        });
+      });
+    }
+
     columns.forEach((column) => {
       const neighbors = {};
       let foamExposure = 0;
@@ -1002,7 +1048,8 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     group,
     solidBlockKeys,
     softBlockKeys,
-    waterColumnKeys,
+    waterColumns: waterColumnMetadata,
+    fluidColumnsByType,
     fluidSurfaces,
     blockLookup,
     typeData,
@@ -1041,7 +1088,7 @@ export function generateWorld(blockMaterials) {
   return {
     meshes: [...chunk.group.children],
     solidBlocks: new Set(chunk.solidBlockKeys),
-    waterColumns: new Set(chunk.waterColumnKeys),
+    waterColumns: new Map(chunk.waterColumns ?? []),
     biomes: chunk.biomes,
   };
 }

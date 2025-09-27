@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 
 import { generateChunk, worldConfig } from './generation.js';
-import { disposeFluidSurface } from './fluids/fluid-registry.js';
+import { createFluidSurface, disposeFluidSurface } from './fluids/fluid-registry.js';
+import { buildFluidGeometry } from './fluids/fluid-geometry.js';
 
 function chunkKey(x, z) {
   return `${x}|${z}`;
@@ -42,6 +43,90 @@ function resolveBudget(value, fallback) {
   return 0;
 }
 
+function ensureWaterColumnMap(source) {
+  if (!source) {
+    return new Map();
+  }
+  if (source instanceof Map) {
+    return source;
+  }
+  const map = new Map();
+  if (source instanceof Set) {
+    source.forEach((key) => {
+      map.set(key, null);
+    });
+    return map;
+  }
+  if (Array.isArray(source)) {
+    source.forEach((entry) => {
+      if (!Array.isArray(entry) || entry.length === 0) {
+        return;
+      }
+      const [key, value = null] = entry;
+      map.set(key, value);
+    });
+    return map;
+  }
+  if (typeof source === 'object') {
+    Object.entries(source).forEach(([key, value]) => {
+      map.set(key, value);
+    });
+  }
+  return map;
+}
+
+function normalizeWaterColumnBounds(bounds) {
+  if (!bounds || typeof bounds !== 'object') {
+    return null;
+  }
+  const resolveValue = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  };
+  const bottomCandidates = [
+    bounds.bottomY,
+    bounds.minY,
+    bounds.yMin,
+    bounds.min,
+  ];
+  const surfaceCandidates = [
+    bounds.surfaceY,
+    bounds.maxY,
+    bounds.yMax,
+    bounds.max,
+  ];
+  let bottom = null;
+  for (let i = 0; i < bottomCandidates.length && bottom === null; i += 1) {
+    bottom = resolveValue(bottomCandidates[i]);
+  }
+  let surface = null;
+  for (let i = 0; i < surfaceCandidates.length && surface === null; i += 1) {
+    surface = resolveValue(surfaceCandidates[i]);
+  }
+  if (bottom === null && surface === null) {
+    return null;
+  }
+  if (bottom === null) {
+    bottom = surface;
+  }
+  if (surface === null) {
+    surface = bottom;
+  }
+  const min = Math.min(bottom, surface);
+  const max = Math.max(bottom, surface);
+  return {
+    bottomY: min,
+    surfaceY: max,
+  };
+}
+
+const fluidNeighborOffsets = [
+  { key: 'px', dx: 1, dz: 0, opposite: 'nx' },
+  { key: 'nx', dx: -1, dz: 0, opposite: 'px' },
+  { key: 'pz', dx: 0, dz: 1, opposite: 'nz' },
+  { key: 'nz', dx: 0, dz: -1, opposite: 'pz' },
+];
+
 export function createChunkManager({
   scene,
   blockMaterials,
@@ -52,7 +137,7 @@ export function createChunkManager({
   const loadedChunks = new Map();
   const solidBlocks = new Set();
   const softBlocks = new Set();
-  const waterColumns = new Set();
+  const waterColumns = new Map();
   const decorationGroupsByKey = new Map();
   const decorationOwnersIndex = new Map();
   const prototypeRemovalGuards = new Set();
@@ -71,6 +156,187 @@ export function createChunkManager({
   const chunkCullMatrix = new THREE.Matrix4();
   const chunkCullPadding = 1.5;
   let lastCamera = null;
+
+  function parseColumnCoordinates(columnKey) {
+    if (typeof columnKey !== 'string') {
+      return null;
+    }
+    const parts = columnKey.split('|');
+    if (parts.length < 2) {
+      return null;
+    }
+    const x = Number.parseInt(parts[0], 10);
+    const z = Number.parseInt(parts[1], 10);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+    return { x, z };
+  }
+
+  function rebuildFluidSurface(chunk, type = 'water') {
+    if (!chunk) {
+      return false;
+    }
+    if (!(chunk.fluidColumnsByType instanceof Map)) {
+      return false;
+    }
+    const columns = chunk.fluidColumnsByType.get(type);
+    if (!(columns instanceof Map) || columns.size === 0) {
+      return false;
+    }
+
+    const geometry = buildFluidGeometry({
+      THREE,
+      columns: Array.from(columns.values()),
+    });
+    const positionAttribute = geometry.getAttribute('position');
+    if (!positionAttribute || positionAttribute.count === 0) {
+      geometry.dispose();
+      return false;
+    }
+
+    if (!Array.isArray(chunk.fluidSurfaces)) {
+      chunk.fluidSurfaces = [];
+    }
+
+    const surface = chunk.fluidSurfaces.find(
+      (mesh) => mesh?.userData?.fluidType === type,
+    );
+    if (!surface) {
+      const mesh = createFluidSurface({ type, geometry });
+      mesh.userData = mesh.userData || {};
+      mesh.userData.type = `fluid:${type}`;
+      mesh.userData.chunkKey = chunkKey(chunk.chunkX, chunk.chunkZ);
+      chunk.fluidSurfaces.push(mesh);
+      chunk.group?.add(mesh);
+      return true;
+    }
+
+    const previousGeometry = surface.geometry;
+    surface.geometry = geometry;
+    if (previousGeometry) {
+      previousGeometry.dispose();
+    }
+    return true;
+  }
+
+  function settleFluidColumn(chunk, columnKey) {
+    if (!chunk || !columnKey) {
+      return false;
+    }
+    if (!(chunk.waterColumns instanceof Map)) {
+      return false;
+    }
+    let metadata = chunk.waterColumns.get(columnKey);
+
+    const coordinates = parseColumnCoordinates(columnKey);
+    if (!coordinates) {
+      return false;
+    }
+
+    const columnsByType =
+      chunk.fluidColumnsByType instanceof Map ? chunk.fluidColumnsByType : null;
+    const waterColumnStore = columnsByType?.get('water');
+    const column = waterColumnStore instanceof Map ? waterColumnStore.get(columnKey) : null;
+
+    if (!metadata) {
+      if (!column) {
+        return false;
+      }
+      metadata = {
+        bottomY: Number.isFinite(column.bottomY) ? column.bottomY : column.surfaceY,
+        surfaceY: Number.isFinite(column.surfaceY) ? column.surfaceY : column.bottomY,
+      };
+      chunk.waterColumns.set(columnKey, metadata);
+      waterColumns.set(columnKey, metadata);
+    }
+
+    const surfaceY = Number.isFinite(metadata.surfaceY)
+      ? metadata.surfaceY
+      : Number.isFinite(column?.surfaceY)
+      ? column.surfaceY
+      : worldConfig.waterLevel + 0.5;
+    const currentBottom = Number.isFinite(metadata.bottomY)
+      ? metadata.bottomY
+      : Number.isFinite(column?.bottomY)
+      ? column.bottomY
+      : surfaceY;
+
+    if (!Number.isFinite(surfaceY) || !Number.isFinite(currentBottom)) {
+      return false;
+    }
+
+    const startY = Math.floor(currentBottom - 0.5);
+    const minYLimit = Number.isFinite(chunk.bounds?.minY)
+      ? Math.floor(chunk.bounds.minY - 1)
+      : -64;
+    let supportTop = null;
+    for (let y = startY; y >= minYLimit; y -= 1) {
+      const candidateKey = `${coordinates.x}|${y}|${coordinates.z}`;
+      if (solidBlocks.has(candidateKey)) {
+        supportTop = y + 0.5;
+        break;
+      }
+    }
+
+    if (supportTop === null) {
+      supportTop = minYLimit + 0.5;
+    }
+
+    if (!(supportTop < currentBottom - 1e-4)) {
+      return false;
+    }
+
+    metadata.bottomY = supportTop;
+    metadata.surfaceY = surfaceY;
+    chunk.waterColumns.set(columnKey, metadata);
+    waterColumns.set(columnKey, metadata);
+    if (chunk.waterColumnKeys instanceof Set) {
+      chunk.waterColumnKeys.add(columnKey);
+    }
+
+    if (column) {
+      column.bottomY = supportTop;
+      column.minY = Math.min(column.minY ?? supportTop, supportTop);
+      column.surfaceY = surfaceY;
+      column.maxY = Math.max(column.maxY ?? surfaceY, surfaceY);
+      column.depth = Math.max(0.05, column.surfaceY - column.bottomY);
+      if (!column.neighbors) {
+        column.neighbors = {};
+      }
+      fluidNeighborOffsets.forEach((offset) => {
+        const neighborKey = `${column.x + offset.dx}|${column.z + offset.dz}`;
+        const neighborColumn = waterColumnStore?.get(neighborKey) ?? null;
+        if (neighborColumn) {
+          if (!neighborColumn.neighbors) {
+            neighborColumn.neighbors = {};
+          }
+          neighborColumn.neighbors[offset.opposite] = {
+            hasFluid: true,
+            surfaceY: column.surfaceY,
+            bottomY: column.bottomY,
+            foamHint: Math.max(0, neighborColumn.surfaceY - column.surfaceY),
+          };
+          column.neighbors[offset.key] = {
+            hasFluid: true,
+            surfaceY: neighborColumn.surfaceY,
+            bottomY: neighborColumn.bottomY,
+            foamHint: Math.max(0, column.surfaceY - neighborColumn.surfaceY),
+          };
+        } else {
+          column.neighbors[offset.key] = {
+            hasFluid: false,
+            surfaceY,
+            bottomY: supportTop,
+            foamHint: 0,
+          };
+        }
+      });
+    }
+
+    rebuildFluidSurface(chunk, 'water');
+    return true;
+  }
 
   function applyChunkBounds(chunk) {
     if (!chunk) {
@@ -235,7 +501,53 @@ export function createChunkManager({
     scene.add(chunk.group);
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.add(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
-    (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.add(column));
+    const chunkWaterColumnSource =
+      chunk.waterColumns ?? chunk.waterColumnKeys ?? null;
+    const chunkWaterColumns = ensureWaterColumnMap(chunkWaterColumnSource);
+    const normalizedWaterColumns = new Map();
+    chunkWaterColumns.forEach((bounds, columnKey) => {
+      const normalized = bounds === null
+        ? null
+        : normalizeWaterColumnBounds(bounds);
+      normalizedWaterColumns.set(columnKey, normalized);
+      waterColumns.set(columnKey, normalized);
+    });
+    chunk.waterColumns = normalizedWaterColumns;
+    chunk.waterColumnKeys = new Set(normalizedWaterColumns.keys());
+    if (chunk.fluidColumnsByType instanceof Map) {
+      chunk.fluidColumnsByType = new Map(
+        Array.from(chunk.fluidColumnsByType.entries()).map(([type, columns]) => [
+          type,
+          columns instanceof Map ? columns : new Map(columns ?? []),
+        ]),
+      );
+    } else if (chunk.fluidColumnsByType && typeof chunk.fluidColumnsByType === 'object') {
+      const fluidMap = new Map();
+      Object.entries(chunk.fluidColumnsByType).forEach(([type, columns]) => {
+        if (columns instanceof Map) {
+          fluidMap.set(type, columns);
+        } else if (Array.isArray(columns)) {
+          fluidMap.set(type, new Map(columns));
+        }
+      });
+      chunk.fluidColumnsByType = fluidMap;
+    } else {
+      chunk.fluidColumnsByType = new Map();
+    }
+    const chunkWaterColumnsMap = chunk.fluidColumnsByType.get('water');
+    if (chunkWaterColumnsMap instanceof Map) {
+      chunkWaterColumnsMap.forEach((column, columnKey) => {
+        const normalized = normalizedWaterColumns.get(columnKey);
+        if (!normalized || !column) {
+          return;
+        }
+        column.bottomY = normalized.bottomY;
+        column.minY = Math.min(column.minY ?? normalized.bottomY, normalized.bottomY);
+        column.surfaceY = normalized.surfaceY;
+        column.maxY = Math.max(column.maxY ?? normalized.surfaceY, normalized.surfaceY);
+        column.depth = Math.max(0.05, column.surfaceY - column.bottomY);
+      });
+    }
     if (!chunk.decorationGroups) {
       chunk.decorationGroups = new Map();
     }
@@ -280,7 +592,11 @@ export function createChunkManager({
     });
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.delete(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.delete(block));
-    (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.delete(column));
+    if (chunk.waterColumns instanceof Map) {
+      chunk.waterColumns.forEach((_, columnKey) => waterColumns.delete(columnKey));
+    } else if (chunk.waterColumnKeys instanceof Set) {
+      chunk.waterColumnKeys.forEach((columnKey) => waterColumns.delete(columnKey));
+    }
     if (chunk.decorationGroups) {
       Array.from(chunk.decorationGroups.values()).forEach((group) => {
         unregisterDecorationGroup(group);
@@ -700,6 +1016,7 @@ export function createChunkManager({
     const candidates = Array.isArray(removalEntries) ? removalEntries : [];
     const indices = [];
     const seen = new Set();
+    const settleColumnKeys = new Set();
 
     candidates.forEach((candidate) => {
       if (!candidate) {
@@ -782,6 +1099,10 @@ export function createChunkManager({
           const coordinateKey = entry.coordinateKey ?? entry.key;
           chunk.solidBlockKeys.delete(coordinateKey);
           solidBlocks.delete(coordinateKey);
+          if (entry.position) {
+            const settleKey = `${Math.round(entry.position.x)}|${Math.round(entry.position.z)}`;
+            settleColumnKeys.add(settleKey);
+          }
         }
         if (entry.collisionMode === 'soft') {
           const coordinateKey = entry.coordinateKey ?? entry.key;
@@ -790,7 +1111,10 @@ export function createChunkManager({
         }
         if (entry.isWater) {
           const columnKey = `${entry.position.x}|${entry.position.z}`;
-          chunk.waterColumnKeys.delete(columnKey);
+          chunk.waterColumns?.delete?.(columnKey);
+          if (chunk.waterColumnKeys instanceof Set) {
+            chunk.waterColumnKeys.delete(columnKey);
+          }
           waterColumns.delete(columnKey);
         }
         entry.index = -1;
@@ -832,6 +1156,12 @@ export function createChunkManager({
 
     prototypeRefs.forEach(({ prototypeKey, entryKey }) => {
       removePrototypePlacement(chunk, prototypeKey, entryKey);
+    });
+
+    settleColumnKeys.forEach((columnKey) => {
+      if (columnKey) {
+        settleFluidColumn(chunk, columnKey);
+      }
     });
 
     return removedEntries;
@@ -913,12 +1243,21 @@ export function createChunkManager({
       softBlocks.delete(coordinateKey);
     }
     if (removed.isWater) {
-      chunk.waterColumnKeys.delete(`${removed.position.x}|${removed.position.z}`);
-      waterColumns.delete(`${removed.position.x}|${removed.position.z}`);
+      const columnKey = `${removed.position.x}|${removed.position.z}`;
+      chunk.waterColumns?.delete?.(columnKey);
+      if (chunk.waterColumnKeys instanceof Set) {
+        chunk.waterColumnKeys.delete(columnKey);
+      }
+      waterColumns.delete(columnKey);
     }
 
     if (removed.prototypeKey) {
       removePrototypePlacement(chunk, removed.prototypeKey, removed.key);
+    }
+
+    if (removed.isSolid && removed.position) {
+      const columnKey = `${Math.round(removed.position.x)}|${Math.round(removed.position.z)}`;
+      settleFluidColumn(chunk, columnKey);
     }
 
     return removed;
