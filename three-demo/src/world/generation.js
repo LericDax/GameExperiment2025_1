@@ -14,6 +14,7 @@ import {
   cloneDecorationOptions,
   createDecorationMeshBatches,
 } from './voxel-object-decoration-mesh.js';
+import { resolveBiomeTintMultiplier } from './color-utils.js';
 
 initializeFluidDebug({ defaultEnabled: false, persistDefault: true, forceDefault: true });
 
@@ -324,8 +325,11 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
     const paletteColor = engine.getBlockColor(biome, type);
     const tintStrength = clamp(biome?.shader?.tintStrength ?? 1, 0, 1);
+    const tintHexOverride =
+      typeof options.tint === 'string' ? options.tint : null;
     const tintOverride = parseTintOverride(options.tint);
     const ignoreBiomeTint = options.ignoreBiomeTint === true;
+    const blockMaterial = blockMaterials?.[type];
 
     const paletteBlend = new THREE.Color(1, 1, 1);
     if (!ignoreBiomeTint) {
@@ -359,10 +363,23 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       if (tintOverride) {
         paletteBlend.multiply(tintOverride);
       }
-    } else if (tintOverride) {
-      paletteBlend.copy(tintOverride);
-    } else if (paletteColor) {
-      paletteBlend.copy(paletteColor);
+    } else if (tintHexOverride) {
+      const multiplier = resolveBiomeTintMultiplier({
+        desiredHex: tintHexOverride,
+        type,
+        palette: biome?.palette,
+        paletteColors: biome?.paletteColors,
+        blockMaterial,
+      });
+      if (multiplier) {
+        paletteBlend.copy(multiplier);
+      } else if (tintOverride) {
+        paletteBlend.copy(tintOverride);
+      } else {
+        paletteBlend.setRGB(1, 1, 1);
+      }
+    } else {
+      paletteBlend.setRGB(1, 1, 1);
     }
 
     return {
