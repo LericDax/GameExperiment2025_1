@@ -29,3 +29,7 @@ Because both levels multiply together, you can clamp the entire biome down and t
 ```
 
 The example above makes the biome 40% lighter overall while keeping flowers close to their original density.
+
+## Palette overrides for `ignoreBiomeTint`
+
+Some voxel libraries expose an `ignoreBiomeTint` flag so that specific blocks render without the biome palette mix. When this flag is set you may now supply a `tint` hex string for each voxel and the renderer will calculate the correct biome tint multiplier so the final shaded colour matches your request. If you omit the `tint` string, the instance keeps the neutral `[1, 1, 1]` multiplier (no extra tint), making it easy to author props that should display their base texture colours untouched.
