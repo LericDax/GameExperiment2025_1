@@ -4,8 +4,8 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { createBlockMaterials } from './rendering/textures.js'
 import {
   initializeWorldGeneration,
-  worldConfig,
   terrainHeight,
+  getWorldOptions,
 } from './world/generation.js'
 import { createChunkManager } from './world/chunk-manager.js'
 import { createPlayerControls } from './player/controls.js'
@@ -40,6 +40,8 @@ function setOverlayStatus(message, { isError = false, revealOverlay = true } = {
 
 initializeWorldGeneration({ THREE })
 initializeFluidRegistry({ THREE })
+
+const worldConfig = getWorldOptions()
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0xa9d6ff)

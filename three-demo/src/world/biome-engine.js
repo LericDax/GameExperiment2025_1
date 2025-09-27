@@ -229,5 +229,8 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
     getDefaultBlockColor() {
       return defaultColor;
     },
+    dispose() {
+      biomes.length = 0;
+    },
   };
 }

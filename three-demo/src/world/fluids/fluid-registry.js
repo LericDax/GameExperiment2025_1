@@ -1,4 +1,5 @@
 import { createHydraWaterMaterial } from './water-material.js';
+import { getWorldOptions } from '../world-settings.js';
 
 let THREERef = null;
 
@@ -40,9 +41,10 @@ export function initializeFluidRegistry({ THREE }) {
       sampleColumnHeight,
       worldConfig,
     }) => {
+      const config = worldConfig ?? getWorldOptions();
       const groundHeight = sampleColumnHeight(x, z);
-      if (groundHeight < worldConfig.waterLevel) {
-        const surfaceY = worldConfig.waterLevel + 0.5;
+      if (groundHeight < config.waterLevel) {
+        const surfaceY = config.waterLevel + 0.5;
         return {
           hasFluid: true,
           surfaceY,
@@ -189,7 +191,14 @@ export function getFluidMaterial(type) {
   return runtime.material;
 }
 
-export function resolveFluidPresence({ type, x, z, sampleColumnHeight, worldConfig }) {
+export function resolveFluidPresence({
+  type,
+  x,
+  z,
+  sampleColumnHeight,
+  worldConfig,
+}) {
+  const config = worldConfig ?? getWorldOptions();
   const definition = fluidDefinitions.get(type);
   if (!definition) {
     const fallbackSurface = sampleColumnHeight(x, z) + 0.5;
@@ -204,7 +213,7 @@ export function resolveFluidPresence({ type, x, z, sampleColumnHeight, worldConf
       x,
       z,
       sampleColumnHeight,
-      worldConfig,
+      worldConfig: config,
     });
   }
   const groundHeight = sampleColumnHeight(x, z);

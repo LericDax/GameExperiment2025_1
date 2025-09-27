@@ -1,6 +1,8 @@
 import { renderAsciiViewport } from '../devtools/ascii-viewport.js';
 import { createHeadlessScanner } from '../devtools/headless-scanner.js';
-import { sampleBiomeAt, worldConfig } from '../world/generation.js';
+import { sampleBiomeAt, getWorldOptions } from '../world/generation.js';
+
+const worldConfig = getWorldOptions();
 
 export function registerDeveloperCommands({
   commandConsole,

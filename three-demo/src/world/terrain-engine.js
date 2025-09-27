@@ -42,5 +42,8 @@ export function createTerrainEngine({ THREE, seed = 1337, worldConfig = {} } = {
     getBlockColor: (biome, type) => biomeEngine.getBlockColor(biome, type),
     getDefaultBlockColor: () => biomeEngine.getDefaultBlockColor(),
     biomeEngine,
+    dispose() {
+      biomeEngine.dispose?.();
+    },
   };
 }
