@@ -1,0 +1,34 @@
+{
+  "id": "golden_flower",
+  "label": "Golden Meadow Flower",
+  "category": "flowers",
+  "author": "system",
+  "description": "Sun-kissed petals with warm amber hues and a sturdy stem.",
+
+  "collision": "none",
+
+  "voxelScale": 0.2,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["temperate_forest"],
+    "weight": 0.4,
+    "maxSlope": 0.65,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.6,
+    "maxInstancesPerColumn": 3
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "tint": "#665028", "destructible": true },
+    { "type": "log", "position": [0, 1, 0], "tint": "#665028" },
+    { "type": "leaf", "position": [0, 2, 0], "size": [1, 1.2, 1], "tint": "#7a9c3c" },
+    { "type": "leaf", "position": [0, 2.8, 0], "size": [1.2, 0.6, 1.2], "tint": "#94b94c" },
+    { "type": "leaf", "position": [0, 3.6, 0], "size": [1.2, 0.6, 1.2], "tint": "#a2c85a" },
+    { "type": "leaf", "position": [1.2, 4, 0], "size": [1.4, 0.6, 1.4], "tint": "#f4c44d", "isSolid": false },
+    { "type": "leaf", "position": [-1.2, 4, 0], "size": [1.4, 0.6, 1.4], "tint": "#f4c44d", "isSolid": false },
+    { "type": "leaf", "position": [0, 4, 1.2], "size": [1.4, 0.6, 1.4], "tint": "#f4c44d", "isSolid": false },
+    { "type": "leaf", "position": [0, 4, -1.2], "size": [1.4, 0.6, 1.4], "tint": "#f4c44d", "isSolid": false },
+    { "type": "leaf", "position": [0, 4.5, 0], "size": [1.2, 0.6, 1.2], "tint": "#ffeb9a", "isSolid": false }
+  ]
+}

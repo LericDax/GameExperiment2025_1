@@ -14,7 +14,7 @@
     "deepBlock": "stone",
     "treeDensity": 0.08,
     "shrubChance": 0.045,
-    "flowerChance": 0.08,
+    "flowerChance": 0.06,
     "rockChance": 0.04,
     "fungiChance": 0.05,
     "waterPlantChance": 0.0,

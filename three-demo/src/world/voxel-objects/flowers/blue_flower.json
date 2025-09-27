@@ -13,7 +13,7 @@
   },
   "placement": {
     "biomes": ["temperate_forest"],
-    "weight": 1.2,
+    "weight": 0.4,
     "maxSlope": 0.65,
     "forbidUnderwater": true,
     "jitterRadius": 0.6,
