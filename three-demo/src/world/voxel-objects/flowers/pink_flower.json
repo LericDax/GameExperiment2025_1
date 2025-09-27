@@ -1,0 +1,34 @@
+{
+  "id": "pink_flower",
+  "label": "Pink Meadow Flower",
+  "category": "flowers",
+  "author": "system",
+  "description": "Bright spring bloom with candy-pink petals and soft green stem.",
+
+  "collision": "none",
+
+  "voxelScale": 0.2,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["temperate_forest"],
+    "weight": 0.4,
+    "maxSlope": 0.65,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.6,
+    "maxInstancesPerColumn": 3
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "tint": "#4f6334", "destructible": true },
+    { "type": "log", "position": [0, 1, 0], "tint": "#4f6334" },
+    { "type": "leaf", "position": [0, 2, 0], "size": [1, 1.2, 1], "tint": "#6ebf53" },
+    { "type": "leaf", "position": [0, 2.8, 0], "size": [1.2, 0.6, 1.2], "tint": "#7fda70" },
+    { "type": "leaf", "position": [0, 3.6, 0], "size": [1.2, 0.6, 1.2], "tint": "#8fe983" },
+    { "type": "leaf", "position": [1.2, 4, 0], "size": [1.4, 0.6, 1.4], "tint": "#ff7ac9", "isSolid": false },
+    { "type": "leaf", "position": [-1.2, 4, 0], "size": [1.4, 0.6, 1.4], "tint": "#ff7ac9", "isSolid": false },
+    { "type": "leaf", "position": [0, 4, 1.2], "size": [1.4, 0.6, 1.4], "tint": "#ff7ac9", "isSolid": false },
+    { "type": "leaf", "position": [0, 4, -1.2], "size": [1.4, 0.6, 1.4], "tint": "#ff7ac9", "isSolid": false },
+    { "type": "leaf", "position": [0, 4.5, 0], "size": [1.2, 0.6, 1.2], "tint": "#ffe0f3", "isSolid": false }
+  ]
+}
