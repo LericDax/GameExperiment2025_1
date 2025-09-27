@@ -184,6 +184,30 @@ export function populateColumnWithVoxelObjects({
   }
   const random = ensureRandomSource(randomSource);
   const terrain = biome.terrain ?? {};
+  const objectDensityMultiplier =
+    typeof terrain.objectDensityMultiplier === 'number' &&
+    Number.isFinite(terrain.objectDensityMultiplier)
+      ? Math.max(0, terrain.objectDensityMultiplier)
+      : 1;
+  const categoryMultipliers =
+    terrain.objectDensityMultipliers &&
+    typeof terrain.objectDensityMultipliers === 'object' &&
+    !Array.isArray(terrain.objectDensityMultipliers)
+      ? terrain.objectDensityMultipliers
+      : {};
+
+  const getCategoryMultiplier = (key) => {
+    const raw = categoryMultipliers?.[key];
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+      return 1;
+    }
+    return Math.max(0, raw);
+  };
+
+  const applyMultipliers = (chance, key) => {
+    const scaled = chance * objectDensityMultiplier * getCategoryMultiplier(key);
+    return Math.max(0, scaled);
+  };
 
   const climate = columnSample?.climate ?? biome?.climate ?? {};
   const columnBaseOffset = {
@@ -407,7 +431,10 @@ export function populateColumnWithVoxelObjects({
     return placeObject(object, randomOffset);
   };
 
-  const treeDensity = Math.max(0, terrain.treeDensity ?? 0) * densityScale;
+  const treeDensity = applyMultipliers(
+    Math.max(0, terrain.treeDensity ?? 0) * densityScale,
+    'trees',
+  );
   if (treeDensity > 0 && !isUnderwater) {
     const roll = random(31);
     if (roll > 1 - treeDensity) {
@@ -416,7 +443,10 @@ export function populateColumnWithVoxelObjects({
     }
   }
 
-  const shrubChance = Math.max(0, terrain.shrubChance ?? 0) * densityScale;
+  const shrubChance = applyMultipliers(
+    Math.max(0, terrain.shrubChance ?? 0) * densityScale,
+    'shrubs',
+  );
   if (shrubChance > 0 && !isUnderwater) {
     const roll = random(51);
     if (roll > 1 - shrubChance) {
@@ -425,8 +455,12 @@ export function populateColumnWithVoxelObjects({
     }
   }
 
-  const flowerChanceRaw = terrain.flowerChance ?? shrubChance * 0.65;
-  const flowerChance = Math.max(0, Math.min(1, flowerChanceRaw || 0));
+  const shrubBaseForFallback = Math.max(0, terrain.shrubChance ?? 0) * densityScale;
+  const flowerChanceRaw = terrain.flowerChance ?? shrubBaseForFallback * 0.65;
+  const flowerChance = Math.max(
+    0,
+    Math.min(1, applyMultipliers(flowerChanceRaw || 0, 'flowers')),
+  );
   if (flowerChance > 0 && !isUnderwater) {
     const roll = random(71);
     if (roll > 1 - flowerChance) {
@@ -437,26 +471,34 @@ export function populateColumnWithVoxelObjects({
 
   attemptCategory(
     'rocks',
-    Math.max(0, terrain.rockChance ?? 0) * densityScale,
+    applyMultipliers(Math.max(0, terrain.rockChance ?? 0) * densityScale, 'rocks'),
     91,
     {
       allowUnderwater: false,
     },
   );
 
-  attemptCategory('fungi', Math.max(0, terrain.fungiChance ?? 0) * densityScale, 111, {
-    allowUnderwater: false,
-  });
+  attemptCategory(
+    'fungi',
+    applyMultipliers(Math.max(0, terrain.fungiChance ?? 0) * densityScale, 'fungi'),
+    111,
+    {
+      allowUnderwater: false,
+    },
+  );
 
   attemptCategory(
     'water-plants',
-    Math.max(0, terrain.waterPlantChance ?? 0),
+    applyMultipliers(Math.max(0, terrain.waterPlantChance ?? 0), 'waterPlants'),
     131,
     { allowUnderwater: true, requireUnderwater: true },
   );
 
   const structureChanceRaw = Math.max(0, terrain.structureChance ?? 0);
-  const structureChance = Math.min(1, structureChanceRaw) * densityScale;
+  const structureChance = Math.min(
+    1,
+    applyMultipliers(structureChanceRaw, 'structures'),
+  ) * densityScale;
   const adjustedStructureChance =
     plannedStructurePlacements > 0 ? structureChance * 0.1 : structureChance;
   if (adjustedStructureChance > 0) {
