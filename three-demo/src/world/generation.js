@@ -485,11 +485,17 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   };
 
   const addDecorationInstance = (type, x, y, z, biome, options = {}) => {
-    const entry = createInstancedEntry(type, x, y, z, biome, options);
+    const normalizedOptions = { ...options };
+    if (typeof normalizedOptions.destructible !== 'boolean') {
+      normalizedOptions.destructible = true;
+    }
+
+    const entry = createInstancedEntry(type, x, y, z, biome, normalizedOptions);
     if (!decorationInstancedData.has(type)) {
       decorationInstancedData.set(type, []);
     }
     decorationInstancedData.get(type).push(entry);
+    entry.isDecoration = true;
     return entry;
   };
 
@@ -792,6 +798,9 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         entry.mesh = mesh;
         entry.tintAttribute = tintAttribute;
         entry.isDecoration = true;
+        entry.destructible = typeof entry.destructible === 'boolean'
+          ? entry.destructible
+          : metadata.destructible;
         blockLookup.set(entry.key, entry);
         if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
           blockLookup.set(entry.coordinateKey, entry);

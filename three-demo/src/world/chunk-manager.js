@@ -989,18 +989,33 @@ export function createChunkManager({
       return null;
     }
     const typeData = chunk.typeData?.get(type);
-    if (!typeData) {
+    if (typeData) {
+      const entry = typeData.entries[intersection.instanceId];
+      if (!entry) {
+        return null;
+      }
+      return {
+        chunk,
+        type,
+        instanceId: intersection.instanceId,
+        entry,
+        isDecoration: false,
+      };
+    }
+    const decorationRecord = chunk.decorationData?.get(type);
+    if (!decorationRecord || !Array.isArray(decorationRecord.entries)) {
       return null;
     }
-    const entry = typeData.entries[intersection.instanceId];
-    if (!entry) {
+    const decorationEntry = decorationRecord.entries[intersection.instanceId];
+    if (!decorationEntry) {
       return null;
     }
     return {
       chunk,
       type,
       instanceId: intersection.instanceId,
-      entry,
+      entry: decorationEntry,
+      isDecoration: true,
     };
   }
 
@@ -1170,6 +1185,51 @@ export function createChunkManager({
 
     return removedEntries;
   }
+
+  function removeDecorationInstance({ chunk, type, instanceId, entry: providedEntry = null }) {
+    if (!chunk) {
+      return [];
+    }
+    const record = chunk.decorationData?.get(type);
+    if (!record || !Array.isArray(record.entries) || record.entries.length === 0) {
+      return [];
+    }
+    const entries = record.entries;
+    let targetEntry = null;
+    if (providedEntry && entries.includes(providedEntry)) {
+      targetEntry = providedEntry;
+    } else if (Number.isInteger(instanceId) && instanceId >= 0 && instanceId < entries.length) {
+      targetEntry = entries[instanceId];
+    }
+    if (!targetEntry) {
+      return [];
+    }
+    const groups = [];
+    if (targetEntry.decorationGroup) {
+      groups.push(targetEntry.decorationGroup);
+    } else {
+      const typeGroups = chunk.decorationTypeIndex?.get(type);
+      if (typeGroups) {
+        typeGroups.forEach((group) => {
+          if (!group || !Array.isArray(group.instanceIndices)) {
+            return;
+          }
+          if (group.instanceIndices.includes(targetEntry.index ?? instanceId)) {
+            groups.push(group);
+          }
+        });
+      }
+    }
+    const uniqueGroups = groups.length > 0 ? Array.from(new Set(groups)) : [];
+    const summaries = uniqueGroups.length > 0
+      ? removeDecorationGroupsBulk({ chunk, type, groups: uniqueGroups })
+      : [];
+    if (targetEntry.prototypeKey) {
+      removePrototypePlacement(chunk, targetEntry.prototypeKey, targetEntry.key);
+    }
+    return summaries;
+  }
+
 
   function removeBlockInstance({ chunk, type, instanceId }) {
     if (!chunk || typeof instanceId !== 'number' || !chunk.typeData) {
@@ -1627,6 +1687,7 @@ export function createChunkManager({
     waterColumns,
     getBlockFromIntersection,
     removeBlockInstance,
+    removeDecorationInstance,
     removeDecorationGroup,
     preloadAround,
     setViewDistance,
