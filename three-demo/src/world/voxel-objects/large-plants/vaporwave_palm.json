@@ -5,27 +5,26 @@
   "author": "system",
   "description": "Retro palm with gradients that fade into oblivion.",
   "collision": "soft",
-  "voxelScale": 0.4,
+  "voxelScale": 1.2,
   "attachment": {
-    "groundOffset": 0.2
+    "groundOffset": 0.6
   },
   "placement": {
     "biomes": [
       "fading_vaporwave_dimension"
     ],
-    "weight": 2.4,
+    "weight": 0.72,
     "maxSlope": 0.5,
     "forbidUnderwater": false,
     "jitterRadius": 0.8
   },
   "procedural": {
     "nodeGrowth": {
-      "step": 0.42,
+      "step": 0.36,
       "smoothing": {
-        "segmentOverlap": 0.4,
-        "segmentEndPadding": 0.35,
-
-        "segmentSubdivisions": 3,
+        "segmentOverlap": 0.45,
+        "segmentEndPadding": 0.38,
+        "segmentSubdivisions": 4,
         "nodeInflate": 0.18,
         "embed": 0.1,
         "featherLayers": 4,

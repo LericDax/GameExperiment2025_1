@@ -11,13 +11,13 @@
   },
   "placement": {
     "biomes": ["fading_vaporwave_dimension"],
-    "weight": 2.4,
+    "weight": 1.0,
     "maxSlope": 0.6,
     "forbidUnderwater": false,
     "requiresWaterProximity": true,
     "waterProximityRadius": 2,
     "jitterRadius": 0.9,
-    "maxInstancesPerColumn": 3
+    "maxInstancesPerColumn": 2
   },
   "voxels": [
     { "type": "log", "position": [0, 0, 0], "size": [0.6, 1.2, 0.6], "tint": "#f48fe3" },
