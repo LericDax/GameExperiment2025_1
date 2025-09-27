@@ -324,38 +324,45 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
     const paletteColor = engine.getBlockColor(biome, type);
     const tintStrength = clamp(biome?.shader?.tintStrength ?? 1, 0, 1);
+    const tintOverride = parseTintOverride(options.tint);
+    const ignoreBiomeTint = options.ignoreBiomeTint === true;
 
     const paletteBlend = new THREE.Color(1, 1, 1);
-    if (paletteColor) {
-      paletteBlend.lerp(paletteColor, tintStrength);
-    }
+    if (!ignoreBiomeTint) {
+      if (paletteColor) {
+        paletteBlend.lerp(paletteColor, tintStrength);
+      }
 
-    if (biome?.shader?.tintColor) {
-      const biomeTintBlend = new THREE.Color(1, 1, 1);
-      biomeTintBlend.lerp(biome.shader.tintColor, tintStrength * 0.65);
-      paletteBlend.multiply(biomeTintBlend);
-    }
+      if (biome?.shader?.tintColor) {
+        const biomeTintBlend = new THREE.Color(1, 1, 1);
+        biomeTintBlend.lerp(biome.shader.tintColor, tintStrength * 0.65);
+        paletteBlend.multiply(biomeTintBlend);
+      }
 
-    if (biome?.climate) {
-      const dryness = clamp(1 - biome.climate.moisture, 0, 1);
-      const climateBlend = new THREE.Color(1, 1, 1);
-      climateBlend.lerp(new THREE.Color(1.02, 0.98, 0.92), dryness * 0.35);
-      paletteBlend.multiply(climateBlend);
-    }
+      if (biome?.climate) {
+        const dryness = clamp(1 - biome.climate.moisture, 0, 1);
+        const climateBlend = new THREE.Color(1, 1, 1);
+        climateBlend.lerp(new THREE.Color(1.02, 0.98, 0.92), dryness * 0.35);
+        paletteBlend.multiply(climateBlend);
+      }
 
-    const altitudeRange = Math.max(1, worldConfig.maxHeight - waterLevel + 6);
-    const altitude = clamp((y - waterLevel + 2) / altitudeRange, -0.25, 1);
-    const altitudeBlend = new THREE.Color(1, 1, 1);
-    if (altitude > 0) {
-      altitudeBlend.lerp(new THREE.Color(0.95, 0.98, 1.04), altitude * 0.3);
-    } else if (altitude < 0) {
-      altitudeBlend.lerp(new THREE.Color(1.04, 1.01, 0.94), Math.abs(altitude) * 0.25);
-    }
-    paletteBlend.multiply(altitudeBlend);
+      const altitudeRange = Math.max(1, worldConfig.maxHeight - waterLevel + 6);
+      const altitude = clamp((y - waterLevel + 2) / altitudeRange, -0.25, 1);
+      const altitudeBlend = new THREE.Color(1, 1, 1);
+      if (altitude > 0) {
+        altitudeBlend.lerp(new THREE.Color(0.95, 0.98, 1.04), altitude * 0.3);
+      } else if (altitude < 0) {
+        altitudeBlend.lerp(new THREE.Color(1.04, 1.01, 0.94), Math.abs(altitude) * 0.25);
+      }
+      paletteBlend.multiply(altitudeBlend);
 
-    const tintOverride = parseTintOverride(options.tint);
-    if (tintOverride) {
-      paletteBlend.multiply(tintOverride);
+      if (tintOverride) {
+        paletteBlend.multiply(tintOverride);
+      }
+    } else if (tintOverride) {
+      paletteBlend.copy(tintOverride);
+    } else if (paletteColor) {
+      paletteBlend.copy(paletteColor);
     }
 
     return {

@@ -120,6 +120,7 @@ export function placeVoxelObject(
       voxelIndex: block.voxelIndex,
       metadata: block.metadata,
       key,
+      ignoreBiomeTint: block.ignoreBiomeTint === true,
     });
   });
 
