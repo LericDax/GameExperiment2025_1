@@ -1,0 +1,49 @@
+{
+  "id": "temperate_sakura",
+  "label": "Temperate Sakura Tree",
+  "category": "large-plants",
+  "author": "system",
+  "description": "Compact cherry blossom variant of the terrain-scale oak silhouette.",
+
+  "destructionMode": "per-voxel",
+
+  "collision": "solid",
+
+  "voxelScale": 1,
+  "attachment": {
+    "groundOffset": 1
+  },
+  "placement": {
+    "biomes": ["temperate_forest"],
+    "weight": 0.1,
+    "maxSlope": 0.55,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.9
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "tint": "#5e3a3d" },
+    { "type": "log", "position": [0, 1, 0], "tint": "#6a4246" },
+    { "type": "log", "position": [0, 2, 0], "tint": "#74494e" },
+    { "type": "log", "position": [0, 3, 0], "tint": "#7f5156" },
+    { "type": "log", "position": [0, 4, 0], "size": [1, 0.6, 1], "tint": "#89595f" },
+    { "type": "leaf", "position": [0, 4, 0], "size": [1.6, 1.4, 1.6], "tint": "#f1a5d3" },
+    { "type": "leaf", "position": [1, 3, 0], "size": [1.4, 1.2, 1.4], "tint": "#f5b2db" },
+    { "type": "leaf", "position": [-1, 3, 0], "size": [1.4, 1.2, 1.4], "tint": "#ec9fcf" },
+    { "type": "leaf", "position": [0, 3, 1], "size": [1.4, 1.1, 1.4], "tint": "#f2add7" },
+    { "type": "leaf", "position": [0, 3, -1], "size": [1.4, 1.1, 1.4], "tint": "#f8bce1" },
+    { "type": "leaf", "position": [1, 4, 0], "size": [1.6, 1.3, 1.6], "tint": "#f5b2db" },
+    { "type": "leaf", "position": [-1, 4, 0], "size": [1.6, 1.3, 1.6], "tint": "#eda3d1" },
+    { "type": "leaf", "position": [0, 4, 1], "size": [1.6, 1.3, 1.6], "tint": "#f8c1e3" },
+    { "type": "leaf", "position": [0, 4, -1], "size": [1.6, 1.3, 1.6], "tint": "#e899c7" },
+    { "type": "leaf", "position": [1, 4, 1], "size": [1.4, 1.1, 1.4], "tint": "#fac8e7" },
+    { "type": "leaf", "position": [-1, 4, -1], "size": [1.4, 1.1, 1.4], "tint": "#f3b5dd" },
+    { "type": "leaf", "position": [1, 4, -1], "size": [1.3, 1.0, 1.3], "tint": "#f2add7" },
+    { "type": "leaf", "position": [-1, 4, 1], "size": [1.3, 1.0, 1.3], "tint": "#f4b8df" },
+    { "type": "leaf", "position": [0, 5, 0], "size": [1.2, 1.2, 1.2], "tint": "#fbd2ec" },
+    { "type": "leaf", "position": [0, 5, 1], "size": [1.1, 1.0, 1.1], "tint": "#f8c1e3" },
+    { "type": "leaf", "position": [0, 5, -1], "size": [1.1, 1.0, 1.1], "tint": "#f2add7" },
+    { "type": "leaf", "position": [1, 5, 0], "size": [1.1, 1.0, 1.1], "tint": "#f5b2db" },
+    { "type": "leaf", "position": [-1, 5, 0], "size": [1.1, 1.0, 1.1], "tint": "#f4b8df" },
+    { "type": "leaf", "position": [0, 6, 0], "size": [0.9, 0.9, 0.9], "tint": "#fde0f2", "isSolid": false }
+  ]
+}
