@@ -5,6 +5,9 @@
   "author": "system",
   "description": "Hovering glyph that whispers page numbers.",
   "collision": "soft",
+
+  "ignoreBiomeTint": true,
+
   "voxelScale": 0.24,
   "attachment": {
     "groundOffset": 0.2
