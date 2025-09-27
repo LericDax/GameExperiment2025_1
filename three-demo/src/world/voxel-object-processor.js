@@ -67,7 +67,12 @@ export function resolveVoxelObjectVoxels(object) {
     : [];
 
   let proceduralVoxels = [];
-  const proceduralConfig = object.raw?.procedural ?? null;
+  const proceduralConfigCandidate =
+    object.raw?.procedural ?? object.procedural ?? object.rawProcedural ?? null;
+  const proceduralConfig =
+    proceduralConfigCandidate && typeof proceduralConfigCandidate === 'object'
+      ? proceduralConfigCandidate
+      : null;
   if (proceduralConfig?.nodeGrowth) {
     proceduralVoxels = generateNodeGrowthVoxels(object, proceduralConfig.nodeGrowth);
   }
