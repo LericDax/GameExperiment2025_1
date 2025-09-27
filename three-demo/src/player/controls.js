@@ -151,19 +151,24 @@ export function createPlayerControls({
 
   function getWaterColumnInfo(columnKey) {
     if (!columnKey) {
+
       return { exists: false, bounds: null, metadata: null };
     }
     if (!waterColumns) {
       return { exists: false, bounds: null, metadata: null };
+
     }
     if (typeof waterColumns.has === 'function') {
       const exists = waterColumns.has(columnKey);
       if (!exists) {
+
         return { exists: false, bounds: null, metadata: null };
+
       }
       if (typeof waterColumns.get === 'function') {
         const metadata = waterColumns.get(columnKey);
         const bounds = metadata === null ? null : normalizeWaterColumnMetadata(metadata);
+
         return { exists: true, bounds, metadata };
       }
       return { exists: true, bounds: null, metadata: null };
@@ -173,6 +178,7 @@ export function createPlayerControls({
       return { exists, bounds: null, metadata: null };
     }
     return { exists: false, bounds: null, metadata: null };
+
   }
   const pointerLockElement = renderer.domElement;
   const pointerLockDocument = pointerLockElement.ownerDocument;
@@ -991,7 +997,9 @@ export function createPlayerControls({
     const headY = position.y;
     const columnInfo = getWaterColumnInfo(columnKey);
     const columnBounds = columnInfo.bounds;
+
     const columnMetadata = columnInfo.metadata;
+
     const fallbackWaterSurface = worldConfig.waterLevel + 0.5;
     const effectiveWaterSurface = Number.isFinite(columnBounds?.surfaceY)
       ? columnBounds.surfaceY
@@ -1132,6 +1140,7 @@ export function createPlayerControls({
       const supportTargetY = standingSurface
         ? standingSurface.height + playerEyeHeight
         : Number.NEGATIVE_INFINITY;
+
       let targetY = supportTargetY;
 
       if (jumpRequested) {
@@ -1156,6 +1165,7 @@ export function createPlayerControls({
           0,
           6,
         );
+
         const columnBuoyancy = Number.isFinite(columnMetadata?.buoyancy)
           ? columnMetadata.buoyancy
           : Number.isFinite(columnBounds?.buoyancy)
@@ -1165,6 +1175,7 @@ export function createPlayerControls({
           const buoyancy = submersion * columnBuoyancy;
           verticalVelocity += buoyancy * delta;
         }
+
         verticalVelocity *= 0.82;
         if (sprint && !isGrounded) {
           verticalVelocity -= 4.2 * delta;

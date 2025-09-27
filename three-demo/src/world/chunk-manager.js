@@ -120,12 +120,14 @@ function normalizeWaterColumnBounds(bounds) {
   };
 }
 
+
 const fluidNeighborOffsets = [
   { key: 'px', dx: 1, dz: 0, opposite: 'nx' },
   { key: 'nx', dx: -1, dz: 0, opposite: 'px' },
   { key: 'pz', dx: 0, dz: 1, opposite: 'nz' },
   { key: 'nz', dx: 0, dz: -1, opposite: 'pz' },
 ];
+
 
 export function createChunkManager({
   scene,
@@ -514,6 +516,7 @@ export function createChunkManager({
     });
     chunk.waterColumns = normalizedWaterColumns;
     chunk.waterColumnKeys = new Set(normalizedWaterColumns.keys());
+
     if (chunk.fluidColumnsByType instanceof Map) {
       chunk.fluidColumnsByType = new Map(
         Array.from(chunk.fluidColumnsByType.entries()).map(([type, columns]) => [
@@ -548,6 +551,7 @@ export function createChunkManager({
         column.depth = Math.max(0.05, column.surfaceY - column.bottomY);
       });
     }
+
     if (!chunk.decorationGroups) {
       chunk.decorationGroups = new Map();
     }
