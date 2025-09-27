@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 
-import { generateChunk, worldConfig } from './generation.js';
+import { generateChunk, getWorldOptions } from './generation.js';
 import { createFluidSurface, disposeFluidSurface } from './fluids/fluid-registry.js';
 import { buildFluidGeometry } from './fluids/fluid-geometry.js';
+
+const worldConfig = getWorldOptions();
 
 function chunkKey(x, z) {
   return `${x}|${z}`;

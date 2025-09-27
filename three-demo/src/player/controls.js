@@ -1,3 +1,5 @@
+import { getWorldOptions } from '../world/world-settings.js';
+
 function blockKey(x, y, z) {
   return `${x}|${y}|${z}`;
 }
@@ -30,7 +32,7 @@ export function createPlayerControls({
   camera,
   renderer,
   overlay,
-  worldConfig,
+  worldConfig = getWorldOptions(),
   terrainHeight,
   solidBlocks,
   softBlocks,

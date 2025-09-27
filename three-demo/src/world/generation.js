@@ -15,6 +15,8 @@ import {
   createDecorationMeshBatches,
 } from './voxel-object-decoration-mesh.js';
 import { resolveBiomeTintMultiplier } from './color-utils.js';
+import { worldOptions, applyWorldOptions } from './world-settings.js';
+export { worldOptions, getWorldOptions } from './world-settings.js';
 
 initializeFluidDebug({ defaultEnabled: false, persistDefault: true, forceDefault: true });
 
@@ -40,26 +42,45 @@ function ensureTerrainEngine() {
   return terrainEngine;
 }
 
-export function initializeWorldGeneration({ THREE }) {
+function disposeTerrainEngineInstance(instance) {
+  if (!instance) {
+    return;
+  }
+  instance.dispose?.();
+  instance.biomeEngine?.dispose?.();
+}
+
+export function initializeWorldGeneration({ THREE, worldOptions: overrides } = {}) {
   if (!THREE) {
     throw new Error('initializeWorldGeneration requires a THREE instance');
   }
-  THREERef = THREE;
-  blockGeometry = new THREE.BoxGeometry(1, 1, 1);
-  terrainEngine = createTerrainEngine({ THREE, seed: 1337, worldConfig });
-}
 
-export const worldConfig = {
-  chunkSize: 48,
-  maxHeight: 20,
-  baseHeight: 6,
-  waterLevel: 9,
-};
+  THREERef = THREE;
+
+  if (overrides) {
+    applyWorldOptions(overrides);
+  }
+
+  if (terrainEngine) {
+    disposeTerrainEngineInstance(terrainEngine);
+  }
+
+  blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+  terrainEngine = createTerrainEngine({
+    THREE,
+    seed: worldOptions.seed,
+    worldConfig: worldOptions,
+  });
+}
 
 export function terrainHeight(x, z) {
   const engine = ensureTerrainEngine();
   const sample = engine.sampleColumn(x, z);
-  return Math.floor(clamp(sample.height, 2, worldConfig.maxHeight));
+  const clampRange =
+    worldOptions.terrain?.clamp ?? { min: 2, max: worldOptions.maxHeight };
+  const minHeight = clampRange.min ?? 2;
+  const maxHeight = clampRange.max ?? worldOptions.maxHeight;
+  return Math.floor(clamp(sample.height, minHeight, maxHeight));
 }
 
 export function sampleBiomeAt(x, z) {
@@ -103,7 +124,7 @@ function addCloud(addBlock, x, y, z) {
 }
 
 function chunkWorldBounds(chunkX, chunkZ) {
-  const { chunkSize } = worldConfig;
+  const { chunkSize } = worldOptions;
   const halfSize = chunkSize / 2;
   return {
     minX: chunkX * chunkSize - halfSize,
@@ -145,7 +166,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   let prototypeInstanceCounter = 0;
 
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
-  const { chunkSize, waterLevel } = worldConfig;
+  const { chunkSize, waterLevel } = worldOptions;
 
   const columnSampleCache = new Map();
 
@@ -163,7 +184,11 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
   const getColumnHeight = (x, z) => {
     const sample = sampleColumnCached(x, z);
-    return Math.floor(clamp(sample.height, 2, worldConfig.maxHeight));
+    const clampRange =
+      worldOptions.terrain?.clamp ?? { min: 2, max: worldOptions.maxHeight };
+    const minHeight = clampRange.min ?? 2;
+    const maxHeight = clampRange.max ?? worldOptions.maxHeight;
+    return Math.floor(clamp(sample.height, minHeight, maxHeight));
   };
 
   const computeSlope = (x, z, baseHeight) => {
@@ -350,7 +375,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         paletteBlend.multiply(climateBlend);
       }
 
-      const altitudeRange = Math.max(1, worldConfig.maxHeight - waterLevel + 6);
+      const altitudeRange = Math.max(1, worldOptions.maxHeight - waterLevel + 6);
       const altitude = clamp((y - waterLevel + 2) / altitudeRange, -0.25, 1);
       const altitudeBlend = new THREE.Color(1, 1, 1);
       if (altitude > 0) {
@@ -977,7 +1002,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
             x: nx,
             z: nz,
             sampleColumnHeight: getColumnHeight,
-            worldConfig,
+            worldConfig: worldOptions,
           });
           neighborInfo = {
             hasFluid: Boolean(presence?.hasFluid),
@@ -1102,7 +1127,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
           minZ: chunkZ * chunkSize - halfSize - 0.5,
           maxZ: chunkZ * chunkSize + halfSize + 0.5,
           minY: -32,
-          maxY: worldConfig.maxHeight + 32,
+          maxY: worldOptions.maxHeight + 32,
         };
       }
       return {
