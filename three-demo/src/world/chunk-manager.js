@@ -42,6 +42,83 @@ function resolveBudget(value, fallback) {
   return 0;
 }
 
+function ensureWaterColumnMap(source) {
+  if (!source) {
+    return new Map();
+  }
+  if (source instanceof Map) {
+    return source;
+  }
+  const map = new Map();
+  if (source instanceof Set) {
+    source.forEach((key) => {
+      map.set(key, null);
+    });
+    return map;
+  }
+  if (Array.isArray(source)) {
+    source.forEach((entry) => {
+      if (!Array.isArray(entry) || entry.length === 0) {
+        return;
+      }
+      const [key, value = null] = entry;
+      map.set(key, value);
+    });
+    return map;
+  }
+  if (typeof source === 'object') {
+    Object.entries(source).forEach(([key, value]) => {
+      map.set(key, value);
+    });
+  }
+  return map;
+}
+
+function normalizeWaterColumnBounds(bounds) {
+  if (!bounds || typeof bounds !== 'object') {
+    return null;
+  }
+  const resolveValue = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  };
+  const bottomCandidates = [
+    bounds.bottomY,
+    bounds.minY,
+    bounds.yMin,
+    bounds.min,
+  ];
+  const surfaceCandidates = [
+    bounds.surfaceY,
+    bounds.maxY,
+    bounds.yMax,
+    bounds.max,
+  ];
+  let bottom = null;
+  for (let i = 0; i < bottomCandidates.length && bottom === null; i += 1) {
+    bottom = resolveValue(bottomCandidates[i]);
+  }
+  let surface = null;
+  for (let i = 0; i < surfaceCandidates.length && surface === null; i += 1) {
+    surface = resolveValue(surfaceCandidates[i]);
+  }
+  if (bottom === null && surface === null) {
+    return null;
+  }
+  if (bottom === null) {
+    bottom = surface;
+  }
+  if (surface === null) {
+    surface = bottom;
+  }
+  const min = Math.min(bottom, surface);
+  const max = Math.max(bottom, surface);
+  return {
+    bottomY: min,
+    surfaceY: max,
+  };
+}
+
 export function createChunkManager({
   scene,
   blockMaterials,
@@ -52,7 +129,7 @@ export function createChunkManager({
   const loadedChunks = new Map();
   const solidBlocks = new Set();
   const softBlocks = new Set();
-  const waterColumns = new Set();
+  const waterColumns = new Map();
   const decorationGroupsByKey = new Map();
   const decorationOwnersIndex = new Map();
   const prototypeRemovalGuards = new Set();
@@ -235,7 +312,19 @@ export function createChunkManager({
     scene.add(chunk.group);
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.add(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
-    (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.add(column));
+    const chunkWaterColumnSource =
+      chunk.waterColumns ?? chunk.waterColumnKeys ?? null;
+    const chunkWaterColumns = ensureWaterColumnMap(chunkWaterColumnSource);
+    const normalizedWaterColumns = new Map();
+    chunkWaterColumns.forEach((bounds, columnKey) => {
+      const normalized = bounds === null
+        ? null
+        : normalizeWaterColumnBounds(bounds);
+      normalizedWaterColumns.set(columnKey, normalized);
+      waterColumns.set(columnKey, normalized);
+    });
+    chunk.waterColumns = normalizedWaterColumns;
+    chunk.waterColumnKeys = new Set(normalizedWaterColumns.keys());
     if (!chunk.decorationGroups) {
       chunk.decorationGroups = new Map();
     }
@@ -280,7 +369,11 @@ export function createChunkManager({
     });
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.delete(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.delete(block));
-    (chunk.waterColumnKeys ?? []).forEach((column) => waterColumns.delete(column));
+    if (chunk.waterColumns instanceof Map) {
+      chunk.waterColumns.forEach((_, columnKey) => waterColumns.delete(columnKey));
+    } else if (chunk.waterColumnKeys instanceof Set) {
+      chunk.waterColumnKeys.forEach((columnKey) => waterColumns.delete(columnKey));
+    }
     if (chunk.decorationGroups) {
       Array.from(chunk.decorationGroups.values()).forEach((group) => {
         unregisterDecorationGroup(group);
@@ -790,7 +883,10 @@ export function createChunkManager({
         }
         if (entry.isWater) {
           const columnKey = `${entry.position.x}|${entry.position.z}`;
-          chunk.waterColumnKeys.delete(columnKey);
+          chunk.waterColumns?.delete?.(columnKey);
+          if (chunk.waterColumnKeys instanceof Set) {
+            chunk.waterColumnKeys.delete(columnKey);
+          }
           waterColumns.delete(columnKey);
         }
         entry.index = -1;
@@ -913,8 +1009,12 @@ export function createChunkManager({
       softBlocks.delete(coordinateKey);
     }
     if (removed.isWater) {
-      chunk.waterColumnKeys.delete(`${removed.position.x}|${removed.position.z}`);
-      waterColumns.delete(`${removed.position.x}|${removed.position.z}`);
+      const columnKey = `${removed.position.x}|${removed.position.z}`;
+      chunk.waterColumns?.delete?.(columnKey);
+      if (chunk.waterColumnKeys instanceof Set) {
+        chunk.waterColumnKeys.delete(columnKey);
+      }
+      waterColumns.delete(columnKey);
     }
 
     if (removed.prototypeKey) {

@@ -99,12 +99,81 @@ export function createPlayerControls({
   const gravity = 18;
   const jumpVelocity = 10.2;
   const nearGroundThreshold = 0.18;
+  const waterColumnEpsilon = 1e-3;
   const spawnDropHeight = 6;
   const minSpawnHeight = worldConfig.maxHeight + playerEyeHeight + 8;
   const maxRescueHeight = worldConfig.maxHeight + playerEyeHeight + 60;
   const spawnSearchRadius = 30;
   const spawnSearchStep = 6;
   const fallbackSpawnPosition = new THREE.Vector3(0, minSpawnHeight, 0);
+
+  function normalizeWaterColumnMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object') {
+      return null;
+    }
+    const resolveValue = (value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
+    };
+    const bottomCandidates = [
+      metadata.bottomY,
+      metadata.minY,
+      metadata.yMin,
+      metadata.min,
+    ];
+    const surfaceCandidates = [
+      metadata.surfaceY,
+      metadata.maxY,
+      metadata.yMax,
+      metadata.max,
+    ];
+    let bottom = null;
+    for (let i = 0; i < bottomCandidates.length && bottom === null; i += 1) {
+      bottom = resolveValue(bottomCandidates[i]);
+    }
+    let surface = null;
+    for (let i = 0; i < surfaceCandidates.length && surface === null; i += 1) {
+      surface = resolveValue(surfaceCandidates[i]);
+    }
+    if (bottom === null && surface === null) {
+      return null;
+    }
+    if (bottom === null) {
+      bottom = surface;
+    }
+    if (surface === null) {
+      surface = bottom;
+    }
+    const min = Math.min(bottom, surface);
+    const max = Math.max(bottom, surface);
+    return { bottomY: min, surfaceY: max };
+  }
+
+  function getWaterColumnInfo(columnKey) {
+    if (!columnKey) {
+      return { exists: false, bounds: null };
+    }
+    if (!waterColumns) {
+      return { exists: false, bounds: null };
+    }
+    if (typeof waterColumns.has === 'function') {
+      const exists = waterColumns.has(columnKey);
+      if (!exists) {
+        return { exists: false, bounds: null };
+      }
+      if (typeof waterColumns.get === 'function') {
+        const metadata = waterColumns.get(columnKey);
+        const bounds = metadata === null ? null : normalizeWaterColumnMetadata(metadata);
+        return { exists: true, bounds };
+      }
+      return { exists: true, bounds: null };
+    }
+    if (Array.isArray(waterColumns)) {
+      const exists = waterColumns.includes(columnKey);
+      return { exists, bounds: null };
+    }
+    return { exists: false, bounds: null };
+  }
   const pointerLockElement = renderer.domElement;
   const pointerLockDocument = pointerLockElement.ownerDocument;
   const pointerLockSupported = isPointerLockSupported(pointerLockDocument);
@@ -311,8 +380,11 @@ export function createPlayerControls({
     }
 
     const columnKey = `${x}|${z}`;
-    const hasWaterColumn = Boolean(waterColumns?.has?.(columnKey));
-    const isSubmerged = hasWaterColumn && surfaceY <= worldConfig.waterLevel + 0.5;
+    const { exists: hasWaterColumn, bounds } = getWaterColumnInfo(columnKey);
+    const waterSurface = Number.isFinite(bounds?.surfaceY)
+      ? bounds.surfaceY
+      : worldConfig.waterLevel + 0.5;
+    const isSubmerged = hasWaterColumn && surfaceY <= waterSurface;
     const spawnY = Math.max(surfaceY + playerEyeHeight + spawnDropHeight, minSpawnHeight);
 
     return {
@@ -915,12 +987,34 @@ export function createPlayerControls({
     }
 
     const columnKey = `${Math.round(position.x)}|${Math.round(position.z)}`;
-    const waterSurface = worldConfig.waterLevel + 0.5;
     const feetY = position.y - playerEyeHeight;
     const headY = position.y;
-    const inWaterColumn = waterColumns.has(columnKey);
-    const feetInWater = inWaterColumn && feetY < waterSurface;
-    const headUnderwater = inWaterColumn && headY < waterSurface;
+    const columnInfo = getWaterColumnInfo(columnKey);
+    const columnBounds = columnInfo.bounds;
+    const fallbackWaterSurface = worldConfig.waterLevel + 0.5;
+    const effectiveWaterSurface = Number.isFinite(columnBounds?.surfaceY)
+      ? columnBounds.surfaceY
+      : fallbackWaterSurface;
+    const inWaterColumn = columnInfo.exists;
+    let feetInWater = false;
+    let headUnderwater = false;
+    if (inWaterColumn) {
+      if (columnBounds) {
+        const minWater = Math.min(columnBounds.bottomY, columnBounds.surfaceY);
+        const maxWater = Math.max(columnBounds.bottomY, columnBounds.surfaceY);
+        const feetWithin =
+          feetY >= minWater - waterColumnEpsilon &&
+          feetY <= maxWater + waterColumnEpsilon;
+        const headWithin =
+          headY >= minWater - waterColumnEpsilon &&
+          headY <= maxWater + waterColumnEpsilon;
+        feetInWater = feetWithin;
+        headUnderwater = headWithin && headY < maxWater - waterColumnEpsilon;
+      } else {
+        feetInWater = feetY < effectiveWaterSurface;
+        headUnderwater = headY < effectiveWaterSurface;
+      }
+    }
     const inSoftMedium = !feetInWater && isInSoftMedium(position);
 
     if (playerState.isInWater !== feetInWater) {
@@ -1037,8 +1131,8 @@ export function createPlayerControls({
       const supportTargetY = standingSurface
         ? standingSurface.height + playerEyeHeight
         : Number.NEGATIVE_INFINITY;
-      const waterTarget =
-        worldConfig.waterLevel + 0.5 + playerEyeHeight - 0.2;
+      const waterSurfaceTarget = effectiveWaterSurface;
+      const waterTarget = waterSurfaceTarget + playerEyeHeight - 0.2;
       let targetY = supportTargetY;
       if (!feetInWater && inWaterColumn) {
         targetY = Math.max(targetY, waterTarget);
@@ -1061,7 +1155,11 @@ export function createPlayerControls({
       const effectiveGravity = feetInWater ? gravity * 0.35 : gravity;
       verticalVelocity -= effectiveGravity * delta;
       if (feetInWater) {
-        const submersion = THREE.MathUtils.clamp(waterSurface - feetY, 0, 6);
+        const submersion = THREE.MathUtils.clamp(
+          effectiveWaterSurface - feetY,
+          0,
+          6,
+        );
         const buoyancy = submersion * 2.4;
         verticalVelocity += buoyancy * delta;
         verticalVelocity *= 0.82;
