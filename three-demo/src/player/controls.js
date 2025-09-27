@@ -1141,7 +1141,6 @@ export function createPlayerControls({
         ? standingSurface.height + playerEyeHeight
         : Number.NEGATIVE_INFINITY;
 
-
       let targetY = supportTargetY;
 
       if (jumpRequested) {

@@ -1049,6 +1049,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     solidBlockKeys,
     softBlockKeys,
     waterColumns: waterColumnMetadata,
+    fluidColumnsByType,
     fluidSurfaces,
     blockLookup,
     typeData,
