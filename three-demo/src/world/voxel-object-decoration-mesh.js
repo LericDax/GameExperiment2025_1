@@ -76,6 +76,7 @@ function cloneBlockPlacement(block) {
     voxelIndex: block.voxelIndex,
     sourceObjectId: block.sourceObjectId ?? null,
     key: block.key ?? null,
+    ignoreBiomeTint: block.ignoreBiomeTint === true,
   };
 }
 

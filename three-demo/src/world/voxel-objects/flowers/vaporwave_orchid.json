@@ -5,6 +5,9 @@
   "author": "system",
   "description": "Glowing petals shimmering with synthwave gradients.",
   "collision": "soft",
+
+  "ignoreBiomeTint": true,
+
   "voxelScale": 0.24,
   "attachment": {
     "groundOffset": 0.12
