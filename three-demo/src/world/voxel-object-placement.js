@@ -52,7 +52,30 @@ export function placeVoxelObject(
     object?.destructionMode !== 'per-voxel' && typeof addPrototypeInstance === 'function';
 
   if (usePrototypePlacement) {
+    const debugPrototypeLogs =
+      typeof console !== 'undefined' && (import.meta.env?.DEV ?? true);
+    if (debugPrototypeLogs) {
+      console.debug('[voxel-object-placement] evaluating prototype placement', {
+        objectId: object.id ?? null,
+      });
+    }
     const prototype = getVoxelObjectPrototype(object);
+    if (!prototype) {
+      if (debugPrototypeLogs) {
+        console.debug(
+          '[voxel-object-placement] prototype unavailable, using per-voxel placement',
+          {
+            objectId: object.id ?? null,
+          },
+        );
+      }
+    } else if (debugPrototypeLogs) {
+      console.debug('[voxel-object-placement] using prototype placement', {
+        objectId: object.id ?? null,
+        blockCount: prototype.blocks?.length ?? 0,
+        decorationCount: prototype.decorations?.length ?? 0,
+      });
+    }
     if (prototype) {
       const instanceKey = [
         object.id ?? 'object',
