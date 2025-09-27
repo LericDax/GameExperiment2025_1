@@ -104,6 +104,8 @@ function normalizeVoxel(voxel, index, { path }) {
     typeof voxel.isSolid === 'boolean' ? voxel.isSolid : undefined;
   const destructible =
     typeof voxel.destructible === 'boolean' ? voxel.destructible : undefined;
+  const ignoreBiomeTint =
+    typeof voxel.ignoreBiomeTint === 'boolean' ? voxel.ignoreBiomeTint : undefined;
 
   let collisionMode = null;
   if (typeof voxel.collision === 'string') {
@@ -126,6 +128,7 @@ function normalizeVoxel(voxel, index, { path }) {
     tint,
     isSolid,
     destructible,
+    ignoreBiomeTint,
 
     collisionMode,
 
@@ -154,6 +157,11 @@ function normalizeDefinition(path, raw) {
   const voxels = Array.isArray(definition.voxels)
     ? definition.voxels.map((voxel, index) => normalizeVoxel(voxel, index, { path }))
     : [];
+
+  const ignoreBiomeTint =
+    typeof definition.ignoreBiomeTint === 'boolean'
+      ? definition.ignoreBiomeTint
+      : false;
 
   let destructionMode = DEFAULT_DESTRUCTION_MODE;
   if (typeof definition.destructionMode === 'string') {
@@ -268,6 +276,7 @@ function normalizeDefinition(path, raw) {
     voxels,
     boundingBox,
     destructionMode,
+    ignoreBiomeTint,
 
     collision: { mode: normalizedCollision },
 

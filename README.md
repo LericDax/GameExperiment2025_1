@@ -42,3 +42,8 @@ npm run build
 ```
 
 The output is written to `three-demo/dist/` and can be hosted on any static web server.
+
+## Voxel Object JSON Notes
+- `ignoreBiomeTint` (boolean, optional): when `true`, the object's voxels render using their explicit `tint` values without
+  additional biome- or altitude-based color grading. Use this for foliage or decorations that should preserve author-defined
+  hues regardless of the surrounding biome lighting.

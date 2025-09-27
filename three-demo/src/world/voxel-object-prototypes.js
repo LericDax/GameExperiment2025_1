@@ -419,6 +419,7 @@ export function computeNanovoxelPlacementsForDescriptor(
             voxelIndex: voxel.index,
             metadata: basePlacement.metadata,
             key,
+            ignoreBiomeTint: basePlacement.ignoreBiomeTint,
           },
         });
       });
@@ -626,6 +627,7 @@ export function computeSegmentFeatherPlacements(voxel, basePlacement, object, sm
         voxelIndex: voxel.index,
         metadata: basePlacement.metadata,
         key: `${basePlacement.key}|layer-${i}`,
+        ignoreBiomeTint: basePlacement.ignoreBiomeTint,
       },
     });
   }
@@ -697,6 +699,7 @@ export function computeNodeFeatherPlacements(voxel, basePlacement, object, smoot
         voxelIndex: voxel.index,
         metadata: basePlacement.metadata,
         key: `${basePlacement.key}|petal-${i}`,
+        ignoreBiomeTint: basePlacement.ignoreBiomeTint,
       },
     });
   }
@@ -820,6 +823,10 @@ export function computeVoxelObjectPlacements(object) {
 
     const collisionMode = resolveCollisionMode(voxel, object);
     const baseKey = `${object.id ?? 'object'}|${voxel.index}`;
+    const ignoreBiomeTint =
+      typeof voxel.ignoreBiomeTint === 'boolean'
+        ? voxel.ignoreBiomeTint
+        : object.ignoreBiomeTint === true;
 
     const blockEntry = {
       type: voxel.type,
@@ -834,6 +841,7 @@ export function computeVoxelObjectPlacements(object) {
       voxelIndex: voxel.index,
       key: baseKey,
       sourceObjectId: object.id ?? null,
+      ignoreBiomeTint,
     };
     blocks.push(blockEntry);
 
@@ -850,6 +858,7 @@ export function computeVoxelObjectPlacements(object) {
       metadata: voxel.metadata,
       collisionMode,
       key: baseKey,
+      ignoreBiomeTint,
     };
 
     const decorativePlacements = computeDecorativePlacements(voxel, basePlacement, object);
