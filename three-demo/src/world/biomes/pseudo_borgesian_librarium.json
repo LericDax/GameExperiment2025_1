@@ -12,6 +12,7 @@
     "subSurfaceBlock": "stone",
     "subSurfaceDepth": 6,
     "deepBlock": "stone",
+    "objectDensityMultiplier": 0.75,
     "treeDensity": 0.02,
     "shrubChance": 0.04,
     "flowerChance": 0.12,

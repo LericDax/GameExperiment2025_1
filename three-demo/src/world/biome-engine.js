@@ -44,6 +44,24 @@ function mixValues(a, b, weight) {
   return a * (1 - weight) + b * weight;
 }
 
+function normalizeMultiplier(value, fallback = 1) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(0, value);
+}
+
+function normalizeCategoryMultipliers(definition) {
+  if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(definition)
+      .filter((entry) => typeof entry[0] === 'string')
+      .map(([key, value]) => [key, normalizeMultiplier(value, 1)]),
+  );
+}
+
 export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
   if (!THREE) {
     throw new Error('createBiomeEngine requires a THREE instance');
@@ -85,6 +103,14 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
     const terrainDefinition = definition.terrain ?? {};
     const treeHeight = terrainDefinition.treeHeight ?? {};
 
+    const objectDensityMultiplier = normalizeMultiplier(
+      terrainDefinition.objectDensityMultiplier,
+      1,
+    );
+    const objectDensityMultipliers = normalizeCategoryMultipliers(
+      terrainDefinition.objectDensityMultipliers,
+    );
+
     const shaderDefinition = definition.shader ?? {};
 
     return {
@@ -113,6 +139,8 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
         fungiChance: clamp01(terrainDefinition.fungiChance ?? 0),
         waterPlantChance: clamp01(terrainDefinition.waterPlantChance ?? 0),
         structureChance: clamp01(terrainDefinition.structureChance ?? 0),
+        objectDensityMultiplier,
+        objectDensityMultipliers,
         treeHeight: {
           min: Math.max(1, Math.floor(treeHeight.min ?? 3)),
           max: Math.max(Math.floor(treeHeight.max ?? 6), Math.floor(treeHeight.min ?? 3)),

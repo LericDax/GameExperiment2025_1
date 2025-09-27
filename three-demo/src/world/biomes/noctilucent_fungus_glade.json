@@ -12,6 +12,11 @@
     "subSurfaceBlock": "dirt",
     "subSurfaceDepth": 5,
     "deepBlock": "stone",
+    "objectDensityMultiplier": 0.8,
+    "objectDensityMultipliers": {
+      "flowers": 1.3,
+      "fungi": 1.1
+    },
     "treeDensity": 0.03,
     "shrubChance": 0.05,
     "flowerChance": 0.1,
