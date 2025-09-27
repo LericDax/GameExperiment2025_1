@@ -646,6 +646,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         isSolid: block.collisionMode === 'solid',
         destructible: block.destructible,
         tint: block.tint,
+        ignoreBiomeTint: block.ignoreBiomeTint === true,
         sourceObjectId: block.sourceObjectId ?? prototype.id ?? null,
         voxelIndex: block.voxelIndex,
         metadata: block.metadata,
