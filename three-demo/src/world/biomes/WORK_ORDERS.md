@@ -11,7 +11,7 @@ This document tracks the multi-layer deliverables for integrating the upcoming b
 - Goals:
   - Solar Chroma Steppe ↔ Luminous Tidebloom Marsh: bridge day/night energy cycles by sharing adaptive flora lines that react to light versus tide pulses.
   - Obsidian Mycelium Hollows ↔ Prismarine Vent Plateau: extend subterranean fungal economies into surface vents, emphasizing heat gradients and mineral reclamation.
-- **Import wiring:** once the JSON files ship, extend the import block and biome registry array in `three-demo/src/world/biome-engine.js` so the new IDs can be instantiated.
+- **Import wiring:** once the JSON files ship, extend the import block and biome registry array in `three-demo/src/world/biome-engine.js` so the new IDs can be instantiated. Cross-check the onboarding steps in `README.md` to keep the process documentation aligned with future rollouts.
 
 ## Layer 1 – Voxel Object Coverage
 For each biome JSON above, provide voxel object payloads before enabling spawning. Deliverables should live under `three-demo/src/world/voxel-objects/` in their respective category folders.
