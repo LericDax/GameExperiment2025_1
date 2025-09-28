@@ -34,13 +34,30 @@ function pseudoRandom2D(x, z, seed = DEFAULT_FLUID_SEED) {
   return hash - Math.floor(hash);
 }
 
-function resolveLumenBloomPresence({ x, z, sampleColumnHeight, worldConfig }) {
+function resolveLumenBloomPresence({
+  x,
+  z,
+  sampleColumnHeight,
+  worldConfig,
+  sampleBiomeAt,
+}) {
   const groundHeight = sampleColumnHeight(x, z);
   const baseSurface = groundHeight + 0.5;
   const seed = worldConfig?.seedHash ?? DEFAULT_FLUID_SEED;
   const cluster = pseudoRandom2D(x * 0.12, z * 0.12, seed * 0.73);
   const bloom = pseudoRandom2D(x * 0.27 + 11.3, z * 0.27 - 6.1, seed * 0.41);
   const altitudeBias = Math.max(0, (worldConfig?.waterLevel ?? groundHeight) - groundHeight);
+
+  const biomeSample =
+    sampleBiomeAt?.(x, z) ?? worldConfig?.biomeEngine?.getBiomeAt?.(x, z);
+  const biomeId = biomeSample?.biome?.id ?? biomeSample?.id ?? null;
+  if (biomeId === 'ice_spire_tundra') {
+    return {
+      hasFluid: false,
+      surfaceY: baseSurface,
+      bottomY: baseSurface,
+    };
+  }
 
   if (cluster + bloom * 0.4 + altitudeBias * 0.01 < 0.75) {
     return {
@@ -61,7 +78,13 @@ function resolveLumenBloomPresence({ x, z, sampleColumnHeight, worldConfig }) {
   };
 }
 
-function resolveAbyssalSerumPresence({ x, z, sampleColumnHeight, worldConfig }) {
+function resolveAbyssalSerumPresence({
+  x,
+  z,
+  sampleColumnHeight,
+  worldConfig,
+  sampleBiomeAt,
+}) {
   const groundHeight = sampleColumnHeight(x, z);
   const baseSurface = groundHeight + 0.5;
   const seed = worldConfig?.seedHash ?? DEFAULT_FLUID_SEED;
@@ -69,6 +92,17 @@ function resolveAbyssalSerumPresence({ x, z, sampleColumnHeight, worldConfig }) 
   const seep = pseudoRandom2D(x * 0.05 + 12.5, z * 0.05 - 2.7, seed * 0.33);
   const depthBias = Math.max(0, (worldConfig?.waterLevel ?? groundHeight) - groundHeight);
   const threshold = 0.68 - depthBias * 0.01;
+
+  const biomeSample =
+    sampleBiomeAt?.(x, z) ?? worldConfig?.biomeEngine?.getBiomeAt?.(x, z);
+  const biomeId = biomeSample?.biome?.id ?? biomeSample?.id ?? null;
+  if (biomeId === 'ice_spire_tundra') {
+    return {
+      hasFluid: false,
+      surfaceY: baseSurface,
+      bottomY: baseSurface,
+    };
+  }
 
   if (caverns < threshold || seep < 0.45) {
     return {
@@ -314,6 +348,7 @@ export function resolveFluidPresence({
   z,
   sampleColumnHeight,
   worldConfig,
+  sampleBiomeAt,
 }) {
   const config = worldConfig ?? getWorldOptions();
   const definition = fluidDefinitions.get(type);
@@ -331,6 +366,7 @@ export function resolveFluidPresence({
       z,
       sampleColumnHeight,
       worldConfig: config,
+      sampleBiomeAt,
     });
   }
   const groundHeight = sampleColumnHeight(x, z);

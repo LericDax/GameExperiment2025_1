@@ -1020,6 +1020,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
             z: nz,
             sampleColumnHeight: getColumnHeight,
             worldConfig: worldOptions,
+            sampleBiomeAt: sampleColumnCached,
           });
           neighborInfo = {
             hasFluid: Boolean(presence?.hasFluid),

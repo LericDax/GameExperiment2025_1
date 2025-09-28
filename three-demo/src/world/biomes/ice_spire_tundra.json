@@ -1,0 +1,66 @@
+{
+  "id": "ice_spire_tundra",
+  "label": "Ice Spire Tundra",
+  "tags": ["frozen", "hazard_frostbite", "windswept"],
+  "climate": {
+    "temperature": 0.04,
+    "moisture": 0.18,
+    "weight": 0.9
+  },
+  "terrain": {
+    "surfaceBlock": "stone",
+    "shoreBlock": "stone",
+    "subSurfaceBlock": "stone",
+    "subSurfaceDepth": 4,
+    "deepBlock": "stone",
+    "treeDensity": 0.0,
+    "shrubChance": 0.02,
+    "flowerChance": 0.01,
+    "rockChance": 0.22,
+    "fungiChance": 0.0,
+    "waterPlantChance": 0.0,
+    "structureChance": 0.28,
+    "objectDensityMultiplier": 0.55,
+    "objectDensityMultipliers": {
+      "structures": 2.4,
+      "rocks": 1.8,
+      "shrubs": 0.4,
+      "flowers": 0.35
+    },
+    "treeHeight": {
+      "min": 1,
+      "max": 2
+    },
+    "heightOffset": 1.5
+  },
+  "palette": {
+    "grass": "#d0f6ff",
+    "dirt": "#8aa3b4",
+    "stone": "#b5c9d6",
+    "water": "#5aa0c9",
+    "cloud": "#edf8ff",
+    "leaf": "#e7fbff",
+    "log": "#9fb2be",
+    "cryoshard_glass": "#bce6ff",
+    "frostbloom_moss": "#9de0d8"
+  },
+  "shader": {
+    "fogColor": "#c0dfff",
+    "tintColor": "#e0f4ff",
+    "tintStrength": 0.68,
+    "effects": {
+      "blizzardHaze": {
+        "intensity": 0.85,
+        "windShear": 0.7,
+        "particleColor": "#f1fbff"
+      }
+    },
+    "hazards": {
+      "frostbite": {
+        "severity": 0.9,
+        "exposureWindowSeconds": 18,
+        "description": "Supercooled squalls sap body heat within moments of exposure."
+      }
+    }
+  }
+}
