@@ -47,6 +47,23 @@ The Vite demo is the recommended way to iterate on the experience:
 - Mouse – look around
 - Keep an eye on the lower-left HUD for health, oxygen, and contextual status alerts.
 
+## Developer Console
+
+The sandbox ships with an in-game console so you can script quick diagnostics without leaving play mode:
+
+- Press the **Backquote** key (`\`` on US keyboards) to toggle the overlay. The same key or `Esc` will close it so you can return to pointer lock. 【F:three-demo/src/ui/command-console.js†L6-L12】【F:three-demo/src/main.js†L307-L337】
+- Console commands always start with `/`. Type `/help` to list everything that is currently registered or `/help <command>` to drill into usage and options. 【F:three-demo/src/ui/command-console.js†L200-L240】【F:three-demo/src/ui/command-console.js†L355-L377】
+
+### Command highlights
+
+Commands are grouped by the kind of developer workflow they support:
+
+- **Navigation & positioning** – `/whereami` prints your coordinates and biome, `/goto <x> <y> <z>` teleports to a specific block, `/look <yaw> <pitch>` snaps the camera orientation (degrees by default), and `/unstuck` nudges you toward the nearest safe tile if you clip into geometry. 【F:three-demo/src/player/dev-commands.js†L675-L901】
+- **Player state & HUD** – `/godmode` and `/fly` toggle invulnerability and free-flight, `/heal [amount]` and `/oxygen [amount]` set vital stats directly, and `/status [message]` updates or clears the HUD status banner. 【F:three-demo/src/player/dev-commands.js†L826-L917】
+- **Diagnostics** – `/scan` casts a ray to inspect the block you are looking at, `/scan column <x> <z>` audits a whole column, and `/scan watch …` keeps logging visibility as the scene evolves. 【F:three-demo/src/player/dev-commands.js†L717-L777】
+- **ASCII tooling** – `/asciimap` renders a top-down ASCII slice, `/asciioptions` saves default radii/offsets/watch cadence, and `/asciiwatch` keeps the map refreshing on demand. 【F:three-demo/src/player/dev-commands.js†L919-L1039】
+- **VFX inspection** – `/vfx overlay [on|off|toggle]` adds a particle debugging overlay, while `/vfx list` dumps live emitter and fluid surface stats to the console. 【F:three-demo/src/player/dev-commands.js†L780-L823】
+
 ## Building for Production
 To create an optimized build via Vite:
 
