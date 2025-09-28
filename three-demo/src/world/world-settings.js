@@ -1,3 +1,30 @@
+function computeSeedHash(value) {
+  const str = String(value ?? '')
+  let hash = 2166136261
+  for (let index = 0; index < str.length; index += 1) {
+    hash ^= str.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function resolveSeed(value, fallbackValue, fallbackHash) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const normalized = Math.trunc(value)
+    return { value: normalized, hash: computeSeedHash(normalized) }
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed.length > 0) {
+      return { value: trimmed, hash: computeSeedHash(trimmed) }
+    }
+  }
+  return { value: fallbackValue, hash: fallbackHash }
+}
+
+const DEFAULT_SEED_VALUE = 1337
+const DEFAULT_SEED_HASH = computeSeedHash(DEFAULT_SEED_VALUE)
+
 const defaultTerrainClamp = Object.freeze({
   min: 2,
   max: 20,
@@ -66,7 +93,8 @@ export const biomeOptionMetadata = Object.freeze({
 })
 
 export const defaultWorldOptions = Object.freeze({
-  seed: 1337,
+  seed: DEFAULT_SEED_VALUE,
+  seedHash: DEFAULT_SEED_HASH,
   chunkSize: 48,
   baseHeight: defaultTerrainOptions.baseHeight,
   maxHeight: defaultTerrainOptions.maxHeight,
@@ -82,8 +110,14 @@ export const defaultWorldOptions = Object.freeze({
 })
 
 function createMutableWorldOptions() {
+  const seedInfo = resolveSeed(
+    DEFAULT_SEED_VALUE,
+    DEFAULT_SEED_VALUE,
+    DEFAULT_SEED_HASH,
+  )
   return {
-    seed: defaultWorldOptions.seed,
+    seed: seedInfo.value,
+    seedHash: seedInfo.hash,
     chunkSize: defaultWorldOptions.chunkSize,
     baseHeight: defaultWorldOptions.baseHeight,
     maxHeight: defaultWorldOptions.maxHeight,
@@ -164,7 +198,13 @@ export function applyWorldOptions(overrides = {}) {
   }
 
   if ('seed' in overrides) {
-    worldOptions.seed = normalizeNumber(overrides.seed, worldOptions.seed)
+    const seedInfo = resolveSeed(
+      overrides.seed,
+      worldOptions.seed,
+      worldOptions.seedHash,
+    )
+    worldOptions.seed = seedInfo.value
+    worldOptions.seedHash = seedInfo.hash
   }
 
   const chunkOverrides = isObject(overrides.chunk) ? overrides.chunk : null
@@ -347,6 +387,7 @@ export function resetWorldOptions() {
   const fresh = createMutableWorldOptions()
 
   worldOptions.seed = fresh.seed
+  worldOptions.seedHash = fresh.seedHash
   worldOptions.chunkSize = fresh.chunkSize
   worldOptions.baseHeight = fresh.baseHeight
   worldOptions.maxHeight = fresh.maxHeight

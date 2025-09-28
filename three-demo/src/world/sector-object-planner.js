@@ -1,4 +1,42 @@
 const SECTOR_SIZE = 32;
+const DEFAULT_PLANNER_SEED = 1337;
+const MAX_16_BIT = 0xffff;
+
+const sectorCache = new Map();
+
+let plannerSeedHash = DEFAULT_PLANNER_SEED >>> 0;
+let pseudoAngleScale = 157.31;
+let pseudoAxisScale = 311.7;
+let pseudoOffsetScale = 37.912;
+let pseudoBias = 0;
+
+function normalize16Bit(value) {
+  return (value & MAX_16_BIT) / MAX_16_BIT;
+}
+
+function updatePlannerSeed(hash) {
+  plannerSeedHash = hash >>> 0;
+  const low = normalize16Bit(plannerSeedHash);
+  const high = normalize16Bit(plannerSeedHash >>> 16);
+  const mix = plannerSeedHash ^ 0x9e3779b9;
+  const mixLow = normalize16Bit(mix);
+  const mixHigh = normalize16Bit(mix >>> 16);
+  pseudoAngleScale = 157.31 + 0.17 + low * 0.83;
+  pseudoAxisScale = 311.7 + 0.21 + high * 0.91;
+  pseudoOffsetScale = 37.912 + 0.11 + mixLow * 0.77;
+  pseudoBias = mixHigh * Math.PI * 2 + SECTOR_SIZE * 0.73;
+}
+
+updatePlannerSeed(DEFAULT_PLANNER_SEED);
+
+export function configureSectorObjectPlanner({ seedHash } = {}) {
+  const normalizedSeed =
+    typeof seedHash === 'number' && Number.isFinite(seedHash)
+      ? seedHash >>> 0
+      : DEFAULT_PLANNER_SEED;
+  updatePlannerSeed(normalizedSeed);
+  sectorCache.clear();
+}
 
 function sectorKey(sectorX, sectorZ) {
   return `${sectorX}|${sectorZ}`;
@@ -6,10 +44,10 @@ function sectorKey(sectorX, sectorZ) {
 
 function pseudoRandom(sectorX, sectorZ, offset = 0) {
   const value = Math.sin(
-    sectorX * 157.31 +
-      sectorZ * 311.7 +
-      offset * 37.912 +
-      SECTOR_SIZE * 0.73,
+    sectorX * pseudoAngleScale +
+      sectorZ * pseudoAxisScale +
+      offset * pseudoOffsetScale +
+      pseudoBias,
   );
   return value - Math.floor(value);
 }
@@ -1504,8 +1542,6 @@ function buildPlacements(sectorX, sectorZ) {
     cells,
   };
 }
-
-const sectorCache = new Map();
 
 function ensureSector(sectorX, sectorZ) {
   const key = sectorKey(sectorX, sectorZ);
