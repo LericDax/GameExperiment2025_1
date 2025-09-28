@@ -40,6 +40,10 @@ The Vite demo is the recommended way to iterate on the experience:
    ```
 3. Open the provided local URL in a modern browser. The Vite entry point serves the modules from `three-demo/src/`, so changes are reflected instantly.
 
+## World Configuration
+
+- Consult [WORLD_CONFIGURATION.md](WORLD_CONFIGURATION.md) for a complete breakdown of every configurable world option, including default ranges and the supported override workflow.
+
 ## Controls
 - `WASD` / arrow keys – movement
 - `Space` – jump (or swim upwards when underwater)
