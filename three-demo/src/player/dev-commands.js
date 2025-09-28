@@ -5,6 +5,7 @@ import {
   terrainHeight,
   getWorldOptions,
   getRegisteredBiomes,
+  sampleBiomeCoverage,
 } from '../world/generation.js';
 
 const worldConfig = getWorldOptions();
@@ -1126,6 +1127,159 @@ export function registerDeveloperCommands({
       commandConsole.log(
         `Position set to X=${position.x.toFixed(2)} Y=${position.y.toFixed(2)} Z=${position.z.toFixed(2)}.`,
       );
+    },
+  });
+
+  registerCommand({
+    name: 'biomes',
+    description: 'Biome diagnostics including coverage sampling benchmarks.',
+    usage:
+      '/biomes coverage [biomeId|label] [samples=<count>] [radius=<distance>] [threshold=<0-1>] [center=<x>,<z>]',
+    handler: ({ args, warn }) => {
+      if (args.length === 0) {
+        throw new Error(
+          'Usage: /biomes coverage [biomeId|label] [samples=<count>] [radius=<distance>] [threshold=<0-1>] [center=<x>,<z>].',
+        );
+      }
+
+      const mode = args[0].toLowerCase();
+      if (mode !== 'coverage') {
+        throw new Error(
+          'Usage: /biomes coverage [biomeId|label] [samples=<count>] [radius=<distance>] [threshold=<0-1>] [center=<x>,<z>].',
+        );
+      }
+
+      const tokens = args.slice(1);
+      const optionTokens = [];
+      const queryTokens = [];
+      tokens.forEach((token) => {
+        if (!token) {
+          return;
+        }
+        if (token.includes('=')) {
+          optionTokens.push(token);
+        } else {
+          queryTokens.push(token);
+        }
+      });
+
+      const defaultBiomeId = 'ice_spire_tundra';
+      const rawQuery = queryTokens.length > 0 ? queryTokens.join(' ').trim() : defaultBiomeId;
+      const normalizedQuery = normalizeBiomeKey(rawQuery);
+
+      let availableBiomes = [];
+      try {
+        availableBiomes = getRegisteredBiomes();
+      } catch (error) {
+        console.warn('Biome registry unavailable during coverage sampling:', error);
+      }
+
+      const resolvedBiome = availableBiomes.find((biome) => {
+        const idKey = normalizeBiomeKey(biome.id);
+        const labelKey = normalizeBiomeKey(biome.label);
+        return idKey === normalizedQuery || labelKey === normalizedQuery;
+      });
+
+      const targetBiomeId = resolvedBiome?.id ?? rawQuery ?? defaultBiomeId;
+      const targetBiomeLabel = resolvedBiome?.label ?? targetBiomeId;
+
+      let sampleCount = 5000;
+      let radius = 2048;
+      let threshold = 0.12;
+      let centerX = 0;
+      let centerZ = 0;
+
+      optionTokens.forEach((token) => {
+        const [rawKey, rawValue] = token.split('=');
+        const key = rawKey.trim().toLowerCase();
+        const value = rawValue?.trim();
+        if (!value) {
+          throw new Error(`Missing value for option "${key || token}".`);
+        }
+        if (key === 'samples' || key === 'count') {
+          const parsed = Number(value);
+          if (!Number.isFinite(parsed) || parsed <= 0) {
+            throw new Error('Sample count must be a positive number.');
+          }
+          sampleCount = Math.max(1, Math.round(parsed));
+          return;
+        }
+        if (key === 'radius') {
+          const parsed = Number(value);
+          if (!Number.isFinite(parsed) || parsed <= 0) {
+            throw new Error('Radius must be a positive number.');
+          }
+          radius = parsed;
+          return;
+        }
+        if (key === 'threshold' || key === 'min') {
+          const parsed = Number(value);
+          if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+            throw new Error('Threshold must be within the range [0, 1].');
+          }
+          threshold = parsed;
+          return;
+        }
+        if (key === 'center') {
+          const [cx, cz] = value.split(',');
+          const parsedX = Number(cx);
+          const parsedZ = Number(cz);
+          if (!Number.isFinite(parsedX) || !Number.isFinite(parsedZ)) {
+            throw new Error('Center must be formatted as center=<x>,<z>.');
+          }
+          centerX = parsedX;
+          centerZ = parsedZ;
+          return;
+        }
+        throw new Error(`Unknown biome coverage option "${key}".`);
+      });
+
+      let result;
+      try {
+        result = sampleBiomeCoverage({
+          biomeId: targetBiomeId,
+          sampleCount,
+          radius,
+          centerX,
+          centerZ,
+        });
+      } catch (error) {
+        console.error('Biome coverage sampling failed:', error);
+        throw new Error('Biome coverage sampling is unavailable until the world is initialized.');
+      }
+
+      if (!result || result.samples === 0) {
+        throw new Error('Biome coverage sampling returned no valid results.');
+      }
+
+      const coveragePercent = (result.coverage * 100).toFixed(2);
+      const thresholdPercent = (threshold * 100).toFixed(2);
+      const meetsThreshold = result.coverage >= threshold;
+
+      commandConsole.log(
+        `[biomes coverage] Sampled ${result.samples}/${result.requestedSamples} columns within radius ${result.radius.toFixed(
+          1,
+        )} around (${result.center.x.toFixed(1)}, ${result.center.z.toFixed(1)}).`,
+      );
+
+      const topCounts = result.counts.slice(0, 6);
+      topCounts.forEach((entry) => {
+        commandConsole.log(
+          `[biomes coverage] ${entry.id}: ${(entry.share * 100).toFixed(2)}% (${entry.count} samples)`,
+        );
+      });
+      if (result.counts.length > topCounts.length) {
+        commandConsole.log(
+          `[biomes coverage] (+${result.counts.length - topCounts.length} additional biomes in sample set)`,
+        );
+      }
+
+      const verdictLine = `${targetBiomeLabel} coverage ${coveragePercent}% (${result.matches}/${result.samples}) vs threshold ${thresholdPercent}%`;
+      if (meetsThreshold) {
+        commandConsole.log(`[biomes coverage] ${verdictLine} — PASS`);
+      } else {
+        warn(`[biomes coverage] ${verdictLine} — FAIL`);
+      }
     },
   });
 

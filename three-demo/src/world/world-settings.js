@@ -90,6 +90,8 @@ const defaultBiomeTuning = Object.freeze({
   ]),
   varianceMultiplier: getDescriptorDefault(['biomes', 'varianceMultiplier']),
   variationStrength: getDescriptorDefault(['biomes', 'variationStrength']),
+  uniformity: getDescriptorDefault(['biomes', 'uniformity']),
+  weightExponent: getDescriptorDefault(['biomes', 'weightExponent']),
 })
 
 const biomeDescriptorKeys = [
@@ -98,6 +100,8 @@ const biomeDescriptorKeys = [
   'moistureDetailMultiplier',
   'varianceMultiplier',
   'variationStrength',
+  'uniformity',
+  'weightExponent',
 ]
 
 export const biomeOptionMetadata = Object.freeze(

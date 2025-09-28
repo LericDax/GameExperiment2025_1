@@ -33,3 +33,7 @@ The example above makes the biome 40% lighter overall while keeping flowers clos
 ## Palette overrides for `ignoreBiomeTint`
 
 Some voxel libraries expose an `ignoreBiomeTint` flag so that specific blocks render without the biome palette mix. When this flag is set you may now supply a `tint` hex string for each voxel and the renderer will calculate the correct biome tint multiplier so the final shaded colour matches your request. If you omit the `tint` string, the instance keeps the neutral `[1, 1, 1]` multiplier (no extra tint), making it easy to author props that should display their base texture colours untouched.
+
+## Distribution targets
+
+- **Ice Spire Tundra** — aim for at least 12% coverage when sampling 5 000 climate probes within a 2 048 block radius (`/biomes coverage ice_spire_tundra threshold=0.12`). The dedicated developer command reports the exact share so designers can confirm adjustments keep the biome within the intended rarity band.
