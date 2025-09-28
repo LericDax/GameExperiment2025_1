@@ -625,80 +625,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     return entry;
   };
 
-  const registerFluidPresence = ({ type, x, z, presence, biome }) => {
-    if (!type || !presence || !presence.hasFluid) {
-      return;
-    }
-    if (!fluidColumnsByType.has(type)) {
-      fluidColumnsByType.set(type, new Map());
-    }
-    const columns = fluidColumnsByType.get(type);
-    const columnKey = `${x}|${z}`;
-    const THREE = ensureThree();
-    const surfaceY = Number.isFinite(presence.surfaceY)
-      ? presence.surfaceY
-      : getColumnHeight(x, z) + 0.5;
-    const bottomY = Number.isFinite(presence.bottomY)
-      ? presence.bottomY
-      : surfaceY;
-    const minY = Math.min(surfaceY, bottomY);
-    const maxY = Math.max(surfaceY, bottomY);
-
-    let column = columns.get(columnKey);
-    if (!column) {
-      const palette = biome?.palette ?? {};
-      const paletteHex =
-        palette[type] ??
-        palette.lumen_bloom ??
-        palette.water ??
-        palette.cloud ??
-        '#3a79c5';
-      column = {
-        key: columnKey,
-        x,
-        z,
-        minY,
-        maxY,
-        color: new THREE.Color(paletteHex),
-        biome,
-        lifecycleCues: new Set(),
-        auroraIntensitySum: 0,
-        auroraIntensitySamples: 0,
-        orientationVector: { x: 0, z: 0 },
-        orientationSamples: 0,
-      };
-      columns.set(columnKey, column);
-    } else {
-      column.minY = Math.min(column.minY, minY);
-      column.maxY = Math.max(column.maxY, maxY);
-      const palette = biome?.palette;
-      if (palette) {
-        const paletteHex =
-          palette[type] ?? palette.lumen_bloom ?? palette.water ?? null;
-        if (paletteHex) {
-          column.color = new THREE.Color(paletteHex);
-        }
-      }
-    }
-
-    const metadata = presence.metadata ?? {};
-    if (Array.isArray(metadata.lifecycleCues)) {
-      metadata.lifecycleCues.forEach((cue) => {
-        column.lifecycleCues.add(String(cue));
-      });
-    }
-    if (Number.isFinite(metadata.auroraIntensity)) {
-      column.auroraIntensitySum += metadata.auroraIntensity;
-      column.auroraIntensitySamples += 1;
-    }
-    if (Number.isFinite(metadata.ribbonOrientation)) {
-      const angle = metadata.ribbonOrientation;
-      column.orientationVector.x += Math.cos(angle);
-      column.orientationVector.z += Math.sin(angle);
-      column.orientationSamples += 1;
-    }
-  };
-
   const addDecorationInstance = (type, x, y, z, biome, options = {}) => {
     const normalizedOptions = { ...options };
     if (typeof normalizedOptions.destructible !== 'boolean') {
@@ -1072,22 +998,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         }
       }
 
-      const lumenPresence = resolveFluidPresence({
-        type: 'lumen_bloom',
-        x: worldX,
-        z: worldZ,
-        sampleColumnHeight: getColumnHeight,
-        worldConfig: worldOptions,
-        sampleBiomeAt: sampleColumnCached,
-      });
-      registerFluidPresence({
-        type: 'lumen_bloom',
-        x: worldX,
-        z: worldZ,
-        presence: lumenPresence,
-        biome,
-      });
-
       populateColumnWithVoxelObjects({
         addBlock,
         addDecorationInstance,
@@ -1227,51 +1137,10 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       column.shoreline = shoreline;
     });
 
-    const columnValues = Array.from(columns.values());
-    const aggregatedCues = new Set();
-    let auroraIntensityTotal = 0;
-    let auroraIntensitySamples = 0;
-    let orientationVectorX = 0;
-    let orientationVectorZ = 0;
-    let orientationSamples = 0;
-
-    columnValues.forEach((column) => {
-      if (column.lifecycleCues instanceof Set) {
-        column.lifecycleCues.forEach((cue) => aggregatedCues.add(cue));
-      }
-      if (
-        Number.isFinite(column.auroraIntensitySum) &&
-        Number.isFinite(column.auroraIntensitySamples) &&
-        column.auroraIntensitySamples > 0
-      ) {
-        auroraIntensityTotal += column.auroraIntensitySum;
-        auroraIntensitySamples += column.auroraIntensitySamples;
-      }
-      if (column.orientationSamples > 0 && column.orientationVector) {
-        orientationVectorX += column.orientationVector.x;
-        orientationVectorZ += column.orientationVector.z;
-        orientationSamples += column.orientationSamples;
-      }
-    });
-
     const geometry = buildFluidGeometry({
       THREE,
-      columns: columnValues,
+      columns: Array.from(columns.values()),
     });
-    geometry.userData = geometry.userData || {};
-    if (aggregatedCues.size > 0) {
-      geometry.userData.lifecycleCues = Array.from(aggregatedCues);
-    }
-    if (auroraIntensitySamples > 0) {
-      geometry.userData.auroraIntensity =
-        auroraIntensityTotal / auroraIntensitySamples;
-    }
-    if (orientationSamples > 0) {
-      geometry.userData.ribbonOrientation = Math.atan2(
-        orientationVectorZ,
-        orientationVectorX,
-      );
-    }
     if (!geometry.getAttribute('position') || geometry.getAttribute('position').count === 0) {
       if (type === 'water') {
         logFluidDebug('water geometry has no vertices');

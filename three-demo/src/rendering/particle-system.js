@@ -440,10 +440,6 @@ export function createParticleSystem({ THREE, scene }) {
         emit,
         THREE,
         getElapsedTime: () => elapsedTime,
-        cues: Array.isArray(info.mesh.userData?.lifecycleCues)
-          ? info.mesh.userData.lifecycleCues.map((cue) => String(cue))
-          : [],
-        metadata: info.metadata,
       });
     } catch (error) {
       console.error('Fluid surface effect factory failed:', error);
@@ -481,7 +477,6 @@ export function createParticleSystem({ THREE, scene }) {
       mesh,
       runtime: runtime ?? null,
       attachments: new Map(),
-      metadata: mesh.userData ?? {},
     };
     fluidSurfaceState.set(mesh, info);
     const factories = fluidSurfaceFactories.get(normalizedType);
