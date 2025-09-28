@@ -89,6 +89,17 @@ function normalizeCategoryMultipliers(definition) {
   );
 }
 
+function cloneShaderMetadata(value) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_error) {
+    return { ...value };
+  }
+}
+
 export function createBiomeEngine({
   THREE,
   seed = defaultWorldOptions.seedHash,
@@ -212,6 +223,9 @@ export function createBiomeEngine({
         fogColor: new THREE.Color(shaderDefinition.fogColor ?? '#a9d6ff'),
         tintColor: new THREE.Color(shaderDefinition.tintColor ?? '#ffffff'),
         tintStrength: clamp01(shaderDefinition.tintStrength ?? 0),
+        effects: cloneShaderMetadata(shaderDefinition.effects),
+        hazards: cloneShaderMetadata(shaderDefinition.hazards),
+        references: cloneShaderMetadata(shaderDefinition.references),
       },
     };
   });
