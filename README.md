@@ -64,6 +64,25 @@ Commands are grouped by the kind of developer workflow they support:
 - **ASCII tooling** – `/asciimap` renders a top-down ASCII slice, `/asciioptions` saves default radii/offsets/watch cadence, and `/asciiwatch` keeps the map refreshing on demand. 【F:three-demo/src/player/dev-commands.js†L919-L1039】
 - **VFX inspection** – `/vfx overlay [on|off|toggle]` adds a particle debugging overlay, while `/vfx list` dumps live emitter and fluid surface stats to the console. 【F:three-demo/src/player/dev-commands.js†L780-L823】
 
+## Performance Instrumentation
+
+When the sandbox is running in the Vite dev server, the browser exposes a debug namespace at `window.__VOXEL_DEBUG__`. You can launch an automated "perf flight" from the DevTools console to gather renderer and world metrics while the avatar flies forward for a fixed window. 【F:three-demo/src/main.js†L250-L318】
+
+1. Open the page in a Chromium- or Firefox-based browser via `npm run dev`.
+2. Open DevTools and switch to the **Console** tab.
+3. Call `window.__VOXEL_DEBUG__.perfFlight.run()` or pass overrides such as:
+   ```js
+   window.__VOXEL_DEBUG__.perfFlight.run({
+     durationMs: 45000,       // total capture time in milliseconds
+     sampleIntervalMs: 250,   // minimum gap between samples (0 uses every frame)
+   })
+   ```
+   The method returns a promise that resolves with the aggregated summary once the flight ends. 【F:three-demo/src/devtools/perf-flight-harness.js†L118-L213】
+
+While the flight runs, an overlay appears in the top-right corner showing elapsed time, average and instant FPS, draw call counts, triangle counts, and chunk/block coverage to help you gauge scene complexity at a glance. The resolved summary mirrors those fields—`fps`, `delta`, renderer `renderCalls` and `triangles`, plus chunk/voxel counts—along with per-frame samples so you can chart the data externally. 【F:three-demo/src/devtools/perf-flight-harness.js†L43-L195】
+
+To start a run automatically on page load, append `?perfFlight=auto` to the URL. The harness will fire once the world boots, displaying the same overlay and logging the summary to the console when complete. 【F:three-demo/src/main.js†L282-L304】
+
 ## Building for Production
 To create an optimized build via Vite:
 
