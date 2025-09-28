@@ -66,17 +66,22 @@ function resolveLumenBloomPresence({
       [0, 1],
       [0, -1],
     ];
-    const neighborHeights = neighborOffsets.map(([dx, dz]) =>
-      sampleColumnHeight(x + dx, z + dz),
-    );
+    const neighborHeights = neighborOffsets.map(([dx, dz]) => {
+      const height = sampleColumnHeight(x + dx, z + dz);
+      return Number.isFinite(height) ? height : groundHeight;
+    });
     const ridgeDiffs = neighborHeights.map((height) => groundHeight - height);
-    const positiveDiffs = ridgeDiffs.filter((diff) => Number.isFinite(diff) && diff > 0);
-    const ridgeStrength =
-      positiveDiffs.length > 0
-        ? positiveDiffs.reduce((sum, value) => sum + value, 0) / positiveDiffs.length
-        : 0;
-    const plateauStrength = Math.max(0, ridgeStrength - 0.32);
-    const plateauInfluence = Math.min(1, plateauStrength / 1.4);
+    const dropPx = ridgeDiffs[0];
+    const dropNx = ridgeDiffs[1];
+    const dropPz = ridgeDiffs[2];
+    const dropNz = ridgeDiffs[3];
+    const ridgeDropThreshold = 0.24;
+    const pairMinX = Math.min(dropPx, dropNx);
+    const pairMinZ = Math.min(dropPz, dropNz);
+    const ridgeStrength = Math.max(0, Math.min(pairMinX, pairMinZ));
+    const ridgeGate = ridgeStrength >= ridgeDropThreshold;
+    const plateauStrength = Math.max(0, ridgeStrength - ridgeDropThreshold);
+    const plateauInfluence = Math.min(1, plateauStrength / 0.9);
     const ribbonNoise = pseudoRandom2D(x * 0.31 + 5.8, z * 0.31 - 8.9, seed * 1.11);
     const ridgeNoise = pseudoRandom2D(x * 0.18 - 9.7, z * 0.18 + 6.4, seed * 0.67);
 
@@ -88,18 +93,17 @@ function resolveLumenBloomPresence({
     }
     ribbonOrientation += Math.PI / 2;
 
-    const ridgeGate = ridgeStrength > 0.32;
     const combinedNoise =
-      cluster * 0.34 + bloom * 0.32 + ribbonNoise * 0.42 + ridgeNoise * 0.22;
-    const spawnThreshold = 0.68 - plateauInfluence * 0.42 + altitudeBias * 0.002;
+      cluster * 0.3 + bloom * 0.28 + ribbonNoise * 0.4 + ridgeNoise * 0.22;
+    const spawnThreshold = 0.64 - plateauInfluence * 0.22 + altitudeBias * 0.0012;
 
     if (ridgeGate && combinedNoise >= spawnThreshold) {
-      const ribbonLift = 1.12 + ridgeStrength * 0.45 + ribbonNoise * 0.24;
+      const ribbonLift = 1.01 + ridgeStrength * 0.3 + ribbonNoise * 0.2;
       const surfaceY = baseSurface + ribbonLift;
-      const depth = Math.max(0.14, 0.2 + bloom * 0.18 + plateauInfluence * 0.22);
+      const depth = Math.max(0.12, 0.18 + bloom * 0.16 + plateauInfluence * 0.2);
       const intensity = Math.min(
         3,
-        0.88 + plateauInfluence * 1.25 + ribbonNoise * 0.4 + ridgeNoise * 0.25,
+        0.82 + plateauInfluence * 0.9 + ribbonNoise * 0.35 + ridgeNoise * 0.24,
       );
 
       return {
