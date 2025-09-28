@@ -23,6 +23,27 @@ let debugBasicMaterial = null;
 
 const fluidDefinitions = new Map();
 const fluidRuntime = new Map();
+const fluidSurfaceListeners = new Set();
+
+function notifySurfaceCreated(context) {
+  fluidSurfaceListeners.forEach((listener) => {
+    try {
+      listener.onCreated?.(context);
+    } catch (error) {
+      console.error('Fluid surface creation listener failed:', error);
+    }
+  });
+}
+
+function notifySurfaceDisposed(context) {
+  fluidSurfaceListeners.forEach((listener) => {
+    try {
+      listener.onDisposed?.(context);
+    } catch (error) {
+      console.error('Fluid surface disposal listener failed:', error);
+    }
+  });
+}
 
 export function initializeFluidRegistry({ THREE }) {
   if (!THREE) {
@@ -59,6 +80,24 @@ export function initializeFluidRegistry({ THREE }) {
       };
     },
   });
+}
+
+export function registerFluidSurfaceLifecycle(callbacks = {}) {
+  const entry = {
+    onCreated:
+      typeof callbacks.onCreated === 'function' ? callbacks.onCreated : null,
+    onDisposed:
+      typeof callbacks.onDisposed === 'function' ? callbacks.onDisposed : null,
+  };
+  if (!entry.onCreated && !entry.onDisposed) {
+    throw new Error(
+      'registerFluidSurfaceLifecycle requires at least one lifecycle callback.',
+    );
+  }
+  fluidSurfaceListeners.add(entry);
+  return () => {
+    fluidSurfaceListeners.delete(entry);
+  };
 }
 
 export function registerFluidType(id, definition) {
@@ -137,6 +176,7 @@ export function createFluidSurface({ type, geometry }) {
   if (runtime.handleSurfaceCreated) {
     runtime.handleSurfaceCreated(mesh);
   }
+  notifySurfaceCreated({ type, mesh, runtime });
   return mesh;
 }
 
@@ -173,6 +213,7 @@ export function disposeFluidSurface(mesh) {
   if (runtime.handleSurfaceDisposed) {
     runtime.handleSurfaceDisposed(mesh);
   }
+  notifySurfaceDisposed({ type, mesh, runtime });
 }
 
 export function updateFluids(delta) {

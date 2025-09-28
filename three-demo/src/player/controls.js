@@ -1,4 +1,9 @@
 import { getWorldOptions } from '../world/world-settings.js';
+import { computeFluidContactPoints } from '../rendering/particle-system.js';
+import {
+  createWaterBubbleBurst,
+  createWaterSplashBurst,
+} from '../rendering/particles/water-effects.js';
 
 function blockKey(x, y, z) {
   return `${x}|${y}|${z}`;
@@ -38,6 +43,7 @@ export function createPlayerControls({
   softBlocks,
   waterColumns,
   chunkManager,
+  particleSystem = null,
   damageMaterials = [],
   onStateChange = () => {},
 }) {
@@ -1031,6 +1037,42 @@ export function createPlayerControls({
     if (playerState.isInWater !== feetInWater) {
       playerState.isInWater = feetInWater;
       markStateDirty();
+      if (particleSystem?.emit) {
+        try {
+          const contact = computeFluidContactPoints({
+            THREE,
+            feetPosition: { x: position.x, y: feetY, z: position.z },
+            surfaceY: effectiveWaterSurface,
+            surfaceOffset: 0.08,
+            subsurfaceDepth: 0.45,
+          });
+          const speed = Math.abs(verticalVelocity);
+          const intensity = THREE.MathUtils.clamp(speed / 6 + 0.45, 0.35, 2.25);
+          if (feetInWater) {
+            particleSystem.emit(
+              createWaterSplashBurst({
+                position: contact.surface,
+                intensity,
+              }),
+            );
+            particleSystem.emit(
+              createWaterBubbleBurst({
+                position: contact.subsurface,
+                intensity: Math.max(0.5, intensity * 0.75),
+              }),
+            );
+          } else {
+            particleSystem.emit(
+              createWaterSplashBurst({
+                position: contact.surface,
+                intensity: Math.max(0.35, intensity * 0.6),
+              }),
+            );
+          }
+        } catch (error) {
+          console.error('Failed to trigger water transition particles:', error);
+        }
+      }
     }
 
     const previousOxygen = playerState.oxygen;

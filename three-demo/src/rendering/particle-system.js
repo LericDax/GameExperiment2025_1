@@ -18,6 +18,83 @@
 
 const DEFAULT_POOL_CAPACITY = 128;
 
+function toVector3(THREE, value) {
+  if (value?.isVector3) {
+    return value.clone();
+  }
+  const vector = new THREE.Vector3();
+  if (Array.isArray(value)) {
+    vector.fromArray(value);
+    return vector;
+  }
+  const source = value ?? {};
+  vector.set(
+    Number.isFinite(source.x) ? source.x : 0,
+    Number.isFinite(source.y) ? source.y : 0,
+    Number.isFinite(source.z) ? source.z : 0,
+  );
+  return vector;
+}
+
+/**
+ * Computes a set of world-space anchor points around a fluid contact based on
+ * the player's feet position and the resolved surface height.
+ */
+export function computeFluidContactPoints({
+  THREE,
+  feetPosition,
+  surfaceY,
+  surfaceOffset = 0.12,
+  subsurfaceDepth = 0.4,
+} = {}) {
+  if (!THREE) {
+    throw new Error('computeFluidContactPoints requires a THREE instance.');
+  }
+  if (!Number.isFinite(surfaceY)) {
+    throw new Error('computeFluidContactPoints requires a numeric surfaceY.');
+  }
+  if (!feetPosition) {
+    throw new Error('computeFluidContactPoints requires a feetPosition.');
+  }
+  const feet = toVector3(THREE, feetPosition);
+  feet.y = Number.isFinite(feet.y) ? feet.y : surfaceY;
+  const surfacePoint = feet.clone();
+  surfacePoint.y = surfaceY + surfaceOffset;
+  const subsurfacePoint = feet.clone();
+  subsurfacePoint.y = surfaceY - subsurfaceDepth;
+  return {
+    feet,
+    surface: surfacePoint,
+    subsurface: subsurfacePoint,
+  };
+}
+
+/**
+ * Approximates a representative spawn anchor for a fluid surface mesh by
+ * sampling its world-space bounding box.
+ */
+export function computeFluidSurfaceAnchor({
+  THREE,
+  mesh,
+  surfaceOffset = 0.45,
+} = {}) {
+  if (!THREE) {
+    throw new Error('computeFluidSurfaceAnchor requires a THREE instance.');
+  }
+  if (!mesh?.isObject3D) {
+    return null;
+  }
+  const boundingBox = new THREE.Box3();
+  boundingBox.setFromObject(mesh);
+  if (!Number.isFinite(boundingBox.min.y) || !Number.isFinite(boundingBox.max.y)) {
+    return null;
+  }
+  const center = new THREE.Vector3();
+  boundingBox.getCenter(center);
+  center.y = boundingBox.max.y + surfaceOffset;
+  return center;
+}
+
 function cloneBufferAttribute(THREE, attribute) {
   const cloned = attribute.clone();
   if (cloned.isInterleavedBufferAttribute) {
@@ -263,6 +340,9 @@ export function createParticleSystem({ THREE, scene }) {
 
   /** @type {Set<EmitterState>} */
   const activeEmitters = new Set();
+  const fluidSurfaceFactories = new Map();
+  const fluidSurfaceState = new Map();
+  let emitterIdCounter = 0;
 
   function disposeEmitterState(state) {
     if (state.disposed) {
@@ -294,6 +374,8 @@ export function createParticleSystem({ THREE, scene }) {
       shouldRemove: false,
       disposed: false,
       instancedPools: new Set(),
+      debugLabel: null,
+      debugId: (emitterIdCounter += 1),
     };
 
     function createPool(options) {
@@ -316,6 +398,13 @@ export function createParticleSystem({ THREE, scene }) {
         getElapsedTime: () => elapsedTime,
         root,
       });
+      const label =
+        typeof emitter.debugLabel === 'string'
+          ? emitter.debugLabel
+          : typeof emitter.label === 'string'
+          ? emitter.label
+          : null;
+      state.debugLabel = label;
     } catch (error) {
       console.error('Particle emitter initialize failed:', error);
       state.shouldRemove = true;
@@ -336,6 +425,154 @@ export function createParticleSystem({ THREE, scene }) {
         }
         return count;
       },
+    };
+  }
+
+  function attachFactoryToSurface(info, factory) {
+    if (!info || typeof factory !== 'function') {
+      return;
+    }
+    let attachment = null;
+    try {
+      attachment = factory({
+        mesh: info.mesh,
+        type: info.type,
+        emit,
+        THREE,
+        getElapsedTime: () => elapsedTime,
+      });
+    } catch (error) {
+      console.error('Fluid surface effect factory failed:', error);
+      attachment = null;
+    }
+    if (!attachment) {
+      return;
+    }
+    info.attachments.set(factory, attachment);
+  }
+
+  function detachFactoryFromSurface(info, factory) {
+    if (!info) {
+      return;
+    }
+    const attachment = info.attachments.get(factory);
+    if (!attachment) {
+      return;
+    }
+    info.attachments.delete(factory);
+    try {
+      attachment.dispose?.();
+    } catch (error) {
+      console.error('Fluid surface effect dispose failed:', error);
+    }
+  }
+
+  function notifyFluidSurfaceCreated({ type, mesh, runtime } = {}) {
+    if (!mesh || !type) {
+      return;
+    }
+    const normalizedType = String(type);
+    const info = {
+      type: normalizedType,
+      mesh,
+      runtime: runtime ?? null,
+      attachments: new Map(),
+    };
+    fluidSurfaceState.set(mesh, info);
+    const factories = fluidSurfaceFactories.get(normalizedType);
+    if (!factories) {
+      return;
+    }
+    factories.forEach((factory) => {
+      if (!info.attachments.has(factory)) {
+        attachFactoryToSurface(info, factory);
+      }
+    });
+  }
+
+  function notifyFluidSurfaceDisposed({ mesh } = {}) {
+    if (!mesh) {
+      return;
+    }
+    const info = fluidSurfaceState.get(mesh);
+    if (!info) {
+      return;
+    }
+    const factories = Array.from(info.attachments.keys());
+    factories.forEach((factory) => {
+      detachFactoryFromSurface(info, factory);
+    });
+    fluidSurfaceState.delete(mesh);
+  }
+
+  function registerFluidSurfaceEffect(type, factory) {
+    if (!type) {
+      throw new Error('registerFluidSurfaceEffect requires a fluid type.');
+    }
+    if (typeof factory !== 'function') {
+      throw new Error('registerFluidSurfaceEffect expects a factory function.');
+    }
+    const normalizedType = String(type);
+    let factories = fluidSurfaceFactories.get(normalizedType);
+    if (!factories) {
+      factories = new Set();
+      fluidSurfaceFactories.set(normalizedType, factories);
+    }
+    factories.add(factory);
+    fluidSurfaceState.forEach((info) => {
+      if (info.type === normalizedType && !info.attachments.has(factory)) {
+        attachFactoryToSurface(info, factory);
+      }
+    });
+    return () => {
+      const registered = fluidSurfaceFactories.get(normalizedType);
+      if (registered) {
+        registered.delete(factory);
+        if (registered.size === 0) {
+          fluidSurfaceFactories.delete(normalizedType);
+        }
+      }
+      fluidSurfaceState.forEach((info) => {
+        if (info.type === normalizedType && info.attachments.has(factory)) {
+          detachFactoryFromSurface(info, factory);
+        }
+      });
+    };
+  }
+
+  function getDebugInfo() {
+    const emitters = [];
+    let totalActiveParticles = 0;
+    activeEmitters.forEach((state) => {
+      if (state.disposed) {
+        return;
+      }
+      let activeParticles = 0;
+      state.instancedPools.forEach((pool) => {
+        activeParticles += pool.getActiveCount();
+      });
+      totalActiveParticles += activeParticles;
+      emitters.push({
+        id: state.debugId,
+        label: state.debugLabel ?? `Emitter #${state.debugId}`,
+        activeParticles,
+        pendingRemoval: Boolean(state.shouldRemove),
+      });
+    });
+    emitters.sort((a, b) => a.id - b.id);
+    const fluidSurfaces = [];
+    fluidSurfaceState.forEach((info) => {
+      fluidSurfaces.push({
+        type: info.type,
+        mesh: info.mesh,
+        attachmentCount: info.attachments.size,
+      });
+    });
+    return {
+      emitterCount: emitters.length,
+      totalActiveParticles,
+      emitters,
+      fluidSurfaces,
     };
   }
 
@@ -408,6 +645,15 @@ export function createParticleSystem({ THREE, scene }) {
       disposeEmitterState(state);
     }
 
+    fluidSurfaceState.forEach((info) => {
+      const factories = Array.from(info.attachments.keys());
+      factories.forEach((factory) => {
+        detachFactoryFromSurface(info, factory);
+      });
+    });
+    fluidSurfaceState.clear();
+    fluidSurfaceFactories.clear();
+
     scene.remove(root);
     root.children.length = 0;
   }
@@ -416,6 +662,10 @@ export function createParticleSystem({ THREE, scene }) {
     emit,
     update,
     dispose,
+    getDebugInfo,
+    registerFluidSurfaceEffect,
+    notifyFluidSurfaceCreated,
+    notifyFluidSurfaceDisposed,
     root,
   };
 }

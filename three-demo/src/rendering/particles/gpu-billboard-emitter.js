@@ -424,6 +424,10 @@ export function createGpuBillboardEmitter(options = {}) {
       return liveParticles.length > 0 || spawnRate > 0
     },
 
+    getActiveParticleCount() {
+      return pool ? pool.getActiveCount() : 0
+    },
+
     dispose() {
       liveParticles.length = 0
       pool = null

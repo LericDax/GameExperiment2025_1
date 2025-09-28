@@ -15,8 +15,13 @@ import { initializeMusicSystem } from './audio/music-system.js'
 import {
   initializeFluidRegistry,
   updateFluids,
+  registerFluidSurfaceLifecycle,
 } from './world/fluids/fluid-registry.js'
-import { createParticleSystem } from './rendering/particle-system.js'
+import {
+  createParticleSystem,
+  computeFluidSurfaceAnchor,
+} from './rendering/particle-system.js'
+import { createWaterSurfaceMistEmitter } from './rendering/particles/water-effects.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -168,6 +173,29 @@ try {
 
   particleSystem = createParticleSystem({ THREE, scene })
 
+  registerFluidSurfaceLifecycle({
+    onCreated: ({ type, mesh, runtime }) =>
+      particleSystem.notifyFluidSurfaceCreated({ type, mesh, runtime }),
+    onDisposed: ({ type, mesh, runtime }) =>
+      particleSystem.notifyFluidSurfaceDisposed({ type, mesh, runtime }),
+  })
+
+  particleSystem.registerFluidSurfaceEffect('water', ({ mesh, emit }) => {
+    const anchor = computeFluidSurfaceAnchor({ THREE, mesh, surfaceOffset: 0.6 })
+    if (!anchor) {
+      return null
+    }
+    const handle = emit(
+      createWaterSurfaceMistEmitter({
+        position: anchor,
+        intensity: 1.05,
+      }),
+    )
+    return {
+      dispose: () => handle?.stop?.(),
+    }
+  })
+
   playerControls = createPlayerControls({
     THREE,
     PointerLockControls,
@@ -181,6 +209,7 @@ try {
     softBlocks: chunkManager.softBlocks,
     waterColumns: chunkManager.waterColumns,
     chunkManager,
+    particleSystem,
     damageMaterials: blockMaterials.damageStages,
     onStateChange: updateHud,
   })
@@ -257,6 +286,7 @@ try {
     scene,
     THREE,
     registerDiagnosticOverlay,
+    particleSystem,
   })
 
   commandConsole.log(
