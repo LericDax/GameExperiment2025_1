@@ -129,7 +129,27 @@ export function registerDeveloperCommands({
     return null;
   }
 
-  function findNearestBiomeColumn({ biomeId, originX = 0, originZ = 0 }) {
+  const getTimestamp = () =>
+    typeof performance !== 'undefined' && performance.now
+      ? performance.now()
+      : Date.now();
+
+  const yieldToEventLoop = () =>
+    new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+  async function findNearestBiomeColumn({
+    biomeId,
+    originX = 0,
+    originZ = 0,
+    maxRadius: requestedMaxRadius = null,
+    samplesPerYield = 4096,
+    timeBudgetMs = 10,
+    onRingComplete = null,
+    onYield = null,
+    onLimitReached = null,
+  }) {
     if (!biomeId) {
       return null;
     }
@@ -145,8 +165,11 @@ export function registerDeveloperCommands({
       step > 1
         ? Array.from({ length: step }, (_, index) => index - halfStep)
         : [0];
-    const desiredMaxDistance = Math.max(chunkSize * 24, 1024);
-    const ringCount = Math.max(1, Math.ceil(desiredMaxDistance / step));
+    const defaultMaxRadius = Math.max(chunkSize * 24, 1024);
+    const resolvedMaxRadius = Number.isFinite(requestedMaxRadius)
+      ? Math.max(step, Math.round(requestedMaxRadius))
+      : defaultMaxRadius;
+    const ringCount = Math.max(1, Math.ceil(resolvedMaxRadius / step));
     const maxRadius = ringCount * step;
     const visited = new Set();
     const originXFloat = Number.isFinite(originX) ? originX : 0;
@@ -154,70 +177,165 @@ export function registerDeveloperCommands({
     const originXInt = Math.round(originXFloat);
     const originZInt = Math.round(originZFloat);
     let best = null;
+    const yieldBudget = {
+      samples: Math.max(1, Math.round(samplesPerYield || 0)),
+      timeMs: Math.max(0, Number(timeBudgetMs) || 0),
+    };
+    let totalSamples = 0;
+    let sliceSamples = 0;
+    let lastYieldTimestamp = getTimestamp();
+    let yieldCount = 0;
 
-    const considerPoint = (worldX, worldZ) => {
-      const sampleX = Math.round(worldX);
-      const sampleZ = Math.round(worldZ);
-      const key = `${sampleX}|${sampleZ}`;
-      if (visited.has(key)) {
-        return;
-      }
-      visited.add(key);
-      const sample = sampleBiomeAt(sampleX, sampleZ);
-      if (!sample || !sample.biome || String(sample.biome.id) !== targetId) {
-        return;
-      }
-      const dx = sampleX - originXFloat;
-      const dz = sampleZ - originZFloat;
-      const distanceSq = dx * dx + dz * dz;
-      const taxicab = Math.max(
-        Math.abs(sampleX - originXInt),
-        Math.abs(sampleZ - originZInt),
-      );
-      if (!best || distanceSq < best.distanceSq) {
-        best = {
-          x: sampleX,
-          z: sampleZ,
-          biome: sample.biome,
-          distanceSq,
-          taxicab,
-        };
+    const notifyRing = (payload) => {
+      if (typeof onRingComplete === 'function') {
+        try {
+          onRingComplete(payload);
+        } catch (error) {
+          console.error('Biome search ring callback failed:', error);
+        }
       }
     };
 
-    const considerNeighborhood = (centerX, centerZ, radiusLimit) => {
-      for (let oxIndex = 0; oxIndex < localOffsets.length; oxIndex += 1) {
-        const ox = localOffsets[oxIndex];
-        for (let ozIndex = 0; ozIndex < localOffsets.length; ozIndex += 1) {
-          const oz = localOffsets[ozIndex];
-          const candidateX = centerX + ox;
-          const candidateZ = centerZ + oz;
-          const sampleX = Math.round(candidateX);
-          const sampleZ = Math.round(candidateZ);
-          const chebyshev = Math.max(
-            Math.abs(sampleX - originXInt),
-            Math.abs(sampleZ - originZInt),
-          );
-          if (chebyshev > radiusLimit) {
-            continue;
-          }
-          considerPoint(sampleX, sampleZ);
+    const notifyYield = (payload) => {
+      if (typeof onYield === 'function') {
+        try {
+          onYield(payload);
+        } catch (error) {
+          console.error('Biome search yield callback failed:', error);
         }
       }
+    };
+
+    const notifyLimit = (payload) => {
+      if (typeof onLimitReached === 'function') {
+        try {
+          onLimitReached(payload);
+        } catch (error) {
+          console.error('Biome search limit callback failed:', error);
+        }
+      }
+    };
+
+    const shouldYield = () => {
+      if (yieldBudget.samples && sliceSamples >= yieldBudget.samples) {
+        return true;
+      }
+      if (yieldBudget.timeMs > 0) {
+        const elapsed = getTimestamp() - lastYieldTimestamp;
+        if (elapsed >= yieldBudget.timeMs) {
+          return true;
+        }
+      }
+      return false;
     };
 
     for (let radius = 0; radius <= maxRadius; radius += step) {
       for (let dx = -radius; dx <= radius; dx += step) {
         for (let dz = -radius; dz <= radius; dz += step) {
-          considerNeighborhood(originXFloat + dx, originZFloat + dz, radius);
+          const centerX = originXFloat + dx;
+          const centerZ = originZFloat + dz;
+          for (let oxIndex = 0; oxIndex < localOffsets.length; oxIndex += 1) {
+            const ox = localOffsets[oxIndex];
+            for (
+              let ozIndex = 0;
+              ozIndex < localOffsets.length;
+              ozIndex += 1
+            ) {
+              const oz = localOffsets[ozIndex];
+              const candidateX = centerX + ox;
+              const candidateZ = centerZ + oz;
+              const sampleX = Math.round(candidateX);
+              const sampleZ = Math.round(candidateZ);
+              const chebyshev = Math.max(
+                Math.abs(sampleX - originXInt),
+                Math.abs(sampleZ - originZInt),
+              );
+              if (chebyshev > radius) {
+                continue;
+              }
+              const key = `${sampleX}|${sampleZ}`;
+              if (visited.has(key)) {
+                continue;
+              }
+              visited.add(key);
+              totalSamples += 1;
+              sliceSamples += 1;
+              const sample = sampleBiomeAt(sampleX, sampleZ);
+              if (
+                sample &&
+                sample.biome &&
+                String(sample.biome.id) === targetId
+              ) {
+                const dxSample = sampleX - originXFloat;
+                const dzSample = sampleZ - originZFloat;
+                const distanceSq = dxSample * dxSample + dzSample * dzSample;
+                const taxicab = Math.max(
+                  Math.abs(sampleX - originXInt),
+                  Math.abs(sampleZ - originZInt),
+                );
+                if (!best || distanceSq < best.distanceSq) {
+                  best = {
+                    x: sampleX,
+                    z: sampleZ,
+                    biome: sample.biome,
+                    distanceSq,
+                    taxicab,
+                  };
+                }
+              }
+
+              if (shouldYield()) {
+                yieldCount += 1;
+                notifyYield({
+                  radius,
+                  maxRadius,
+                  totalSamples,
+                  yieldCount,
+                });
+                await yieldToEventLoop();
+                sliceSamples = 0;
+                lastYieldTimestamp = getTimestamp();
+              }
+            }
+          }
         }
       }
+
+      notifyRing({
+        radius,
+        maxRadius,
+        ringCount,
+        totalSamples,
+        best,
+      });
+
       if (best && best.taxicab <= radius) {
-        return best;
+        return {
+          ...best,
+          totalSamples,
+          ringsVisited: Math.floor(radius / step) + 1,
+          yields: yieldCount,
+        };
       }
     }
 
-    return best;
+    notifyLimit({
+      maxRadius,
+      totalSamples,
+      yieldCount,
+      best,
+    });
+
+    if (best) {
+      return {
+        ...best,
+        totalSamples,
+        ringsVisited: ringCount + 1,
+        yields: yieldCount,
+      };
+    }
+
+    return null;
   }
 
   const getDebugSnapshot = () => window.__VOXEL_DEBUG__?.chunkSnapshot;
@@ -849,8 +967,9 @@ export function registerDeveloperCommands({
     name: 'goto',
     description:
       'Teleport the player to specific coordinates or the nearest instance of a biome.',
-    usage: '/goto <x> <y> <z> | /goto biome [biomeId|label]',
-    handler: ({ args }) => {
+    usage:
+      '/goto <x> <y> <z> | /goto biome [biomeId|label] [radius=<maxDistance>]',
+    handler: async ({ args }) => {
       if (args.length === 0) {
         throw new Error('Usage: /goto <x> <y> <z> | /goto biome [biomeId|label].');
       }
@@ -877,7 +996,20 @@ export function registerDeveloperCommands({
           return;
         }
 
-        const rawQuery = tokens.join(' ').trim();
+        const optionTokens = [];
+        const queryTokens = [];
+        tokens.forEach((token) => {
+          if (token.includes('=')) {
+            optionTokens.push(token);
+          } else {
+            queryTokens.push(token);
+          }
+        });
+
+        const rawQuery = queryTokens.join(' ').trim();
+        if (!rawQuery) {
+          throw new Error('Specify a biome identifier or label before adding options.');
+        }
         const normalizedQuery = normalizeBiomeKey(rawQuery);
         const targetBiome = availableBiomes.find((biome) => {
           const idKey = normalizeBiomeKey(biome.id);
@@ -893,13 +1025,60 @@ export function registerDeveloperCommands({
           throw new Error('Biome not found.');
         }
 
+        let maxRadiusOverride = null;
+        optionTokens.forEach((token) => {
+          const [rawKey, rawValue] = token.split('=');
+          const key = rawKey.trim().toLowerCase();
+          const value = rawValue?.trim();
+          if (!value) {
+            throw new Error(`Missing value for option "${key || token}".`);
+          }
+          if (key === 'radius' || key === 'maxradius') {
+            const parsed = Number(value);
+            if (!Number.isFinite(parsed) || parsed <= 0) {
+              throw new Error('Search radius must be a positive number.');
+            }
+            maxRadiusOverride = parsed;
+            return;
+          }
+          throw new Error(`Unknown biome search option "${key}".`);
+        });
+
         const origin = playerControls.getPosition();
         let searchResult;
+        let hasLoggedYield = false;
         try {
-          searchResult = findNearestBiomeColumn({
+          commandConsole.log(
+            `Searching for nearest ${targetBiome.label ?? targetBiome.id} biome column...`,
+          );
+          searchResult = await findNearestBiomeColumn({
             biomeId: targetBiome.id,
             originX: origin?.x ?? 0,
             originZ: origin?.z ?? 0,
+            maxRadius: maxRadiusOverride,
+            onYield: ({ radius, maxRadius, totalSamples, yieldCount }) => {
+              if (!hasLoggedYield) {
+                hasLoggedYield = true;
+                commandConsole.log(
+                  'Biome search is taking longer than usual — continuing scan without freezing the game.',
+                  'warn',
+                );
+              }
+              if (yieldCount % 5 === 0) {
+                const percent = maxRadius > 0 ? (radius / maxRadius) * 100 : 0;
+                commandConsole.log(
+                  `  Progress: radius ${Math.round(radius)} / ${maxRadius} (~${percent.toFixed(
+                    1,
+                  )}%); samples evaluated: ${totalSamples}.`,
+                );
+              }
+            },
+            onLimitReached: ({ maxRadius }) => {
+              commandConsole.log(
+                `Reached search radius limit (${maxRadius}). Consider providing a larger radius=... option if needed.`,
+                'warn',
+              );
+            },
           });
         } catch (error) {
           console.error('Biome search failed:', error);
