@@ -3,6 +3,22 @@ const defaultTerrainClamp = Object.freeze({
   max: 20,
 })
 
+const defaultTerrainOptions = Object.freeze({
+  baseHeight: 6,
+  maxHeight: 20,
+  clamp: defaultTerrainClamp,
+  primaryFrequency: 0.06,
+  primaryAmplitude: 8,
+  primaryOffset: 0,
+  detailFrequency: 0.12,
+  detailAmplitude: 3,
+  detailOffset: 100,
+  ridgeFrequency: 0.02,
+  ridgeStrength: 2.4,
+  ridgeOffset: 220,
+  climateHeightInfluence: 1.2,
+})
+
 const defaultBiomeTuning = Object.freeze({
   scale: 0.003,
   detailMultiplier: 2.15,
@@ -52,8 +68,8 @@ export const biomeOptionMetadata = Object.freeze({
 export const defaultWorldOptions = Object.freeze({
   seed: 1337,
   chunkSize: 48,
-  baseHeight: 6,
-  maxHeight: 20,
+  baseHeight: defaultTerrainOptions.baseHeight,
+  maxHeight: defaultTerrainOptions.maxHeight,
   waterLevel: 9,
   chunk: Object.freeze({
     size: 48,
@@ -61,11 +77,7 @@ export const defaultWorldOptions = Object.freeze({
   water: Object.freeze({
     level: 9,
   }),
-  terrain: Object.freeze({
-    baseHeight: 6,
-    maxHeight: 20,
-    clamp: defaultTerrainClamp,
-  }),
+  terrain: defaultTerrainOptions,
   biomes: defaultBiomeTuning,
 })
 
@@ -79,9 +91,19 @@ function createMutableWorldOptions() {
     chunk: { size: defaultWorldOptions.chunk.size },
     water: { level: defaultWorldOptions.water.level },
     terrain: {
-      baseHeight: defaultWorldOptions.terrain.baseHeight,
-      maxHeight: defaultWorldOptions.terrain.maxHeight,
-      clamp: { ...defaultWorldOptions.terrain.clamp },
+      baseHeight: defaultTerrainOptions.baseHeight,
+      maxHeight: defaultTerrainOptions.maxHeight,
+      clamp: { ...defaultTerrainOptions.clamp },
+      primaryFrequency: defaultTerrainOptions.primaryFrequency,
+      primaryAmplitude: defaultTerrainOptions.primaryAmplitude,
+      primaryOffset: defaultTerrainOptions.primaryOffset,
+      detailFrequency: defaultTerrainOptions.detailFrequency,
+      detailAmplitude: defaultTerrainOptions.detailAmplitude,
+      detailOffset: defaultTerrainOptions.detailOffset,
+      ridgeFrequency: defaultTerrainOptions.ridgeFrequency,
+      ridgeStrength: defaultTerrainOptions.ridgeStrength,
+      ridgeOffset: defaultTerrainOptions.ridgeOffset,
+      climateHeightInfluence: defaultTerrainOptions.climateHeightInfluence,
     },
     biomes: { ...defaultWorldOptions.biomes },
   }
@@ -96,6 +118,38 @@ function normalizeNumber(value, fallback) {
     return fallback
   }
   return value
+}
+
+const TERRAIN_OPTION_BOUNDS = Object.freeze({
+  baseHeight: Object.freeze({ min: 0, max: 512 }),
+  maxHeight: Object.freeze({ min: 1, max: 1024 }),
+  clampMin: Object.freeze({ min: 0, max: 1024 }),
+  clampMax: Object.freeze({ min: 1, max: 1024 }),
+  primaryFrequency: Object.freeze({ min: 0.0001, max: 1 }),
+  primaryAmplitude: Object.freeze({ min: 0, max: 256 }),
+  primaryOffset: Object.freeze({ min: -10000, max: 10000 }),
+  detailFrequency: Object.freeze({ min: 0.0001, max: 2 }),
+  detailAmplitude: Object.freeze({ min: 0, max: 128 }),
+  detailOffset: Object.freeze({ min: -10000, max: 10000 }),
+  ridgeFrequency: Object.freeze({ min: 0.0001, max: 1 }),
+  ridgeStrength: Object.freeze({ min: 0, max: 64 }),
+  ridgeOffset: Object.freeze({ min: -10000, max: 10000 }),
+  climateHeightInfluence: Object.freeze({ min: -10, max: 10 }),
+})
+
+function normalizeWithBounds(value, fallback, boundsKey) {
+  const bounds = TERRAIN_OPTION_BOUNDS[boundsKey] ?? {}
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback
+  }
+  let normalized = value
+  if (Number.isFinite(bounds.min)) {
+    normalized = Math.max(bounds.min, normalized)
+  }
+  if (Number.isFinite(bounds.max)) {
+    normalized = Math.min(bounds.max, normalized)
+  }
+  return normalized
 }
 
 export const worldOptions = createMutableWorldOptions()
@@ -131,8 +185,13 @@ export function applyWorldOptions(overrides = {}) {
     null,
   )
   if (resolvedBaseHeight !== null) {
-    worldOptions.baseHeight = resolvedBaseHeight
-    worldOptions.terrain.baseHeight = resolvedBaseHeight
+    const baseHeight = normalizeWithBounds(
+      resolvedBaseHeight,
+      worldOptions.terrain.baseHeight,
+      'baseHeight',
+    )
+    worldOptions.baseHeight = baseHeight
+    worldOptions.terrain.baseHeight = baseHeight
   }
 
   const resolvedMaxHeight = normalizeNumber(
@@ -140,9 +199,17 @@ export function applyWorldOptions(overrides = {}) {
     null,
   )
   if (resolvedMaxHeight !== null) {
-    worldOptions.maxHeight = resolvedMaxHeight
-    worldOptions.terrain.maxHeight = resolvedMaxHeight
-    worldOptions.terrain.clamp.max = resolvedMaxHeight
+    const maxHeight = normalizeWithBounds(
+      resolvedMaxHeight,
+      worldOptions.terrain.maxHeight,
+      'maxHeight',
+    )
+    worldOptions.maxHeight = maxHeight
+    worldOptions.terrain.maxHeight = maxHeight
+    worldOptions.terrain.clamp.max = Math.max(
+      worldOptions.terrain.clamp.max,
+      maxHeight,
+    )
   }
 
   const clampOverrides = isObject(terrainOverrides?.clamp)
@@ -150,13 +217,106 @@ export function applyWorldOptions(overrides = {}) {
     : null
   const resolvedClampMin = normalizeNumber(clampOverrides?.min, null)
   if (resolvedClampMin !== null) {
-    worldOptions.terrain.clamp.min = resolvedClampMin
+    worldOptions.terrain.clamp.min = normalizeWithBounds(
+      resolvedClampMin,
+      worldOptions.terrain.clamp.min,
+      'clampMin',
+    )
   }
   const resolvedClampMax = normalizeNumber(clampOverrides?.max, null)
   if (resolvedClampMax !== null) {
-    worldOptions.terrain.clamp.max = resolvedClampMax
-    worldOptions.maxHeight = Math.max(worldOptions.maxHeight, resolvedClampMax)
+    const clampMax = normalizeWithBounds(
+      resolvedClampMax,
+      worldOptions.terrain.clamp.max,
+      'clampMax',
+    )
+    worldOptions.terrain.clamp.max = clampMax
+    worldOptions.maxHeight = Math.max(worldOptions.maxHeight, clampMax)
   }
+
+  const terrainOptionKeys = [
+    'primaryFrequency',
+    'primaryAmplitude',
+    'primaryOffset',
+    'detailFrequency',
+    'detailAmplitude',
+    'detailOffset',
+    'ridgeFrequency',
+    'ridgeStrength',
+    'ridgeOffset',
+    'climateHeightInfluence',
+  ]
+
+  terrainOptionKeys.forEach((key) => {
+    if (key in (terrainOverrides ?? {})) {
+      worldOptions.terrain[key] = normalizeWithBounds(
+        terrainOverrides[key],
+        worldOptions.terrain[key],
+        key,
+      )
+    }
+  })
+
+  worldOptions.baseHeight = normalizeWithBounds(
+    worldOptions.baseHeight,
+    defaultTerrainOptions.baseHeight,
+    'baseHeight',
+  )
+  worldOptions.terrain.baseHeight = worldOptions.baseHeight
+
+  const minimumMaxHeight = Math.max(
+    worldOptions.baseHeight,
+    worldOptions.terrain.baseHeight,
+  )
+  worldOptions.terrain.maxHeight = Math.max(
+    normalizeWithBounds(
+      worldOptions.terrain.maxHeight,
+      defaultTerrainOptions.maxHeight,
+      'maxHeight',
+    ),
+    minimumMaxHeight,
+  )
+  worldOptions.maxHeight = Math.max(
+    normalizeWithBounds(
+      worldOptions.maxHeight,
+      defaultTerrainOptions.maxHeight,
+      'maxHeight',
+    ),
+    worldOptions.terrain.maxHeight,
+  )
+
+  const ridgeContribution = Math.max(0, worldOptions.terrain.ridgeStrength)
+  const estimatedTerrainMax =
+    worldOptions.terrain.baseHeight +
+    worldOptions.terrain.primaryAmplitude +
+    worldOptions.terrain.detailAmplitude +
+    ridgeContribution
+
+  if (worldOptions.terrain.maxHeight < estimatedTerrainMax) {
+    worldOptions.terrain.maxHeight = estimatedTerrainMax
+  }
+  if (worldOptions.maxHeight < estimatedTerrainMax) {
+    worldOptions.maxHeight = estimatedTerrainMax
+  }
+
+  worldOptions.terrain.clamp.min = normalizeWithBounds(
+    worldOptions.terrain.clamp.min,
+    defaultTerrainOptions.clamp.min,
+    'clampMin',
+  )
+  worldOptions.terrain.clamp.max = Math.max(
+    normalizeWithBounds(
+      worldOptions.terrain.clamp.max,
+      defaultTerrainOptions.clamp.max,
+      'clampMax',
+    ),
+    worldOptions.terrain.clamp.min,
+    worldOptions.maxHeight,
+  )
+  worldOptions.maxHeight = Math.max(
+    worldOptions.maxHeight,
+    worldOptions.terrain.clamp.max,
+  )
 
   const waterOverrides = isObject(overrides.water) ? overrides.water : null
   const resolvedWaterLevel = normalizeNumber(
