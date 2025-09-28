@@ -37,3 +37,13 @@ Some voxel libraries expose an `ignoreBiomeTint` flag so that specific blocks re
 ## Distribution targets
 
 - **Ice Spire Tundra** — aim for at least 12% coverage when sampling 5 000 climate probes within a 2 048 block radius (`/biomes coverage ice_spire_tundra threshold=0.12`). The dedicated developer command reports the exact share so designers can confirm adjustments keep the biome within the intended rarity band.
+
+## How to add a biome
+
+Follow these high-level steps whenever introducing a new biome so the generation stack stays in sync:
+
+1. **Author the definition.** Create a JSON file under this folder with a unique `id` and schema-compliant payload. [`../biome-engine.js`](../biome-engine.js)
+2. **Confirm registry wiring.** Ensure the new file is discovered by the import glob and registered alongside existing biomes in [`../biome-engine.js`](../biome-engine.js).
+3. **Provide voxel objects.** Supply prop payloads inside [`../voxel-objects/`](../voxel-objects/) so placement logic can spawn biome-specific structures, flora, and fungi.
+4. **Hook up fluids and palettes.** Register any liquid or tint behaviour inside [`../fluids/fluid-registry.js`](../fluids/fluid-registry.js) (and related helpers) to keep rendering consistent.
+5. **Extend validation.** Update or add tests within [`../__tests__/`](../__tests__/) to cover climate sampling and placement expectations for the biome.

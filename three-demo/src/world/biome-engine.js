@@ -6,6 +6,18 @@ const biomeModuleMap = import.meta.glob('./biomes/*.json', {
   eager: true,
 });
 
+/*
+ * Biome onboarding checklist:
+ * 1. Add the biome JSON definition under ./biomes/ with a unique `id`.
+ * 2. Verify the import.meta.glob call above discovers the new file and that
+ *    downstream registry wiring includes the biome.
+ * 3. Supply voxel object payloads under ../voxel-objects/ so placement logic
+ *    can spawn the new content.
+ * 4. Register any biome-specific fluids, tints, or palette hooks inside the
+ *    ../fluids/ modules.
+ * 5. Extend the world generation tests under ../__tests__/ to cover climate
+ *    sampling and placement expectations for the new biome.
+ */
 const rawBiomeDefinitions = Object.values(biomeModuleMap)
   .filter((definition) => definition && typeof definition === 'object')
   .map((definition) => ({ ...definition }))
