@@ -26,6 +26,44 @@ import { createWaterSurfaceMistEmitter } from './rendering/particles/water-effec
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
 
+const underwaterOverlay = (() => {
+  const existing = document.getElementById('underwater-overlay')
+  if (existing) {
+    return existing
+  }
+
+  const element = document.createElement('div')
+  element.id = 'underwater-overlay'
+  element.setAttribute('aria-hidden', 'true')
+
+  const desiredBubbleCount = Number.parseInt(
+    document.body.dataset.underwaterBubbleCount ?? '',
+    10,
+  )
+  const bubbleCount = Number.isFinite(desiredBubbleCount)
+    ? Math.max(0, Math.round(desiredBubbleCount))
+    : 6
+
+  for (let i = 0; i < bubbleCount; i += 1) {
+    const bubble = document.createElement('span')
+    bubble.className = 'bubble'
+    bubble.style.setProperty('--bubble-left', `${Math.random() * 100}%`)
+    bubble.style.setProperty('--bubble-delay', `${Math.random() * -6}s`)
+    bubble.style.setProperty(
+      '--bubble-duration',
+      `${12 + Math.random() * 6}s`,
+    )
+    bubble.style.setProperty(
+      '--bubble-scale',
+      `${0.6 + Math.random() * 0.9}`,
+    )
+    element.appendChild(bubble)
+  }
+
+  document.body.appendChild(element)
+  return element
+})()
+
 function setOverlayStatus(message, { isError = false, revealOverlay = true } = {}) {
   if (!overlay || !overlayStatus) {
     return
@@ -152,6 +190,11 @@ function updateHud(state) {
   const statusIsError = hudStatusOverride !== null ? hudStatusOverrideIsError : false
   renderHudStatus(statusMessage, statusIsError)
   hud.classList.toggle('in-water', state.isInWater)
+  underwaterOverlay.classList.toggle('visible', Boolean(state.isUnderwater))
+  underwaterOverlay.setAttribute(
+    'aria-hidden',
+    state.isUnderwater ? 'false' : 'true',
+  )
 }
 
 let blockMaterials
