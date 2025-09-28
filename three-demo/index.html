@@ -16,6 +16,110 @@
         color: #fff;
       }
 
+      #underwater-overlay {
+        --underwater-overlay-tint: rgba(16, 68, 128, 0.48);
+        --underwater-overlay-highlight: rgba(72, 172, 255, 0.22);
+        --underwater-bubble-color: rgba(255, 255, 255, 0.3);
+        --underwater-bubble-size: 80px;
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        pointer-events: none;
+        opacity: 0;
+        transform: translateZ(0);
+        transition: opacity 0.4s ease, filter 0.6s ease;
+        filter: saturate(100%);
+      }
+
+      #underwater-overlay::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+            180deg,
+            var(--underwater-overlay-highlight) 0%,
+            transparent 35%
+          ),
+          linear-gradient(
+            180deg,
+            transparent 0%,
+            var(--underwater-overlay-tint) 100%
+          );
+        backdrop-filter: saturate(140%) blur(3px);
+      }
+
+      #underwater-overlay::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+            circle at 20% 20%,
+            rgba(255, 255, 255, 0.12),
+            transparent 45%
+          ),
+          radial-gradient(
+            circle at 80% 40%,
+            rgba(255, 255, 255, 0.08),
+            transparent 55%
+          );
+        mix-blend-mode: screen;
+        opacity: 0.6;
+      }
+
+      #underwater-overlay.visible {
+        opacity: 1;
+        filter: saturate(140%);
+      }
+
+      #underwater-overlay .bubble {
+        position: absolute;
+        bottom: calc(-1 * var(--underwater-bubble-size));
+        left: var(--bubble-left, 50%);
+        width: calc(
+          var(--underwater-bubble-size) * var(--bubble-scale, 1)
+        );
+        height: calc(
+          var(--underwater-bubble-size) * var(--bubble-scale, 1)
+        );
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 255, 255, 0.55) 0%,
+          var(--underwater-bubble-color) 45%,
+          rgba(255, 255, 255, 0.08) 70%,
+          transparent 100%
+        );
+        opacity: 0;
+        transform: translate(-50%, 0) scale(var(--bubble-scale, 1));
+        animation: bubbleRise var(--bubble-duration, 12s) linear infinite;
+        animation-delay: var(--bubble-delay, 0s);
+        animation-play-state: paused;
+      }
+
+      #underwater-overlay.visible .bubble {
+        animation-play-state: running;
+      }
+
+      @keyframes bubbleRise {
+        0% {
+          transform: translate(-50%, 0) scale(var(--bubble-scale, 1));
+          opacity: 0;
+        }
+
+        10% {
+          opacity: 0.55;
+        }
+
+        40% {
+          opacity: 0.8;
+        }
+
+        100% {
+          transform: translate(-50%, -110vh) scale(calc(var(--bubble-scale, 1) * 1.1));
+          opacity: 0;
+        }
+      }
+
       #overlay {
         position: absolute;
         top: 0;
