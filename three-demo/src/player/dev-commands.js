@@ -140,8 +140,11 @@ export function registerDeveloperCommands({
       ? worldConfig.chunk.size
       : 32;
     const step = Math.max(2, Math.round(chunkSize / 4));
-    const offsetSpacing = Math.max(1, Math.round(step / 2));
-    const localOffsets = step > 1 ? [0, offsetSpacing, -offsetSpacing] : [0];
+    const halfStep = Math.floor(step / 2);
+    const localOffsets =
+      step > 1
+        ? Array.from({ length: step }, (_, index) => index - halfStep)
+        : [0];
     const desiredMaxDistance = Math.max(chunkSize * 24, 1024);
     const ringCount = Math.max(1, Math.ceil(desiredMaxDistance / step));
     const maxRadius = ringCount * step;
@@ -182,18 +185,31 @@ export function registerDeveloperCommands({
       }
     };
 
-    const considerNeighborhood = (centerX, centerZ) => {
-      localOffsets.forEach((ox) => {
-        localOffsets.forEach((oz) => {
-          considerPoint(centerX + ox, centerZ + oz);
-        });
-      });
+    const considerNeighborhood = (centerX, centerZ, radiusLimit) => {
+      for (let oxIndex = 0; oxIndex < localOffsets.length; oxIndex += 1) {
+        const ox = localOffsets[oxIndex];
+        for (let ozIndex = 0; ozIndex < localOffsets.length; ozIndex += 1) {
+          const oz = localOffsets[ozIndex];
+          const candidateX = centerX + ox;
+          const candidateZ = centerZ + oz;
+          const sampleX = Math.round(candidateX);
+          const sampleZ = Math.round(candidateZ);
+          const chebyshev = Math.max(
+            Math.abs(sampleX - originXInt),
+            Math.abs(sampleZ - originZInt),
+          );
+          if (chebyshev > radiusLimit) {
+            continue;
+          }
+          considerPoint(sampleX, sampleZ);
+        }
+      }
     };
 
     for (let radius = 0; radius <= maxRadius; radius += step) {
       for (let dx = -radius; dx <= radius; dx += step) {
         for (let dz = -radius; dz <= radius; dz += step) {
-          considerNeighborhood(originXFloat + dx, originZFloat + dz);
+          considerNeighborhood(originXFloat + dx, originZFloat + dz, radius);
         }
       }
       if (best && best.taxicab <= radius) {
