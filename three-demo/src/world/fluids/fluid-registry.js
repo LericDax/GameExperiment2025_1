@@ -1,4 +1,6 @@
 import { createHydraWaterMaterial } from './water-material.js';
+import { createLumenBloomMaterial } from './lumen-bloom-material.js';
+import { createAbyssalSerumMaterial } from './abyssal-serum-material.js';
 import { getWorldOptions } from '../world-settings.js';
 
 let THREERef = null;
@@ -24,6 +26,68 @@ let debugBasicMaterial = null;
 const fluidDefinitions = new Map();
 const fluidRuntime = new Map();
 const fluidSurfaceListeners = new Set();
+
+const DEFAULT_FLUID_SEED = 7331;
+
+function pseudoRandom2D(x, z, seed = DEFAULT_FLUID_SEED) {
+  const hash = Math.sin(x * 127.1 + z * 311.7 + seed * 0.001) * 43758.5453;
+  return hash - Math.floor(hash);
+}
+
+function resolveLumenBloomPresence({ x, z, sampleColumnHeight, worldConfig }) {
+  const groundHeight = sampleColumnHeight(x, z);
+  const baseSurface = groundHeight + 0.5;
+  const seed = worldConfig?.seedHash ?? DEFAULT_FLUID_SEED;
+  const cluster = pseudoRandom2D(x * 0.12, z * 0.12, seed * 0.73);
+  const bloom = pseudoRandom2D(x * 0.27 + 11.3, z * 0.27 - 6.1, seed * 0.41);
+  const altitudeBias = Math.max(0, (worldConfig?.waterLevel ?? groundHeight) - groundHeight);
+
+  if (cluster + bloom * 0.4 + altitudeBias * 0.01 < 0.75) {
+    return {
+      hasFluid: false,
+      surfaceY: baseSurface,
+      bottomY: baseSurface,
+    };
+  }
+
+  const surfaceRise = 0.6 + (cluster - 0.5) * 1.2 + bloom * 0.5;
+  const depth = 0.6 + bloom * 0.9;
+  const surfaceY = baseSurface + surfaceRise;
+
+  return {
+    hasFluid: true,
+    surfaceY,
+    bottomY: surfaceY - depth,
+  };
+}
+
+function resolveAbyssalSerumPresence({ x, z, sampleColumnHeight, worldConfig }) {
+  const groundHeight = sampleColumnHeight(x, z);
+  const baseSurface = groundHeight + 0.5;
+  const seed = worldConfig?.seedHash ?? DEFAULT_FLUID_SEED;
+  const caverns = pseudoRandom2D(x * 0.18 - 4.2, z * 0.18 + 3.6, seed * 0.91);
+  const seep = pseudoRandom2D(x * 0.05 + 12.5, z * 0.05 - 2.7, seed * 0.33);
+  const depthBias = Math.max(0, (worldConfig?.waterLevel ?? groundHeight) - groundHeight);
+  const threshold = 0.68 - depthBias * 0.01;
+
+  if (caverns < threshold || seep < 0.45) {
+    return {
+      hasFluid: false,
+      surfaceY: baseSurface,
+      bottomY: baseSurface,
+    };
+  }
+
+  const surfaceDrop = 0.3 + seep * 0.4;
+  const depth = 0.9 + caverns * 1.6;
+  const surfaceY = baseSurface - surfaceDrop;
+
+  return {
+    hasFluid: true,
+    surfaceY,
+    bottomY: surfaceY - depth,
+  };
+}
 
 function notifySurfaceCreated(context) {
   fluidSurfaceListeners.forEach((listener) => {
@@ -79,6 +143,18 @@ export function initializeFluidRegistry({ THREE }) {
         bottomY: surfaceY,
       };
     },
+  });
+
+  registerFluidType('lumen_bloom', {
+    label: 'Lumen Bloom',
+    createMaterial: (context) => createLumenBloomMaterial(context),
+    presenceResolver: resolveLumenBloomPresence,
+  });
+
+  registerFluidType('abyssal_serum', {
+    label: 'Abyssal Serum',
+    createMaterial: (context) => createAbyssalSerumMaterial(context),
+    presenceResolver: resolveAbyssalSerumPresence,
   });
 }
 
