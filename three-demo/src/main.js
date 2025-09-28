@@ -22,6 +22,7 @@ import {
   computeFluidSurfaceAnchor,
 } from './rendering/particle-system.js'
 import { createWaterSurfaceMistEmitter } from './rendering/particles/water-effects.js'
+import { createAuroraRibbonEmitter } from './rendering/particles/aurora-effects.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -238,6 +239,48 @@ try {
       dispose: () => handle?.stop?.(),
     }
   })
+
+  particleSystem.registerFluidSurfaceEffect(
+    'lumen_bloom',
+    ({ mesh, emit, metadata, cues }) => {
+      const cueSource = Array.isArray(cues) && cues.length > 0
+        ? cues
+        : Array.isArray(metadata?.lifecycleCues)
+        ? metadata.lifecycleCues
+        : mesh.userData?.lifecycleCues
+      if (!Array.isArray(cueSource) || !cueSource.includes('aurora_ribbon')) {
+        return null
+      }
+      const anchor = computeFluidSurfaceAnchor({ THREE, mesh, surfaceOffset: 0.9 })
+      if (!anchor) {
+        return null
+      }
+      const geometry = mesh.geometry
+      if (geometry && !geometry.boundingBox) {
+        geometry.computeBoundingBox?.()
+      }
+      const bounds = geometry?.boundingBox ?? null
+      let span = 4.6
+      if (bounds) {
+        span = Math.max(span, bounds.max.x - bounds.min.x, bounds.max.z - bounds.min.z)
+      }
+      const intensityValue = metadata?.auroraIntensity ?? mesh.userData?.auroraIntensity
+      const orientationValue = metadata?.ribbonOrientation ?? mesh.userData?.ribbonOrientation
+      const intensity = Number.isFinite(intensityValue) ? intensityValue : 1
+      const orientation = Number.isFinite(orientationValue) ? orientationValue : 0
+      const handle = emit(
+        createAuroraRibbonEmitter({
+          position: anchor,
+          span,
+          intensity,
+          orientation,
+        }),
+      )
+      return {
+        dispose: () => handle?.stop?.(),
+      }
+    },
+  )
 
   playerControls = createPlayerControls({
     THREE,

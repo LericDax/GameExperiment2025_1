@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 
 import { generateChunk, getWorldOptions } from './generation.js';
-import { createFluidSurface, disposeFluidSurface } from './fluids/fluid-registry.js';
+import {
+  createFluidSurface,
+  disposeFluidSurface,
+  applyFluidSurfaceMetadata,
+} from './fluids/fluid-registry.js';
 import { buildFluidGeometry } from './fluids/fluid-geometry.js';
 
 const worldConfig = getWorldOptions();
@@ -211,6 +215,7 @@ export function createChunkManager({
       mesh.userData = mesh.userData || {};
       mesh.userData.type = `fluid:${type}`;
       mesh.userData.chunkKey = chunkKey(chunk.chunkX, chunk.chunkZ);
+      applyFluidSurfaceMetadata(mesh, geometry);
       chunk.fluidSurfaces.push(mesh);
       chunk.group?.add(mesh);
       return true;
@@ -218,6 +223,7 @@ export function createChunkManager({
 
     const previousGeometry = surface.geometry;
     surface.geometry = geometry;
+    applyFluidSurfaceMetadata(surface, geometry);
     if (previousGeometry) {
       previousGeometry.dispose();
     }

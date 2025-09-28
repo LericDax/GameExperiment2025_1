@@ -59,22 +59,96 @@ function resolveLumenBloomPresence({
     };
   }
 
+  if (biomeId === 'aurora_shard_expanse') {
+    const neighborOffsets = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ];
+    const neighborHeights = neighborOffsets.map(([dx, dz]) =>
+      sampleColumnHeight(x + dx, z + dz),
+    );
+    const ridgeDiffs = neighborHeights.map((height) => groundHeight - height);
+    const positiveDiffs = ridgeDiffs.filter((diff) => Number.isFinite(diff) && diff > 0);
+    const ridgeStrength =
+      positiveDiffs.length > 0
+        ? positiveDiffs.reduce((sum, value) => sum + value, 0) / positiveDiffs.length
+        : 0;
+    const plateauStrength = Math.max(0, ridgeStrength - 0.32);
+    const plateauInfluence = Math.min(1, plateauStrength / 1.4);
+    const ribbonNoise = pseudoRandom2D(x * 0.31 + 5.8, z * 0.31 - 8.9, seed * 1.11);
+    const ridgeNoise = pseudoRandom2D(x * 0.18 - 9.7, z * 0.18 + 6.4, seed * 0.67);
+
+    const slopeX = neighborHeights[0] - neighborHeights[1];
+    const slopeZ = neighborHeights[2] - neighborHeights[3];
+    let ribbonOrientation = Math.atan2(slopeZ, slopeX);
+    if (!Number.isFinite(ribbonOrientation)) {
+      ribbonOrientation = 0;
+    }
+    ribbonOrientation += Math.PI / 2;
+
+    const ridgeGate = ridgeStrength > 0.32;
+    const combinedNoise =
+      cluster * 0.34 + bloom * 0.32 + ribbonNoise * 0.42 + ridgeNoise * 0.22;
+    const spawnThreshold = 0.68 - plateauInfluence * 0.42 + altitudeBias * 0.002;
+
+    if (ridgeGate && combinedNoise >= spawnThreshold) {
+      const ribbonLift = 1.12 + ridgeStrength * 0.45 + ribbonNoise * 0.24;
+      const surfaceY = baseSurface + ribbonLift;
+      const depth = Math.max(0.14, 0.2 + bloom * 0.18 + plateauInfluence * 0.22);
+      const intensity = Math.min(
+        3,
+        0.88 + plateauInfluence * 1.25 + ribbonNoise * 0.4 + ridgeNoise * 0.25,
+      );
+
+      return {
+        hasFluid: true,
+        surfaceY,
+        bottomY: surfaceY - depth,
+        metadata: {
+          lifecycleCues: ['aurora_ribbon'],
+          auroraIntensity: intensity,
+          ribbonOrientation,
+          ridgeStrength,
+        },
+      };
+    }
+
+    return {
+      hasFluid: false,
+      surfaceY: baseSurface,
+      bottomY: baseSurface,
+      metadata: {
+        ribbonOrientation,
+        ridgeStrength,
+      },
+    };
+  }
+
   if (cluster + bloom * 0.4 + altitudeBias * 0.01 < 0.75) {
     return {
       hasFluid: false,
       surfaceY: baseSurface,
       bottomY: baseSurface,
+      metadata: {
+        nonRendered: true,
+      },
     };
   }
 
   const surfaceRise = 0.6 + (cluster - 0.5) * 1.2 + bloom * 0.5;
   const depth = 0.6 + bloom * 0.9;
-  const surfaceY = baseSurface + surfaceRise;
 
   return {
-    hasFluid: true,
-    surfaceY,
-    bottomY: surfaceY - depth,
+    hasFluid: false,
+    surfaceY: baseSurface,
+    bottomY: baseSurface,
+    metadata: {
+      nonRendered: true,
+      surfaceHint: baseSurface + surfaceRise,
+      depthHint: depth,
+    },
   };
 }
 
@@ -229,6 +303,36 @@ export function registerFluidType(id, definition) {
   fluidRuntime.delete(id);
 }
 
+export function applyFluidSurfaceMetadata(mesh, geometry) {
+  if (!mesh || typeof mesh !== 'object') {
+    return;
+  }
+  mesh.userData = mesh.userData || {};
+  const fluidType = mesh.userData.fluidType ?? null;
+  const metadata = geometry?.userData;
+
+  const cues = Array.isArray(metadata?.lifecycleCues)
+    ? Array.from(new Set(metadata.lifecycleCues.map((cue) => String(cue))))
+    : [];
+  if (cues.length > 0) {
+    mesh.userData.lifecycleCues = cues;
+  } else if (fluidType === 'lumen_bloom') {
+    mesh.userData.lifecycleCues = [];
+  }
+
+  if (metadata && Number.isFinite(metadata.auroraIntensity)) {
+    mesh.userData.auroraIntensity = metadata.auroraIntensity;
+  } else if (fluidType === 'lumen_bloom') {
+    delete mesh.userData.auroraIntensity;
+  }
+
+  if (metadata && Number.isFinite(metadata.ribbonOrientation)) {
+    mesh.userData.ribbonOrientation = metadata.ribbonOrientation;
+  } else if (fluidType === 'lumen_bloom') {
+    delete mesh.userData.ribbonOrientation;
+  }
+}
+
 export function isFluidType(id) {
   return fluidDefinitions.has(id);
 }
@@ -282,6 +386,7 @@ export function createFluidSurface({ type, geometry }) {
   mesh.castShadow = false;
   mesh.receiveShadow = true;
   mesh.userData.fluidType = type;
+  applyFluidSurfaceMetadata(mesh, geometry);
   runtime.surfaces.add(mesh);
   if (runtime.handleSurfaceCreated) {
     runtime.handleSurfaceCreated(mesh);
