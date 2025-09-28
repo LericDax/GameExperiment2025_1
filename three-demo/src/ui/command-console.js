@@ -251,11 +251,28 @@ export function createCommandConsole(options = {}) {
       execute: executeCommand,
     };
 
+    const handleCommandResult = (value) => {
+      if (typeof value === 'string' && value.trim()) {
+        appendLog(value, 'success');
+      }
+    };
+
     try {
       const result = command.handler(context);
-      if (typeof result === 'string' && result.trim()) {
-        appendLog(result, 'success');
+      if (result && typeof result.then === 'function') {
+        result
+          .then((value) => handleCommandResult(value))
+          .catch((error) => {
+            const message =
+              error instanceof Error && error.message
+                ? error.message
+                : 'Command execution failed.';
+            appendLog(message, 'error');
+            console.error(`Command "${command.name}" failed:`, error);
+          });
+        return;
       }
+      handleCommandResult(result);
     } catch (error) {
       const message =
         error instanceof Error && error.message
