@@ -255,6 +255,7 @@ export function createPlayerControls({
     oxygen: 12,
     maxOxygen: 12,
     isInWater: false,
+    isUnderwater: false,
     statusMessage: 'Click or tap the game view to look around. Use WASD to move.',
   };
   let statusTimer = Number.POSITIVE_INFINITY;
@@ -1073,6 +1074,11 @@ export function createPlayerControls({
           console.error('Failed to trigger water transition particles:', error);
         }
       }
+    }
+
+    if (playerState.isUnderwater !== headUnderwater) {
+      playerState.isUnderwater = headUnderwater;
+      markStateDirty();
     }
 
     const previousOxygen = playerState.oxygen;
