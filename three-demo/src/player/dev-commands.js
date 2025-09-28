@@ -1,6 +1,11 @@
 import { renderAsciiViewport } from '../devtools/ascii-viewport.js';
 import { createHeadlessScanner } from '../devtools/headless-scanner.js';
-import { sampleBiomeAt, getWorldOptions } from '../world/generation.js';
+import {
+  sampleBiomeAt,
+  terrainHeight,
+  getWorldOptions,
+  getRegisteredBiomes,
+} from '../world/generation.js';
 
 const worldConfig = getWorldOptions();
 
@@ -65,6 +70,139 @@ export function registerDeveloperCommands({
     group: null,
     element: null,
   };
+
+  const biomeTeleportOffsets = [
+    { dx: 0, dz: 0 },
+    { dx: 1, dz: 0 },
+    { dx: -1, dz: 0 },
+    { dx: 0, dz: 1 },
+    { dx: 0, dz: -1 },
+    { dx: 1, dz: 1 },
+    { dx: 1, dz: -1 },
+    { dx: -1, dz: 1 },
+    { dx: -1, dz: -1 },
+  ];
+
+  const biomeAltitudeOffsets = [2.25, 5.25];
+
+  function normalizeBiomeKey(value) {
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[\s_-]+/g, '_');
+  }
+
+  function resolveWaterLevel() {
+    if (Number.isFinite(worldConfig?.waterLevel)) {
+      return worldConfig.waterLevel;
+    }
+    if (worldConfig?.water && Number.isFinite(worldConfig.water.level)) {
+      return worldConfig.water.level;
+    }
+    return 0;
+  }
+
+  function attemptTeleportToBiomeColumn(baseX, baseZ) {
+    const waterLevel = resolveWaterLevel();
+    for (const offset of biomeTeleportOffsets) {
+      const columnX = baseX + offset.dx;
+      const columnZ = baseZ + offset.dz;
+      const surfaceHeight = terrainHeight(columnX, columnZ);
+      if (!Number.isFinite(surfaceHeight)) {
+        continue;
+      }
+      const baseHeight = Math.max(surfaceHeight, waterLevel);
+      for (const altitude of biomeAltitudeOffsets) {
+        const target = {
+          x: columnX + 0.5,
+          y: baseHeight + altitude,
+          z: columnZ + 0.5,
+        };
+        const moved = playerControls.setPosition(target);
+        if (moved) {
+          const position = playerControls.getPosition();
+          return { position, column: { x: columnX, z: columnZ } };
+        }
+      }
+    }
+    return null;
+  }
+
+  function findNearestBiomeColumn({ biomeId, originX = 0, originZ = 0 }) {
+    if (!biomeId) {
+      return null;
+    }
+    const targetId = String(biomeId);
+    const chunkSize = Number.isFinite(worldConfig?.chunkSize)
+      ? worldConfig.chunkSize
+      : Number.isFinite(worldConfig?.chunk?.size)
+      ? worldConfig.chunk.size
+      : 32;
+    const step = Math.max(2, Math.round(chunkSize / 4));
+    const offsetSpacing = Math.max(1, Math.round(step / 2));
+    const localOffsets = step > 1 ? [0, offsetSpacing, -offsetSpacing] : [0];
+    const desiredMaxDistance = Math.max(chunkSize * 24, 1024);
+    const ringCount = Math.max(1, Math.ceil(desiredMaxDistance / step));
+    const maxRadius = ringCount * step;
+    const visited = new Set();
+    const originXFloat = Number.isFinite(originX) ? originX : 0;
+    const originZFloat = Number.isFinite(originZ) ? originZ : 0;
+    const originXInt = Math.round(originXFloat);
+    const originZInt = Math.round(originZFloat);
+    let best = null;
+
+    const considerPoint = (worldX, worldZ) => {
+      const sampleX = Math.round(worldX);
+      const sampleZ = Math.round(worldZ);
+      const key = `${sampleX}|${sampleZ}`;
+      if (visited.has(key)) {
+        return;
+      }
+      visited.add(key);
+      const sample = sampleBiomeAt(sampleX, sampleZ);
+      if (!sample || !sample.biome || String(sample.biome.id) !== targetId) {
+        return;
+      }
+      const dx = sampleX - originXFloat;
+      const dz = sampleZ - originZFloat;
+      const distanceSq = dx * dx + dz * dz;
+      const taxicab = Math.max(
+        Math.abs(sampleX - originXInt),
+        Math.abs(sampleZ - originZInt),
+      );
+      if (!best || distanceSq < best.distanceSq) {
+        best = {
+          x: sampleX,
+          z: sampleZ,
+          biome: sample.biome,
+          distanceSq,
+          taxicab,
+        };
+      }
+    };
+
+    const considerNeighborhood = (centerX, centerZ) => {
+      localOffsets.forEach((ox) => {
+        localOffsets.forEach((oz) => {
+          considerPoint(centerX + ox, centerZ + oz);
+        });
+      });
+    };
+
+    for (let radius = 0; radius <= maxRadius; radius += step) {
+      for (let dx = -radius; dx <= radius; dx += step) {
+        for (let dz = -radius; dz <= radius; dz += step) {
+          considerNeighborhood(originXFloat + dx, originZFloat + dz);
+        }
+      }
+      if (best && best.taxicab <= radius) {
+        return best;
+      }
+    }
+
+    return best;
+  }
 
   const getDebugSnapshot = () => window.__VOXEL_DEBUG__?.chunkSnapshot;
 
@@ -693,11 +831,94 @@ export function registerDeveloperCommands({
 
   registerCommand({
     name: 'goto',
-    description: 'Teleport the player to the specified world coordinates.',
-    usage: '/goto <x> <y> <z>',
+    description:
+      'Teleport the player to specific coordinates or the nearest instance of a biome.',
+    usage: '/goto <x> <y> <z> | /goto biome [biomeId|label]',
     handler: ({ args }) => {
+      if (args.length === 0) {
+        throw new Error('Usage: /goto <x> <y> <z> | /goto biome [biomeId|label].');
+      }
+
+      if (args[0].toLowerCase() === 'biome') {
+        const tokens = args.slice(1);
+        let availableBiomes;
+        try {
+          availableBiomes = getRegisteredBiomes();
+        } catch (error) {
+          console.error('Failed to access biome registry:', error);
+          throw new Error('Biome data is not available yet. Try again after the world loads.');
+        }
+        if (tokens.length === 0) {
+          if (!availableBiomes || availableBiomes.length === 0) {
+            commandConsole.log('No biomes are currently registered.', 'warn');
+            return;
+          }
+          commandConsole.log('Available biomes:');
+          availableBiomes.forEach((biome) => {
+            const tagSuffix = biome.tags.length > 0 ? ` [${biome.tags.join(', ')}]` : '';
+            commandConsole.log(`- ${biome.id} — ${biome.label}${tagSuffix}`);
+          });
+          return;
+        }
+
+        const rawQuery = tokens.join(' ').trim();
+        const normalizedQuery = normalizeBiomeKey(rawQuery);
+        const targetBiome = availableBiomes.find((biome) => {
+          const idKey = normalizeBiomeKey(biome.id);
+          const labelKey = normalizeBiomeKey(biome.label);
+          return idKey === normalizedQuery || labelKey === normalizedQuery;
+        });
+
+        if (!targetBiome) {
+          commandConsole.log(
+            `Unknown biome "${rawQuery}". Use /goto biome to list valid biome identifiers.`,
+            'warn',
+          );
+          throw new Error('Biome not found.');
+        }
+
+        const origin = playerControls.getPosition();
+        let searchResult;
+        try {
+          searchResult = findNearestBiomeColumn({
+            biomeId: targetBiome.id,
+            originX: origin?.x ?? 0,
+            originZ: origin?.z ?? 0,
+          });
+        } catch (error) {
+          console.error('Biome search failed:', error);
+          throw new Error('Biome search failed — ensure world generation is initialized.');
+        }
+
+        if (!searchResult) {
+          throw new Error(
+            `Unable to locate biome "${targetBiome.id}" within the search radius.`,
+          );
+        }
+
+        const landing = attemptTeleportToBiomeColumn(searchResult.x, searchResult.z);
+        if (!landing) {
+          throw new Error('Unable to find a safe landing spot near the target biome.');
+        }
+
+        const distance = Number.isFinite(searchResult.distanceSq)
+          ? Math.sqrt(searchResult.distanceSq)
+          : Math.hypot(
+              (landing.position?.x ?? 0) - (origin?.x ?? 0),
+              (landing.position?.z ?? 0) - (origin?.z ?? 0),
+            );
+
+        commandConsole.log(
+          `Nearest ${targetBiome.label ?? targetBiome.id} biome column at (${searchResult.x}, ${searchResult.z}) ≈${distance.toFixed(1)}m away.`,
+        );
+        commandConsole.log(
+          `Position set to X=${landing.position.x.toFixed(2)} Y=${landing.position.y.toFixed(2)} Z=${landing.position.z.toFixed(2)}.`,
+        );
+        return;
+      }
+
       if (args.length < 3) {
-        throw new Error('Usage: /goto <x> <y> <z>.');
+        throw new Error('Usage: /goto <x> <y> <z> | /goto biome [biomeId|label].');
       }
       const x = parseCoordinate(args[0], 'X coordinate');
       const y = parseCoordinate(args[1], 'Y coordinate');
