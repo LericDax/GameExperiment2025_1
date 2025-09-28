@@ -11,6 +11,7 @@ export function registerDeveloperCommands({
   scene,
   THREE,
   registerDiagnosticOverlay,
+  particleSystem = null,
 }) {
   if (!commandConsole) {
     throw new Error('registerDeveloperCommands requires a commandConsole instance.');
@@ -56,6 +57,13 @@ export function registerDeveloperCommands({
     disposer: null,
     options: null,
     lastKey: null,
+  };
+
+  const vfxOverlayState = {
+    disposer: null,
+    helpers: new Map(),
+    group: null,
+    element: null,
   };
 
   const getDebugSnapshot = () => window.__VOXEL_DEBUG__?.chunkSnapshot;
@@ -536,6 +544,133 @@ export function registerDeveloperCommands({
     });
   };
 
+  const disposeVfxOverlayHelpers = () => {
+    if (vfxOverlayState.group) {
+      vfxOverlayState.helpers.forEach((entry) => {
+        entry.helper.geometry?.dispose?.();
+        entry.helper.material?.dispose?.();
+      });
+      scene.remove(vfxOverlayState.group);
+      vfxOverlayState.group = null;
+    }
+    vfxOverlayState.helpers.clear();
+  };
+
+  const disableVfxOverlay = ({ silent = false } = {}) => {
+    if (vfxOverlayState.disposer) {
+      try {
+        vfxOverlayState.disposer();
+      } catch (error) {
+        console.error('Failed to dispose VFX overlay callback:', error);
+      }
+      vfxOverlayState.disposer = null;
+    }
+    disposeVfxOverlayHelpers();
+    if (vfxOverlayState.element) {
+      vfxOverlayState.element.remove();
+      vfxOverlayState.element = null;
+    }
+    if (!silent) {
+      commandConsole.log('VFX overlay disabled.');
+    }
+  };
+
+  const enableVfxOverlay = () => {
+    if (!particleSystem?.getDebugInfo) {
+      commandConsole.log('Particle system debugging is unavailable.');
+      return;
+    }
+    if (typeof registerDiagnosticOverlay !== 'function') {
+      commandConsole.log('Diagnostic overlay loop is unavailable; cannot enable VFX overlay.');
+      return;
+    }
+    if (vfxOverlayState.disposer) {
+      commandConsole.log('VFX overlay is already enabled.');
+      return;
+    }
+
+    const element = document.createElement('div');
+    element.className = 'vfx-debug-overlay';
+    element.textContent = 'VFX overlay active…';
+    document.body.appendChild(element);
+    vfxOverlayState.element = element;
+
+    const group = new THREE.Group();
+    group.name = 'VfxDebugOverlay';
+    scene.add(group);
+    vfxOverlayState.group = group;
+    vfxOverlayState.helpers = new Map();
+
+    const syncHelpers = (surfaces = []) => {
+      const seen = new Set();
+      surfaces.forEach((surface) => {
+        const { mesh, type, attachmentCount } = surface;
+        if (!mesh?.isObject3D) {
+          return;
+        }
+        let entry = vfxOverlayState.helpers.get(mesh);
+        if (!entry) {
+          const box = new THREE.Box3().setFromObject(mesh);
+          const helper = new THREE.Box3Helper(
+            box,
+            attachmentCount > 0 ? 0x4aa3ff : 0xffa64d,
+          );
+          helper.name = `VfxSurfaceHelper(${type ?? 'unknown'})`;
+          group.add(helper);
+          entry = { helper, box };
+          vfxOverlayState.helpers.set(mesh, entry);
+        } else {
+          entry.box.setFromObject(mesh);
+          entry.helper.material?.color?.set(
+            attachmentCount > 0 ? 0x4aa3ff : 0xffa64d,
+          );
+        }
+        seen.add(mesh);
+      });
+      vfxOverlayState.helpers.forEach((entry, mesh) => {
+        if (seen.has(mesh)) {
+          return;
+        }
+        group.remove(entry.helper);
+        entry.helper.geometry?.dispose?.();
+        entry.helper.material?.dispose?.();
+        vfxOverlayState.helpers.delete(mesh);
+      });
+    };
+
+    const updateOverlay = () => {
+      if (!vfxOverlayState.element) {
+        return;
+      }
+      const info = particleSystem.getDebugInfo?.();
+      if (!info) {
+        vfxOverlayState.element.textContent = 'No VFX data available.';
+        return;
+      }
+      const lines = [
+        `Emitters: ${info.emitterCount}`,
+        `Active Particles: ${info.totalActiveParticles}`,
+      ];
+      const emitterSummaries = info.emitters.slice(0, 6);
+      emitterSummaries.forEach((emitter, index) => {
+        const flag = emitter.pendingRemoval ? ' *' : '';
+        lines.push(`  #${index + 1} ${emitter.label} — ${emitter.activeParticles}${flag}`);
+      });
+      if (info.emitters.length > emitterSummaries.length) {
+        lines.push(`  (+${info.emitters.length - emitterSummaries.length} more…)`);
+      }
+      lines.push('', `Fluid surfaces: ${info.fluidSurfaces.length}`);
+      vfxOverlayState.element.textContent = lines.join('\n');
+      syncHelpers(info.fluidSurfaces);
+    };
+
+    vfxOverlayState.disposer = registerDiagnosticOverlay(() => {
+      updateOverlay();
+    });
+    updateOverlay();
+    commandConsole.log('VFX overlay enabled. Use /vfx overlay off to disable.');
+  };
+
   registerCommand({
     name: 'look',
     description:
@@ -638,6 +773,53 @@ export function registerDeveloperCommands({
       const options = normalizeScanOptions({ distance, yaw, pitch });
       const result = performScan(options);
       logScanResult(result, { label: 'scan' });
+    },
+  });
+
+  registerCommand({
+    name: 'vfx',
+    description: 'Inspect and control particle visual effects.',
+    usage: '/vfx overlay [on|off|toggle] | /vfx list',
+    handler: ({ args, toggle }) => {
+      if (!particleSystem) {
+        commandConsole.log('Particle system is not available.');
+        return;
+      }
+      if (args.length === 0) {
+        throw new Error('Usage: /vfx overlay [on|off|toggle] | /vfx list.');
+      }
+      const mode = args[0].toLowerCase();
+      if (mode === 'overlay') {
+        const desired = toggle(args[1], Boolean(vfxOverlayState.disposer));
+        if (desired) {
+          enableVfxOverlay();
+        } else {
+          disableVfxOverlay();
+        }
+        return;
+      }
+      if (mode === 'list') {
+        const info = particleSystem.getDebugInfo?.();
+        if (!info) {
+          commandConsole.log('Particle system did not provide debug info.');
+          return;
+        }
+        commandConsole.log(`Emitters (${info.emitterCount} total):`);
+        info.emitters.forEach((emitter, index) => {
+          const status = emitter.pendingRemoval ? ' (pending removal)' : '';
+          commandConsole.log(
+            `  #${index + 1} ${emitter.label} — particles=${emitter.activeParticles}${status}`,
+          );
+        });
+        commandConsole.log(`Fluid surfaces tracked: ${info.fluidSurfaces.length}`);
+        info.fluidSurfaces.forEach((surface, index) => {
+          commandConsole.log(
+            `  #${index + 1} type=${surface.type} attachments=${surface.attachmentCount}`,
+          );
+        });
+        return;
+      }
+      throw new Error('Usage: /vfx overlay [on|off|toggle] | /vfx list.');
     },
   });
 

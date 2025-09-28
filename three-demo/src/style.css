@@ -175,6 +175,26 @@ button:focus-visible {
 
 }
 
+.vfx-debug-overlay {
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
+  padding: 0.6rem 0.75rem;
+  background: rgba(10, 14, 22, 0.78);
+  color: #e4f0ff;
+  border: 1px solid rgba(150, 184, 255, 0.28);
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.34);
+  font-family: 'Fira Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  pointer-events: none;
+  z-index: 82;
+  white-space: pre;
+  max-width: 260px;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
