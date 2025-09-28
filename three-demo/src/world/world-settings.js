@@ -1,3 +1,35 @@
+import {
+  createWorldOptionDescriptorIndex,
+  worldOptionDescriptors,
+  worldOptionPathToKey,
+} from './world-option-descriptors.js'
+
+export { worldOptionDescriptors } from './world-option-descriptors.js'
+
+const descriptorIndex = createWorldOptionDescriptorIndex(worldOptionDescriptors)
+
+export function getWorldOptionDescriptor(pathKey) {
+  return descriptorIndex.get(pathKey) ?? null
+}
+
+function getDescriptorForPath(path) {
+  if (Array.isArray(path)) {
+    return descriptorIndex.get(worldOptionPathToKey(path)) ?? null
+  }
+  if (typeof path === 'string') {
+    return descriptorIndex.get(path) ?? null
+  }
+  return null
+}
+
+function getDescriptorDefault(path) {
+  const descriptor = getDescriptorForPath(path)
+  if (!descriptor) {
+    throw new Error(`Missing world option descriptor for path: ${path.join('.')}`)
+  }
+  return descriptor.default
+}
+
 function computeSeedHash(value) {
   const str = String(value ?? '')
   let hash = 2166136261
@@ -22,88 +54,81 @@ function resolveSeed(value, fallbackValue, fallbackHash) {
   return { value: fallbackValue, hash: fallbackHash }
 }
 
-const DEFAULT_SEED_VALUE = 1337
+const DEFAULT_SEED_VALUE = getDescriptorDefault(['seed'])
 const DEFAULT_SEED_HASH = computeSeedHash(DEFAULT_SEED_VALUE)
 
 const defaultTerrainClamp = Object.freeze({
-  min: 2,
-  max: 20,
+  min: getDescriptorDefault(['terrain', 'clamp', 'min']),
+  max: getDescriptorDefault(['terrain', 'clamp', 'max']),
 })
 
 const defaultTerrainOptions = Object.freeze({
-  baseHeight: 6,
-  maxHeight: 20,
+  baseHeight: getDescriptorDefault(['terrain', 'baseHeight']),
+  maxHeight: getDescriptorDefault(['terrain', 'maxHeight']),
   clamp: defaultTerrainClamp,
-  primaryFrequency: 0.06,
-  primaryAmplitude: 8,
-  primaryOffset: 0,
-  detailFrequency: 0.12,
-  detailAmplitude: 3,
-  detailOffset: 100,
-  ridgeFrequency: 0.02,
-  ridgeStrength: 2.4,
-  ridgeOffset: 220,
-  climateHeightInfluence: 1.2,
+  primaryFrequency: getDescriptorDefault(['terrain', 'primaryFrequency']),
+  primaryAmplitude: getDescriptorDefault(['terrain', 'primaryAmplitude']),
+  primaryOffset: getDescriptorDefault(['terrain', 'primaryOffset']),
+  detailFrequency: getDescriptorDefault(['terrain', 'detailFrequency']),
+  detailAmplitude: getDescriptorDefault(['terrain', 'detailAmplitude']),
+  detailOffset: getDescriptorDefault(['terrain', 'detailOffset']),
+  ridgeFrequency: getDescriptorDefault(['terrain', 'ridgeFrequency']),
+  ridgeStrength: getDescriptorDefault(['terrain', 'ridgeStrength']),
+  ridgeOffset: getDescriptorDefault(['terrain', 'ridgeOffset']),
+  climateHeightInfluence: getDescriptorDefault([
+    'terrain',
+    'climateHeightInfluence',
+  ]),
 })
 
 const defaultBiomeTuning = Object.freeze({
-  scale: 0.003,
-  detailMultiplier: 2.15,
-  moistureDetailMultiplier: 1.18,
-  varianceMultiplier: 0.45,
-  variationStrength: 0.18,
+  scale: getDescriptorDefault(['biomes', 'scale']),
+  detailMultiplier: getDescriptorDefault(['biomes', 'detailMultiplier']),
+  moistureDetailMultiplier: getDescriptorDefault([
+    'biomes',
+    'moistureDetailMultiplier',
+  ]),
+  varianceMultiplier: getDescriptorDefault(['biomes', 'varianceMultiplier']),
+  variationStrength: getDescriptorDefault(['biomes', 'variationStrength']),
 })
 
-export const biomeOptionMetadata = Object.freeze({
-  scale: Object.freeze({
-    default: defaultBiomeTuning.scale,
-    min: 0.0005,
-    max: 0.02,
-    description:
-      'Base frequency for the temperature/moisture noise fields. Lower values produce larger biome continents.',
-  }),
-  detailMultiplier: Object.freeze({
-    default: defaultBiomeTuning.detailMultiplier,
-    min: 0.1,
-    max: 10,
-    description:
-      'Multiplier applied to the base scale for secondary climate detail noise.',
-  }),
-  moistureDetailMultiplier: Object.freeze({
-    default: defaultBiomeTuning.moistureDetailMultiplier,
-    min: 0.1,
-    max: 4,
-    description:
-      'Multiplier that adjusts the moisture detail scale relative to the temperature field.',
-  }),
-  varianceMultiplier: Object.freeze({
-    default: defaultBiomeTuning.varianceMultiplier,
-    min: 0,
-    max: 2,
-    description:
-      'Controls how strongly biome variance noise distorts the climate map.',
-  }),
-  variationStrength: Object.freeze({
-    default: defaultBiomeTuning.variationStrength,
-    min: 0,
-    max: 1,
-    description:
-      'Strength of the random jitter applied when selecting the closest biome.',
-  }),
-})
+const biomeDescriptorKeys = [
+  'scale',
+  'detailMultiplier',
+  'moistureDetailMultiplier',
+  'varianceMultiplier',
+  'variationStrength',
+]
+
+export const biomeOptionMetadata = Object.freeze(
+  Object.fromEntries(
+    biomeDescriptorKeys.map((key) => {
+      const descriptor = getDescriptorForPath(['biomes', key])
+      return [
+        key,
+        Object.freeze({
+          default: defaultBiomeTuning[key],
+          min: descriptor?.min,
+          max: descriptor?.max,
+          description: descriptor?.description,
+        }),
+      ]
+    }),
+  ),
+)
 
 export const defaultWorldOptions = Object.freeze({
   seed: DEFAULT_SEED_VALUE,
   seedHash: DEFAULT_SEED_HASH,
-  chunkSize: 48,
-  baseHeight: defaultTerrainOptions.baseHeight,
-  maxHeight: defaultTerrainOptions.maxHeight,
-  waterLevel: 9,
+  chunkSize: getDescriptorDefault(['chunkSize']),
+  baseHeight: getDescriptorDefault(['baseHeight']),
+  maxHeight: getDescriptorDefault(['maxHeight']),
+  waterLevel: getDescriptorDefault(['waterLevel']),
   chunk: Object.freeze({
-    size: 48,
+    size: getDescriptorDefault(['chunk', 'size']),
   }),
   water: Object.freeze({
-    level: 9,
+    level: getDescriptorDefault(['water', 'level']),
   }),
   terrain: defaultTerrainOptions,
   biomes: defaultBiomeTuning,
@@ -154,34 +179,17 @@ function normalizeNumber(value, fallback) {
   return value
 }
 
-const TERRAIN_OPTION_BOUNDS = Object.freeze({
-  baseHeight: Object.freeze({ min: 0, max: 512 }),
-  maxHeight: Object.freeze({ min: 1, max: 1024 }),
-  clampMin: Object.freeze({ min: 0, max: 1024 }),
-  clampMax: Object.freeze({ min: 1, max: 1024 }),
-  primaryFrequency: Object.freeze({ min: 0.0001, max: 1 }),
-  primaryAmplitude: Object.freeze({ min: 0, max: 256 }),
-  primaryOffset: Object.freeze({ min: -10000, max: 10000 }),
-  detailFrequency: Object.freeze({ min: 0.0001, max: 2 }),
-  detailAmplitude: Object.freeze({ min: 0, max: 128 }),
-  detailOffset: Object.freeze({ min: -10000, max: 10000 }),
-  ridgeFrequency: Object.freeze({ min: 0.0001, max: 1 }),
-  ridgeStrength: Object.freeze({ min: 0, max: 64 }),
-  ridgeOffset: Object.freeze({ min: -10000, max: 10000 }),
-  climateHeightInfluence: Object.freeze({ min: -10, max: 10 }),
-})
-
-function normalizeWithBounds(value, fallback, boundsKey) {
-  const bounds = TERRAIN_OPTION_BOUNDS[boundsKey] ?? {}
+function normalizeWithDescriptor(value, fallback, path) {
+  const descriptor = getDescriptorForPath(path)
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return fallback
   }
   let normalized = value
-  if (Number.isFinite(bounds.min)) {
-    normalized = Math.max(bounds.min, normalized)
+  if (descriptor && Number.isFinite(descriptor.min)) {
+    normalized = Math.max(descriptor.min, normalized)
   }
-  if (Number.isFinite(bounds.max)) {
-    normalized = Math.min(bounds.max, normalized)
+  if (descriptor && Number.isFinite(descriptor.max)) {
+    normalized = Math.min(descriptor.max, normalized)
   }
   return normalized
 }
@@ -213,9 +221,19 @@ export function applyWorldOptions(overrides = {}) {
     null,
   )
   if (resolvedChunkSize !== null) {
-    const size = Math.max(1, Math.floor(resolvedChunkSize))
-    worldOptions.chunkSize = size
-    worldOptions.chunk.size = size
+    const floored = Math.floor(resolvedChunkSize)
+    const positive = Math.max(1, floored)
+    const normalizedChunkSize = normalizeWithDescriptor(
+      positive,
+      worldOptions.chunk.size,
+      ['chunk', 'size'],
+    )
+    worldOptions.chunk.size = normalizedChunkSize
+    worldOptions.chunkSize = normalizeWithDescriptor(
+      normalizedChunkSize,
+      worldOptions.chunkSize,
+      ['chunkSize'],
+    )
   }
 
   const terrainOverrides = isObject(overrides.terrain) ? overrides.terrain : null
@@ -225,10 +243,10 @@ export function applyWorldOptions(overrides = {}) {
     null,
   )
   if (resolvedBaseHeight !== null) {
-    const baseHeight = normalizeWithBounds(
+    const baseHeight = normalizeWithDescriptor(
       resolvedBaseHeight,
       worldOptions.terrain.baseHeight,
-      'baseHeight',
+      ['terrain', 'baseHeight'],
     )
     worldOptions.baseHeight = baseHeight
     worldOptions.terrain.baseHeight = baseHeight
@@ -239,10 +257,10 @@ export function applyWorldOptions(overrides = {}) {
     null,
   )
   if (resolvedMaxHeight !== null) {
-    const maxHeight = normalizeWithBounds(
+    const maxHeight = normalizeWithDescriptor(
       resolvedMaxHeight,
       worldOptions.terrain.maxHeight,
-      'maxHeight',
+      ['terrain', 'maxHeight'],
     )
     worldOptions.maxHeight = maxHeight
     worldOptions.terrain.maxHeight = maxHeight
@@ -257,18 +275,18 @@ export function applyWorldOptions(overrides = {}) {
     : null
   const resolvedClampMin = normalizeNumber(clampOverrides?.min, null)
   if (resolvedClampMin !== null) {
-    worldOptions.terrain.clamp.min = normalizeWithBounds(
+    worldOptions.terrain.clamp.min = normalizeWithDescriptor(
       resolvedClampMin,
       worldOptions.terrain.clamp.min,
-      'clampMin',
+      ['terrain', 'clamp', 'min'],
     )
   }
   const resolvedClampMax = normalizeNumber(clampOverrides?.max, null)
   if (resolvedClampMax !== null) {
-    const clampMax = normalizeWithBounds(
+    const clampMax = normalizeWithDescriptor(
       resolvedClampMax,
       worldOptions.terrain.clamp.max,
-      'clampMax',
+      ['terrain', 'clamp', 'max'],
     )
     worldOptions.terrain.clamp.max = clampMax
     worldOptions.maxHeight = Math.max(worldOptions.maxHeight, clampMax)
@@ -289,18 +307,18 @@ export function applyWorldOptions(overrides = {}) {
 
   terrainOptionKeys.forEach((key) => {
     if (key in (terrainOverrides ?? {})) {
-      worldOptions.terrain[key] = normalizeWithBounds(
+      worldOptions.terrain[key] = normalizeWithDescriptor(
         terrainOverrides[key],
         worldOptions.terrain[key],
-        key,
+        ['terrain', key],
       )
     }
   })
 
-  worldOptions.baseHeight = normalizeWithBounds(
+  worldOptions.baseHeight = normalizeWithDescriptor(
     worldOptions.baseHeight,
     defaultTerrainOptions.baseHeight,
-    'baseHeight',
+    ['baseHeight'],
   )
   worldOptions.terrain.baseHeight = worldOptions.baseHeight
 
@@ -309,18 +327,18 @@ export function applyWorldOptions(overrides = {}) {
     worldOptions.terrain.baseHeight,
   )
   worldOptions.terrain.maxHeight = Math.max(
-    normalizeWithBounds(
+    normalizeWithDescriptor(
       worldOptions.terrain.maxHeight,
       defaultTerrainOptions.maxHeight,
-      'maxHeight',
+      ['terrain', 'maxHeight'],
     ),
     minimumMaxHeight,
   )
   worldOptions.maxHeight = Math.max(
-    normalizeWithBounds(
+    normalizeWithDescriptor(
       worldOptions.maxHeight,
       defaultTerrainOptions.maxHeight,
-      'maxHeight',
+      ['maxHeight'],
     ),
     worldOptions.terrain.maxHeight,
   )
@@ -339,16 +357,16 @@ export function applyWorldOptions(overrides = {}) {
     worldOptions.maxHeight = estimatedTerrainMax
   }
 
-  worldOptions.terrain.clamp.min = normalizeWithBounds(
+  worldOptions.terrain.clamp.min = normalizeWithDescriptor(
     worldOptions.terrain.clamp.min,
     defaultTerrainOptions.clamp.min,
-    'clampMin',
+    ['terrain', 'clamp', 'min'],
   )
   worldOptions.terrain.clamp.max = Math.max(
-    normalizeWithBounds(
+    normalizeWithDescriptor(
       worldOptions.terrain.clamp.max,
       defaultTerrainOptions.clamp.max,
-      'clampMax',
+      ['terrain', 'clamp', 'max'],
     ),
     worldOptions.terrain.clamp.min,
     worldOptions.maxHeight,
@@ -364,19 +382,33 @@ export function applyWorldOptions(overrides = {}) {
     null,
   )
   if (resolvedWaterLevel !== null) {
-    worldOptions.waterLevel = resolvedWaterLevel
-    worldOptions.water.level = resolvedWaterLevel
+    const normalizedWaterLevel = normalizeWithDescriptor(
+      resolvedWaterLevel,
+      worldOptions.water.level,
+      ['water', 'level'],
+    )
+    worldOptions.water.level = normalizedWaterLevel
+    worldOptions.waterLevel = normalizeWithDescriptor(
+      normalizedWaterLevel,
+      worldOptions.waterLevel,
+      ['waterLevel'],
+    )
   }
 
   if ('biomes' in overrides && isObject(overrides.biomes)) {
     Object.entries(overrides.biomes).forEach(([key, value]) => {
-      if (
-        Object.prototype.hasOwnProperty.call(worldOptions.biomes, key) &&
-        typeof value === 'number' &&
-        Number.isFinite(value)
-      ) {
-        worldOptions.biomes[key] = value
+      if (!Object.prototype.hasOwnProperty.call(worldOptions.biomes, key)) {
+        return
       }
+      const normalizedInput = normalizeNumber(value, null)
+      if (normalizedInput === null) {
+        return
+      }
+      worldOptions.biomes[key] = normalizeWithDescriptor(
+        normalizedInput,
+        worldOptions.biomes[key],
+        ['biomes', key],
+      )
     })
   }
 
