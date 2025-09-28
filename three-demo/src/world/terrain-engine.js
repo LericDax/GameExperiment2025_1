@@ -2,7 +2,11 @@ import { ValueNoise2D } from './noise.js';
 import { createBiomeEngine } from './biome-engine.js';
 import { defaultWorldOptions } from './world-settings.js';
 
-export function createTerrainEngine({ THREE, seed = 1337, worldConfig = {} } = {}) {
+export function createTerrainEngine({
+  THREE,
+  seed = defaultWorldOptions.seedHash,
+  worldConfig = {},
+} = {}) {
   if (!THREE) {
     throw new Error('createTerrainEngine requires a THREE instance');
   }

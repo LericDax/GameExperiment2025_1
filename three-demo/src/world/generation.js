@@ -1,5 +1,8 @@
 import { createTerrainEngine } from './terrain-engine.js';
-import { populateColumnWithVoxelObjects } from './voxel-object-placement.js';
+import {
+  configureVoxelObjectPlacement,
+  populateColumnWithVoxelObjects,
+} from './voxel-object-placement.js';
 import {
   createFluidSurface,
   isFluidType,
@@ -16,6 +19,7 @@ import {
 } from './voxel-object-decoration-mesh.js';
 import { resolveBiomeTintMultiplier } from './color-utils.js';
 import { worldOptions, applyWorldOptions } from './world-settings.js';
+import { configureSectorObjectPlanner } from './sector-object-planner.js';
 export { worldOptions, getWorldOptions } from './world-settings.js';
 
 initializeFluidDebug({ defaultEnabled: false, persistDefault: true, forceDefault: true });
@@ -27,6 +31,7 @@ function clamp(value, min, max) {
 let THREERef = null;
 let blockGeometry = null;
 let terrainEngine = null;
+let worldSeedHash = worldOptions.seedHash >>> 0;
 
 function ensureThree() {
   if (!THREERef) {
@@ -61,6 +66,8 @@ export function initializeWorldGeneration({ THREE, worldOptions: overrides } = {
     applyWorldOptions(overrides);
   }
 
+  worldSeedHash = worldOptions.seedHash >>> 0;
+
   if (terrainEngine) {
     disposeTerrainEngineInstance(terrainEngine);
   }
@@ -68,9 +75,11 @@ export function initializeWorldGeneration({ THREE, worldOptions: overrides } = {
   blockGeometry = new THREE.BoxGeometry(1, 1, 1);
   terrainEngine = createTerrainEngine({
     THREE,
-    seed: worldOptions.seed,
+    seed: worldSeedHash,
     worldConfig: worldOptions,
   });
+  configureVoxelObjectPlacement({ seedHash: worldSeedHash });
+  configureSectorObjectPlanner({ seedHash: worldSeedHash });
 }
 
 export function terrainHeight(x, z) {
@@ -88,19 +97,27 @@ export function sampleBiomeAt(x, z) {
   return engine.getBiomeAt(x, z);
 }
 
-function hashCoordinate(x, z, offset = 0) {
-  let h = Math.imul(x | 0, 374761393);
-  h = Math.imul(h + Math.imul(z | 0, 668265263), 1274126177);
+function hashCoordinate(x, z, offset = 0, seed = worldSeedHash) {
+  const seedLow = seed & 0xffff;
+  const seedHigh = (seed >>> 16) & 0xffff;
+  let h = Math.imul((x | 0) ^ (seedLow || 1), 374761393);
+  h = Math.imul(h + Math.imul((z | 0) ^ (seedHigh || 1), 668265263), 1274126177);
   h ^= h >>> 15;
-  h = Math.imul(h + Math.imul(offset | 0, 1597334677), 2246822519);
+  const seedMix = ((seed >>> 1) | 1) & 0x7fffffff;
+  h = Math.imul(h + Math.imul((offset | 0) ^ seedMix, 1597334677), 2246822519);
   h ^= h >>> 13;
-  h = Math.imul(h, 3266489917);
+  h = Math.imul(h ^ seed, 3266489917);
   h ^= h >>> 16;
   return h >>> 0;
 }
 
 export function randomAt(x, z, offset = 0) {
-  const hashed = hashCoordinate(Math.floor(x), Math.floor(z), Math.floor(offset));
+  const hashed = hashCoordinate(
+    Math.floor(x),
+    Math.floor(z),
+    Math.floor(offset),
+    worldSeedHash,
+  );
   return hashed / 4294967296;
 }
 

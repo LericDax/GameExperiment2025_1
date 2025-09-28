@@ -19,7 +19,17 @@ import {
   getDecorationMeshTemplate,
 } from './voxel-object-decoration-mesh.js';
 
-const objectDensityField = new ValueNoise2D(9103);
+const DEFAULT_DENSITY_SEED = 9103;
+let objectDensityField = new ValueNoise2D(DEFAULT_DENSITY_SEED);
+
+export function configureVoxelObjectPlacement({ seedHash } = {}) {
+  const normalizedSeed =
+    typeof seedHash === 'number' && Number.isFinite(seedHash)
+      ? seedHash >>> 0
+      : DEFAULT_DENSITY_SEED;
+  const mixedSeed = ((normalizedSeed ^ 0x85ebca6b) >>> 0) * 1.21 + DEFAULT_DENSITY_SEED;
+  objectDensityField = new ValueNoise2D(mixedSeed);
+}
 
 function ensureRandomSource(randomSource) {
   if (typeof randomSource === 'function') {

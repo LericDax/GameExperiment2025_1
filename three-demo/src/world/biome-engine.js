@@ -79,7 +79,11 @@ function normalizeCategoryMultipliers(definition) {
   );
 }
 
-export function createBiomeEngine({ THREE, seed = 1337, biomeOptions = null } = {}) {
+export function createBiomeEngine({
+  THREE,
+  seed = defaultWorldOptions.seedHash,
+  biomeOptions = null,
+} = {}) {
   if (!THREE) {
     throw new Error('createBiomeEngine requires a THREE instance');
   }
