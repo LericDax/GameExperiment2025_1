@@ -3,6 +3,52 @@ const defaultTerrainClamp = Object.freeze({
   max: 20,
 })
 
+const defaultBiomeTuning = Object.freeze({
+  scale: 0.003,
+  detailMultiplier: 2.15,
+  moistureDetailMultiplier: 1.18,
+  varianceMultiplier: 0.45,
+  variationStrength: 0.18,
+})
+
+export const biomeOptionMetadata = Object.freeze({
+  scale: Object.freeze({
+    default: defaultBiomeTuning.scale,
+    min: 0.0005,
+    max: 0.02,
+    description:
+      'Base frequency for the temperature/moisture noise fields. Lower values produce larger biome continents.',
+  }),
+  detailMultiplier: Object.freeze({
+    default: defaultBiomeTuning.detailMultiplier,
+    min: 0.1,
+    max: 10,
+    description:
+      'Multiplier applied to the base scale for secondary climate detail noise.',
+  }),
+  moistureDetailMultiplier: Object.freeze({
+    default: defaultBiomeTuning.moistureDetailMultiplier,
+    min: 0.1,
+    max: 4,
+    description:
+      'Multiplier that adjusts the moisture detail scale relative to the temperature field.',
+  }),
+  varianceMultiplier: Object.freeze({
+    default: defaultBiomeTuning.varianceMultiplier,
+    min: 0,
+    max: 2,
+    description:
+      'Controls how strongly biome variance noise distorts the climate map.',
+  }),
+  variationStrength: Object.freeze({
+    default: defaultBiomeTuning.variationStrength,
+    min: 0,
+    max: 1,
+    description:
+      'Strength of the random jitter applied when selecting the closest biome.',
+  }),
+})
+
 export const defaultWorldOptions = Object.freeze({
   seed: 1337,
   chunkSize: 48,
@@ -20,11 +66,7 @@ export const defaultWorldOptions = Object.freeze({
     maxHeight: 20,
     clamp: defaultTerrainClamp,
   }),
-  biome: Object.freeze({
-    climateScale: 0.003,
-    detailScaleMultiplier: 2.15,
-    varianceScaleMultiplier: 0.45,
-  }),
+  biomes: defaultBiomeTuning,
 })
 
 function createMutableWorldOptions() {
@@ -41,7 +83,7 @@ function createMutableWorldOptions() {
       maxHeight: defaultWorldOptions.terrain.maxHeight,
       clamp: { ...defaultWorldOptions.terrain.clamp },
     },
-    biome: { ...defaultWorldOptions.biome },
+    biomes: { ...defaultWorldOptions.biomes },
   }
 }
 
@@ -126,10 +168,14 @@ export function applyWorldOptions(overrides = {}) {
     worldOptions.water.level = resolvedWaterLevel
   }
 
-  if ('biome' in overrides && isObject(overrides.biome)) {
-    Object.entries(overrides.biome).forEach(([key, value]) => {
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        worldOptions.biome[key] = value
+  if ('biomes' in overrides && isObject(overrides.biomes)) {
+    Object.entries(overrides.biomes).forEach(([key, value]) => {
+      if (
+        Object.prototype.hasOwnProperty.call(worldOptions.biomes, key) &&
+        typeof value === 'number' &&
+        Number.isFinite(value)
+      ) {
+        worldOptions.biomes[key] = value
       }
     })
   }
@@ -152,10 +198,10 @@ export function resetWorldOptions() {
   worldOptions.terrain.clamp.min = fresh.terrain.clamp.min
   worldOptions.terrain.clamp.max = fresh.terrain.clamp.max
 
-  Object.keys(worldOptions.biome).forEach((key) => {
-    delete worldOptions.biome[key]
+  Object.keys(worldOptions.biomes).forEach((key) => {
+    delete worldOptions.biomes[key]
   })
-  Object.assign(worldOptions.biome, fresh.biome)
+  Object.assign(worldOptions.biomes, fresh.biomes)
 
   return worldOptions
 }

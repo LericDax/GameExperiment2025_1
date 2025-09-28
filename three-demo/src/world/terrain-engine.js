@@ -15,7 +15,11 @@ export function createTerrainEngine({ THREE, seed = 1337, worldConfig = {} } = {
   const detailNoise = new ValueNoise2D(seed * 1.59 + 139);
   const ridgeNoise = new ValueNoise2D(seed * 2.03 + 211);
 
-  const biomeEngine = createBiomeEngine({ THREE, seed: seed * 1.37 + 19 });
+  const biomeEngine = createBiomeEngine({
+    THREE,
+    seed: seed * 1.37 + 19,
+    biomeOptions: worldConfig.biomes,
+  });
 
   function computeElevation(x, z) {
     const n1 = elevationNoise.noise(x * 0.06, z * 0.06);

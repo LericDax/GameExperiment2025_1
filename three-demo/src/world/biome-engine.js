@@ -1,4 +1,5 @@
 import { ValueNoise2D } from './noise.js';
+import { defaultWorldOptions, biomeOptionMetadata } from './world-settings.js';
 
 import temperate from './biomes/temperate.json' with { type: 'json' };
 import desert from './biomes/desert.json' with { type: 'json' };
@@ -51,6 +52,22 @@ function normalizeMultiplier(value, fallback = 1) {
   return Math.max(0, value);
 }
 
+function resolveBiomeOption(option, value) {
+  const defaults = defaultWorldOptions.biomes;
+  const fallback = defaults[option];
+  const metadata = biomeOptionMetadata[option] ?? {};
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+  const min = Number.isFinite(metadata.min) ? metadata.min : Number.NEGATIVE_INFINITY;
+  const max = Number.isFinite(metadata.max) ? metadata.max : Number.POSITIVE_INFINITY;
+  const clamped = Math.min(Math.max(value, min), max);
+  if (option === 'scale' && clamped === 0) {
+    return fallback;
+  }
+  return clamped;
+}
+
 function normalizeCategoryMultipliers(definition) {
   if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
     return {};
@@ -62,7 +79,7 @@ function normalizeCategoryMultipliers(definition) {
   );
 }
 
-export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
+export function createBiomeEngine({ THREE, seed = 1337, biomeOptions = null } = {}) {
   if (!THREE) {
     throw new Error('createBiomeEngine requires a THREE instance');
   }
@@ -73,9 +90,26 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
   const moistureDetailNoise = new ValueNoise2D(seed * 2.03 + 311);
   const varianceNoise = new ValueNoise2D(seed * 1.73 + 443);
 
-  const climateScale = 0.003;
-  const detailScale = climateScale * 2.15;
-  const varianceScale = climateScale * 0.45;
+  const climateScale = resolveBiomeOption('scale', biomeOptions?.scale);
+  const detailMultiplier = resolveBiomeOption(
+    'detailMultiplier',
+    biomeOptions?.detailMultiplier,
+  );
+  const moistureDetailMultiplier = resolveBiomeOption(
+    'moistureDetailMultiplier',
+    biomeOptions?.moistureDetailMultiplier,
+  );
+  const varianceMultiplier = resolveBiomeOption(
+    'varianceMultiplier',
+    biomeOptions?.varianceMultiplier,
+  );
+  const variationStrength = resolveBiomeOption(
+    'variationStrength',
+    biomeOptions?.variationStrength,
+  );
+
+  const detailScale = climateScale * detailMultiplier;
+  const varianceScale = climateScale * varianceMultiplier;
 
   const defaultColor = new THREE.Color(0xffffff);
   const basePaletteColors = Object.fromEntries(
@@ -176,7 +210,7 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
       x,
       z,
       climateScale,
-      detailScale * 1.18,
+      detailScale * moistureDetailMultiplier,
     );
 
     return { temperature, moisture };
@@ -194,7 +228,7 @@ export function createBiomeEngine({ THREE, seed = 1337 } = {}) {
         x * varianceScale + index * 17.13,
         z * varianceScale + index * 31.17,
       );
-      const adjustedDistance = distance - (variation - 0.5) * 0.18;
+      const adjustedDistance = distance - (variation - 0.5) * variationStrength;
       if (adjustedDistance < bestScore) {
         bestScore = adjustedDistance;
         selected = biome;
