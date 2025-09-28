@@ -16,6 +16,7 @@ import {
   initializeFluidRegistry,
   updateFluids,
 } from './world/fluids/fluid-registry.js'
+import { createParticleSystem } from './rendering/particle-system.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -150,6 +151,7 @@ function updateHud(state) {
 
 let blockMaterials
 let chunkManager
+let particleSystem
 let playerControls
 let initializationError = null
 
@@ -163,6 +165,8 @@ try {
     retainDistance: 3,
     maxPreloadPerUpdate: 3,
   })
+
+  particleSystem = createParticleSystem({ THREE, scene })
 
   playerControls = createPlayerControls({
     THREE,
@@ -291,6 +295,7 @@ if (!initializationError) {
     chunkManager.update(playerControls.getPosition(), { camera })
     playerControls.update(delta)
     updateFluids(delta)
+    particleSystem?.update(delta)
 
     if (diagnosticOverlayCallbacks.size > 0) {
       const callbacks = Array.from(diagnosticOverlayCallbacks)
@@ -318,5 +323,6 @@ if (!initializationError) {
     playerControls.dispose()
     chunkManager.dispose()
     musicSystem?.dispose()
+    particleSystem?.dispose()
   })
 }
