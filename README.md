@@ -62,7 +62,7 @@ The sandbox ships with an in-game console so you can script quick diagnostics wi
 
 Commands are grouped by the kind of developer workflow they support:
 
-- **Navigation & positioning** – `/whereami` prints your coordinates and biome, `/goto <x> <y> <z>` teleports to a specific block, `/look <yaw> <pitch>` snaps the camera orientation (degrees by default), and `/unstuck` nudges you toward the nearest safe tile if you clip into geometry. 【F:three-demo/src/player/dev-commands.js†L675-L901】
+- **Navigation & positioning** – `/whereami` prints your coordinates and biome, `/goto <x> <y> <z>` teleports to a specific block, `/goto biome <biome id|label>` warps you to the nearest matching biome (omit the name to list valid identifiers), `/look <yaw> <pitch>` snaps the camera orientation (degrees by default), and `/unstuck` nudges you toward the nearest safe tile if you clip into geometry. 【F:three-demo/src/player/dev-commands.js†L675-L901】
 - **Player state & HUD** – `/godmode` and `/fly` toggle invulnerability and free-flight, `/heal [amount]` and `/oxygen [amount]` set vital stats directly, and `/status [message]` updates or clears the HUD status banner. 【F:three-demo/src/player/dev-commands.js†L826-L917】
 - **Diagnostics** – `/scan` casts a ray to inspect the block you are looking at, `/scan column <x> <z>` audits a whole column, and `/scan watch …` keeps logging visibility as the scene evolves. 【F:three-demo/src/player/dev-commands.js†L717-L777】
 - **ASCII tooling** – `/asciimap` renders a top-down ASCII slice, `/asciioptions` saves default radii/offsets/watch cadence, and `/asciiwatch` keeps the map refreshing on demand. 【F:three-demo/src/player/dev-commands.js†L919-L1039】

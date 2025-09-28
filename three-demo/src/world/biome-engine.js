@@ -14,6 +14,7 @@ import auroral from './biomes/auroral_glass_reef.json' with { type: 'json' };
 import noctilucent from './biomes/noctilucent_fungus_glade.json' with {
   type: 'json',
 };
+import iceSpireTundra from './biomes/ice_spire_tundra.json' with { type: 'json' };
 
 
 const rawBiomeDefinitions = [
@@ -24,6 +25,7 @@ const rawBiomeDefinitions = [
   vaporwave,
   auroral,
   noctilucent,
+  iceSpireTundra,
 ];
 
 const NEUTRAL_BASE_PALETTE = {

@@ -1,0 +1,93 @@
+{
+  "id": "cryospire_cluster",
+  "label": "Cryospire Cluster",
+  "category": "structures",
+  "author": "system",
+  "description": "Conjoined cryoshard spires crusted with frostbloom moss.",
+  "collision": "solid",
+  "voxelScale": 0.42,
+  "attachment": {
+    "groundOffset": 0.18
+  },
+  "placement": {
+    "biomes": ["ice_spire_tundra"],
+    "weight": 1.6,
+    "maxSlope": 0.65,
+    "minHeight": 6,
+    "maxHeight": 52,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.55
+  },
+  "voxels": [
+    {
+      "type": "frostbloom_moss",
+      "position": [0, -0.2, 0],
+      "size": [2.4, 0.5, 2.0],
+      "tint": "#9fe9df",
+      "isSolid": false
+    },
+    {
+      "type": "cryoshard_glass",
+      "position": [0, 0, 0],
+      "size": [0.9, 3.6, 0.9],
+      "tint": "#c9f5ff",
+      "metadata": {
+        "visual": {
+          "nanovoxels": {
+            "id": "frost_spicule",
+            "count": 7,
+            "radius": 0.34,
+            "arcTurns": 0.75,
+            "offset": [0, 1.2, 0],
+            "scale": [0.72, 1.08, 0.72],
+            "jitter": 0.06,
+            "accentTint": "#f4ffff",
+            "inheritTintStrength": 0.55
+          }
+        }
+      }
+    },
+    {
+      "type": "cryoshard_glass",
+      "position": [-0.9, 0.2, 0.6],
+      "size": [0.7, 2.8, 0.7],
+      "tint": "#bdefff",
+      "metadata": {
+        "visual": {
+          "nanovoxels": {
+            "id": "frost_spicule",
+            "count": 5,
+            "radius": 0.28,
+            "arcTurns": 0.6,
+            "offset": [0, 0.9, 0],
+            "scale": [0.64, 0.95, 0.64],
+            "jitter": 0.05,
+            "accentTint": "#e6fbff",
+            "inheritTintStrength": 0.5
+          }
+        }
+      }
+    },
+    {
+      "type": "cryoshard_glass",
+      "position": [0.8, -0.1, -0.8],
+      "size": [0.8, 2.3, 0.8],
+      "tint": "#b7ebff",
+      "metadata": {
+        "visual": {
+          "nanovoxels": {
+            "id": "frost_spicule",
+            "count": 4,
+            "radius": 0.26,
+            "arcTurns": 0.5,
+            "offset": [0, 0.7, 0],
+            "scale": [0.62, 0.88, 0.62],
+            "jitter": 0.05,
+            "accentTint": "#e2f6ff",
+            "inheritTintStrength": 0.48
+          }
+        }
+      }
+    }
+  ]
+}

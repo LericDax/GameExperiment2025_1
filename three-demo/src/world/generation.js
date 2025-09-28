@@ -97,6 +97,19 @@ export function sampleBiomeAt(x, z) {
   return engine.getBiomeAt(x, z);
 }
 
+export function getRegisteredBiomes() {
+  const engine = ensureTerrainEngine();
+  const biomeEngine = engine.biomeEngine;
+  if (!biomeEngine || !Array.isArray(biomeEngine.biomes)) {
+    return [];
+  }
+  return biomeEngine.biomes.map((biome) => ({
+    id: biome.id,
+    label: biome.label,
+    tags: Array.isArray(biome.tags) ? [...biome.tags] : [],
+  }));
+}
+
 function hashCoordinate(x, z, offset = 0, seed = worldSeedHash) {
   const seedLow = seed & 0xffff;
   const seedHigh = (seed >>> 16) & 0xffff;
@@ -1020,6 +1033,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
             z: nz,
             sampleColumnHeight: getColumnHeight,
             worldConfig: worldOptions,
+            sampleBiomeAt: sampleColumnCached,
           });
           neighborInfo = {
             hasFluid: Boolean(presence?.hasFluid),
