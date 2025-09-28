@@ -297,7 +297,7 @@ const biomesGroup = Object.freeze({
       min: 0.0005,
       max: 0.02,
       step: 0.0001,
-      default: 0.003,
+      default: 0.012,
       path: Object.freeze(['biomes', 'scale']),
     }),
     Object.freeze({
