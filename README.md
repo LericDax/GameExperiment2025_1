@@ -12,6 +12,20 @@ This project hosts a browser-based sandbox inspired by classic block-building ga
 - Enhanced lighting pass with ACES filmic tone mapping, soft shadows, and a fill light for richer visuals.
 - Responsive HUD overlay that surfaces health, oxygen, and contextual status messaging.
 
+## Audio
+The sandbox ships with a lightweight background music pipeline so developers can quickly audition new tracks:
+
+- Drop `.mp3` or `.wav` files into `three-demo/src/sounds/music/tracks/`. The build will automatically bundle every file in that directory and expose it to the in-game playlist.
+- Track titles are generated from the filenames (underscores and hyphens are converted to spaces and casing is normalized), so name the assets the way you want them to appear in the UI.
+
+When at least one track is present, the HUD adds a volume widget that surfaces:
+
+- A play/pause toggle that controls the currently selected song.
+- A volume slider with immediate feedback for balancing music against other sound effects.
+- A "next track" button that cycles through the available playlist in order.
+
+On first load, the widget shows a hint explaining that music will autoplay once tracks are detected in the directory. The hint disappears after interaction so you can rely on it only during initial setup.
+
 ## Development Workflow
 The Vite demo is the recommended way to iterate on the experience:
 
