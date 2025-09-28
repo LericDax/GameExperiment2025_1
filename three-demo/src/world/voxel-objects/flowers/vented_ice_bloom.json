@@ -1,0 +1,75 @@
+{
+  "id": "vented_ice_bloom",
+  "label": "Vented Ice Bloom",
+  "category": "flowers",
+  "author": "system",
+  "description": "Frostbloom rosette with cryoshard vents that whistle in polar gusts.",
+  "collision": "soft",
+  "voxelScale": 0.26,
+  "attachment": {
+    "groundOffset": 0.12
+  },
+  "placement": {
+    "biomes": ["ice_spire_tundra"],
+    "weight": 1.9,
+    "maxSlope": 0.58,
+    "minSlope": 0.02,
+    "minHeight": 5,
+    "maxHeight": 50,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.8,
+    "maxInstancesPerColumn": 3
+  },
+  "voxels": [
+    {
+      "type": "frostbloom_moss",
+      "position": [0, -0.1, 0],
+      "size": [1.8, 0.3, 1.8],
+      "tint": "#9be6da",
+      "isSolid": false
+    },
+    {
+      "type": "frostbloom_moss",
+      "position": [0, 0.2, 0],
+      "size": [1.2, 0.4, 1.2],
+      "tint": "#aef3e8",
+      "isSolid": false,
+      "metadata": {
+        "visual": {
+          "nanovoxels": {
+            "id": "frost_spicule",
+            "count": 8,
+            "radius": 0.42,
+            "arcTurns": 1.05,
+            "offset": [0, 0.2, 0],
+            "scale": [0.85, 0.5, 0.85],
+            "jitter": 0.06,
+            "accentTint": "#f3ffff",
+            "inheritTintStrength": 0.48
+          }
+        }
+      }
+    },
+    {
+      "type": "cryoshard_glass",
+      "position": [0, 0.5, 0],
+      "size": [0.5, 1.1, 0.5],
+      "tint": "#c3f4ff",
+      "metadata": {
+        "visual": {
+          "nanovoxels": {
+            "id": "frost_spicule",
+            "count": 5,
+            "radius": 0.24,
+            "arcTurns": 0.7,
+            "offset": [0, 0.5, 0],
+            "scale": [0.55, 0.9, 0.55],
+            "jitter": 0.04,
+            "accentTint": "#ecfdff",
+            "inheritTintStrength": 0.56
+          }
+        }
+      }
+    }
+  ]
+}
