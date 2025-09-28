@@ -44,11 +44,15 @@ This reference aggregates every tunable world-generation option exposed by the v
 ### Biomes
 | Path | Label | Description | Type | Default | Range | Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| `biomes.scale` | Biome Scale | Base frequency for the temperature/moisture noise fields. Lower values produce larger biome continents. | `number` | `0.003` | `0.0005` – `0.02` | `0.0001` |
+| `biomes.scale` | Biome Scale | Base frequency for the temperature/moisture noise fields. Lower values produce larger biome continents. | `number` | `0.012` | `0.0005` – `0.02` | `0.0001` |
 | `biomes.detailMultiplier` | Detail Multiplier | Multiplier applied to the base scale for secondary climate detail noise. | `number` | `2.15` | `0.1` – `10` | `0.01` |
 | `biomes.moistureDetailMultiplier` | Moisture Detail Multiplier | Multiplier that adjusts the moisture detail scale relative to the temperature field. | `number` | `1.18` | `0.1` – `4` | `0.01` |
 | `biomes.varianceMultiplier` | Variance Multiplier | Controls how strongly biome variance noise distorts the climate map. | `number` | `0.45` | `0` – `2` | `0.01` |
 | `biomes.variationStrength` | Variation Strength | Strength of the random jitter applied when selecting the closest biome. | `number` | `0.18` | `0` – `1` | `0.01` |
+| `biomes.uniformity` | Uniformity | Blend factor between climate-driven selection (0) and a perfectly uniform distribution across all registered biomes (1). | `number` | `1` | `0` – `1` | `0.01` |
+| `biomes.weightExponent` | Weight Exponent | Exponent applied to per-biome climate weights before distance comparison. Lower values soften weight effects globally. | `number` | `1` | `0` – `4` | `0.01` |
+
+With `biomes.uniformity` set to `1`, the default world boots into a maximally generalized test configuration where every registered biome is equally likely to spawn. Lowering the value gradually reintroduces climate-driven Voronoi weighting while keeping the same API levers for tuning variance and weight response.
 
 ## Applying Overrides
 

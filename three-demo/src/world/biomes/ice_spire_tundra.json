@@ -3,9 +3,9 @@
   "label": "Ice Spire Tundra",
   "tags": ["frozen", "hazard_frostbite", "windswept"],
   "climate": {
-    "temperature": 0.04,
-    "moisture": 0.18,
-    "weight": 0.9
+    "temperature": 0.06,
+    "moisture": 0.22,
+    "weight": 1.32
   },
   "terrain": {
     "surfaceBlock": "stone",

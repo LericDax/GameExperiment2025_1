@@ -346,6 +346,30 @@ const biomesGroup = Object.freeze({
       default: 0.18,
       path: Object.freeze(['biomes', 'variationStrength']),
     }),
+    Object.freeze({
+      id: 'biomes.uniformity',
+      label: 'Uniformity',
+      description:
+        'Blend factor between climate-driven selection (0) and a uniform distribution across all registered biomes (1).',
+      type: numberType,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 1,
+      path: Object.freeze(['biomes', 'uniformity']),
+    }),
+    Object.freeze({
+      id: 'biomes.weightExponent',
+      label: 'Weight Exponent',
+      description:
+        'Exponent applied to biome climate weights before distance comparison. Lower values soften the influence of per-biome weights.',
+      type: numberType,
+      min: 0,
+      max: 4,
+      step: 0.01,
+      default: 1,
+      path: Object.freeze(['biomes', 'weightExponent']),
+    }),
   ]),
 })
 

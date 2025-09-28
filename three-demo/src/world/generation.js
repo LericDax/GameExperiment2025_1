@@ -134,6 +134,68 @@ export function randomAt(x, z, offset = 0) {
   return hashed / 4294967296;
 }
 
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+export function sampleBiomeCoverage({
+  biomeId,
+  sampleCount = 4096,
+  radius = 2048,
+  centerX = 0,
+  centerZ = 0,
+} = {}) {
+  if (!biomeId) {
+    throw new Error('sampleBiomeCoverage requires a biomeId to evaluate.');
+  }
+
+  const engine = ensureTerrainEngine();
+  const targetId = String(biomeId);
+  const requestedSamples = Math.max(1, Math.floor(sampleCount));
+  const effectiveRadius = Number.isFinite(radius) && radius > 0 ? radius : 1;
+  const originX = Number.isFinite(centerX) ? centerX : 0;
+  const originZ = Number.isFinite(centerZ) ? centerZ : 0;
+
+  let matches = 0;
+  let validSamples = 0;
+  const counts = new Map();
+
+  for (let index = 0; index < requestedSamples; index += 1) {
+    const progress = (index + 0.5) / requestedSamples;
+    const distance = Math.sqrt(progress) * effectiveRadius;
+    const angle = index * GOLDEN_ANGLE;
+    const sampleX = Math.round(originX + Math.cos(angle) * distance);
+    const sampleZ = Math.round(originZ + Math.sin(angle) * distance);
+    const sample = engine.getBiomeAt(sampleX, sampleZ);
+    const biome = sample?.biome ?? null;
+    if (!biome?.id) {
+      continue;
+    }
+    validSamples += 1;
+    const id = String(biome.id);
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+    if (id === targetId) {
+      matches += 1;
+    }
+  }
+
+  const sortedCounts = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  const coverage = validSamples > 0 ? matches / validSamples : 0;
+
+  return {
+    biomeId: targetId,
+    matches,
+    samples: validSamples,
+    requestedSamples,
+    coverage,
+    radius: effectiveRadius,
+    center: { x: originX, z: originZ },
+    counts: sortedCounts.map(([id, count]) => ({
+      id,
+      count,
+      share: validSamples > 0 ? count / validSamples : 0,
+    })),
+  };
+}
+
 const solidTypes = new Set(['grass', 'dirt', 'stone', 'sand', 'leaf', 'log']);
 
 function blockKey(x, y, z) {

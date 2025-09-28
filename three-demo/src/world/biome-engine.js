@@ -1,32 +1,28 @@
 import { ValueNoise2D } from './noise.js';
 import { defaultWorldOptions, biomeOptionMetadata } from './world-settings.js';
 
-import temperate from './biomes/temperate.json' with { type: 'json' };
-import desert from './biomes/desert.json' with { type: 'json' };
-import tundra from './biomes/tundra.json' with { type: 'json' };
-import librarium from './biomes/pseudo_borgesian_librarium.json' with {
-  type: 'json',
-};
-import vaporwave from './biomes/fading_vaporwave_dimension.json' with {
-  type: 'json',
-};
-import auroral from './biomes/auroral_glass_reef.json' with { type: 'json' };
-import noctilucent from './biomes/noctilucent_fungus_glade.json' with {
-  type: 'json',
-};
-import iceSpireTundra from './biomes/ice_spire_tundra.json' with { type: 'json' };
+const biomeModuleMap = import.meta.glob('./biomes/*.json', {
+  import: 'default',
+  eager: true,
+});
 
-
-const rawBiomeDefinitions = [
-  temperate,
-  desert,
-  tundra,
-  librarium,
-  vaporwave,
-  auroral,
-  noctilucent,
-  iceSpireTundra,
-];
+const rawBiomeDefinitions = Object.values(biomeModuleMap)
+  .filter((definition) => definition && typeof definition === 'object')
+  .map((definition) => ({ ...definition }))
+  .sort((a, b) => {
+    const idA = String(a?.id ?? '').toLowerCase();
+    const idB = String(b?.id ?? '').toLowerCase();
+    if (idA && idB) {
+      return idA.localeCompare(idB);
+    }
+    if (idA) {
+      return -1;
+    }
+    if (idB) {
+      return 1;
+    }
+    return 0;
+  });
 
 const NEUTRAL_BASE_PALETTE = {
   grass: '#4a9c47',
@@ -113,9 +109,18 @@ export function createBiomeEngine({
     'variationStrength',
     biomeOptions?.variationStrength,
   );
+  const uniformity = clamp01(
+    resolveBiomeOption('uniformity', biomeOptions?.uniformity),
+  );
+  const weightExponent = Math.max(
+    0,
+    resolveBiomeOption('weightExponent', biomeOptions?.weightExponent),
+  );
 
   const detailScale = climateScale * detailMultiplier;
   const varianceScale = climateScale * varianceMultiplier;
+  const climateInfluence = 1 - uniformity;
+  const uniformityInfluence = uniformity;
 
   const defaultColor = new THREE.Color(0xffffff);
   const basePaletteColors = Object.fromEntries(
@@ -124,6 +129,10 @@ export function createBiomeEngine({
       new THREE.Color(hex),
     ]),
   );
+
+  if (rawBiomeDefinitions.length === 0) {
+    throw new Error('No biome JSON definitions were discovered.');
+  }
 
   const biomes = rawBiomeDefinitions.map((definition, index) => {
     const palette = { ...NEUTRAL_BASE_PALETTE, ...(definition.palette ?? {}) };
@@ -229,12 +238,19 @@ export function createBiomeEngine({
     biomes.forEach((biome, index) => {
       const dx = climate.temperature - biome.climate.temperature;
       const dy = climate.moisture - biome.climate.moisture;
-      const distance = Math.sqrt(dx * dx + dy * dy) / biome.climate.weight;
-      const variation = varianceNoise.noise(
+      const weightScale = Math.max(
+        0.001,
+        Math.pow(biome.climate.weight, weightExponent),
+      );
+      const baseDistance = Math.sqrt(dx * dx + dy * dy) / weightScale;
+      const variationNoiseSample = varianceNoise.noise(
         x * varianceScale + index * 17.13,
         z * varianceScale + index * 31.17,
       );
-      const adjustedDistance = distance - (variation - 0.5) * variationStrength;
+      const climateScore = baseDistance * climateInfluence;
+      const uniformScore = -variationNoiseSample * uniformityInfluence;
+      const variationScore = -(variationNoiseSample - 0.5) * variationStrength;
+      const adjustedDistance = climateScore + uniformScore + variationScore;
       if (adjustedDistance < bestScore) {
         bestScore = adjustedDistance;
         selected = biome;
