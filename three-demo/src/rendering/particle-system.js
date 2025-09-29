@@ -13,6 +13,10 @@
  * - `update(context)` — invoked once per frame while the emitter is alive.
  *   Return `false` to signal that the emitter should be removed once all of its
  *   particles have expired.
+ * - `stop(context)` — invoked exactly once when the emitter is requested to
+ *   stop spawning new particles (for example when the handle's `stop()` method
+ *   is called or the emitter's `update()` hook returns `false`). Emitters can
+ *   use this hook to flush any internal spawn state.
  * - `dispose()` — called once when the emitter is removed from the system.
  */
 
@@ -361,6 +365,24 @@ export function createParticleSystem({ THREE, scene }) {
     }
   }
 
+  function requestEmitterStop(state) {
+    state.shouldRemove = true;
+    if (state.stopNotified) {
+      return;
+    }
+    state.stopNotified = true;
+    try {
+      state.emitter.stop?.({
+        THREE,
+        getElapsedTime: () => elapsedTime,
+        createInstancedPool: state.createInstancedPool,
+        root,
+      });
+    } catch (error) {
+      console.error('Particle emitter stop failed:', error);
+    }
+  }
+
   /**
    * Registers a particle emitter with the system.
    *
@@ -387,6 +409,7 @@ export function createParticleSystem({ THREE, scene }) {
       instancedPools: new Set(),
       debugLabel: null,
       debugId: (emitterIdCounter += 1),
+      stopNotified: false,
     };
 
     function createPool(options) {
@@ -444,7 +467,7 @@ export function createParticleSystem({ THREE, scene }) {
 
     return {
       stop: () => {
-        state.shouldRemove = true;
+        requestEmitterStop(state);
       },
       getActiveParticleCount: () => {
         let count = 0;
@@ -626,8 +649,9 @@ export function createParticleSystem({ THREE, scene }) {
       if (typeof state.emitter.update === 'function') {
         let keepAlive = true;
         try {
+          const deltaForEmitter = state.shouldRemove ? 0 : deltaSeconds;
           const result = state.emitter.update({
-            delta: deltaSeconds,
+            delta: deltaForEmitter,
             THREE,
             getElapsedTime: () => elapsedTime,
             createInstancedPool: state.createInstancedPool,
@@ -641,7 +665,7 @@ export function createParticleSystem({ THREE, scene }) {
           keepAlive = false;
         }
         if (!keepAlive) {
-          state.shouldRemove = true;
+          requestEmitterStop(state);
         }
       }
     }
@@ -708,3 +732,4 @@ export function createParticleSystem({ THREE, scene }) {
  * {@link createGpuBillboardEmitter} from `./particles/gpu-billboard-emitter.js`.
  */
 export { createGpuBillboardEmitter as createBillboardEmitter } from './particles/gpu-billboard-emitter.js';
+
