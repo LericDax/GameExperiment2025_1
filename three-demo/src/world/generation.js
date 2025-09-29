@@ -9,6 +9,7 @@ import {
   resolveFluidPresence,
 } from './fluids/fluid-registry.js';
 import { buildFluidGeometry } from './fluids/fluid-geometry.js';
+import { buildLumenRibbonGeometry } from './fluids/lumen-ribbon-geometry.js';
 import {
   initializeFluidDebug,
   logFluidDebug,
@@ -1412,10 +1413,16 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       return;
     }
 
-    const geometry = buildFluidGeometry({
-      THREE,
-      columns: columnValues,
-    });
+    const geometry =
+      type === 'lumen_bloom'
+        ? buildLumenRibbonGeometry({
+            THREE,
+            columns: columnValues,
+          })
+        : buildFluidGeometry({
+            THREE,
+            columns: columnValues,
+          });
     geometry.userData = geometry.userData || {};
     if (aggregatedCues.size > 0) {
       geometry.userData.lifecycleCues = Array.from(aggregatedCues);
