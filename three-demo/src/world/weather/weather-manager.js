@@ -2,6 +2,7 @@ import { createAuroraRibbonEmitter } from '../../rendering/particles/aurora-effe
 import { createWeatherRainEmitter } from '../../rendering/particles/weather-rain.js';
 import { createWeatherSnowEmitter } from '../../rendering/particles/weather-snow.js';
 import { createWeatherAudioController } from '../../audio/weather-audio.js';
+import { createWeatherDebugOverlay } from '../../ui/weather-debug-overlay.js';
 
 const DEFAULT_WEATHER_PRESETS = {
   clear_skies: {
@@ -233,24 +234,95 @@ export function createWeatherManager({
   const activeParticleEffects = [];
   let needsEffectRefresh = true;
 
+  let overlayUi = null;
+
+  const ensureWeatherState = () => {
+    if (!scene) {
+      return null;
+    }
+    scene.userData = scene.userData || {};
+    if (!scene.userData.weather) {
+      scene.userData.weather = {};
+    }
+    const state = scene.userData.weather;
+    if (!Number.isFinite(state.failedPrecipitationSpawns)) {
+      state.failedPrecipitationSpawns = 0;
+    }
+    if (state.lastPrecipitationFailure === undefined) {
+      state.lastPrecipitationFailure = null;
+    }
+    if (state.lastOverlayUpdate === undefined) {
+      state.lastOverlayUpdate = null;
+    }
+    if (state.lastDebugSample === undefined) {
+      state.lastDebugSample = null;
+    }
+    if (state.overridesSuppressed === undefined) {
+      state.overridesSuppressed = false;
+    }
+    if (state.activeEmitterCount === undefined) {
+      state.activeEmitterCount = 0;
+    }
+    if (state.totalActiveParticles === undefined) {
+      state.totalActiveParticles = null;
+    }
+    if (state.lastAnchorUpdate === undefined) {
+      state.lastAnchorUpdate = null;
+    }
+    if (state.lastPrecipitationSpawn === undefined) {
+      state.lastPrecipitationSpawn = null;
+    }
+    return state;
+  };
+
+  const syncEmitterState = () => {
+    const state = ensureWeatherState();
+    if (!state) {
+      return;
+    }
+    state.activeEmitterCount = activeParticleEffects.length;
+    if (state.activeEmitterCount === 0) {
+      state.totalActiveParticles = 0;
+    }
+  };
+
+  const recordAnchorUpdate = (elapsedTime) => {
+    const state = ensureWeatherState();
+    if (!state) {
+      return;
+    }
+    if (Number.isFinite(elapsedTime)) {
+      state.lastAnchorUpdate = elapsedTime;
+    }
+  };
+
+  const recordPrecipitationSpawn = ({ type, elapsedTime }) => {
+    const state = ensureWeatherState();
+    if (!state) {
+      return;
+    }
+    state.lastPrecipitationSpawn = {
+      type,
+      elapsedTime: Number.isFinite(elapsedTime) ? elapsedTime : null,
+    };
+  };
+
   const applyWeatherEffects = (weather) => {
     if (!weather || !scene) {
       return;
     }
-    scene.userData = scene.userData || {};
-    const previousOverlayUpdate = scene.userData.weather?.lastOverlayUpdate ?? null;
+
+    const weatherState = ensureWeatherState();
     const resolvedEffects = resolveWeatherEffects(weather);
-    scene.userData.weather = {
-      id: weather.id,
-      label: weather.label,
-      intensity: weather.intensity,
-      category: weather.category,
-      precipitation: resolvedEffects.precipitation?.type ?? null,
-      aurora: Boolean(resolvedEffects.aurora && Object.keys(resolvedEffects.aurora).length > 0),
-      failedPrecipitationSpawns: 0,
-      lastPrecipitationFailure: null,
-      lastOverlayUpdate: previousOverlayUpdate,
-    };
+    weatherState.id = weather.id;
+    weatherState.label = weather.label;
+    weatherState.intensity = weather.intensity;
+    weatherState.category = weather.category;
+    weatherState.precipitation = resolvedEffects.precipitation?.type ?? null;
+    weatherState.aurora = Boolean(
+      resolvedEffects.aurora && Object.keys(resolvedEffects.aurora).length > 0,
+    );
+
   };
 
   const disposeWeatherEffects = () => {
@@ -262,6 +334,7 @@ export function createWeatherManager({
       }
     }
     activeParticleEffects.length = 0;
+    syncEmitterState();
   };
 
   const spawnPrecipitationEffect = (config, context) => {
@@ -282,7 +355,9 @@ export function createWeatherManager({
           });
     const handle = particleSystem.emit(emitter);
     if (!handle) {
-      const weatherState = scene?.userData?.weather;
+
+      const weatherState = ensureWeatherState();
+
       if (weatherState) {
         const previousFailures = Number.isFinite(weatherState.failedPrecipitationSpawns)
           ? weatherState.failedPrecipitationSpawns
@@ -341,8 +416,11 @@ export function createWeatherManager({
         z: playerPosition.z,
       };
       attachment.lastUpdateTime = elapsedTime;
+      recordAnchorUpdate(elapsedTime);
     }
     activeParticleEffects.push(attachment);
+    recordPrecipitationSpawn({ type: config.type, elapsedTime });
+    syncEmitterState();
   };
 
   const spawnAuroraEffects = (config, context) => {
@@ -388,6 +466,9 @@ export function createWeatherManager({
         lastUpdateTime: -Infinity,
       };
       activeParticleEffects.push(attachment);
+    }
+    if (count > 0) {
+      syncEmitterState();
     }
   };
 
@@ -447,6 +528,7 @@ export function createWeatherManager({
           z: playerPosition.z,
         };
         attachment.lastUpdateTime = elapsedTime;
+        recordAnchorUpdate(elapsedTime);
       } else if (attachment.type === 'aurora') {
         let heading = attachment.staticOrientation ?? 0;
         if (attachment.alignWithHeading) {
@@ -469,6 +551,7 @@ export function createWeatherManager({
           z: anchorZ,
         });
         attachment.lastUpdateTime = elapsedTime;
+        recordAnchorUpdate(elapsedTime);
       }
     }
   };
@@ -513,11 +596,63 @@ export function createWeatherManager({
     if (typeof registerDiagnosticOverlay !== 'function' || diagnosticOverlayDisposer) {
       return;
     }
+    if (!overlayUi) {
+      overlayUi = createWeatherDebugOverlay();
+    }
     diagnosticOverlayDisposer = registerDiagnosticOverlay(({ elapsedTime }) => {
-      if (!scene?.userData?.weather) {
+      const weatherState = ensureWeatherState();
+      if (!weatherState) {
         return;
       }
-      scene.userData.weather.lastOverlayUpdate = elapsedTime;
+      weatherState.lastOverlayUpdate = Number.isFinite(elapsedTime)
+        ? elapsedTime
+        : weatherState.lastOverlayUpdate;
+      weatherState.activeEmitterCount = activeParticleEffects.length;
+
+      let stats = null;
+      if (particleSystem && typeof particleSystem.getDebugInfo === 'function') {
+        const debugInfo = particleSystem.getDebugInfo();
+        if (debugInfo) {
+          const emitters = Array.isArray(debugInfo.emitters) ? debugInfo.emitters : [];
+          const weatherEmitters = emitters.filter((emitter) => {
+            if (!emitter || typeof emitter.label !== 'string') {
+              return false;
+            }
+            return emitter.label.toLowerCase().includes('weather');
+          });
+          const summaries = weatherEmitters.slice(0, 4).map((emitter) => ({
+            label: emitter.label ?? 'WeatherEmitter',
+            particles: Number.isFinite(emitter.activeParticles)
+              ? emitter.activeParticles
+              : 0,
+            status: emitter.pendingRemoval ? ' (pending removal)' : '',
+          }));
+          const weatherParticles = weatherEmitters.reduce((sum, emitter) => {
+            const value = Number.isFinite(emitter?.activeParticles)
+              ? emitter.activeParticles
+              : 0;
+            return sum + value;
+          }, 0);
+          const totalEmitters = Number.isFinite(debugInfo.emitterCount)
+            ? debugInfo.emitterCount
+            : emitters.length;
+          stats = {
+            totalEmitters,
+            weatherCount: weatherEmitters.length,
+            weatherParticles,
+            emitters: summaries,
+            extraCount: Math.max(0, weatherEmitters.length - summaries.length),
+          };
+          weatherState.lastDebugSample = Number.isFinite(elapsedTime)
+            ? elapsedTime
+            : weatherState.lastDebugSample;
+          weatherState.totalActiveParticles = Number.isFinite(weatherParticles)
+            ? weatherParticles
+            : weatherState.totalActiveParticles;
+        }
+      }
+
+      overlayUi?.update({ weatherState, stats });
     });
   };
 
@@ -615,6 +750,14 @@ export function createWeatherManager({
         console.error('Failed to dispose weather diagnostic overlay:', error);
       }
       diagnosticOverlayDisposer = null;
+    }
+    if (overlayUi) {
+      try {
+        overlayUi.dispose();
+      } catch (error) {
+        console.error('Failed to dispose weather overlay UI:', error);
+      }
+      overlayUi = null;
     }
   };
 

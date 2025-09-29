@@ -79,6 +79,15 @@ export function registerDeveloperCommands({
     lastSuppressedWeatherId: null,
   };
 
+  const setWeatherSuppressionState = (isSuppressed) => {
+    if (!scene) {
+      return;
+    }
+    scene.userData = scene.userData || {};
+    scene.userData.weather = scene.userData.weather || {};
+    scene.userData.weather.overridesSuppressed = Boolean(isSuppressed);
+  };
+
   const biomeTeleportOffsets = [
     { dx: 0, dz: 0 },
     { dx: 1, dz: 0 },
@@ -1655,6 +1664,7 @@ export function registerDeveloperCommands({
           throw new Error('Failed to disable weather overrides.');
         }
         weatherControlState.suppressed = true;
+        setWeatherSuppressionState(true);
         success('[weather] Weather overrides disabled — clear skies enforced.');
         logWeatherPresetSummary();
         return;
@@ -1679,6 +1689,7 @@ export function registerDeveloperCommands({
           }
         }
         weatherControlState.suppressed = false;
+        setWeatherSuppressionState(false);
         if (!restored) {
           warn('No valid weather preset could be restored.');
           throw new Error('Failed to enable weather overrides.');
@@ -1699,6 +1710,7 @@ export function registerDeveloperCommands({
       }
       weatherControlState.lastManualWeatherId = applied.id;
       weatherControlState.suppressed = false;
+      setWeatherSuppressionState(false);
       success(`[weather] Weather set to ${describeWeather(applied)}.`);
       logWeatherPresetSummary();
     },
