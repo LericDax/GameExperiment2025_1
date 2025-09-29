@@ -1,5 +1,6 @@
 import { TextureEngine } from './texture-engine.js';
 import { createBiomeTintMaterial } from './biome-tint-material.js';
+import { loadStaticTextureMap } from './static-texture-loader.js';
 
 export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
   if (!THREE) {
@@ -800,6 +801,11 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
       },
     }),
   };
+
+  const staticTextures = loadStaticTextureMap({ THREE });
+  for (const [key, texture] of Object.entries(staticTextures)) {
+    textures[key] = texture;
+  }
 
   const damageStageCount = 6;
   const damageTextures = Array.from({ length: damageStageCount }, (_, stage) => {
