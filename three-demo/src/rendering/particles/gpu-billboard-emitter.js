@@ -290,6 +290,7 @@ export function createGpuBillboardEmitter(options = {}) {
   let tempPosition = null
   let tempVelocity = null
   let pendingBasePosition = null
+  let isStopped = false
 
   function ensureTempVectors(THREE) {
     if (!tempPosition) {
@@ -410,6 +411,7 @@ export function createGpuBillboardEmitter(options = {}) {
 
       spawnAccumulator = 0
       liveParticles.length = 0
+      isStopped = false
 
       const now = getElapsedTime?.() ?? 0
       material.uniforms.uTime.value = now
@@ -430,7 +432,8 @@ export function createGpuBillboardEmitter(options = {}) {
 
       recycleExpired(now)
 
-      if (maxParticles <= 0) {
+      const spawningDisabled = isStopped || maxParticles <= 0 || spawnRate <= 0
+      if (spawningDisabled) {
         spawnAccumulator = 0
         return liveParticles.length > 0
       }
@@ -443,7 +446,7 @@ export function createGpuBillboardEmitter(options = {}) {
         toSpawn -= 1
       }
 
-      return liveParticles.length > 0 || spawnRate > 0
+      return liveParticles.length > 0 || (!isStopped && spawnRate > 0)
     },
 
     getActiveParticleCount() {
@@ -463,6 +466,11 @@ export function createGpuBillboardEmitter(options = {}) {
       pendingBasePosition = null
     },
 
+    stop() {
+      isStopped = true
+      spawnAccumulator = 0
+    },
+
     dispose() {
       liveParticles.length = 0
       pool = null
@@ -470,6 +478,7 @@ export function createGpuBillboardEmitter(options = {}) {
       basePosition = undefined
       threeModule = null
       pendingBasePosition = null
+      isStopped = false
     },
   }
 }
