@@ -4,6 +4,11 @@ import * as THREE from 'three';
 
 const { createWeatherManager } = await import('../weather/weather-manager.js');
 const { createParticleSystem } = await import('../../rendering/particle-system.js');
+const {
+  clampRaindropOverlayWindSpeed,
+  clampRaindropOverlayStreakDensity,
+  clampRaindropOverlaySparkleGain,
+} = await import('../../rendering/effects/raindrop-overlay.js');
 
 const RAIN_OVERLAY_TEST_MIN = 0.24;
 const RAIN_OVERLAY_TEST_MAX = 1.35;
@@ -52,6 +57,25 @@ function expectedOverlayIntensity(precipIntensity) {
   return Math.min(raised, RAIN_OVERLAY_TEST_MAX);
 }
 
+function expectedOverlayUniforms(precipIntensity, overrides = {}) {
+  const normalised = Math.min(Math.max(precipIntensity, 0), 2.6) / 2.6;
+  const windBase =
+    overrides.windSpeed !== undefined ? overrides.windSpeed : normalised * 1.8;
+  const streakBase =
+    overrides.streakDensity !== undefined
+      ? overrides.streakDensity
+      : 0.9 + normalised * (2.4 - 0.9);
+  const sparkleBase =
+    overrides.sparkleGain !== undefined
+      ? overrides.sparkleGain
+      : 0.55 + normalised * (1.65 - 0.55);
+  return {
+    windSpeed: clampRaindropOverlayWindSpeed(windBase),
+    streakDensity: clampRaindropOverlayStreakDensity(streakBase),
+    sparkleGain: clampRaindropOverlaySparkleGain(sparkleBase),
+  };
+}
+
 test('setWeather emits precipitation for rainy presets', () => {
   let emitCount = 0;
   const handles = [];
@@ -72,7 +96,7 @@ test('setWeather emits precipitation for rainy presets', () => {
 });
 
 test('raindrop overlay intensity follows precipitation tuning', () => {
-  const { manager } = createManager({
+  const { manager, scene } = createManager({
     emitImplementation: (emitter) => ({
       ...emitter,
       stop() {},
@@ -82,6 +106,49 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
     }),
   });
 
+  const assertOverlaySnapshot = ({
+    overlay,
+    expectedIntensity,
+    expectedUniforms,
+    label,
+  }) => {
+    assert.ok(overlay.enabled, `expected overlay to enable for ${label}`);
+    assert.ok(overlay.visible, `expected overlay mesh to exist for ${label}`);
+    assert.ok(
+      approxEqual(overlay.baseIntensity, expectedIntensity, 1e-4),
+      `expected ${label} overlay intensity (${overlay.baseIntensity}) to match tuning (${expectedIntensity})`,
+    );
+    assert.ok(
+      approxEqual(overlay.baseWindSpeed, expectedUniforms.windSpeed, 1e-4),
+      `expected ${label} overlay wind speed to match derived value`,
+    );
+    assert.ok(
+      approxEqual(overlay.baseStreakDensity, expectedUniforms.streakDensity, 1e-4),
+      `expected ${label} overlay streak density to match derived value`,
+    );
+    assert.ok(
+      approxEqual(overlay.baseSparkleGain, expectedUniforms.sparkleGain, 1e-4),
+      `expected ${label} overlay sparkle gain to match derived value`,
+    );
+    const metadata = scene.userData.weather?.raindropOverlay ?? {};
+    assert.ok(
+      approxEqual(metadata.intensity ?? 0, overlay.intensity, 1e-4),
+      'expected overlay metadata to publish intensity',
+    );
+    assert.ok(
+      approxEqual(metadata.windSpeed ?? 0, expectedUniforms.windSpeed, 1e-4),
+      'expected overlay metadata to publish wind speed',
+    );
+    assert.ok(
+      approxEqual(metadata.streakDensity ?? 0, expectedUniforms.streakDensity, 1e-4),
+      'expected overlay metadata to publish streak density',
+    );
+    assert.ok(
+      approxEqual(metadata.sparkleGain ?? 0, expectedUniforms.sparkleGain, 1e-4),
+      'expected overlay metadata to publish sparkle gain',
+    );
+  };
+
   manager.setWeather('misty_rain');
   manager.update({ delta: 0.016, elapsedTime: 1 });
 
@@ -89,12 +156,13 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
   let weather = manager.getCurrentWeather();
   let precipitationIntensity = weather?.effects?.precipitation?.intensity ?? 0;
   let expected = expectedOverlayIntensity(precipitationIntensity);
-  assert.ok(overlay.enabled, 'expected raindrop overlay to enable for rainy preset');
-  assert.ok(overlay.visible, 'expected raindrop overlay mesh to be created for rainy preset');
-  assert.ok(
-    approxEqual(overlay.baseIntensity, expected, 1e-4),
-    `expected misty rain overlay intensity (${overlay.baseIntensity}) to match tuning (${expected})`,
-  );
+  let expectedUniforms = expectedOverlayUniforms(precipitationIntensity);
+  assertOverlaySnapshot({
+    overlay,
+    expectedIntensity: expected,
+    expectedUniforms,
+    label: 'misty rain',
+  });
 
   manager.registerWeatherPreset({
     id: 'qa_downpour',
@@ -116,15 +184,17 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
   weather = manager.getCurrentWeather();
   precipitationIntensity = weather?.effects?.precipitation?.intensity ?? 0;
   expected = expectedOverlayIntensity(precipitationIntensity);
-  assert.ok(overlay.enabled, 'expected overlay to remain enabled for heavy rain');
+  expectedUniforms = expectedOverlayUniforms(precipitationIntensity);
   assert.ok(
     overlay.baseIntensity > expectedOverlayIntensity(0.45),
     'expected heavier precipitation to drive a stronger overlay response',
   );
-  assert.ok(
-    approxEqual(overlay.baseIntensity, expected, 1e-4),
-    `expected heavy rain overlay intensity (${overlay.baseIntensity}) to clamp using tuning (${expected})`,
-  );
+  assertOverlaySnapshot({
+    overlay,
+    expectedIntensity: expected,
+    expectedUniforms,
+    label: 'heavy rain',
+  });
 
   manager.registerWeatherPreset({
     id: 'qa_extreme_downpour',
@@ -142,18 +212,147 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
   manager.setWeather('qa_extreme_downpour');
   manager.update({ delta: 0.016, elapsedTime: 3 });
 
-  const extremeOverlay = manager.getRaindropOverlayState();
-  const extremeWeather = manager.getCurrentWeather();
-  const extremePrecipitationIntensity = extremeWeather?.effects?.precipitation?.intensity ?? 0;
-  const extremeExpected = expectedOverlayIntensity(extremePrecipitationIntensity);
+  overlay = manager.getRaindropOverlayState();
+  weather = manager.getCurrentWeather();
+  precipitationIntensity = weather?.effects?.precipitation?.intensity ?? 0;
+  expected = expectedOverlayIntensity(precipitationIntensity);
+  expectedUniforms = expectedOverlayUniforms(precipitationIntensity);
+  assertOverlaySnapshot({
+    overlay,
+    expectedIntensity: expected,
+    expectedUniforms,
+    label: 'extreme rain',
+  });
+
+  manager.registerWeatherPreset({
+    id: 'qa_overlay_override',
+    label: 'QA Overlay Override',
+    category: 'storm',
+    intensity: 1.1,
+    effects: {
+      precipitation: {
+        type: 'rain',
+        intensity: 0.8,
+        raindropOverlay: {
+          windSpeed: 3.25,
+          streakDensity: 0.2,
+          sparkleGain: 2.5,
+        },
+      },
+    },
+  });
+
+  manager.setWeather('qa_overlay_override');
+  manager.update({ delta: 0.016, elapsedTime: 4 });
+
+  overlay = manager.getRaindropOverlayState();
+  weather = manager.getCurrentWeather();
+  precipitationIntensity = weather?.effects?.precipitation?.intensity ?? 0;
+  expected = expectedOverlayIntensity(precipitationIntensity);
+  expectedUniforms = expectedOverlayUniforms(precipitationIntensity, {
+    windSpeed: 3.25,
+    streakDensity: 0.2,
+    sparkleGain: 2.5,
+  });
+  assertOverlaySnapshot({
+    overlay,
+    expectedIntensity: expected,
+    expectedUniforms,
+    label: 'override rain',
+  });
+  const metadata = scene.userData.weather?.raindropOverlay ?? {};
   assert.ok(
-    approxEqual(extremeOverlay.baseIntensity, extremeExpected, 1e-4),
-    `expected extreme rain overlay intensity (${extremeOverlay.baseIntensity}) to clamp to tuned maximum (${extremeExpected})`,
+    approxEqual(metadata.baseWindSpeed ?? 0, overlay.baseWindSpeed, 1e-4),
+    'expected metadata to store base wind speed overrides',
   );
   assert.ok(
-    approxEqual(extremeOverlay.baseIntensity, overlay.baseIntensity, 1e-4),
-    'expected overlay to clamp so extreme rain matches heavy rain output',
+    approxEqual(metadata.baseStreakDensity ?? 0, overlay.baseStreakDensity, 1e-4),
+    'expected metadata to store base streak density overrides',
   );
+});
+
+test('raindrop overlay manual uniform overrides clamp and persist', () => {
+  const { manager, scene } = createManager({
+    emitImplementation: (emitter) => ({
+      ...emitter,
+      stop() {},
+      getActiveParticleCount() {
+        return 28;
+      },
+    }),
+  });
+
+  manager.setWeather('misty_rain');
+  manager.update({ delta: 0.016, elapsedTime: 0.5 });
+
+  const weather = manager.getCurrentWeather();
+  const precipitationIntensity = weather?.effects?.precipitation?.intensity ?? 0;
+  const baseUniforms = expectedOverlayUniforms(precipitationIntensity);
+
+  manager.setRaindropOverlayManualWindSpeed(9);
+  manager.setRaindropOverlayManualStreakDensity(-1);
+  manager.setRaindropOverlayManualSparkleGain(5);
+
+  let overlay = manager.getRaindropOverlayState();
+  assert.ok(
+    approxEqual(overlay.windSpeed, clampRaindropOverlayWindSpeed(9), 1e-4),
+    'expected manual wind override to clamp to allowable range',
+  );
+  assert.ok(
+    approxEqual(
+      overlay.streakDensity,
+      clampRaindropOverlayStreakDensity(-1),
+      1e-4,
+    ),
+    'expected manual density override to clamp to allowable range',
+  );
+  assert.ok(
+    approxEqual(overlay.sparkleGain, clampRaindropOverlaySparkleGain(5), 1e-4),
+    'expected manual sparkle override to clamp to allowable range',
+  );
+  const metadata = scene.userData.weather?.raindropOverlay ?? {};
+  assert.ok(
+    approxEqual(metadata.manualWindSpeed ?? 0, clampRaindropOverlayWindSpeed(9), 1e-4),
+    'expected metadata to record clamped manual wind override',
+  );
+  assert.ok(
+    approxEqual(
+      metadata.manualStreakDensity ?? 0,
+      clampRaindropOverlayStreakDensity(-1),
+      1e-4,
+    ),
+    'expected metadata to record clamped manual density override',
+  );
+  assert.ok(
+    approxEqual(
+      metadata.manualSparkleGain ?? 0,
+      clampRaindropOverlaySparkleGain(5),
+      1e-4,
+    ),
+    'expected metadata to record clamped manual sparkle override',
+  );
+
+  manager.setRaindropOverlayManualWindSpeed(null);
+  manager.setRaindropOverlayManualStreakDensity(null);
+  manager.setRaindropOverlayManualSparkleGain(null);
+
+  overlay = manager.getRaindropOverlayState();
+  assert.ok(
+    approxEqual(overlay.windSpeed, baseUniforms.windSpeed, 1e-4),
+    'expected clearing manual wind override to restore base response',
+  );
+  assert.ok(
+    approxEqual(overlay.streakDensity, baseUniforms.streakDensity, 1e-4),
+    'expected clearing manual density override to restore base response',
+  );
+  assert.ok(
+    approxEqual(overlay.sparkleGain, baseUniforms.sparkleGain, 1e-4),
+    'expected clearing manual sparkle override to restore base response',
+  );
+  const clearedMetadata = scene.userData.weather?.raindropOverlay ?? {};
+  assert.equal(clearedMetadata.manualWindSpeed, null);
+  assert.equal(clearedMetadata.manualStreakDensity, null);
+  assert.equal(clearedMetadata.manualSparkleGain, null);
 });
 
 test('failed precipitation spawns are recorded for diagnostics', () => {

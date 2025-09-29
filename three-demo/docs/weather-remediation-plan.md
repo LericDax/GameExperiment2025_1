@@ -74,6 +74,12 @@ Please continue appending follow-up findings or configuration changes here whene
   - Use `/weather` overrides (or edit `scene.userData.weather.manualOverrides.precipitation`) to test gust extremes—verify wind tilt, streak noise, and highlight width respond live via the overlay and rain visuals.【F:src/world/weather/weather-manager.js†L300-L430】【F:src/world/weather/weather-manager.js†L1012-L1115】
   - Keep `/weather debug` handy to confirm manual overrides propagate into the emitter summaries (uniform readouts now surface in diagnostics).【F:src/world/weather/weather-manager.js†L1260-L1310】
 
+## 2025-11 Parallax Rain Overlay Controls
+- Rebuilt the screen-space raindrop fragment shader with three parallaxed streak layers, wind-driven tilt, and sparkle pulses, exposing uniforms for wind speed, streak density, and sparkle gain so QA can see gust variations even when world particles underperform.【F:src/rendering/effects/raindrop-overlay.js†L1-L192】
+- Weather manager now derives overlay wind/density/sparkle from precipitation configs (with clamps), persists the applied values on `scene.userData.weather.raindropOverlay`, and exposes manual setters for `/weather overlay` to tweak wind and density live.【F:src/world/weather/weather-manager.js†L229-L540】【F:src/world/weather/weather-manager.js†L1267-L1752】
+- `/weather overlay wind|density` commands apply those manual overrides, extend the status readout, and a new regression checks the clamps, metadata persistence, and override clearing so CI guards the documented intensity scale—update this plan alongside future tuning shifts.【F:src/player/dev-commands.js†L1780-L1900】【F:src/world/__tests__/weather-manager.test.js†L132-L268】
+- **Reminder:** keep this section synchronized whenever you touch the overlay shader, uniform maths, or console tooling so QA expectations, metadata snapshots, and tests stay aligned.
+
 ## Work Orders
 1. **Gameplay-driven rotation**
    - Sample the player’s biome each frame (reusing the `sampleBiomeAt` helper from `/weather status`) and resolve the preset rotation with `resolveBiomeWeatherRotation`, storing timing metadata per biome.【F:src/player/dev-commands.js†L1532-L1562】【F:src/world/weather/weather-manager.js†L76-L127】
