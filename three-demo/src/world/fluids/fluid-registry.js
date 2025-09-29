@@ -34,6 +34,55 @@ function pseudoRandom2D(x, z, seed = DEFAULT_FLUID_SEED) {
   return hash - Math.floor(hash);
 }
 
+function clamp01(value) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, value));
+}
+
+function hueToRgb(p, q, t) {
+  let temp = t;
+  if (temp < 0) temp += 1;
+  if (temp > 1) temp -= 1;
+  if (temp < 1 / 6) return p + (q - p) * 6 * temp;
+  if (temp < 1 / 2) return q;
+  if (temp < 2 / 3) return p + (q - p) * (2 / 3 - temp) * 6;
+  return p;
+}
+
+function hslToHex(h, s, l) {
+  const hue = ((h % 1) + 1) % 1;
+  const saturation = clamp01(s);
+  const lightness = clamp01(l);
+
+  let r;
+  let g;
+  let b;
+
+  if (saturation === 0) {
+    r = g = b = lightness;
+  } else {
+    const q =
+      lightness < 0.5
+        ? lightness * (1 + saturation)
+        : lightness + saturation - lightness * saturation;
+    const p = 2 * lightness - q;
+    r = hueToRgb(p, q, hue + 1 / 3);
+    g = hueToRgb(p, q, hue);
+    b = hueToRgb(p, q, hue - 1 / 3);
+  }
+
+  const toHex = (value) => {
+    const hex = Math.round(clamp01(value) * 255)
+      .toString(16)
+      .padStart(2, '0');
+    return hex;
+  };
+
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
 function resolveLumenBloomPresence({
   x,
   z,
@@ -105,6 +154,16 @@ function resolveLumenBloomPresence({
         3,
         0.82 + plateauInfluence * 0.9 + ribbonNoise * 0.35 + ridgeNoise * 0.24,
       );
+      const normalizedIntensity = clamp01(intensity / 3);
+      const colorHue =
+        (0.45 + ridgeStrength * 0.08 + ribbonNoise * 0.05 + bloom * 0.02) % 1;
+      const colorSaturation = clamp01(0.62 + plateauInfluence * 0.32);
+      const colorLightness = clamp01(0.54 + ridgeStrength * 0.2 + bloom * 0.12);
+      const colorHex = hslToHex(colorHue, colorSaturation, colorLightness);
+      const pulseRate = 1.3 + plateauInfluence * 0.8 + bloom * 0.6;
+      const glowBias = clamp01(
+        0.55 + normalizedIntensity * 0.5 + ridgeStrength * 0.35,
+      );
 
       return {
         hasFluid: true,
@@ -115,6 +174,9 @@ function resolveLumenBloomPresence({
           auroraIntensity: intensity,
           ribbonOrientation,
           ridgeStrength,
+          colorHex,
+          pulseRate,
+          glowBias,
         },
       };
     }
@@ -126,6 +188,7 @@ function resolveLumenBloomPresence({
       metadata: {
         ribbonOrientation,
         ridgeStrength,
+        glowBias: clamp01(ridgeStrength * 0.4),
       },
     };
   }
