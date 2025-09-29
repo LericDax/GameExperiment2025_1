@@ -21,6 +21,8 @@ uniform vec2 uSizeStops[8];
 uniform int uSizeStopCount;
 
 varying vec4 vColor;
+varying vec2 vLocalUv;
+varying float vNormalizedAge;
 
 vec3 integrateMotion(vec3 origin, vec3 velocity, vec3 gravity, float drag, float age) {
   vec3 displacement;
@@ -79,6 +81,7 @@ void main() {
   float lifetime = max(aLifetime.y, 0.0001);
   float age = max(uTime - spawnTime, 0.0);
   float normalizedAge = clamp(age / lifetime, 0.0, 1.0);
+  vNormalizedAge = normalizedAge;
 
   vec3 center = integrateMotion(aOrigin, aVelocity, uGravity, uDrag, age);
 
@@ -92,6 +95,7 @@ void main() {
 
   vec3 rampColor = sampleColorRamp(normalizedAge);
   vColor = vec4(rampColor * aColor.rgb, alpha);
+  vLocalUv = position.xy + 0.5;
 
   vec3 billboardRight = normalize(vec3(modelViewMatrix[0][0], modelViewMatrix[1][0], modelViewMatrix[2][0]));
   vec3 billboardUp = normalize(vec3(modelViewMatrix[0][1], modelViewMatrix[1][1], modelViewMatrix[2][1]));

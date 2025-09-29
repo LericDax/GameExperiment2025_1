@@ -54,14 +54,25 @@ Please continue appending follow-up findings or configuration changes here whene
 - Added a unit test that locks the overlay intensity maths to the new tuning so future adjustments must update this plan and QA expectations in tandem—treat the stronger overlay as the fallback visibility requirement during manual checks.【F:src/world/__tests__/weather-manager.test.js†L1-L138】
 
 ## 2025-09 High-Contrast Rain Refresh
-- Reworked `createWeatherRainEmitter` with thicker billboards, a dark-to-ice-blue color ramp, and normal blending so rain streaks retain contrast during daylight scenes.【F:src/rendering/particles/weather-rain.js†L9-L55】
-- Increased spawn and lifetime budgets to keep at least 30 active particles during the regression harness and renamed the debug label to `WeatherRainEmitter/HighContrast` so tooling can confirm the look is active.【F:src/rendering/particles/weather-rain.js†L15-L55】【F:src/world/__tests__/weather-manager.test.js†L170-L203】
-- Updated the regression test to assert both the higher particle floor and the high-contrast label—future changes must update this plan *and* the test expectations together to avoid silent drift.【F:src/world/__tests__/weather-manager.test.js†L170-L203】
-- **QA checklist:**
+> _Historical note:_ superseded by the 2025-10 bright-streak shader but retained here so we remember why the earlier pass existed.
+- Reworked `createWeatherRainEmitter` with thicker billboards, a dark-to-ice-blue color ramp, and normal blending so rain streaks retain contrast during daylight scenes.【F:src/rendering/particles/weather-rain.js†L1-L92】
+- Increased spawn and lifetime budgets to keep at least 30 active particles during the regression harness and renamed the debug label to `WeatherRainEmitter/HighContrast` so tooling can confirm the look is active.【F:src/rendering/particles/weather-rain.js†L1-L92】【F:src/world/__tests__/weather-manager.test.js†L160-L230】
+- Updated the regression test to assert both the higher particle floor and the high-contrast label—future changes must update this plan *and* the test expectations together to avoid silent drift.【F:src/world/__tests__/weather-manager.test.js†L160-L230】
+- **QA checklist (legacy):**
   - Trigger `/weather misty_rain` (or cycle via the harness) at midday lighting and verify streaks remain visible against bright terrain.
   - Confirm the weather debug overlay reports the `WeatherRainEmitter/HighContrast` label and at least 30 active particles once the emitter stabilises.
   - Re-run `/weather debug` to ensure the darker-core ramp remains readable when the overlay is disabled, noting any deviations here.
 - **Reminder:** When retuning rain visuals or thresholds, update this section, the automated test expectations, and any overlay heuristics so QA retains a single source of truth.
+
+## 2025-10 Bright-Streak Rain Shader
+- Swapped the rain fragment shader to `weather-rain-streak.glsl.js`, introducing wind-tilt, streak-noise, and highlight-width uniforms so we can tune sheen and gusts without rebuilding the emitter.【F:src/rendering/particles/weather-rain.js†L1-L109】【F:src/rendering/shaders/weather-rain-streak.glsl.js†L1-L54】
+- `createWeatherRainEmitter` now feeds those uniforms, thickens the base billboard width to ~0.35–0.45 m, and renames the debug label to `WeatherRainEmitter/BrightStreakPass` to match the new look.【F:src/rendering/particles/weather-rain.js†L13-L109】【F:src/world/__tests__/weather-manager.test.js†L206-L231】
+- Manual precipitation overrides (`scene.userData.weather.manualOverrides.precipitation`) can force intensity or wind parameters at runtime so `/weather` QA scripts can probe edge cases; the manager keeps snapshots in emitter diagnostics.【F:src/world/weather/weather-manager.js†L300-L430】【F:src/world/weather/weather-manager.js†L930-L1074】【F:src/world/__tests__/weather-manager.test.js†L120-L205】
+- Regression coverage now locks the bright-streak label, a 34-particle floor, and uniform override behaviour so shader tweaks stay visible in CI.【F:src/world/__tests__/weather-manager.test.js†L198-L264】
+- **QA checklist:**
+  - Trigger `/weather misty_rain` under daylight; ensure the overlay reports `WeatherRainEmitter/BrightStreakPass` with ≥34 active particles after stabilisation.【F:src/world/__tests__/weather-manager.test.js†L206-L231】
+  - Use `/weather` overrides (or edit `scene.userData.weather.manualOverrides.precipitation`) to test gust extremes—verify wind tilt, streak noise, and highlight width respond live via the overlay and rain visuals.【F:src/world/weather/weather-manager.js†L300-L430】【F:src/world/weather/weather-manager.js†L1012-L1115】
+  - Keep `/weather debug` handy to confirm manual overrides propagate into the emitter summaries (uniform readouts now surface in diagnostics).【F:src/world/weather/weather-manager.js†L1260-L1310】
 
 ## Work Orders
 1. **Gameplay-driven rotation**

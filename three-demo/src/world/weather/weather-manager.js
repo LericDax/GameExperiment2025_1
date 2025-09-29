@@ -341,6 +341,25 @@ export function createWeatherManager({
     if (!Array.isArray(state.pendingPrecipitationRetries)) {
       state.pendingPrecipitationRetries = [];
     }
+    if (!state.manualOverrides) {
+      state.manualOverrides = {};
+    }
+    if (!state.manualOverrides.precipitation) {
+      state.manualOverrides.precipitation = {};
+    }
+    const precipitationOverrides = state.manualOverrides.precipitation;
+    if (!('intensity' in precipitationOverrides)) {
+      precipitationOverrides.intensity = null;
+    }
+    if (!('windTilt' in precipitationOverrides)) {
+      precipitationOverrides.windTilt = null;
+    }
+    if (!('streakNoise' in precipitationOverrides)) {
+      precipitationOverrides.streakNoise = null;
+    }
+    if (!('highlightWidth' in precipitationOverrides)) {
+      precipitationOverrides.highlightWidth = null;
+    }
     if (!state.rotationHarness) {
       state.rotationHarness = {
         active: false,
@@ -375,6 +394,32 @@ export function createWeatherManager({
     overlay.enabled = Boolean((manualEnabled ?? baseActive) && targetIntensity > 0);
     overlay.intensity = raindropOverlay?.getIntensity?.() ?? targetIntensity;
     overlay.visible = Boolean(raindropOverlay);
+  };
+
+  const getManualPrecipitationOverrides = () => {
+    const state = ensureWeatherState();
+    if (!state) {
+      return null;
+    }
+    const overrides = state.manualOverrides?.precipitation ?? null;
+    if (!overrides) {
+      return null;
+    }
+    const normalise = (value) => {
+      if (Number.isFinite(value)) {
+        return Number(value);
+      }
+      if (value === null) {
+        return null;
+      }
+      return undefined;
+    };
+    return {
+      intensity: normalise(overrides.intensity),
+      windTilt: normalise(overrides.windTilt),
+      streakNoise: normalise(overrides.streakNoise),
+      highlightWidth: normalise(overrides.highlightWidth),
+    };
   };
 
   const ensureRaindropOverlayEffect = (intensity) => {
@@ -950,17 +995,34 @@ export function createWeatherManager({
     if (!particleSystem || typeof particleSystem.emit !== 'function') {
       return;
     }
+    const manualOverrides = getManualPrecipitationOverrides();
+    const intensityOverride = manualOverrides?.intensity;
+    const appliedIntensity = Number.isFinite(intensityOverride)
+      ? intensityOverride
+      : config.intensity;
     const emitter =
       config.type === 'snow'
         ? createWeatherSnowEmitter({
-            intensity: config.intensity,
+            intensity: appliedIntensity,
             radius: config.radius,
             heightOffset: config.anchorHeight,
           })
         : createWeatherRainEmitter({
-            intensity: config.intensity,
+            intensity: appliedIntensity,
             radius: config.radius,
             heightOffset: config.anchorHeight,
+            windTilt:
+              manualOverrides && manualOverrides.windTilt !== undefined
+                ? manualOverrides.windTilt
+                : undefined,
+            streakNoise:
+              manualOverrides && manualOverrides.streakNoise !== undefined
+                ? manualOverrides.streakNoise
+                : undefined,
+            highlightWidth:
+              manualOverrides && manualOverrides.highlightWidth !== undefined
+                ? manualOverrides.highlightWidth
+                : undefined,
           });
     const handle = particleSystem.emit(emitter);
     if (!handle) {
@@ -1050,7 +1112,7 @@ export function createWeatherManager({
       recordAnchorUpdate(elapsedTime);
     }
     activeParticleEffects.push(attachment);
-    attachment.spawnConfig = { ...config };
+    attachment.spawnConfig = { ...config, intensity: appliedIntensity };
     attachment.spawnAttempt = attempt;
     attachment.spawnElapsedTime = elapsedTime;
     attachment.validationReadyTime = Number.isFinite(elapsedTime)
@@ -1060,7 +1122,96 @@ export function createWeatherManager({
     attachment.validationRetryAfter = null;
     attachment.validationPendingSince = null;
     recordPrecipitationSpawn({ type: config.type, elapsedTime });
+    attachment.appliedIntensity = appliedIntensity;
+    attachment.manualOverrides = manualOverrides;
+    if (typeof emitter.getWeatherRainShaderBaseUniforms === 'function') {
+      attachment.baseRainUniforms = emitter.getWeatherRainShaderBaseUniforms();
+    }
+    if (typeof emitter.getWeatherRainShaderUniforms === 'function') {
+      const uniforms = emitter.getWeatherRainShaderUniforms();
+      if (!attachment.baseRainUniforms) {
+        attachment.baseRainUniforms = { ...uniforms };
+      }
+      attachment.lastAppliedRainOverrides = {
+        windTilt: uniforms?.windTilt,
+        streakNoise: uniforms?.streakNoise,
+        highlightWidth: uniforms?.highlightWidth,
+      };
+    }
     syncEmitterState();
+  };
+
+  const syncPrecipitationUniformOverrides = () => {
+    const state = ensureWeatherState();
+    if (!state) {
+      return;
+    }
+    const overrides = state.manualOverrides?.precipitation ?? null;
+    if (!overrides) {
+      return;
+    }
+    activeParticleEffects.forEach((attachment) => {
+      if (attachment.type !== 'precipitation') {
+        return;
+      }
+      const setter = attachment.emitter?.setWeatherRainShaderUniforms;
+      if (typeof setter !== 'function') {
+        return;
+      }
+      const last = attachment.lastAppliedRainOverrides || {};
+      const updates = {};
+      let changed = false;
+      if (overrides.windTilt !== undefined) {
+        const overrideValue = overrides.windTilt;
+        const target = Number.isFinite(overrideValue)
+          ? overrideValue
+          : overrideValue === null
+          ? null
+          : undefined;
+        if (target !== undefined && target !== last.windTilt) {
+          updates.windTilt = target;
+          changed = true;
+        }
+      }
+      if (overrides.streakNoise !== undefined) {
+        const overrideValue = overrides.streakNoise;
+        const target = Number.isFinite(overrideValue)
+          ? overrideValue
+          : overrideValue === null
+          ? null
+          : undefined;
+        if (target !== undefined && target !== last.streakNoise) {
+          updates.streakNoise = target;
+          changed = true;
+        }
+      }
+      if (overrides.highlightWidth !== undefined) {
+        const overrideValue = overrides.highlightWidth;
+        const target = Number.isFinite(overrideValue)
+          ? overrideValue
+          : overrideValue === null
+          ? null
+          : undefined;
+        if (target !== undefined && target !== last.highlightWidth) {
+          updates.highlightWidth = target;
+          changed = true;
+        }
+      }
+      attachment.manualOverrides = {
+        intensity: overrides.intensity,
+        windTilt: overrides.windTilt,
+        streakNoise: overrides.streakNoise,
+        highlightWidth: overrides.highlightWidth,
+      };
+      if (!changed) {
+        return;
+      }
+      setter.call(attachment.emitter, updates);
+      attachment.lastAppliedRainOverrides = {
+        ...last,
+        ...updates,
+      };
+    });
   };
 
   const spawnAuroraEffects = (config, context) => {
@@ -1287,6 +1438,19 @@ export function createWeatherManager({
             spawnedAt: Number.isFinite(attachment.spawnElapsedTime)
               ? attachment.spawnElapsedTime
               : null,
+            appliedIntensity: Number.isFinite(attachment.appliedIntensity)
+              ? attachment.appliedIntensity
+              : null,
+            manualOverrides: attachment.manualOverrides ?? null,
+            shaderUniforms:
+              typeof attachment.emitter?.getWeatherRainShaderUniforms === 'function'
+                ? attachment.emitter.getWeatherRainShaderUniforms()
+                : null,
+            shaderBase:
+              typeof attachment.emitter?.getWeatherRainShaderBaseUniforms === 'function'
+                ? attachment.emitter.getWeatherRainShaderBaseUniforms()
+                : attachment.baseRainUniforms ?? null,
+            lastAppliedRainOverrides: attachment.lastAppliedRainOverrides ?? null,
           };
         });
       weatherState.precipitationEmitters = precipitationSummaries;
@@ -1525,6 +1689,7 @@ export function createWeatherManager({
     }
     processPendingPrecipitationRetries({ ...context, elapsedTime: lastElapsedTime });
     updateAnchoredEffects({ ...context, elapsedTime: lastElapsedTime });
+    syncPrecipitationUniformOverrides();
     validatePrecipitationHandles({ ...context, elapsedTime: lastElapsedTime });
     if (raindropOverlay) {
       raindropOverlay.update({ delta, elapsedTime: lastElapsedTime });
