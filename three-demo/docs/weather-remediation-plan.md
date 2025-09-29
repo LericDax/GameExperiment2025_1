@@ -29,6 +29,12 @@
 - The weather debug overlay now streams particle-system diagnostics every frame, reporting precipitation emitter particle counts, retry windows, last failure reasons, and harness timing so testers can watch the system recover without rerunning console commands.【F:src/ui/weather-debug-overlay.js†L1-L156】【F:src/world/weather/weather-manager.js†L872-L940】
 - Rain emitters were retuned (higher particle budget, longer lifetimes, faster anchor updates) to match the reliability of the underwater bubble effects and guarantee visible spawn when the harness cycles into rain-heavy presets.【F:src/rendering/particles/weather-rain.js†L9-L53】【F:src/rendering/particles/water-effects.js†L46-L80】
 
+## 2025-05 Regression Coverage Updates
+- Added a node:test case that boots the real GPU billboard particle system, applies the `misty_rain` preset, and advances both managers until `particleSystem.getDebugInfo()` reports active “weather” emitters—proving end-to-end precipitation spawning works without mocks.【F:src/world/__tests__/weather-manager.test.js†L1-L127】
+- Remaining gaps: the suite still lacks automated checks for aurora ribbons, anchor repositioning against live player controls, and rotation-harness scheduling edge cases—these should follow once we expose lightweight test doubles for those systems.
+
+> **Reminder for reviewers:** please continue keeping this remediation plan up to date whenever you touch weather logic or diagnostics so future investigators inherit an accurate coverage map.
+
 Please continue appending follow-up findings or configuration changes here whenever the harness or emitter settings evolve.
 
 ## Work Orders

@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 
 const { createWeatherManager } = await import('../weather/weather-manager.js');
+const { createParticleSystem } = await import('../../rendering/particle-system.js');
 
 function createManager({ emitImplementation }) {
   const emit = emitImplementation ?? (() => ({ stop() {} }));
@@ -115,4 +117,40 @@ test('zero-particle precipitation handles trigger retries and diagnostics', () =
     type: 'rain',
     reason: 'zero_particles',
   });
+});
+
+test('rain preset spawns active particles with the real particle system', () => {
+  const scene = new THREE.Scene();
+  const particleSystem = createParticleSystem({ THREE, scene });
+  const manager = createWeatherManager({ scene, particleSystem });
+
+  try {
+    manager.setWeather('misty_rain');
+
+    let elapsedTime = 0;
+    let weatherParticles = 0;
+
+    const frameDelta = 1 / 60;
+    for (let frame = 0; frame < 300; frame += 1) {
+      elapsedTime += frameDelta;
+      manager.update({ delta: frameDelta, elapsedTime });
+      particleSystem.update(frameDelta);
+      const debugInfo = particleSystem.getDebugInfo();
+      const emitters = Array.isArray(debugInfo?.emitters) ? debugInfo.emitters : [];
+      const weatherEmitter = emitters.find((emitter) =>
+        typeof emitter.label === 'string' && emitter.label.toLowerCase().includes('weather'),
+      );
+      if (weatherEmitter?.activeParticles > 0) {
+        weatherParticles = weatherEmitter.activeParticles;
+        break;
+      }
+    }
+
+    assert.ok(
+      weatherParticles > 0,
+      'expected real weather emitter to accumulate active particles after ticking the system',
+    );
+  } finally {
+    particleSystem.dispose();
+  }
 });
