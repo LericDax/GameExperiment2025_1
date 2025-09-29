@@ -24,6 +24,7 @@ import {
 import { createWaterSurfaceMistEmitter } from './rendering/particles/water-effects.js'
 import { createAuroraRibbonEmitter } from './rendering/particles/aurora-effects.js'
 import { createLumenBloomMotesEmitter } from './rendering/particles/lumen-bloom-effects.js'
+import { createWeatherManager } from './world/weather/weather-manager.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -203,6 +204,7 @@ let blockMaterials
 let chunkManager
 let particleSystem
 let playerControls
+let weatherManager
 let initializationError = null
 
 try {
@@ -217,6 +219,12 @@ try {
   })
 
   particleSystem = createParticleSystem({ THREE, scene })
+
+  weatherManager = createWeatherManager({
+    scene,
+    particleSystem,
+    registerDiagnosticOverlay,
+  })
 
   registerFluidSurfaceLifecycle({
     onCreated: ({ type, mesh, runtime }) =>
@@ -331,6 +339,7 @@ try {
       getYawPitch: () => playerControls.getYawPitch(),
     }
     debugNamespace.registerDiagnosticOverlay = registerDiagnosticOverlay
+    debugNamespace.weather = weatherManager
 
     let perfFlightModulePromise = null
     const resolvePerfFlightModule = () => {
@@ -430,6 +439,11 @@ if (!initializationError) {
     playerControls.update(delta)
     updateFluids(delta)
     particleSystem?.update(delta)
+    weatherManager?.update({
+      delta,
+      elapsedTime,
+      playerControls,
+    })
 
     if (diagnosticOverlayCallbacks.size > 0) {
       const callbacks = Array.from(diagnosticOverlayCallbacks)
@@ -458,5 +472,6 @@ if (!initializationError) {
     chunkManager.dispose()
     musicSystem?.dispose()
     particleSystem?.dispose()
+    weatherManager?.dispose?.()
   })
 }
