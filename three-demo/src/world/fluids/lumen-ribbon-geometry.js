@@ -14,6 +14,7 @@ export function buildLumenRibbonGeometry({ THREE, columns }) {
   const flowStrengths = [];
   const ribbonVectors = [];
   const auroraGlows = [];
+  const ribbonHeightFractions = [];
 
   if (!Array.isArray(columns) || columns.length === 0) {
     return new THREE.BufferGeometry();
@@ -25,7 +26,8 @@ export function buildLumenRibbonGeometry({ THREE, columns }) {
   const pushVertex = (
     position,
     normal,
-    uv,
+    uvX,
+    uvY,
     color,
     surfaceType,
     surfaceRole,
@@ -33,10 +35,11 @@ export function buildLumenRibbonGeometry({ THREE, columns }) {
     flowStrength,
     ribbonDir,
     auroraGlow,
+    heightFraction,
   ) => {
     positions.push(position.x, position.y, position.z);
     normals.push(normal.x, normal.y, normal.z);
-    uvs.push(uv.x, uv.y);
+    uvs.push(uvX, uvY);
     colors.push(color.r, color.g, color.b);
     surfaceTypes.push(surfaceType);
     surfaceRoles.push(surfaceRole);
@@ -44,6 +47,7 @@ export function buildLumenRibbonGeometry({ THREE, columns }) {
     flowStrengths.push(flowStrength);
     ribbonVectors.push(ribbonDir.x, ribbonDir.y);
     auroraGlows.push(auroraGlow);
+    ribbonHeightFractions.push(heightFraction);
   };
 
   const pushQuad = ({
@@ -58,79 +62,95 @@ export function buildLumenRibbonGeometry({ THREE, columns }) {
     flowStrength,
     ribbonDir,
     auroraGlow,
+    bottomFraction,
+    topFraction,
+    bottomRole,
+    topRole,
   }) => {
     pushVertex(
       bottomLeft,
       normal,
-      new THREE.Vector2(0, 0),
+      0,
+      bottomFraction,
       color,
       surfaceType,
-      SURFACE_ROLES.EDGE_BOTTOM,
+      bottomRole,
       flowDir,
       flowStrength,
       ribbonDir,
       auroraGlow,
+      bottomFraction,
     );
     pushVertex(
       bottomRight,
       normal,
-      new THREE.Vector2(1, 0),
+      1,
+      bottomFraction,
       color,
       surfaceType,
-      SURFACE_ROLES.EDGE_BOTTOM,
+      bottomRole,
       flowDir,
       flowStrength,
       ribbonDir,
       auroraGlow,
+      bottomFraction,
     );
     pushVertex(
       topRight,
       normal,
-      new THREE.Vector2(1, 1),
+      1,
+      topFraction,
       color,
       surfaceType,
-      SURFACE_ROLES.EDGE_TOP,
+      topRole,
       flowDir,
       flowStrength,
       ribbonDir,
       auroraGlow,
+      topFraction,
     );
 
     pushVertex(
       bottomLeft,
       normal,
-      new THREE.Vector2(0, 0),
+      0,
+      bottomFraction,
       color,
       surfaceType,
-      SURFACE_ROLES.EDGE_BOTTOM,
+      bottomRole,
       flowDir,
       flowStrength,
       ribbonDir,
       auroraGlow,
+      bottomFraction,
     );
     pushVertex(
       topRight,
       normal,
-      new THREE.Vector2(1, 1),
+      1,
+      topFraction,
       color,
       surfaceType,
-      SURFACE_ROLES.EDGE_TOP,
+      topRole,
       flowDir,
       flowStrength,
       ribbonDir,
       auroraGlow,
+      topFraction,
     );
     pushVertex(
       topLeft,
       normal,
-      new THREE.Vector2(0, 1),
+      0,
+      topFraction,
       color,
       surfaceType,
-      SURFACE_ROLES.EDGE_TOP,
+      topRole,
       flowDir,
       flowStrength,
       ribbonDir,
       auroraGlow,
+      topFraction,
     );
   };
 
@@ -138,10 +158,11 @@ export function buildLumenRibbonGeometry({ THREE, columns }) {
     const bottomY = Number.isFinite(column?.bottomY)
       ? column.bottomY
       : (Number.isFinite(column?.surfaceY) ? column.surfaceY : 0) - (column?.depth ?? 0.5);
-    const topY = Number.isFinite(column?.surfaceY)
-      ? column.surfaceY
-      : bottomY + Math.max(column?.depth ?? 0.75, MIN_HEIGHT);
-    if (!(topY > bottomY + MIN_HEIGHT)) {
+    const ribbonHeight = Math.max(
+      Number.isFinite(column?.ribbonHeight) ? column.ribbonHeight : 6,
+      MIN_HEIGHT,
+    );
+    if (!(ribbonHeight > MIN_HEIGHT)) {
       return;
     }
 
@@ -170,15 +191,6 @@ export function buildLumenRibbonGeometry({ THREE, columns }) {
       : DEFAULT_HALF_SPAN;
     const dir = new THREE.Vector3(ribbonVector.x, 0, ribbonVector.y);
     const offset = dir.clone().multiplyScalar(span);
-
-    const bottomCenter = new THREE.Vector3(column.x, bottomY, column.z);
-    const topCenter = new THREE.Vector3(column.x, topY, column.z);
-
-    const bottomLeft = bottomCenter.clone().sub(offset);
-    const bottomRight = bottomCenter.clone().add(offset);
-    const topLeft = topCenter.clone().sub(offset);
-    const topRight = topCenter.clone().add(offset);
-
     const color = column?.color
       ? tempColor.copy(column.color)
       : tempColor.set('#4ef0ff');
@@ -202,34 +214,66 @@ export function buildLumenRibbonGeometry({ THREE, columns }) {
 
     const surfaceType = 1;
 
-    pushQuad({
-      bottomLeft,
-      bottomRight,
-      topRight,
-      topLeft,
-      normal,
-      color,
-      surfaceType,
-      flowDir,
-      flowStrength,
-      ribbonDir: ribbonVector,
-      auroraGlow,
-    });
-
+    const baseSegmentCount = Number.isFinite(column?.ribbonSegments)
+      ? Math.max(1, Math.floor(column.ribbonSegments))
+      : 8;
+    const segmentCount = Math.max(8, baseSegmentCount);
     const backNormal = normal.clone().negate();
-    pushQuad({
-      bottomLeft: bottomRight,
-      bottomRight: bottomLeft,
-      topRight: topLeft,
-      topLeft: topRight,
-      normal: backNormal,
-      color,
-      surfaceType,
-      flowDir,
-      flowStrength,
-      ribbonDir: ribbonVector,
-      auroraGlow,
-    });
+
+    for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+      const bottomFraction = segmentIndex / segmentCount;
+      const topFraction = (segmentIndex + 1) / segmentCount;
+      const segmentBottomY = bottomY + ribbonHeight * bottomFraction;
+      const segmentTopY = bottomY + ribbonHeight * topFraction;
+
+      const bottomCenter = new THREE.Vector3(column.x, segmentBottomY, column.z);
+      const topCenter = new THREE.Vector3(column.x, segmentTopY, column.z);
+
+      const bottomLeft = bottomCenter.clone().sub(offset);
+      const bottomRight = bottomCenter.clone().add(offset);
+      const topLeft = topCenter.clone().sub(offset);
+      const topRight = topCenter.clone().add(offset);
+
+      const bottomRole = segmentIndex === 0 ? SURFACE_ROLES.EDGE_BOTTOM : SURFACE_ROLES.SURFACE;
+      const topRole =
+        segmentIndex === segmentCount - 1 ? SURFACE_ROLES.EDGE_TOP : SURFACE_ROLES.SURFACE;
+
+      pushQuad({
+        bottomLeft,
+        bottomRight,
+        topRight,
+        topLeft,
+        normal,
+        color,
+        surfaceType,
+        flowDir,
+        flowStrength,
+        ribbonDir: ribbonVector,
+        auroraGlow,
+        bottomFraction,
+        topFraction,
+        bottomRole,
+        topRole,
+      });
+
+      pushQuad({
+        bottomLeft: bottomRight,
+        bottomRight: bottomLeft,
+        topRight: topLeft,
+        topLeft: topRight,
+        normal: backNormal,
+        color,
+        surfaceType,
+        flowDir,
+        flowStrength,
+        ribbonDir: ribbonVector,
+        auroraGlow,
+        bottomFraction,
+        topFraction,
+        bottomRole,
+        topRole,
+      });
+    }
   });
 
   const geometry = new THREE.BufferGeometry();
@@ -247,6 +291,10 @@ export function buildLumenRibbonGeometry({ THREE, columns }) {
   geometry.setAttribute('flowStrength', new THREE.Float32BufferAttribute(flowStrengths, 1));
   geometry.setAttribute('ribbonVector', new THREE.Float32BufferAttribute(ribbonVectors, 2));
   geometry.setAttribute('auroraGlow', new THREE.Float32BufferAttribute(auroraGlows, 1));
+  geometry.setAttribute(
+    'ribbonHeightFraction',
+    new THREE.Float32BufferAttribute(ribbonHeightFractions, 1),
+  );
 
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
