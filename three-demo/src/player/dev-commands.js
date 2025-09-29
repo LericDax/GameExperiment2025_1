@@ -18,6 +18,7 @@ export function registerDeveloperCommands({
   THREE,
   registerDiagnosticOverlay,
   particleSystem = null,
+  weatherManager = null,
 }) {
   if (!commandConsole) {
     throw new Error('registerDeveloperCommands requires a commandConsole instance.');
@@ -72,6 +73,12 @@ export function registerDeveloperCommands({
     element: null,
   };
 
+  const weatherControlState = {
+    suppressed: false,
+    lastManualWeatherId: null,
+    lastSuppressedWeatherId: null,
+  };
+
   const biomeTeleportOffsets = [
     { dx: 0, dz: 0 },
     { dx: 1, dz: 0 },
@@ -103,6 +110,33 @@ export function registerDeveloperCommands({
     }
     return 0;
   }
+
+  const normalizeWeatherKey = (value) => normalizeBiomeKey(value);
+
+  const describeWeather = (weather) => {
+    if (!weather) {
+      return 'Unknown weather preset';
+    }
+    const label = weather.label ?? weather.id ?? 'Unknown weather preset';
+    const intensity = Number.isFinite(weather.intensity)
+      ? weather.intensity.toFixed(2)
+      : 'n/a';
+    return `${label} [${weather.id}] (intensity ${intensity})`;
+  };
+
+  const applyWeatherPreset = (weatherId) => {
+    if (!weatherManager || typeof weatherManager.setWeather !== 'function') {
+      return null;
+    }
+    if (!weatherId) {
+      return weatherManager.getCurrentWeather?.() ?? null;
+    }
+    const next = weatherManager.setWeather(weatherId);
+    if (!next || next.id !== weatherId) {
+      return null;
+    }
+    return next;
+  };
 
   function attemptTeleportToBiomeColumn(baseX, baseZ) {
     const waterLevel = resolveWaterLevel();
@@ -1390,6 +1424,143 @@ export function registerDeveloperCommands({
         return;
       }
       throw new Error('Usage: /vfx overlay [on|off|toggle] | /vfx list.');
+    },
+  });
+
+  registerCommand({
+    name: 'weather',
+    description: 'Inspect and override the active weather preset.',
+    usage: '/weather <on|off|status|weatherId>',
+    handler: ({ args, success, warn, info }) => {
+      if (!weatherManager || typeof weatherManager.setWeather !== 'function') {
+        warn('Weather manager is not available yet.');
+        return;
+      }
+      if (args.length === 0) {
+        throw new Error('Usage: /weather <on|off|status|weatherId>.');
+      }
+
+      const subcommand = String(args[0] ?? '').toLowerCase();
+
+      if (subcommand === 'status') {
+        const active = weatherManager.getCurrentWeather?.();
+        if (!active) {
+          info('[weather status] No active weather preset.');
+        } else {
+          info(`[weather status] Active — ${describeWeather(active)}.`);
+        }
+        info(
+          `[weather status] Overrides ${weatherControlState.suppressed ? 'OFF (forced clear skies)' : 'ON'}.`,
+        );
+        const duration = active?.duration ?? null;
+        if (duration) {
+          const durationParts = [];
+          if (Number.isFinite(duration.remaining)) {
+            durationParts.push(`remaining ${duration.remaining.toFixed(1)}s`);
+          }
+          if (Number.isFinite(duration.min) || Number.isFinite(duration.max)) {
+            const minText = Number.isFinite(duration.min)
+              ? duration.min.toFixed(1)
+              : '?';
+            const maxText = Number.isFinite(duration.max)
+              ? duration.max.toFixed(1)
+              : '?';
+            durationParts.push(`window ${minText}–${maxText}s`);
+          }
+          const summary = durationParts.length > 0 ? durationParts.join(', ') : 'metadata unavailable';
+          info(`[weather status] Duration — ${summary}.`);
+        } else {
+          info('[weather status] Duration metadata unavailable.');
+        }
+
+        const position = playerControls?.getPosition?.();
+        if (position) {
+          const biomeSample = sampleBiomeAt(Math.round(position.x), Math.round(position.z));
+          const biome = biomeSample?.biome ?? null;
+          if (biome) {
+            const candidates = Array.isArray(biome.weather?.candidates)
+              ? biome.weather.candidates
+              : [];
+            const rotationIds =
+              candidates.length > 0
+                ? candidates.map((candidate) => candidate.id)
+                : ['clear_skies'];
+            info(
+              `[weather status] Biome — ${
+                biome.label ?? biome.id ?? 'Unknown biome'
+              } (${rotationIds.join(', ')}).`,
+            );
+            if (active?.id && !rotationIds.includes(active.id)) {
+              warn(
+                `[weather status] Active preset ${active.id} is not part of the current biome rotation.`,
+              );
+            }
+          } else {
+            info('[weather status] Unable to resolve biome at current position.');
+          }
+        } else {
+          info('[weather status] Player position unavailable; cannot sample biome.');
+        }
+        return;
+      }
+
+      if (subcommand === 'off') {
+        if (weatherControlState.suppressed) {
+          info('[weather] Weather overrides already disabled.');
+          return;
+        }
+        const current = weatherManager.getCurrentWeather?.();
+        weatherControlState.lastSuppressedWeatherId =
+          current && current.id !== 'clear_skies' ? current.id : weatherControlState.lastSuppressedWeatherId;
+        const applied = applyWeatherPreset('clear_skies');
+        if (!applied) {
+          warn('Unable to enforce clear skies; preset "clear_skies" is not registered.');
+          throw new Error('Failed to disable weather overrides.');
+        }
+        weatherControlState.suppressed = true;
+        success('[weather] Weather overrides disabled — clear skies enforced.');
+        return;
+      }
+
+      if (subcommand === 'on') {
+        if (!weatherControlState.suppressed) {
+          const active = weatherManager.getCurrentWeather?.();
+          info(`[weather] Weather overrides already enabled — ${describeWeather(active)}.`);
+          return;
+        }
+        const candidateIds = [
+          weatherControlState.lastManualWeatherId,
+          weatherControlState.lastSuppressedWeatherId,
+          'clear_skies',
+        ].filter(Boolean);
+        let restored = null;
+        for (const candidate of candidateIds) {
+          restored = applyWeatherPreset(candidate);
+          if (restored) {
+            break;
+          }
+        }
+        weatherControlState.suppressed = false;
+        if (!restored) {
+          warn('No valid weather preset could be restored.');
+          throw new Error('Failed to enable weather overrides.');
+        }
+        success(`[weather] Weather overrides enabled — ${describeWeather(restored)}.`);
+        return;
+      }
+
+      const targetId = normalizeWeatherKey(args.join(' '));
+      if (!targetId) {
+        throw new Error('Specify a weather preset identifier.');
+      }
+      const applied = applyWeatherPreset(targetId);
+      if (!applied) {
+        warn(`Weather preset "${targetId}" is not registered.`);
+        throw new Error('Weather preset not found.');
+      }
+      weatherControlState.lastManualWeatherId = applied.id;
+      weatherControlState.suppressed = false;
+      success(`[weather] Weather set to ${describeWeather(applied)}.`);
     },
   });
 

@@ -400,6 +400,7 @@ try {
     THREE,
     registerDiagnosticOverlay,
     particleSystem,
+    weatherManager,
   })
 
   commandConsole.log(
