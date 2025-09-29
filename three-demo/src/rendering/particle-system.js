@@ -361,6 +361,17 @@ export function createParticleSystem({ THREE, scene }) {
     }
   }
 
+  /**
+   * Registers a particle emitter with the system.
+   *
+   * Callers receive a handle object for successful registrations. When the
+   * emitter fails to initialize or does not allocate any instanced pools, the
+   * method disposes the emitter immediately and returns `null` so callers can
+   * react to the hard failure.
+   *
+   * @param {object} emitter
+   * @returns {{ stop: () => void; getActiveParticleCount: () => number } | null}
+   */
   function emit(emitter) {
     if (isDisposed) {
       throw new Error('Cannot emit from a disposed particle system');
@@ -391,6 +402,8 @@ export function createParticleSystem({ THREE, scene }) {
 
     activeEmitters.add(state);
 
+    let initializationFailed = false;
+
     try {
       emitter.initialize?.({
         THREE,
@@ -407,11 +420,26 @@ export function createParticleSystem({ THREE, scene }) {
       state.debugLabel = label;
     } catch (error) {
       console.error('Particle emitter initialize failed:', error);
-      state.shouldRemove = true;
+      initializationFailed = true;
     }
 
-    if (!emitter.update && state.instancedPools.size === 0) {
+    const hasInstancedPools = state.instancedPools.size > 0;
+
+    if (initializationFailed || !hasInstancedPools) {
+      if (!initializationFailed && !hasInstancedPools) {
+        if (state.debugLabel) {
+          console.warn(
+            'Particle emitter initialize completed without allocating any instanced pools; disposing emitter.',
+            { label: state.debugLabel },
+          );
+        } else {
+          console.warn(
+            'Particle emitter initialize completed without allocating any instanced pools; disposing emitter.',
+          );
+        }
+      }
       disposeEmitterState(state);
+      return null;
     }
 
     return {
