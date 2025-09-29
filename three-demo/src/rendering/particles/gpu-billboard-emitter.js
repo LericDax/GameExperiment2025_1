@@ -227,7 +227,9 @@ function jitterVector(base, jitter, target) {
  * @param {import('three').Vector3|Array|Object} [options.velocity] Base particle velocity.
  * @param {import('three').Vector3|Array|Object} [options.velocityJitter]
  *   Per-axis random offset applied to the initial velocity.
- * @param {number|{min:number,max:number}} [options.size=0.6] Base billboard size in world units.
+ * @param {number|{min:number,max:number}} [options.size=0.6] Base billboard width in world units.
+ * @param {number|{min:number,max:number}} [options.lengthMultiplier=1]
+ *   Multiplier applied to the width to compute the billboard height.
  * @param {number} [options.sizeJitter=0.2] Scalar noise applied to the size.
  * @param {import('three').Vector3|Array|Object} [options.gravity]
  *   Acceleration applied to particles in world space.
@@ -254,6 +256,7 @@ export function createGpuBillboardEmitter(options = {}) {
     velocityJitter = null,
     size = 0.6,
     sizeJitter = 0.2,
+    lengthMultiplier = 1,
     gravity = null,
     drag = 1.5,
     fadeIn = 0.1,
@@ -277,6 +280,8 @@ export function createGpuBillboardEmitter(options = {}) {
   let baseTint
   let minSize
   let maxSize
+  let minLengthMultiplier
+  let maxLengthMultiplier
   let lifetimeRange
   let gravityVector
   let spawnAccumulator = 0
@@ -307,6 +312,11 @@ export function createGpuBillboardEmitter(options = {}) {
       return
     }
     const sizeValue = Math.max(0.001, minSize + Math.random() * (maxSize - minSize))
+    const lengthFactor = Math.max(
+      0.001,
+      minLengthMultiplier + Math.random() * (maxLengthMultiplier - minLengthMultiplier),
+    )
+    const lengthValue = sizeValue * lengthFactor
 
     const positionVec = jitterVector(basePosition, positionNoise, tempPosition)
     const velocityVec = jitterVector(baseVelocity, velocityNoise, tempVelocity)
@@ -314,7 +324,7 @@ export function createGpuBillboardEmitter(options = {}) {
     pool.setAttributeValues('aOrigin', instanceIndex, [positionVec.x, positionVec.y, positionVec.z])
     pool.setAttributeValues('aVelocity', instanceIndex, [velocityVec.x, velocityVec.y, velocityVec.z])
     pool.setAttributeValues('aColor', instanceIndex, [baseTint.r, baseTint.g, baseTint.b, clampedOpacity])
-    pool.setAttributeValues('aSize', instanceIndex, [sizeValue, 0])
+    pool.setAttributeValues('aSize', instanceIndex, [sizeValue, lengthValue])
 
     const lifetimeValue = Math.max(
       0.01,
@@ -354,6 +364,9 @@ export function createGpuBillboardEmitter(options = {}) {
       const jitterAmount = Math.abs(sizeJitter)
       minSize = Math.max(0.001, baseMin - jitterAmount)
       maxSize = Math.max(minSize, baseMax + jitterAmount)
+      const resolvedLength = resolveRange(lengthMultiplier, 1)
+      minLengthMultiplier = Math.max(0.001, resolvedLength.min)
+      maxLengthMultiplier = Math.max(minLengthMultiplier, resolvedLength.max)
       lifetimeRange = resolveRange(lifetime, 1.5)
       lifetimeRange.min = Math.max(0.01, lifetimeRange.min)
       lifetimeRange.max = Math.max(lifetimeRange.min, lifetimeRange.max)
