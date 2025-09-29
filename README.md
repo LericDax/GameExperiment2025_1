@@ -12,6 +12,10 @@ This project hosts a browser-based sandbox inspired by classic block-building ga
 - Enhanced lighting pass with ACES filmic tone mapping, soft shadows, and a fill light for richer visuals.
 - Responsive HUD overlay that surfaces health, oxygen, and contextual status messaging.
 
+## Art Assets
+
+Artists can drop hand-authored overrides into `three-demo/src/textures/nonprocedural/`. See the README in that folder for naming and tiling conventions so the runtime picks up your textures automatically.
+
 ## Audio
 The sandbox ships with a lightweight background music pipeline so developers can quickly audition new tracks:
 
