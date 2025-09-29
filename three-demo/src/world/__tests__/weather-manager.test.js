@@ -65,5 +65,54 @@ test('failed precipitation spawns are recorded for diagnostics', () => {
   assert.deepEqual(weatherState.lastPrecipitationFailure, {
     elapsedTime: 2,
     type: 'rain',
+    reason: 'no_handle',
+  });
+});
+
+test('zero-particle precipitation handles trigger retries and diagnostics', () => {
+  let stopCalls = 0;
+  let emitCount = 0;
+  const handles = [
+    {
+      stop() {
+        stopCalls += 1;
+      },
+      getActiveParticleCount() {
+        return 0;
+      },
+    },
+    {
+      stop() {},
+      getActiveParticleCount() {
+        return 24;
+      },
+    },
+  ];
+
+  const { manager, scene, particleSystem } = createManager({
+    emitImplementation: () => {
+      const handle = handles[emitCount] ?? null;
+      emitCount += 1;
+      return handle;
+    },
+  });
+
+  manager.setWeather('misty_rain');
+  manager.update({ delta: 0.1, elapsedTime: 0.1 });
+  manager.update({ delta: 1, elapsedTime: 1.1 });
+  manager.update({ delta: 0.7, elapsedTime: 1.8 });
+  manager.update({ delta: 0.4, elapsedTime: 2.2 });
+
+  const weatherState = scene.userData.weather;
+
+  assert.equal(emitCount, 2, 'expected precipitation spawn to retry once');
+  assert.equal(stopCalls, 1, 'expected inactive precipitation handle to be stopped');
+  assert.equal(particleSystem.emitted.length, 2, 'expected two precipitation handles to be tracked');
+  assert.equal(weatherState.failedPrecipitationSpawns, 1);
+  assert.equal(weatherState.precipitationRecoveryAttempts, 1);
+  assert.deepEqual(weatherState.lastPrecipitationFailure, {
+    elapsedTime: 1.8,
+    type: 'rain',
+    reason: 'zero_particles',
   });
 });

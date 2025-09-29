@@ -70,6 +70,9 @@ const CATEGORY_DEFAULT_EFFECTS = {
 const DEFAULT_TICK_INTERVAL = 1.5;
 const DEFAULT_PRECIPITATION_UPDATE_INTERVAL = 0.22;
 const DEFAULT_AURORA_UPDATE_INTERVAL = 0.55;
+const PRECIPITATION_HANDLE_VALIDATION_DELAY = 0.85;
+const PRECIPITATION_HANDLE_RECHECK_INTERVAL = 0.55;
+const PRECIPITATION_SPAWN_MAX_RETRIES = 2;
 const MIN_WEATHER_DURATION_SECONDS = 30;
 const DEFAULT_BIOME_WEATHER_DURATION = { min: 180, max: 420 };
 
@@ -251,6 +254,9 @@ export function createWeatherManager({
     if (state.lastPrecipitationFailure === undefined) {
       state.lastPrecipitationFailure = null;
     }
+    if (!Number.isFinite(state.precipitationRecoveryAttempts)) {
+      state.precipitationRecoveryAttempts = 0;
+    }
     if (state.lastOverlayUpdate === undefined) {
       state.lastOverlayUpdate = null;
     }
@@ -307,6 +313,22 @@ export function createWeatherManager({
     };
   };
 
+  const recordPrecipitationFailure = ({ type, elapsedTime, reason }) => {
+    const state = ensureWeatherState();
+    if (!state) {
+      return;
+    }
+    const previousFailures = Number.isFinite(state.failedPrecipitationSpawns)
+      ? state.failedPrecipitationSpawns
+      : 0;
+    state.failedPrecipitationSpawns = previousFailures + 1;
+    state.lastPrecipitationFailure = {
+      type,
+      elapsedTime: Number.isFinite(elapsedTime) ? elapsedTime : null,
+      reason: reason ?? null,
+    };
+  };
+
   const applyWeatherEffects = (weather) => {
     if (!weather || !scene) {
       return;
@@ -325,19 +347,34 @@ export function createWeatherManager({
 
   };
 
+  const stopAttachmentHandle = (attachment) => {
+    if (!attachment) {
+      return;
+    }
+    try {
+      attachment.handle?.stop?.();
+    } catch (error) {
+      console.warn('Failed to dispose weather particle handle:', error);
+    }
+  };
+
+  const removeAttachment = (attachment) => {
+    const index = activeParticleEffects.indexOf(attachment);
+    if (index >= 0) {
+      activeParticleEffects.splice(index, 1);
+    }
+    syncEmitterState();
+  };
+
   const disposeWeatherEffects = () => {
     for (const attachment of activeParticleEffects) {
-      try {
-        attachment.handle?.stop?.();
-      } catch (error) {
-        console.warn('Failed to dispose weather particle handle:', error);
-      }
+      stopAttachmentHandle(attachment);
     }
     activeParticleEffects.length = 0;
     syncEmitterState();
   };
 
-  const spawnPrecipitationEffect = (config, context) => {
+  const spawnPrecipitationEffect = (config, context, attempt = 0) => {
     if (!particleSystem || typeof particleSystem.emit !== 'function') {
       return;
     }
@@ -355,19 +392,11 @@ export function createWeatherManager({
           });
     const handle = particleSystem.emit(emitter);
     if (!handle) {
-
-      const weatherState = ensureWeatherState();
-
-      if (weatherState) {
-        const previousFailures = Number.isFinite(weatherState.failedPrecipitationSpawns)
-          ? weatherState.failedPrecipitationSpawns
-          : 0;
-        weatherState.failedPrecipitationSpawns = previousFailures + 1;
-        weatherState.lastPrecipitationFailure = {
-          elapsedTime: context?.elapsedTime ?? null,
-          type: config.type,
-        };
-      }
+      recordPrecipitationFailure({
+        type: config.type,
+        elapsedTime: context?.elapsedTime ?? null,
+        reason: 'no_handle',
+      });
       console.warn('Weather precipitation emitter failed to spawn; no handle was returned.', {
         type: config.type,
       });
@@ -419,6 +448,15 @@ export function createWeatherManager({
       recordAnchorUpdate(elapsedTime);
     }
     activeParticleEffects.push(attachment);
+    attachment.spawnConfig = { ...config };
+    attachment.spawnAttempt = attempt;
+    attachment.spawnElapsedTime = elapsedTime;
+    attachment.validationReadyTime = Number.isFinite(elapsedTime)
+      ? elapsedTime + PRECIPITATION_HANDLE_VALIDATION_DELAY
+      : Number.POSITIVE_INFINITY;
+    attachment.validationStatus = 'pending';
+    attachment.validationRetryAfter = null;
+    attachment.validationPendingSince = null;
     recordPrecipitationSpawn({ type: config.type, elapsedTime });
     syncEmitterState();
   };
@@ -656,6 +694,97 @@ export function createWeatherManager({
     });
   };
 
+  const validatePrecipitationHandles = (context) => {
+    if (activeParticleEffects.length === 0) {
+      return;
+    }
+    const { elapsedTime = lastElapsedTime } = context;
+    const now = Number.isFinite(elapsedTime) ? elapsedTime : lastElapsedTime;
+    if (!Number.isFinite(now)) {
+      return;
+    }
+    const attachments = activeParticleEffects.slice();
+    for (const attachment of attachments) {
+      if (attachment.type !== 'precipitation') {
+        continue;
+      }
+      if (attachment.validationStatus === 'passed' || attachment.validationStatus === 'failed') {
+        continue;
+      }
+      const readyTime = Number.isFinite(attachment.validationReadyTime)
+        ? attachment.validationReadyTime
+        : Number.POSITIVE_INFINITY;
+      if (now < readyTime) {
+        continue;
+      }
+      const getCount = attachment.handle?.getActiveParticleCount;
+      if (typeof getCount !== 'function') {
+        attachment.validationStatus = 'passed';
+        continue;
+      }
+      const count = Number(getCount.call(attachment.handle));
+      if (Number.isFinite(count) && count > 0) {
+        attachment.validationStatus = 'passed';
+        continue;
+      }
+      if (!Number.isFinite(attachment.validationPendingSince)) {
+        attachment.validationPendingSince = now;
+        attachment.validationRetryAfter = now + PRECIPITATION_HANDLE_RECHECK_INTERVAL;
+        continue;
+      }
+      if (Number.isFinite(attachment.validationRetryAfter) && now < attachment.validationRetryAfter) {
+        continue;
+      }
+      const retryCount = Number(getCount.call(attachment.handle));
+      if (Number.isFinite(retryCount) && retryCount > 0) {
+        attachment.validationStatus = 'passed';
+        continue;
+      }
+
+      attachment.validationStatus = 'failed';
+      const failureElapsed = now;
+      const failureType = attachment.spawnConfig?.type ?? 'precipitation';
+      recordPrecipitationFailure({
+        type: failureType,
+        elapsedTime: failureElapsed,
+        reason: 'zero_particles',
+      });
+      stopAttachmentHandle(attachment);
+      removeAttachment(attachment);
+
+      const state = ensureWeatherState();
+      const maxAttempts = PRECIPITATION_SPAWN_MAX_RETRIES + 1;
+      const attemptIndex = Number.isFinite(attachment.spawnAttempt)
+        ? attachment.spawnAttempt
+        : 0;
+
+      if (attemptIndex < PRECIPITATION_SPAWN_MAX_RETRIES) {
+        if (state) {
+          const previousRecoveries = Number.isFinite(state.precipitationRecoveryAttempts)
+            ? state.precipitationRecoveryAttempts
+            : 0;
+          state.precipitationRecoveryAttempts = previousRecoveries + 1;
+        }
+        const nextAttempt = attemptIndex + 1;
+        console.warn(
+          'Weather precipitation emitter produced no particles; retrying spawn.',
+          {
+            type: failureType,
+            attempt: attemptIndex + 1,
+            maxAttempts,
+          },
+        );
+        const retryConfig = { ...attachment.spawnConfig };
+        spawnPrecipitationEffect(retryConfig, context, nextAttempt);
+      } else {
+        console.error('Weather precipitation emitter failed after maximum retries.', {
+          type: failureType,
+          attempts: maxAttempts,
+        });
+      }
+    }
+  };
+
   const setWeather = (weatherId, options = {}) => {
     const preset = weatherPresets.get(weatherId);
     if (!preset) {
@@ -726,6 +855,7 @@ export function createWeatherManager({
       refreshWeatherEffects({ ...context, elapsedTime: lastElapsedTime });
     }
     updateAnchoredEffects({ ...context, elapsedTime: lastElapsedTime });
+    validatePrecipitationHandles({ ...context, elapsedTime: lastElapsedTime });
     tickAccumulator += Number.isFinite(delta) ? delta : 0;
     while (tickAccumulator >= DEFAULT_TICK_INTERVAL) {
       tickAccumulator -= DEFAULT_TICK_INTERVAL;
