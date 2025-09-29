@@ -43,6 +43,11 @@ Please continue appending follow-up findings or configuration changes here whene
 - The end-to-end precipitation regression test now requires the live rain emitter to reach at least 18 active particles, matching the new readability targets.【F:src/world/__tests__/weather-manager.test.js†L170-L198】
 - **Reminder:** keep this section updated whenever precipitation visuals or thresholds change so QA can track expectation shifts alongside the documented plan.
 
+## 2025-07 Raindrop Overlay Diagnostics
+- Added a lightweight screen-space raindrop overlay that tracks the camera, scales with precipitation intensity, and is created or disposed alongside rain emitters so `/weather misty_rain` always renders a visible drizzle cue for testers.【F:src/rendering/effects/raindrop-overlay.js†L1-L147】【F:src/world/weather/weather-manager.js†L262-L407】
+- Exposed `/weather overlay` developer-console controls to toggle the overlay, adjust manual intensity, or reset to automatic behaviour for quick regression probes without touching presets.【F:src/player/dev-commands.js†L1443-L1542】
+- **Reminder:** keep this remediation plan current whenever the overlay visuals or tooling change so future weather investigators inherit accurate guidance.
+
 ## Work Orders
 1. **Gameplay-driven rotation**
    - Sample the player’s biome each frame (reusing the `sampleBiomeAt` helper from `/weather status`) and resolve the preset rotation with `resolveBiomeWeatherRotation`, storing timing metadata per biome.【F:src/player/dev-commands.js†L1532-L1562】【F:src/world/weather/weather-manager.js†L76-L127】
