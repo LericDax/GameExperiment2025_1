@@ -23,6 +23,7 @@ import {
 } from './rendering/particle-system.js'
 import { createWaterSurfaceMistEmitter } from './rendering/particles/water-effects.js'
 import { createAuroraRibbonEmitter } from './rendering/particles/aurora-effects.js'
+import { createLumenBloomMotesEmitter } from './rendering/particles/lumen-bloom-effects.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -268,16 +269,33 @@ try {
       const orientationValue = metadata?.ribbonOrientation ?? mesh.userData?.ribbonOrientation
       const intensity = Number.isFinite(intensityValue) ? intensityValue : 1
       const orientation = Number.isFinite(orientationValue) ? orientationValue : 0
-      const handle = emit(
-        createAuroraRibbonEmitter({
-          position: anchor,
-          span,
-          intensity,
-          orientation,
-        }),
+      const handles = []
+      handles.push(
+        emit(
+          createAuroraRibbonEmitter({
+            position: anchor,
+            span,
+            intensity,
+            orientation,
+          }),
+        ),
+      )
+      handles.push(
+        emit(
+          createLumenBloomMotesEmitter({
+            position: anchor,
+            radius: span * 0.55,
+            intensity: intensity * 0.9,
+            riseHeight: Math.max(2.4, span * 0.35),
+          }),
+        ),
       )
       return {
-        dispose: () => handle?.stop?.(),
+        dispose: () => {
+          for (const handle of handles) {
+            handle?.stop?.()
+          }
+        },
       }
     },
   )
