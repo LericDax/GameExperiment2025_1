@@ -147,9 +147,46 @@ function resolveLumenBloomPresence({
     const spawnThreshold = 0.64 - plateauInfluence * 0.22 + altitudeBias * 0.0012;
 
     if (ridgeGate && combinedNoise >= spawnThreshold) {
-      const ribbonLift = 1.01 + ridgeStrength * 0.3 + ribbonNoise * 0.2;
-      const surfaceY = baseSurface + ribbonLift;
       const depth = Math.max(0.12, 0.18 + bloom * 0.16 + plateauInfluence * 0.2);
+      const surfaceOffsetLimit = 0.3;
+      const rawLift =
+        0.12 +
+        plateauInfluence * 0.18 +
+        ridgeStrength * 0.22 +
+        ribbonNoise * 0.15 +
+        ridgeNoise * 0.1;
+      const clampedLift = Math.max(
+        -surfaceOffsetLimit,
+        Math.min(surfaceOffsetLimit, rawLift),
+      );
+      let surfaceY = baseSurface + clampedLift;
+
+      const neighborBaseSurfaces = neighborHeights.map((height) => height + 0.5);
+      const highestNeighborSurface = Math.max(baseSurface, ...neighborBaseSurfaces);
+      const smoothingFactor = 0.45;
+      const smoothedSurface =
+        surfaceY + (highestNeighborSurface - surfaceY) * smoothingFactor;
+      surfaceY = Math.max(
+        baseSurface - surfaceOffsetLimit,
+        Math.min(baseSurface + surfaceOffsetLimit, smoothedSurface),
+      );
+
+      const maxDepth = 0.6;
+      const puddleFloor = baseSurface - maxDepth;
+      let bottomY = surfaceY - depth;
+      bottomY = Math.max(bottomY, puddleFloor);
+      bottomY = Math.min(bottomY, surfaceY - 0.08);
+
+      const neighborBottomTargets = neighborBaseSurfaces.map((surface) =>
+        Math.max(surface - depth, surface - maxDepth),
+      );
+      const highestNeighborBottom = Math.max(
+        puddleFloor,
+        ...neighborBottomTargets,
+      );
+      bottomY += (highestNeighborBottom - bottomY) * smoothingFactor;
+      bottomY = Math.min(bottomY, surfaceY - 0.08);
+      bottomY = Math.max(bottomY, puddleFloor);
       const intensity = Math.min(
         3,
         0.82 + plateauInfluence * 0.9 + ribbonNoise * 0.35 + ridgeNoise * 0.24,
@@ -168,7 +205,7 @@ function resolveLumenBloomPresence({
       return {
         hasFluid: true,
         surfaceY,
-        bottomY: surfaceY - depth,
+        bottomY,
         metadata: {
           lifecycleCues: ['aurora_ribbon'],
           auroraIntensity: intensity,
