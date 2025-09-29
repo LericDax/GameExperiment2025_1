@@ -1771,7 +1771,10 @@ export function registerDeveloperCommands({
         if (
           typeof weatherManager.getRaindropOverlayState !== 'function' ||
           typeof weatherManager.setRaindropOverlayManualEnabled !== 'function' ||
-          typeof weatherManager.setRaindropOverlayManualIntensity !== 'function'
+          typeof weatherManager.setRaindropOverlayManualIntensity !== 'function' ||
+          typeof weatherManager.setRaindropOverlayManualWindSpeed !== 'function' ||
+          typeof weatherManager.setRaindropOverlayManualStreakDensity !== 'function' ||
+          typeof weatherManager.setRaindropOverlayManualSparkleGain !== 'function'
         ) {
           warn('[weather overlay] Overlay controls are unavailable in this build.');
           return;
@@ -1787,15 +1790,41 @@ export function registerDeveloperCommands({
               : current.manualEnabled
               ? 'manual:on'
               : 'manual:off';
-          const source = current.manualIntensity !== null && current.manualIntensity !== undefined ? 'manual' : 'auto';
+          const source =
+            current.manualIntensity !== null && current.manualIntensity !== undefined
+              ? 'manual'
+              : 'auto';
           const appliedIntensity = Number.isFinite(current.intensity)
             ? current.intensity.toFixed(2)
             : 'n/a';
           const baseIntensity = Number.isFinite(current.baseIntensity)
             ? current.baseIntensity.toFixed(2)
             : 'n/a';
+          const windSource =
+            current.manualWindSpeed !== null && current.manualWindSpeed !== undefined
+              ? 'manual'
+              : 'auto';
+          const streakSource =
+            current.manualStreakDensity !== null && current.manualStreakDensity !== undefined
+              ? 'manual'
+              : 'auto';
+          const sparkleSource =
+            current.manualSparkleGain !== null && current.manualSparkleGain !== undefined
+              ? 'manual'
+              : 'auto';
+          const windSpeed = Number.isFinite(current.windSpeed)
+            ? current.windSpeed.toFixed(2)
+            : 'n/a';
+          const streakDensity = Number.isFinite(current.streakDensity)
+            ? current.streakDensity.toFixed(2)
+            : 'n/a';
+          const sparkleGain = Number.isFinite(current.sparkleGain)
+            ? current.sparkleGain.toFixed(2)
+            : 'n/a';
           info(
-            `${prefix} visible=${current.visible ? 'yes' : 'no'}, enabled=${current.enabled ? 'yes' : 'no'}, mode=${mode}, intensity=${appliedIntensity} (${source}), base=${baseIntensity}.`,
+            `${prefix} visible=${current.visible ? 'yes' : 'no'}, enabled=${
+              current.enabled ? 'yes' : 'no'
+            }, mode=${mode}, intensity=${appliedIntensity} (${source}), base=${baseIntensity}, wind=${windSpeed} (${windSource}), density=${streakDensity} (${streakSource}), sparkle=${sparkleGain} (${sparkleSource}).`,
           );
         };
 
@@ -1809,6 +1838,9 @@ export function registerDeveloperCommands({
         if (action === 'clear') {
           weatherManager.setRaindropOverlayManualEnabled(null);
           weatherManager.setRaindropOverlayManualIntensity(null);
+          weatherManager.setRaindropOverlayManualWindSpeed(null);
+          weatherManager.setRaindropOverlayManualStreakDensity(null);
+          weatherManager.setRaindropOverlayManualSparkleGain(null);
           success('[weather overlay] Cleared manual overrides; overlay returned to auto mode.');
           reportOverlayStatus();
           return;
@@ -1841,7 +1873,7 @@ export function registerDeveloperCommands({
           if (valueToken === undefined) {
             throw new Error('Usage: /weather overlay intensity <value|auto>.');
           }
-          const normalized = valueToken.toLowerCase();
+          const normalized = String(valueToken).toLowerCase();
           if (normalized === 'auto' || normalized === 'default') {
             weatherManager.setRaindropOverlayManualIntensity(null);
             success('[weather overlay] Cleared manual intensity override.');
@@ -1858,8 +1890,52 @@ export function registerDeveloperCommands({
           return;
         }
 
+        if (action === 'wind') {
+          const valueToken = overlayArgs[1];
+          if (valueToken === undefined) {
+            throw new Error('Usage: /weather overlay wind <value|auto>.');
+          }
+          const normalized = String(valueToken).toLowerCase();
+          if (normalized === 'auto' || normalized === 'default') {
+            weatherManager.setRaindropOverlayManualWindSpeed(null);
+            success('[weather overlay] Cleared manual wind override.');
+            reportOverlayStatus();
+            return;
+          }
+          const numeric = Number(valueToken);
+          if (!Number.isFinite(numeric)) {
+            throw new Error('Specify a numeric overlay wind speed (e.g. 1.1) or "auto".');
+          }
+          weatherManager.setRaindropOverlayManualWindSpeed(numeric);
+          success(`[weather overlay] Manual wind speed set to ${numeric.toFixed(2)}.`);
+          reportOverlayStatus();
+          return;
+        }
+
+        if (action === 'density') {
+          const valueToken = overlayArgs[1];
+          if (valueToken === undefined) {
+            throw new Error('Usage: /weather overlay density <value|auto>.');
+          }
+          const normalized = String(valueToken).toLowerCase();
+          if (normalized === 'auto' || normalized === 'default') {
+            weatherManager.setRaindropOverlayManualStreakDensity(null);
+            success('[weather overlay] Cleared manual density override.');
+            reportOverlayStatus();
+            return;
+          }
+          const numeric = Number(valueToken);
+          if (!Number.isFinite(numeric)) {
+            throw new Error('Specify a numeric overlay streak density (e.g. 1.4) or "auto".');
+          }
+          weatherManager.setRaindropOverlayManualStreakDensity(numeric);
+          success(`[weather overlay] Manual streak density set to ${numeric.toFixed(2)}.`);
+          reportOverlayStatus();
+          return;
+        }
+
         throw new Error(
-          'Usage: /weather overlay [status|on|off|toggle|auto|intensity <value|auto>|clear].',
+          'Usage: /weather overlay [status|on|off|toggle|auto|intensity <value|auto>|wind <value|auto>|density <value|auto>|clear].',
         );
       }
 

@@ -3,7 +3,13 @@ import { createWeatherRainEmitter } from '../../rendering/particles/weather-rain
 import { createWeatherSnowEmitter } from '../../rendering/particles/weather-snow.js';
 import {
   clampRaindropOverlayIntensity,
+  clampRaindropOverlayWindSpeed,
+  clampRaindropOverlayStreakDensity,
+  clampRaindropOverlaySparkleGain,
   createRaindropOverlay,
+  DEFAULT_RAIN_OVERLAY_WIND_SPEED,
+  DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
+  DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
 } from '../../rendering/effects/raindrop-overlay.js';
 import { createWeatherAudioController } from '../../audio/weather-audio.js';
 import { createWeatherDebugOverlay } from '../../ui/weather-debug-overlay.js';
@@ -181,6 +187,25 @@ function normalisePrecipitationEffect(weather, effect) {
   const minAnchorDistance = Number.isFinite(effect.minAnchorDistance)
     ? effect.minAnchorDistance
     : null;
+  const overlayEffect = effect.raindropOverlay ?? null;
+  let raindropOverlay = null;
+  if (overlayEffect) {
+    const overlayConfig = {};
+    if (Number.isFinite(overlayEffect.windSpeed)) {
+      overlayConfig.windSpeed = clampRaindropOverlayWindSpeed(overlayEffect.windSpeed);
+    }
+    if (Number.isFinite(overlayEffect.streakDensity)) {
+      overlayConfig.streakDensity = clampRaindropOverlayStreakDensity(
+        overlayEffect.streakDensity,
+      );
+    }
+    if (Number.isFinite(overlayEffect.sparkleGain)) {
+      overlayConfig.sparkleGain = clampRaindropOverlaySparkleGain(overlayEffect.sparkleGain);
+    }
+    if (Object.keys(overlayConfig).length > 0) {
+      raindropOverlay = overlayConfig;
+    }
+  }
   return {
     type,
     intensity: clamp(baseIntensity, 0.15, 2.6),
@@ -188,6 +213,7 @@ function normalisePrecipitationEffect(weather, effect) {
     anchorHeight,
     updateInterval: updateInterval ?? null,
     minAnchorDistance: minAnchorDistance ?? null,
+    raindropOverlay,
   };
 }
 
@@ -226,13 +252,43 @@ function normaliseAuroraEffect(weather, effect) {
   };
 }
 
-function resolveRainOverlayIntensity(precipitation) {
+function resolveRainOverlayResponse(precipitation) {
+  const defaults = {
+    active: false,
+    intensity: 0,
+    windSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
+    streakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
+    sparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
+  };
   if (!precipitation) {
-    return 0;
+    return defaults;
   }
   const base = Number.isFinite(precipitation.intensity) ? precipitation.intensity : 0;
-  const scaled = clamp(base * RAIN_OVERLAY_INTENSITY_SCALE, RAIN_OVERLAY_INTENSITY_MIN, RAIN_OVERLAY_INTENSITY_MAX);
-  return clampRaindropOverlayIntensity(scaled);
+  const scaled = clamp(
+    base * RAIN_OVERLAY_INTENSITY_SCALE,
+    RAIN_OVERLAY_INTENSITY_MIN,
+    RAIN_OVERLAY_INTENSITY_MAX,
+  );
+  const intensity = clampRaindropOverlayIntensity(scaled);
+  const normalised = clamp(base / 2.6, 0, 1);
+  const overlayConfig = precipitation.raindropOverlay ?? {};
+  const windSource =
+    overlayConfig.windSpeed !== undefined ? overlayConfig.windSpeed : normalised * 1.8;
+  const streakSource =
+    overlayConfig.streakDensity !== undefined
+      ? overlayConfig.streakDensity
+      : 0.9 + normalised * (2.4 - 0.9);
+  const sparkleSource =
+    overlayConfig.sparkleGain !== undefined
+      ? overlayConfig.sparkleGain
+      : 0.55 + normalised * (1.65 - 0.55);
+  return {
+    active: intensity > 0,
+    intensity,
+    windSpeed: clampRaindropOverlayWindSpeed(windSource),
+    streakDensity: clampRaindropOverlayStreakDensity(streakSource),
+    sparkleGain: clampRaindropOverlaySparkleGain(sparkleSource),
+  };
 }
 
 export function createWeatherManager({
@@ -275,8 +331,48 @@ export function createWeatherManager({
   const raindropOverlayState = {
     baseActive: false,
     baseIntensity: 0,
+    baseWindSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
+    baseStreakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
+    baseSparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
     manualEnabled: null,
     manualIntensity: null,
+    manualWindSpeed: null,
+    manualStreakDensity: null,
+    manualSparkleGain: null,
+  };
+
+  const resolveOverlayTargets = () => {
+    const pickValue = (manualValue, baseValue, clampFn, fallback) => {
+      if (manualValue === null || manualValue === undefined) {
+        const source = Number.isFinite(baseValue) ? baseValue : fallback;
+        return clampFn(source);
+      }
+      return clampFn(manualValue);
+    };
+
+    const intensitySource =
+      raindropOverlayState.manualIntensity ?? raindropOverlayState.baseIntensity;
+    return {
+      intensity: clampRaindropOverlayIntensity(intensitySource),
+      windSpeed: pickValue(
+        raindropOverlayState.manualWindSpeed,
+        raindropOverlayState.baseWindSpeed,
+        clampRaindropOverlayWindSpeed,
+        DEFAULT_RAIN_OVERLAY_WIND_SPEED,
+      ),
+      streakDensity: pickValue(
+        raindropOverlayState.manualStreakDensity,
+        raindropOverlayState.baseStreakDensity,
+        clampRaindropOverlayStreakDensity,
+        DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
+      ),
+      sparkleGain: pickValue(
+        raindropOverlayState.manualSparkleGain,
+        raindropOverlayState.baseSparkleGain,
+        clampRaindropOverlaySparkleGain,
+        DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
+      ),
+    };
   };
 
   const ensureWeatherState = () => {
@@ -331,10 +427,19 @@ export function createWeatherManager({
       state.raindropOverlay = {
         baseActive: false,
         baseIntensity: 0,
+        baseWindSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
+        baseStreakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
+        baseSparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
         manualEnabled: null,
         manualIntensity: null,
+        manualWindSpeed: null,
+        manualStreakDensity: null,
+        manualSparkleGain: null,
         enabled: false,
         intensity: 0,
+        windSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
+        streakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
+        sparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
         visible: false,
       };
     }
@@ -389,10 +494,22 @@ export function createWeatherManager({
     const baseActive = raindropOverlayState.baseActive;
     overlay.baseActive = baseActive;
     overlay.baseIntensity = raindropOverlayState.baseIntensity;
+    overlay.baseWindSpeed = raindropOverlayState.baseWindSpeed;
+    overlay.baseStreakDensity = raindropOverlayState.baseStreakDensity;
+    overlay.baseSparkleGain = raindropOverlayState.baseSparkleGain;
     overlay.manualEnabled = manualEnabled;
     overlay.manualIntensity = raindropOverlayState.manualIntensity;
-    overlay.enabled = Boolean((manualEnabled ?? baseActive) && targetIntensity > 0);
-    overlay.intensity = raindropOverlay?.getIntensity?.() ?? targetIntensity;
+    overlay.manualWindSpeed = raindropOverlayState.manualWindSpeed;
+    overlay.manualStreakDensity = raindropOverlayState.manualStreakDensity;
+    overlay.manualSparkleGain = raindropOverlayState.manualSparkleGain;
+    const targets = resolveOverlayTargets();
+    overlay.enabled = Boolean((manualEnabled ?? baseActive) && targets.intensity > 0);
+    overlay.intensity = raindropOverlay?.getIntensity?.() ?? targets.intensity;
+    overlay.windSpeed = raindropOverlay?.getWindSpeed?.() ?? targets.windSpeed;
+    overlay.streakDensity =
+      raindropOverlay?.getStreakDensity?.() ?? targets.streakDensity;
+    overlay.sparkleGain =
+      raindropOverlay?.getSparkleGain?.() ?? targets.sparkleGain;
     overlay.visible = Boolean(raindropOverlay);
   };
 
@@ -422,14 +539,22 @@ export function createWeatherManager({
     };
   };
 
-  const ensureRaindropOverlayEffect = (intensity) => {
+  const ensureRaindropOverlayEffect = (targets) => {
     if (raindropOverlay || !scene) {
-      if (raindropOverlay && Number.isFinite(intensity)) {
-        raindropOverlay.setIntensity(intensity);
+      if (raindropOverlay && targets) {
+        raindropOverlay.setIntensity(targets.intensity);
+        raindropOverlay.setWindSpeed(targets.windSpeed);
+        raindropOverlay.setStreakDensity(targets.streakDensity);
+        raindropOverlay.setSparkleGain(targets.sparkleGain);
       }
       return raindropOverlay;
     }
-    const overlay = createRaindropOverlay({ intensity });
+    const overlay = createRaindropOverlay({
+      intensity: targets?.intensity,
+      windSpeed: targets?.windSpeed,
+      streakDensity: targets?.streakDensity,
+      sparkleGain: targets?.sparkleGain,
+    });
     if (!overlay?.mesh) {
       return null;
     }
@@ -457,10 +582,8 @@ export function createWeatherManager({
     const manualEnabled = raindropOverlayState.manualEnabled;
     const baseActive = raindropOverlayState.baseActive;
     const shouldShow = manualEnabled !== null ? manualEnabled : baseActive;
-    const intensityTarget = clampRaindropOverlayIntensity(
-      raindropOverlayState.manualIntensity ?? raindropOverlayState.baseIntensity,
-    );
-    if (!shouldShow || intensityTarget <= 0) {
+    const targets = resolveOverlayTargets();
+    if (!shouldShow || targets.intensity <= 0) {
       if (raindropOverlay) {
         disposeRaindropOverlayEffect();
       } else {
@@ -468,9 +591,12 @@ export function createWeatherManager({
       }
       return;
     }
-    const overlay = ensureRaindropOverlayEffect(intensityTarget);
+    const overlay = ensureRaindropOverlayEffect(targets);
     if (overlay) {
-      overlay.setIntensity(intensityTarget);
+      overlay.setIntensity(targets.intensity);
+      overlay.setWindSpeed(targets.windSpeed);
+      overlay.setStreakDensity(targets.streakDensity);
+      overlay.setSparkleGain(targets.sparkleGain);
       if (overlay.mesh) {
         overlay.mesh.visible = true;
       }
@@ -478,19 +604,40 @@ export function createWeatherManager({
     updateRaindropOverlayMetadata();
   };
 
-  const setRaindropOverlayBaseState = ({ active, intensity }) => {
+  const setRaindropOverlayBaseState = ({
+    active,
+    intensity,
+    windSpeed,
+    streakDensity,
+    sparkleGain,
+  }) => {
     const nextActive = Boolean(active);
     const nextIntensity = Number.isFinite(intensity)
       ? clampRaindropOverlayIntensity(intensity)
       : 0;
+    const nextWindSpeed = Number.isFinite(windSpeed)
+      ? clampRaindropOverlayWindSpeed(windSpeed)
+      : DEFAULT_RAIN_OVERLAY_WIND_SPEED;
+    const nextStreakDensity = Number.isFinite(streakDensity)
+      ? clampRaindropOverlayStreakDensity(streakDensity)
+      : DEFAULT_RAIN_OVERLAY_STREAK_DENSITY;
+    const nextSparkleGain = Number.isFinite(sparkleGain)
+      ? clampRaindropOverlaySparkleGain(sparkleGain)
+      : DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN;
     if (
       raindropOverlayState.baseActive === nextActive &&
-      raindropOverlayState.baseIntensity === nextIntensity
+      raindropOverlayState.baseIntensity === nextIntensity &&
+      raindropOverlayState.baseWindSpeed === nextWindSpeed &&
+      raindropOverlayState.baseStreakDensity === nextStreakDensity &&
+      raindropOverlayState.baseSparkleGain === nextSparkleGain
     ) {
       return;
     }
     raindropOverlayState.baseActive = nextActive;
     raindropOverlayState.baseIntensity = nextIntensity;
+    raindropOverlayState.baseWindSpeed = nextWindSpeed;
+    raindropOverlayState.baseStreakDensity = nextStreakDensity;
+    raindropOverlayState.baseSparkleGain = nextSparkleGain;
     syncRaindropOverlay();
   };
 
@@ -519,20 +666,79 @@ export function createWeatherManager({
     syncRaindropOverlay();
   };
 
+  const setRaindropOverlayManualWindSpeed = (value) => {
+    let next = null;
+    if (value !== null && value !== undefined) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return;
+      }
+      next = clampRaindropOverlayWindSpeed(numeric);
+    }
+    if (raindropOverlayState.manualWindSpeed === next) {
+      return;
+    }
+    raindropOverlayState.manualWindSpeed = next;
+    syncRaindropOverlay();
+  };
+
+  const setRaindropOverlayManualStreakDensity = (value) => {
+    let next = null;
+    if (value !== null && value !== undefined) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return;
+      }
+      next = clampRaindropOverlayStreakDensity(numeric);
+    }
+    if (raindropOverlayState.manualStreakDensity === next) {
+      return;
+    }
+    raindropOverlayState.manualStreakDensity = next;
+    syncRaindropOverlay();
+  };
+
+  const setRaindropOverlayManualSparkleGain = (value) => {
+    let next = null;
+    if (value !== null && value !== undefined) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return;
+      }
+      next = clampRaindropOverlaySparkleGain(numeric);
+    }
+    if (raindropOverlayState.manualSparkleGain === next) {
+      return;
+    }
+    raindropOverlayState.manualSparkleGain = next;
+    syncRaindropOverlay();
+  };
+
   const getRaindropOverlayState = () => {
     const manualEnabled = raindropOverlayState.manualEnabled;
     const baseActive = raindropOverlayState.baseActive;
-    const intensity = raindropOverlay?.getIntensity?.() ?? clampRaindropOverlayIntensity(
-      raindropOverlayState.manualIntensity ?? raindropOverlayState.baseIntensity,
-    );
+    const targets = resolveOverlayTargets();
+    const intensity = raindropOverlay?.getIntensity?.() ?? targets.intensity;
+    const windSpeed = raindropOverlay?.getWindSpeed?.() ?? targets.windSpeed;
+    const streakDensity = raindropOverlay?.getStreakDensity?.() ?? targets.streakDensity;
+    const sparkleGain = raindropOverlay?.getSparkleGain?.() ?? targets.sparkleGain;
     return {
       enabled: Boolean((manualEnabled ?? baseActive) && intensity > 0),
       visible: Boolean(raindropOverlay),
       intensity,
+      windSpeed,
+      streakDensity,
+      sparkleGain,
       baseActive,
       baseIntensity: raindropOverlayState.baseIntensity,
+      baseWindSpeed: raindropOverlayState.baseWindSpeed,
+      baseStreakDensity: raindropOverlayState.baseStreakDensity,
+      baseSparkleGain: raindropOverlayState.baseSparkleGain,
       manualEnabled,
       manualIntensity: raindropOverlayState.manualIntensity,
+      manualWindSpeed: raindropOverlayState.manualWindSpeed,
+      manualStreakDensity: raindropOverlayState.manualStreakDensity,
+      manualSparkleGain: raindropOverlayState.manualSparkleGain,
     };
   };
 
@@ -1271,13 +1477,23 @@ export function createWeatherManager({
     }
     const resolved = resolveWeatherEffects(activeWeather);
     const precipitation = normalisePrecipitationEffect(activeWeather, resolved.precipitation);
-    let overlayBaseState = { active: false, intensity: 0 };
+    let overlayBaseState = {
+      active: false,
+      intensity: 0,
+      windSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
+      streakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
+      sparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
+    };
     if (precipitation) {
       spawnPrecipitationEffect(precipitation, context);
       if (precipitation.type === 'rain') {
+        const overlayResponse = resolveRainOverlayResponse(precipitation);
         overlayBaseState = {
-          active: true,
-          intensity: resolveRainOverlayIntensity(precipitation),
+          active: overlayResponse.active,
+          intensity: overlayResponse.intensity,
+          windSpeed: overlayResponse.windSpeed,
+          streakDensity: overlayResponse.streakDensity,
+          sparkleGain: overlayResponse.sparkleGain,
         };
       }
     }
@@ -1749,6 +1965,9 @@ export function createWeatherManager({
     getRaindropOverlayState,
     setRaindropOverlayManualEnabled,
     setRaindropOverlayManualIntensity,
+    setRaindropOverlayManualWindSpeed,
+    setRaindropOverlayManualStreakDensity,
+    setRaindropOverlayManualSparkleGain,
     dispose,
   };
 }
