@@ -196,7 +196,7 @@ export function sampleBiomeCoverage({
   };
 }
 
-const solidTypes = new Set(['grass', 'dirt', 'stone', 'sand', 'leaf', 'log']);
+const solidTypes = new Set(['grass', 'dirt', 'stone', 'sand', 'leaf', 'log', 'snow']);
 
 function blockKey(x, y, z) {
   return `${x}|${y}|${z}`;
