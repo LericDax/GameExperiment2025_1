@@ -75,6 +75,7 @@ const PRECIPITATION_HANDLE_RECHECK_INTERVAL = 0.55;
 const PRECIPITATION_SPAWN_MAX_RETRIES = 2;
 const MIN_WEATHER_DURATION_SECONDS = 30;
 const DEFAULT_BIOME_WEATHER_DURATION = { min: 180, max: 420 };
+const ROTATION_HARNESS_TAG = 'weather-rotation-harness';
 
 export const DEFAULT_BIOME_WEATHER_ROTATION = Object.freeze([
   {
@@ -233,6 +234,21 @@ export function createWeatherManager({
   let lastElapsedTime = 0;
   const tickListeners = new Set();
   const scheduledTransitions = [];
+  const rotationHarnessState = {
+    active: false,
+    rotation: [],
+    currentIndex: -1,
+    pendingIndex: null,
+    loop: true,
+    cancelScheduled: null,
+    nextChangeTime: null,
+    nextWeatherId: null,
+    biomeId: null,
+    label: null,
+    startedAt: null,
+    lastIndex: -1,
+    cycleCount: 0,
+  };
   let diagnosticOverlayDisposer = null;
   const activeParticleEffects = [];
   let needsEffectRefresh = true;
@@ -277,6 +293,28 @@ export function createWeatherManager({
     }
     if (state.lastPrecipitationSpawn === undefined) {
       state.lastPrecipitationSpawn = null;
+    }
+    if (!Array.isArray(state.precipitationEmitters)) {
+      state.precipitationEmitters = [];
+    }
+    if (!Number.isFinite(state.precipitationActiveCount)) {
+      state.precipitationActiveCount = 0;
+    }
+    if (!Number.isFinite(state.precipitationActiveParticles)) {
+      state.precipitationActiveParticles = 0;
+    }
+    if (!state.rotationHarness) {
+      state.rotationHarness = {
+        active: false,
+        biomeId: null,
+        label: null,
+        index: null,
+        size: 0,
+        nextWeatherId: null,
+        nextChangeTime: null,
+        remaining: null,
+        cycleCount: 0,
+      };
     }
     return state;
   };
@@ -327,6 +365,274 @@ export function createWeatherManager({
       elapsedTime: Number.isFinite(elapsedTime) ? elapsedTime : null,
       reason: reason ?? null,
     };
+  };
+
+  const clearScheduledTransitionsByTag = (tag) => {
+    for (let i = scheduledTransitions.length - 1; i >= 0; i -= 1) {
+      if (scheduledTransitions[i]?.tag === tag) {
+        scheduledTransitions.splice(i, 1);
+      }
+    }
+  };
+
+  const computeHarnessDurationSeconds = (entry) => {
+    if (!entry) {
+      return DEFAULT_BIOME_WEATHER_DURATION.min;
+    }
+    const duration = entry.duration ?? {};
+    const rawMin = Number.isFinite(duration.min)
+      ? duration.min
+      : DEFAULT_BIOME_WEATHER_DURATION.min;
+    const rawMax = Number.isFinite(duration.max) ? duration.max : rawMin;
+    const min = Math.max(MIN_WEATHER_DURATION_SECONDS, rawMin);
+    const max = Math.max(min, rawMax);
+    if (max <= min) {
+      return min;
+    }
+    return min + Math.random() * (max - min);
+  };
+
+  const syncRotationHarnessState = () => {
+    const state = ensureWeatherState();
+    if (!state) {
+      return;
+    }
+    const harness = state.rotationHarness || {};
+    const now = Number.isFinite(lastElapsedTime) ? lastElapsedTime : null;
+    harness.active = rotationHarnessState.active;
+    harness.biomeId = rotationHarnessState.biomeId;
+    harness.label = rotationHarnessState.label;
+    harness.index = rotationHarnessState.currentIndex;
+    harness.size = rotationHarnessState.rotation.length;
+    harness.nextWeatherId = rotationHarnessState.nextWeatherId;
+    harness.nextChangeTime = rotationHarnessState.nextChangeTime;
+    harness.remaining =
+      Number.isFinite(rotationHarnessState.nextChangeTime) && Number.isFinite(now)
+        ? Math.max(0, rotationHarnessState.nextChangeTime - now)
+        : null;
+    harness.cycleCount = rotationHarnessState.cycleCount;
+    harness.startedAt = rotationHarnessState.startedAt;
+    harness.pendingIndex = rotationHarnessState.pendingIndex;
+    state.rotationHarness = harness;
+  };
+
+  const stopRotationHarness = () => {
+    if (rotationHarnessState.cancelScheduled) {
+      try {
+        rotationHarnessState.cancelScheduled();
+      } catch (error) {
+        console.warn('Failed to cancel weather rotation harness schedule:', error);
+      }
+      rotationHarnessState.cancelScheduled = null;
+    }
+    clearScheduledTransitionsByTag(ROTATION_HARNESS_TAG);
+    const wasActive = rotationHarnessState.active;
+    rotationHarnessState.active = false;
+    rotationHarnessState.rotation = [];
+    rotationHarnessState.currentIndex = -1;
+    rotationHarnessState.pendingIndex = null;
+    rotationHarnessState.loop = true;
+    rotationHarnessState.nextChangeTime = null;
+    rotationHarnessState.nextWeatherId = null;
+    rotationHarnessState.biomeId = null;
+    rotationHarnessState.label = null;
+    rotationHarnessState.startedAt = null;
+    rotationHarnessState.lastIndex = -1;
+    rotationHarnessState.cycleCount = 0;
+    syncRotationHarnessState();
+    return wasActive;
+  };
+
+  const scheduleHarnessNext = ({ index, now }) => {
+    if (!rotationHarnessState.active || rotationHarnessState.rotation.length === 0) {
+      rotationHarnessState.nextChangeTime = null;
+      rotationHarnessState.nextWeatherId = null;
+      rotationHarnessState.pendingIndex = null;
+      if (rotationHarnessState.cancelScheduled) {
+        try {
+          rotationHarnessState.cancelScheduled();
+        } catch (error) {
+          console.warn('Failed to cancel stale weather harness schedule:', error);
+        }
+        rotationHarnessState.cancelScheduled = null;
+      }
+      syncRotationHarnessState();
+      return;
+    }
+    const rotation = rotationHarnessState.rotation;
+    const currentEntry = rotation[index];
+    if (!currentEntry) {
+      stopRotationHarness();
+      return;
+    }
+    const nextIndexRaw = index + 1;
+    const hasNext = nextIndexRaw < rotation.length;
+    if (!hasNext && !rotationHarnessState.loop) {
+      rotationHarnessState.nextChangeTime = null;
+      rotationHarnessState.nextWeatherId = null;
+      rotationHarnessState.pendingIndex = null;
+      if (rotationHarnessState.cancelScheduled) {
+        try {
+          rotationHarnessState.cancelScheduled();
+        } catch (error) {
+          console.warn('Failed to cancel terminal weather harness schedule:', error);
+        }
+        rotationHarnessState.cancelScheduled = null;
+      }
+      syncRotationHarnessState();
+      return;
+    }
+    const resolvedIndex = hasNext ? nextIndexRaw : 0;
+    const nextEntry = rotation[resolvedIndex];
+    if (!nextEntry) {
+      stopRotationHarness();
+      return;
+    }
+    const baseTime = Number.isFinite(now) ? now : 0;
+    const durationSeconds = computeHarnessDurationSeconds(currentEntry);
+    const triggerTime = baseTime + durationSeconds;
+    rotationHarnessState.nextChangeTime = triggerTime;
+    rotationHarnessState.nextWeatherId = nextEntry.id;
+    rotationHarnessState.pendingIndex = resolvedIndex;
+    if (rotationHarnessState.cancelScheduled) {
+      try {
+        rotationHarnessState.cancelScheduled();
+      } catch (error) {
+        console.warn('Failed to cancel previous weather harness schedule:', error);
+      }
+      rotationHarnessState.cancelScheduled = null;
+    }
+    rotationHarnessState.cancelScheduled = scheduleWeatherChange({
+      weatherId: nextEntry.id,
+      triggerTime,
+      options: {
+        metadata: {
+          source: ROTATION_HARNESS_TAG,
+          rotationIndex: resolvedIndex,
+          biomeId: rotationHarnessState.biomeId ?? null,
+          harnessLabel: rotationHarnessState.label ?? null,
+        },
+      },
+      tag: ROTATION_HARNESS_TAG,
+    });
+    syncRotationHarnessState();
+  };
+
+  const handleRotationHarnessWeatherApplied = (weather) => {
+    if (!rotationHarnessState.active || !weather?.id) {
+      return;
+    }
+    const rotation = rotationHarnessState.rotation;
+    if (rotation.length === 0) {
+      stopRotationHarness();
+      return;
+    }
+    const index = rotation.findIndex((entry) => entry.id === weather.id);
+    if (index === -1) {
+      stopRotationHarness();
+      return;
+    }
+    const now = Number.isFinite(lastElapsedTime) ? lastElapsedTime : 0;
+    if (rotationHarnessState.lastIndex !== -1 && index === 0 && rotationHarnessState.lastIndex !== 0) {
+      rotationHarnessState.cycleCount += 1;
+    }
+    rotationHarnessState.currentIndex = index;
+    rotationHarnessState.lastIndex = index;
+    rotationHarnessState.pendingIndex = null;
+    rotationHarnessState.startedAt = rotationHarnessState.startedAt ?? now;
+    scheduleHarnessNext({ index, now });
+  };
+
+  const startRotationHarness = ({
+    rotation = [],
+    biomeId = null,
+    label = null,
+    loop = true,
+  } = {}) => {
+    const source = Array.isArray(rotation) ? rotation : [];
+    const resolved = source
+      .map((entry) => {
+        if (!entry?.id) {
+          return null;
+        }
+        if (!weatherPresets.has(entry.id)) {
+          return null;
+        }
+        const duration = cloneWeatherDuration(entry.duration, DEFAULT_BIOME_WEATHER_DURATION);
+        return { id: String(entry.id), duration };
+      })
+      .filter(Boolean);
+    if (resolved.length === 0) {
+      console.warn('Weather rotation harness was asked to start with no valid presets.');
+      stopRotationHarness();
+      return getRotationHarnessStatus();
+    }
+    stopRotationHarness();
+    rotationHarnessState.active = true;
+    rotationHarnessState.rotation = resolved;
+    rotationHarnessState.loop = loop !== false;
+    rotationHarnessState.biomeId = biomeId ?? null;
+    rotationHarnessState.label = label ?? null;
+    rotationHarnessState.startedAt = Number.isFinite(lastElapsedTime) ? lastElapsedTime : 0;
+    rotationHarnessState.currentIndex = -1;
+    rotationHarnessState.lastIndex = -1;
+    rotationHarnessState.cycleCount = 0;
+    rotationHarnessState.nextChangeTime = null;
+    rotationHarnessState.nextWeatherId = null;
+    rotationHarnessState.pendingIndex = 0;
+    const firstEntry = resolved[0];
+    if (firstEntry) {
+      if (activeWeather?.id === firstEntry.id) {
+        handleRotationHarnessWeatherApplied({ id: firstEntry.id });
+      } else {
+        setWeather(firstEntry.id, {
+          metadata: {
+            harnessInitiator: true,
+            harnessLabel: rotationHarnessState.label ?? null,
+            biomeId: rotationHarnessState.biomeId ?? null,
+          },
+        });
+      }
+    }
+    syncRotationHarnessState();
+    return getRotationHarnessStatus();
+  };
+
+  const getRotationHarnessStatus = () => ({
+    active: rotationHarnessState.active,
+    rotation: rotationHarnessState.rotation.map((entry) => ({
+      id: entry.id,
+      duration: { ...entry.duration },
+    })),
+    index: rotationHarnessState.currentIndex,
+    nextWeatherId: rotationHarnessState.nextWeatherId,
+    nextChangeTime: rotationHarnessState.nextChangeTime,
+    loop: rotationHarnessState.loop,
+    biomeId: rotationHarnessState.biomeId,
+    label: rotationHarnessState.label,
+    cycleCount: rotationHarnessState.cycleCount,
+    pendingIndex: rotationHarnessState.pendingIndex,
+  });
+
+  const updateRotationHarnessTick = ({ elapsedTime }) => {
+    if (rotationHarnessState.active && rotationHarnessState.rotation.length === 0) {
+      stopRotationHarness();
+      syncRotationHarnessState();
+      return;
+    }
+    if (
+      rotationHarnessState.active &&
+      rotationHarnessState.currentIndex >= 0 &&
+      rotationHarnessState.pendingIndex !== null &&
+      !rotationHarnessState.cancelScheduled &&
+      rotationHarnessState.nextWeatherId
+    ) {
+      scheduleHarnessNext({
+        index: rotationHarnessState.currentIndex,
+        now: Number.isFinite(elapsedTime) ? elapsedTime : lastElapsedTime,
+      });
+    }
+    syncRotationHarnessState();
   };
 
   const applyWeatherEffects = (weather) => {
@@ -647,6 +953,44 @@ export function createWeatherManager({
         : weatherState.lastOverlayUpdate;
       weatherState.activeEmitterCount = activeParticleEffects.length;
 
+      const now = Number.isFinite(elapsedTime) ? elapsedTime : lastElapsedTime;
+      const precipitationSummaries = activeParticleEffects
+        .filter((attachment) => attachment.type === 'precipitation')
+        .map((attachment, index) => {
+          const handle = attachment.handle;
+          const getCount = handle?.getActiveParticleCount;
+          const particleCount =
+            typeof getCount === 'function' ? Number(getCount.call(handle)) : null;
+          const attempts = Number.isFinite(attachment.spawnAttempt)
+            ? attachment.spawnAttempt + 1
+            : 1;
+          const status = attachment.validationStatus ?? 'pending';
+          const retryDelay =
+            status === 'pending' && Number.isFinite(attachment.validationRetryAfter) &&
+            Number.isFinite(now)
+              ? Math.max(0, attachment.validationRetryAfter - now)
+              : null;
+          return {
+            index,
+            label: attachment.emitter?.debugLabel ?? 'WeatherPrecipitationEmitter',
+            type: attachment.spawnConfig?.type ?? 'precipitation',
+            particles: Number.isFinite(particleCount) ? particleCount : null,
+            attempts,
+            maxAttempts: PRECIPITATION_SPAWN_MAX_RETRIES + 1,
+            status,
+            nextRetryIn: Number.isFinite(retryDelay) ? retryDelay : null,
+            spawnedAt: Number.isFinite(attachment.spawnElapsedTime)
+              ? attachment.spawnElapsedTime
+              : null,
+          };
+        });
+      weatherState.precipitationEmitters = precipitationSummaries;
+      weatherState.precipitationActiveCount = precipitationSummaries.length;
+      weatherState.precipitationActiveParticles = precipitationSummaries.reduce(
+        (total, summary) => (Number.isFinite(summary.particles) ? total + summary.particles : total),
+        0,
+      );
+
       let stats = null;
       if (particleSystem && typeof particleSystem.getDebugInfo === 'function') {
         const debugInfo = particleSystem.getDebugInfo();
@@ -680,6 +1024,10 @@ export function createWeatherManager({
             weatherParticles,
             emitters: summaries,
             extraCount: Math.max(0, weatherEmitters.length - summaries.length),
+            precipitation: {
+              emitters: precipitationSummaries,
+              totalParticles: weatherState.precipitationActiveParticles,
+            },
           };
           weatherState.lastDebugSample = Number.isFinite(elapsedTime)
             ? elapsedTime
@@ -797,6 +1145,7 @@ export function createWeatherManager({
       id: weatherId,
     };
     if (activeWeather && activeWeather.id === nextWeather.id) {
+      handleRotationHarnessWeatherApplied(nextWeather);
       return activeWeather;
     }
     const previousWeatherId = activeWeather?.id ?? null;
@@ -804,6 +1153,7 @@ export function createWeatherManager({
     activeWeather = nextWeather;
     needsEffectRefresh = true;
     applyWeatherEffects(activeWeather);
+    handleRotationHarnessWeatherApplied(activeWeather);
     audioController.handleTransition({
       previousWeatherId,
       nextWeatherId: activeWeather?.id ?? null,
@@ -811,18 +1161,32 @@ export function createWeatherManager({
     return activeWeather;
   };
 
-  const scheduleWeatherChange = ({ weatherId, delay = 0, triggerTime, options = {} }) => {
+  const scheduleWeatherChange = ({
+    weatherId,
+    delay = 0,
+    triggerTime,
+    options = {},
+    tag = null,
+  }) => {
     if (!weatherId) {
       throw new Error('scheduleWeatherChange requires a weatherId');
     }
     const baseTime = Number.isFinite(triggerTime)
       ? triggerTime
       : (Number.isFinite(lastElapsedTime) ? lastElapsedTime : 0) + Math.max(0, delay);
-    scheduledTransitions.push({
+    const entry = {
       weatherId,
       triggerTime: baseTime,
       options,
-    });
+      tag,
+    };
+    scheduledTransitions.push(entry);
+    return () => {
+      const index = scheduledTransitions.indexOf(entry);
+      if (index >= 0) {
+        scheduledTransitions.splice(index, 1);
+      }
+    };
   };
 
   const registerTickListener = (listener) => {
@@ -856,6 +1220,7 @@ export function createWeatherManager({
     }
     updateAnchoredEffects({ ...context, elapsedTime: lastElapsedTime });
     validatePrecipitationHandles({ ...context, elapsedTime: lastElapsedTime });
+    updateRotationHarnessTick({ elapsedTime: lastElapsedTime });
     tickAccumulator += Number.isFinite(delta) ? delta : 0;
     while (tickAccumulator >= DEFAULT_TICK_INTERVAL) {
       tickAccumulator -= DEFAULT_TICK_INTERVAL;
@@ -872,6 +1237,7 @@ export function createWeatherManager({
     tickListeners.clear();
     scheduledTransitions.length = 0;
     needsEffectRefresh = false;
+    stopRotationHarness();
     audioController.dispose();
     if (diagnosticOverlayDisposer) {
       try {
@@ -902,6 +1268,9 @@ export function createWeatherManager({
     registerWeatherPreset,
     listWeatherPresets,
     getCurrentWeather,
+    startRotationHarness,
+    stopRotationHarness,
+    getRotationHarnessStatus,
     dispose,
   };
 }

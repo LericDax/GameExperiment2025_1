@@ -1,6 +1,8 @@
 
 # Weather Visuals Investigation
 
+> **Team note:** Keep this plan current after any further weather fixes or experiments—add new findings, tooling, and regressions here so the next investigator starts with the latest context.
+
 ## Observed Gaps
 - The main render loop instantiates `createWeatherManager` and advances it every frame, yet nothing in gameplay ever schedules a preset beyond the default `clear_skies`, so weather state never changes during normal play.【F:src/main.js†L187-L214】【F:src/main.js†L433-L447】
 - Developer tooling keeps track of override suppression flags on the shared `scene.userData.weather` object, but those flags are only toggled through console commands, meaning gameplay has no awareness of when manual overrides should pause or resume automated rotation.【F:src/player/dev-commands.js†L76-L89】【F:src/player/dev-commands.js†L1653-L1714】
@@ -20,6 +22,14 @@
 - **Weather rotation harness** – Add a small developer utility (invoked from the console or a debug hotkey) that cycles through the resolved biome rotation, calls `scheduleWeatherChange`, and streams overlay updates so we can observe whether emitters appear, similar to how the underwater overlay permanently resides on screen.【F:src/world/weather/weather-manager.js†L555-L569】【F:src/main.js†L32-L68】
 - **Real-time emitter probe** – Extend the diagnostic overlay to poll `particleSystem.getDebugInfo()` every frame, highlighting when precipitation emitters fail to register or immediately dispose, providing parity with the automated underwater bubble feedback loop.【F:src/ui/weather-debug-overlay.js†L1-L94】【F:src/world/weather/weather-manager.js†L591-L620】
 - **Unit-test scaffolding** – Mock the particle system within Jest to assert that `setWeather('misty_rain')` issues at least one `emit` call and to simulate failure paths, ensuring regressions are caught in CI rather than by manual QA.【F:src/world/weather/weather-manager.js†L338-L370】【F:src/world/weather/weather-manager.js†L506-L569】
+
+## 2025-04 Diagnostic Harness Progress
+- `createWeatherManager` now exposes `startRotationHarness`, `stopRotationHarness`, and `getRotationHarnessStatus`, which drive automated preset cycling, schedule follow-up transitions, and record rotation metadata on `scene.userData.weather` for the overlay.【F:src/world/weather/weather-manager.js†L232-L911】
+- The developer console gained `/weather harness [start|once|stop|status]`, sampling the player’s current biome, resolving its weather rotation, and toggling the harness while clearing manual suppression flags so automated cycles are visible immediately.【F:src/player/dev-commands.js†L1508-L1669】
+- The weather debug overlay now streams particle-system diagnostics every frame, reporting precipitation emitter particle counts, retry windows, last failure reasons, and harness timing so testers can watch the system recover without rerunning console commands.【F:src/ui/weather-debug-overlay.js†L1-L156】【F:src/world/weather/weather-manager.js†L872-L940】
+- Rain emitters were retuned (higher particle budget, longer lifetimes, faster anchor updates) to match the reliability of the underwater bubble effects and guarantee visible spawn when the harness cycles into rain-heavy presets.【F:src/rendering/particles/weather-rain.js†L9-L53】【F:src/rendering/particles/water-effects.js†L46-L80】
+
+Please continue appending follow-up findings or configuration changes here whenever the harness or emitter settings evolve.
 
 ## Work Orders
 1. **Gameplay-driven rotation**
