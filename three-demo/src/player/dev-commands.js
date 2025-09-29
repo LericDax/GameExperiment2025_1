@@ -1437,7 +1437,7 @@ export function registerDeveloperCommands({
     },
   });
 
-  const weatherCommandUsage = '/weather [on|off|status|help|debug|harness|weatherId]';
+  const weatherCommandUsage = '/weather [on|off|status|help|debug|harness|overlay|weatherId]';
 
   registerCommand({
     name: 'weather',
@@ -1523,6 +1523,9 @@ export function registerDeveloperCommands({
         info('[weather help]   once — run through the current biome rotation a single time.');
         info('[weather help]   stop — halt the developer harness.');
         info('[weather help]   status — report the harness state.');
+        info(
+          '[weather help] Overlay controls: /weather overlay [status|on|off|toggle|auto|intensity <value|auto>|clear].',
+        );
         return;
       }
 
@@ -1762,6 +1765,102 @@ export function registerDeveloperCommands({
         }
         logWeatherPresetSummary({ prefix: '[weather status]' });
         return;
+      }
+
+      if (subcommand === 'overlay') {
+        if (
+          typeof weatherManager.getRaindropOverlayState !== 'function' ||
+          typeof weatherManager.setRaindropOverlayManualEnabled !== 'function' ||
+          typeof weatherManager.setRaindropOverlayManualIntensity !== 'function'
+        ) {
+          warn('[weather overlay] Overlay controls are unavailable in this build.');
+          return;
+        }
+
+        const overlayArgs = args.slice(1);
+
+        const reportOverlayStatus = (prefix = '[weather overlay]') => {
+          const current = weatherManager.getRaindropOverlayState() ?? {};
+          const mode =
+            current.manualEnabled === null || current.manualEnabled === undefined
+              ? 'auto'
+              : current.manualEnabled
+              ? 'manual:on'
+              : 'manual:off';
+          const source = current.manualIntensity !== null && current.manualIntensity !== undefined ? 'manual' : 'auto';
+          const appliedIntensity = Number.isFinite(current.intensity)
+            ? current.intensity.toFixed(2)
+            : 'n/a';
+          const baseIntensity = Number.isFinite(current.baseIntensity)
+            ? current.baseIntensity.toFixed(2)
+            : 'n/a';
+          info(
+            `${prefix} visible=${current.visible ? 'yes' : 'no'}, enabled=${current.enabled ? 'yes' : 'no'}, mode=${mode}, intensity=${appliedIntensity} (${source}), base=${baseIntensity}.`,
+          );
+        };
+
+        if (overlayArgs.length === 0 || overlayArgs[0].toLowerCase() === 'status') {
+          reportOverlayStatus();
+          return;
+        }
+
+        const action = overlayArgs[0].toLowerCase();
+
+        if (action === 'clear') {
+          weatherManager.setRaindropOverlayManualEnabled(null);
+          weatherManager.setRaindropOverlayManualIntensity(null);
+          success('[weather overlay] Cleared manual overrides; overlay returned to auto mode.');
+          reportOverlayStatus();
+          return;
+        }
+
+        if (action === 'auto') {
+          weatherManager.setRaindropOverlayManualEnabled(null);
+          success('[weather overlay] Overlay visibility returned to auto mode.');
+          reportOverlayStatus();
+          return;
+        }
+
+        if (action === 'on' || action === 'off' || action === 'toggle') {
+          const state = weatherManager.getRaindropOverlayState();
+          const current =
+            state?.manualEnabled !== null && state?.manualEnabled !== undefined
+              ? state.manualEnabled
+              : state?.enabled;
+          const next = action === 'toggle' ? !current : action === 'on';
+          weatherManager.setRaindropOverlayManualEnabled(next);
+          success(
+            `[weather overlay] Manual overlay ${next ? 'enabled' : 'disabled'}. Use /weather overlay auto to resume automatic control.`,
+          );
+          reportOverlayStatus();
+          return;
+        }
+
+        if (action === 'intensity') {
+          const valueToken = overlayArgs[1];
+          if (valueToken === undefined) {
+            throw new Error('Usage: /weather overlay intensity <value|auto>.');
+          }
+          const normalized = valueToken.toLowerCase();
+          if (normalized === 'auto' || normalized === 'default') {
+            weatherManager.setRaindropOverlayManualIntensity(null);
+            success('[weather overlay] Cleared manual intensity override.');
+            reportOverlayStatus();
+            return;
+          }
+          const numeric = Number(valueToken);
+          if (!Number.isFinite(numeric)) {
+            throw new Error('Specify a numeric overlay intensity (e.g. 0.5) or "auto".');
+          }
+          weatherManager.setRaindropOverlayManualIntensity(numeric);
+          success(`[weather overlay] Manual intensity set to ${numeric.toFixed(2)}.`);
+          reportOverlayStatus();
+          return;
+        }
+
+        throw new Error(
+          'Usage: /weather overlay [status|on|off|toggle|auto|intensity <value|auto>|clear].',
+        );
       }
 
       if (subcommand === 'off') {
