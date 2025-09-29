@@ -22,8 +22,10 @@ function ensureOverlayElement() {
       <div class="weather-debug-overlay__line" data-field="preset">Preset: —</div>
       <div class="weather-debug-overlay__line" data-field="suppression">Suppression: —</div>
       <div class="weather-debug-overlay__line" data-field="emitters">Emitters: —</div>
+      <div class="weather-debug-overlay__line" data-field="precipitation">Precipitation: —</div>
       <div class="weather-debug-overlay__line" data-field="anchor">Last anchor update: —</div>
       <div class="weather-debug-overlay__line" data-field="failures">Failures: —</div>
+      <div class="weather-debug-overlay__line" data-field="harness">Harness: —</div>
       <div class="weather-debug-overlay__line" data-field="debug">Debug sample: —</div>
     </div>
   `;
@@ -126,6 +128,85 @@ function describeFailures(weatherState) {
   return `Failures: ${failures} (last ${type} @ ${formatTime(recent.elapsedTime)}${reason}${recoveriesText})`;
 }
 
+function describePrecipitation(weatherState) {
+  const emitters = Array.isArray(weatherState?.precipitationEmitters)
+    ? weatherState.precipitationEmitters
+    : [];
+  const totalParticles = Number.isFinite(weatherState?.precipitationActiveParticles)
+    ? weatherState.precipitationActiveParticles
+    : null;
+  const recoveries = Number.isFinite(weatherState?.precipitationRecoveryAttempts)
+    ? weatherState.precipitationRecoveryAttempts
+    : 0;
+  if (emitters.length === 0) {
+    const baseSummary = totalParticles === 0 || totalParticles === null
+      ? 'Precipitation: none active'
+      : `Precipitation: none active (particles=${totalParticles})`;
+    const failure = weatherState?.lastPrecipitationFailure ?? null;
+    if (failure) {
+      const reason = failure.reason ? `, reason=${failure.reason}` : '';
+      return `${baseSummary}. Last failure ${failure.type ?? 'unknown'} @ ${formatTime(
+        failure.elapsedTime,
+      )}${reason}.`;
+    }
+    return recoveries > 0
+      ? `${baseSummary} (recoveries=${recoveries}).`
+      : `${baseSummary}.`;
+  }
+  const summaryParts = [`Precipitation: ${emitters.length} active`];
+  if (Number.isFinite(totalParticles)) {
+    summaryParts.push(`particles=${totalParticles}`);
+  }
+  if (recoveries > 0) {
+    summaryParts.push(`recoveries=${recoveries}`);
+  }
+  const lines = [`${summaryParts.join(', ')}.`];
+  emitters.forEach((emitter, index) => {
+    const label = emitter.label ?? `Emitter #${index + 1}`;
+    const type = emitter.type ?? 'precipitation';
+    const particles = Number.isFinite(emitter.particles)
+      ? emitter.particles
+      : emitter.particles === 0
+      ? 0
+      : 'n/a';
+    const attempts = Number.isFinite(emitter.attempts) ? emitter.attempts : '?';
+    const maxAttempts = Number.isFinite(emitter.maxAttempts) ? emitter.maxAttempts : '?';
+    const status = emitter.status ?? 'unknown';
+    const retryText = Number.isFinite(emitter.nextRetryIn)
+      ? `, retry in ${formatTime(emitter.nextRetryIn)}`
+      : '';
+    const spawnedText = Number.isFinite(emitter.spawnedAt)
+      ? `, spawned @ ${formatTime(emitter.spawnedAt)}`
+      : '';
+    lines.push(
+      `  #${index + 1} ${label} (${type}) — particles=${particles}, attempt ${attempts}/${maxAttempts}, status=${status}${retryText}${spawnedText}.`,
+    );
+  });
+  const failure = weatherState?.lastPrecipitationFailure ?? null;
+  if (failure) {
+    const reason = failure.reason ? `, reason=${failure.reason}` : '';
+    lines.push(
+      `  Last failure: ${failure.type ?? 'unknown'} @ ${formatTime(failure.elapsedTime)}${reason}.`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function describeHarness(weatherState) {
+  const harness = weatherState?.rotationHarness ?? null;
+  if (!harness || !harness.active) {
+    return 'Harness: inactive';
+  }
+  const label = harness.label || (harness.biomeId ? `Biome ${harness.biomeId}` : 'Rotation');
+  const size = Number.isFinite(harness.size) ? harness.size : 0;
+  const index = Number.isFinite(harness.index) ? harness.index + 1 : '?';
+  const countText = size > 0 ? `${index}/${size}` : `${index}`;
+  const nextId = harness.nextWeatherId ?? 'n/a';
+  const remaining = Number.isFinite(harness.remaining) ? formatTime(harness.remaining) : 'n/a';
+  const cycles = Number.isFinite(harness.cycleCount) ? harness.cycleCount : 0;
+  return `Harness: ${label} — preset ${countText}, next ${nextId} in ${remaining} (cycles=${cycles}).`;
+}
+
 function describeDebugSample(weatherState, stats) {
   const sampledAt = Number.isFinite(weatherState?.lastDebugSample)
     ? formatTime(weatherState.lastDebugSample)
@@ -137,7 +218,15 @@ function describeDebugSample(weatherState, stats) {
     ? stats.weatherParticles
     : weatherState?.totalActiveParticles;
   const particleLine = Number.isFinite(particles) ? `particles=${particles}` : 'particles=n/a';
-  return `Debug sample: overlay=${overlayAt}, stats=${sampledAt}, ${particleLine}`;
+  const precipitationParticles = Number.isFinite(weatherState?.precipitationActiveParticles)
+    ? weatherState.precipitationActiveParticles
+    : Number.isFinite(stats?.precipitation?.totalParticles)
+    ? stats.precipitation.totalParticles
+    : null;
+  const precipitationLine = Number.isFinite(precipitationParticles)
+    ? `, precipitationParticles=${precipitationParticles}`
+    : '';
+  return `Debug sample: overlay=${overlayAt}, stats=${sampledAt}, ${particleLine}${precipitationLine}`;
 }
 
 export function createWeatherDebugOverlay() {
@@ -170,8 +259,10 @@ export function createWeatherDebugOverlay() {
       updateField('preset', describePreset(weatherState));
       updateField('suppression', describeSuppression(weatherState));
       updateField('emitters', describeEmitters(weatherState, stats));
+      updateField('precipitation', describePrecipitation(weatherState));
       updateField('anchor', describeAnchor(weatherState));
       updateField('failures', describeFailures(weatherState));
+      updateField('harness', describeHarness(weatherState));
       updateField('debug', describeDebugSample(weatherState, stats));
     },
     dispose() {

@@ -7,6 +7,7 @@ import {
   getRegisteredBiomes,
   sampleBiomeCoverage,
 } from '../world/generation.js';
+import { resolveBiomeWeatherRotation } from '../world/weather/weather-manager.js';
 
 const worldConfig = getWorldOptions();
 
@@ -1436,7 +1437,7 @@ export function registerDeveloperCommands({
     },
   });
 
-  const weatherCommandUsage = '/weather [on|off|status|help|debug|weatherId]';
+  const weatherCommandUsage = '/weather [on|off|status|help|debug|harness|weatherId]';
 
   registerCommand({
     name: 'weather',
@@ -1517,6 +1518,96 @@ export function registerDeveloperCommands({
       if (subcommand === 'help') {
         info(`[weather] Usage: ${weatherCommandUsage}.`);
         logVerboseWeatherPresetSummary();
+        info('[weather help] Harness controls: /weather harness [start|once|stop|status].');
+        info('[weather help]   start — cycle the current biome rotation indefinitely.');
+        info('[weather help]   once — run through the current biome rotation a single time.');
+        info('[weather help]   stop — halt the developer harness.');
+        info('[weather help]   status — report the harness state.');
+        return;
+      }
+
+      if (subcommand === 'harness') {
+        if (
+          typeof weatherManager.startRotationHarness !== 'function' ||
+          typeof weatherManager.getRotationHarnessStatus !== 'function'
+        ) {
+          warn('[weather harness] Rotation harness API is unavailable in this build.');
+          return;
+        }
+        const action = String(args[1] ?? 'start').toLowerCase();
+        if (action === 'status') {
+          const status = weatherManager.getRotationHarnessStatus();
+          const harnessState = scene?.userData?.weather?.rotationHarness ?? null;
+          if (!status?.active) {
+            info('[weather harness] Rotation harness is idle.');
+          } else {
+            const rotationList = Array.isArray(status.rotation)
+              ? status.rotation.map((entry) => entry.id).join(', ')
+              : 'unknown';
+            const nextId = status.nextWeatherId ?? 'n/a';
+            const remaining = Number.isFinite(harnessState?.remaining)
+              ? `${harnessState.remaining.toFixed(2)}s`
+              : 'n/a';
+            info(
+              `[weather harness] Active — presets: ${rotationList}. Next ${nextId} in ${remaining}.`,
+            );
+          }
+          return;
+        }
+        if (action === 'stop') {
+          const wasActive = weatherManager.stopRotationHarness?.();
+          if (wasActive) {
+            success('[weather harness] Rotation harness stopped.');
+          } else {
+            info('[weather harness] Rotation harness was already idle.');
+          }
+          return;
+        }
+
+        const loop = !(action === 'once' || action === 'single');
+        const position = playerControls?.getPosition?.();
+        if (!position) {
+          warn('[weather harness] Player position unavailable; cannot sample biome.');
+          return;
+        }
+        const biomeSample = sampleBiomeAt(Math.round(position.x), Math.round(position.z));
+        const biome = biomeSample?.biome ?? null;
+        if (!biome) {
+          warn('[weather harness] Unable to resolve biome at current position.');
+          return;
+        }
+        const rotation = resolveBiomeWeatherRotation(biome);
+        if (!rotation || rotation.length === 0) {
+          warn('[weather harness] Current biome does not define a weather rotation.');
+          return;
+        }
+        const status = weatherManager.startRotationHarness({
+          rotation,
+          biomeId: biome.id ?? biome.key ?? null,
+          label: biome.label ?? biome.id ?? 'Biome rotation',
+          loop,
+        });
+        if (!status?.active) {
+          warn('[weather harness] Rotation harness failed to start.');
+          return;
+        }
+        weatherControlState.suppressed = false;
+        setWeatherSuppressionState(false);
+        weatherControlState.lastManualWeatherId = null;
+        const rotationIds = Array.isArray(status.rotation)
+          ? status.rotation.map((entry) => entry.id)
+          : rotation.map((entry) => entry.id);
+        const nextId = status.nextWeatherId ?? rotationIds[0];
+        const harnessState = scene?.userData?.weather?.rotationHarness ?? null;
+        const remaining = Number.isFinite(harnessState?.remaining)
+          ? `${harnessState.remaining.toFixed(2)}s`
+          : 'n/a';
+        success(
+          `[weather harness] Cycling ${rotationIds.length} preset(s) for ${
+            biome.label ?? biome.id ?? 'current biome'
+          } — next ${nextId} in ${remaining}.`,
+        );
+        info(`[weather harness] Rotation order: ${rotationIds.join(', ')}.`);
         return;
       }
 
@@ -1650,6 +1741,24 @@ export function registerDeveloperCommands({
           }
         } else {
           info('[weather status] Player position unavailable; cannot sample biome.');
+        }
+        if (typeof weatherManager.getRotationHarnessStatus === 'function') {
+          const harnessStatus = weatherManager.getRotationHarnessStatus();
+          const harnessState = scene?.userData?.weather?.rotationHarness ?? null;
+          if (harnessStatus?.active) {
+            const rotationList = Array.isArray(harnessStatus.rotation)
+              ? harnessStatus.rotation.map((entry) => entry.id).join(', ')
+              : 'unknown';
+            const nextId = harnessStatus.nextWeatherId ?? 'n/a';
+            const remaining = Number.isFinite(harnessState?.remaining)
+              ? `${harnessState.remaining.toFixed(2)}s`
+              : 'n/a';
+            info(
+              `[weather status] Rotation harness active — presets: ${rotationList}. Next ${nextId} in ${remaining}.`,
+            );
+          } else {
+            info('[weather status] Rotation harness inactive.');
+          }
         }
         logWeatherPresetSummary({ prefix: '[weather status]' });
         return;
