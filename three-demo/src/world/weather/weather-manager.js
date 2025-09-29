@@ -251,6 +251,7 @@ export function createWeatherManager({
   };
   let diagnosticOverlayDisposer = null;
   const activeParticleEffects = [];
+  const pendingPrecipitationRetries = [];
   let needsEffectRefresh = true;
 
   let overlayUi = null;
@@ -302,6 +303,9 @@ export function createWeatherManager({
     }
     if (!Number.isFinite(state.precipitationActiveParticles)) {
       state.precipitationActiveParticles = 0;
+    }
+    if (!Array.isArray(state.pendingPrecipitationRetries)) {
+      state.pendingPrecipitationRetries = [];
     }
     if (!state.rotationHarness) {
       state.rotationHarness = {
@@ -365,6 +369,98 @@ export function createWeatherManager({
       elapsedTime: Number.isFinite(elapsedTime) ? elapsedTime : null,
       reason: reason ?? null,
     };
+  };
+
+  const syncPendingPrecipitationRetries = (now = lastElapsedTime) => {
+    const state = ensureWeatherState();
+    if (!state) {
+      return;
+    }
+    const resolvedNow = Number.isFinite(now)
+      ? now
+      : Number.isFinite(lastElapsedTime)
+      ? lastElapsedTime
+      : null;
+    const maxAttempts = PRECIPITATION_SPAWN_MAX_RETRIES + 1;
+    state.pendingPrecipitationRetries = pendingPrecipitationRetries.map((entry) => {
+      const attemptIndex = Number.isFinite(entry.attempt) ? entry.attempt : 0;
+      const retryAt = Number.isFinite(entry.readyTime) ? entry.readyTime : null;
+      const nextRetryIn =
+        Number.isFinite(retryAt) && Number.isFinite(resolvedNow)
+          ? Math.max(0, retryAt - resolvedNow)
+          : null;
+      return {
+        type: entry.config?.type ?? 'precipitation',
+        attempt: attemptIndex + 1,
+        attemptIndex,
+        maxAttempts,
+        reason: entry.reason ?? null,
+        scheduledAt: Number.isFinite(entry.scheduledAt) ? entry.scheduledAt : null,
+        retryAt,
+        nextRetryIn,
+      };
+    });
+  };
+
+  const clearPendingPrecipitationRetries = (now = lastElapsedTime) => {
+    pendingPrecipitationRetries.length = 0;
+    syncPendingPrecipitationRetries(now);
+  };
+
+  const queuePrecipitationRetry = ({
+    config,
+    attempt,
+    readyTime,
+    reason,
+    elapsedTime,
+  }) => {
+    const entry = {
+      config: { ...(config ?? {}) },
+      attempt: Number.isFinite(attempt) ? attempt : 0,
+      readyTime: Number.isFinite(readyTime)
+        ? readyTime
+        : (Number.isFinite(elapsedTime) ? elapsedTime : 0) + PRECIPITATION_HANDLE_RECHECK_INTERVAL,
+      reason: reason ?? null,
+      scheduledAt: Number.isFinite(elapsedTime) ? elapsedTime : null,
+    };
+    pendingPrecipitationRetries.push(entry);
+    const state = ensureWeatherState();
+    if (state) {
+      const previousRecoveries = Number.isFinite(state.precipitationRecoveryAttempts)
+        ? state.precipitationRecoveryAttempts
+        : 0;
+      state.precipitationRecoveryAttempts = previousRecoveries + 1;
+    }
+    syncPendingPrecipitationRetries(elapsedTime);
+  };
+
+  const processPendingPrecipitationRetries = (context) => {
+    if (pendingPrecipitationRetries.length === 0) {
+      syncPendingPrecipitationRetries(context?.elapsedTime);
+      return;
+    }
+    const { elapsedTime = lastElapsedTime } = context ?? {};
+    const now = Number.isFinite(elapsedTime) ? elapsedTime : lastElapsedTime;
+    if (!Number.isFinite(now)) {
+      syncPendingPrecipitationRetries(now);
+      return;
+    }
+    const readyEntries = [];
+    for (let i = pendingPrecipitationRetries.length - 1; i >= 0; i -= 1) {
+      const entry = pendingPrecipitationRetries[i];
+      const readyTime = Number.isFinite(entry.readyTime) ? entry.readyTime : Number.POSITIVE_INFINITY;
+      if (now >= readyTime) {
+        pendingPrecipitationRetries.splice(i, 1);
+        readyEntries.unshift(entry);
+      }
+    }
+    syncPendingPrecipitationRetries(now);
+    if (readyEntries.length === 0) {
+      return;
+    }
+    readyEntries.forEach((entry) => {
+      spawnPrecipitationEffect(entry.config, context, entry.attempt);
+    });
   };
 
   const clearScheduledTransitionsByTag = (tag) => {
@@ -678,6 +774,7 @@ export function createWeatherManager({
     }
     activeParticleEffects.length = 0;
     syncEmitterState();
+    clearPendingPrecipitationRetries();
   };
 
   const spawnPrecipitationEffect = (config, context, attempt = 0) => {
@@ -698,14 +795,44 @@ export function createWeatherManager({
           });
     const handle = particleSystem.emit(emitter);
     if (!handle) {
+      const now = Number.isFinite(context?.elapsedTime)
+        ? context.elapsedTime
+        : Number.isFinite(lastElapsedTime)
+        ? lastElapsedTime
+        : null;
       recordPrecipitationFailure({
         type: config.type,
-        elapsedTime: context?.elapsedTime ?? null,
+        elapsedTime: now,
         reason: 'no_handle',
       });
-      console.warn('Weather precipitation emitter failed to spawn; no handle was returned.', {
-        type: config.type,
-      });
+      const maxAttempts = PRECIPITATION_SPAWN_MAX_RETRIES + 1;
+      if (attempt < PRECIPITATION_SPAWN_MAX_RETRIES) {
+        const nextAttempt = attempt + 1;
+        const retryReadyTime = Number.isFinite(now)
+          ? now + PRECIPITATION_HANDLE_RECHECK_INTERVAL
+          : null;
+        queuePrecipitationRetry({
+          config,
+          attempt: nextAttempt,
+          readyTime: retryReadyTime,
+          reason: 'no_handle',
+          elapsedTime: now,
+        });
+        console.warn(
+          'Weather precipitation emitter failed to spawn; retry scheduled.',
+          {
+            type: config.type,
+            attempt: nextAttempt,
+            maxAttempts,
+            retryAt: retryReadyTime,
+          },
+        );
+      } else {
+        console.error('Weather precipitation emitter failed after maximum retries.', {
+          type: config.type,
+          attempts: maxAttempts,
+        });
+      }
       return;
     }
     let updateInterval = config.updateInterval;
@@ -954,6 +1081,7 @@ export function createWeatherManager({
       weatherState.activeEmitterCount = activeParticleEffects.length;
 
       const now = Number.isFinite(elapsedTime) ? elapsedTime : lastElapsedTime;
+      syncPendingPrecipitationRetries(now);
       const precipitationSummaries = activeParticleEffects
         .filter((attachment) => attachment.type === 'precipitation')
         .map((attachment, index) => {
@@ -1218,6 +1346,7 @@ export function createWeatherManager({
     if (needsEffectRefresh) {
       refreshWeatherEffects({ ...context, elapsedTime: lastElapsedTime });
     }
+    processPendingPrecipitationRetries({ ...context, elapsedTime: lastElapsedTime });
     updateAnchoredEffects({ ...context, elapsedTime: lastElapsedTime });
     validatePrecipitationHandles({ ...context, elapsedTime: lastElapsedTime });
     updateRotationHarnessTick({ elapsedTime: lastElapsedTime });

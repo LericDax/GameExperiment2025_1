@@ -64,11 +64,63 @@ test('failed precipitation spawns are recorded for diagnostics', () => {
     'expected no handles when particle system emit returned null',
   );
   assert.equal(weatherState.failedPrecipitationSpawns, 1);
+  assert.equal(weatherState.precipitationRecoveryAttempts, 1);
   assert.deepEqual(weatherState.lastPrecipitationFailure, {
     elapsedTime: 2,
     type: 'rain',
     reason: 'no_handle',
   });
+  assert.equal(weatherState.pendingPrecipitationRetries.length, 1);
+  const pendingRetry = weatherState.pendingPrecipitationRetries[0];
+  assert.equal(pendingRetry.type, 'rain');
+  assert.equal(pendingRetry.attempt, 2);
+  assert.equal(pendingRetry.maxAttempts, 3);
+  assert.equal(pendingRetry.reason, 'no_handle');
+});
+
+test('precipitation spawn retries recover after missing handles', () => {
+  let emitCount = 0;
+  const handles = [null, null, { stop() {}, getActiveParticleCount() { return 12; } }];
+
+  const { manager, scene, particleSystem } = createManager({
+    emitImplementation: () => {
+      const handle = emitCount < handles.length ? handles[emitCount] : handles.at(-1);
+      emitCount += 1;
+      return handle;
+    },
+  });
+
+  manager.setWeather('misty_rain');
+
+  manager.update({ delta: 0.1, elapsedTime: 0.1 });
+
+  let weatherState = scene.userData.weather;
+  assert.equal(emitCount, 1, 'expected initial precipitation emit call');
+  assert.equal(weatherState.failedPrecipitationSpawns, 1);
+  assert.equal(weatherState.precipitationRecoveryAttempts, 1);
+  assert.equal(weatherState.pendingPrecipitationRetries.length, 1);
+  assert.equal(weatherState.pendingPrecipitationRetries[0].attempt, 2);
+
+  manager.update({ delta: 0.4, elapsedTime: 0.5 });
+  weatherState = scene.userData.weather;
+  assert.equal(emitCount, 1, 'expected retry to wait until the interval has elapsed');
+  assert.equal(weatherState.pendingPrecipitationRetries.length, 1);
+
+  manager.update({ delta: 0.3, elapsedTime: 0.8 });
+  weatherState = scene.userData.weather;
+  assert.equal(emitCount, 2, 'expected queued retry to fire after the interval');
+  assert.equal(weatherState.failedPrecipitationSpawns, 2);
+  assert.equal(weatherState.precipitationRecoveryAttempts, 2);
+  assert.equal(weatherState.pendingPrecipitationRetries.length, 1);
+  assert.equal(weatherState.pendingPrecipitationRetries[0].attempt, 3);
+
+  manager.update({ delta: 0.7, elapsedTime: 1.5 });
+  weatherState = scene.userData.weather;
+  assert.equal(emitCount, 3, 'expected final retry to execute');
+  assert.equal(particleSystem.emitted.length, 1, 'expected successful handle to be recorded');
+  assert.equal(weatherState.pendingPrecipitationRetries.length, 0);
+  assert.equal(weatherState.failedPrecipitationSpawns, 2);
+  assert.equal(weatherState.precipitationRecoveryAttempts, 2);
 });
 
 test('zero-particle precipitation handles trigger retries and diagnostics', () => {
