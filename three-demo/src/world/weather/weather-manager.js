@@ -311,6 +311,7 @@ export function createWeatherManager({
     if (!weather || !scene) {
       return;
     }
+
     const weatherState = ensureWeatherState();
     const resolvedEffects = resolveWeatherEffects(weather);
     weatherState.id = weather.id;
@@ -321,6 +322,7 @@ export function createWeatherManager({
     weatherState.aurora = Boolean(
       resolvedEffects.aurora && Object.keys(resolvedEffects.aurora).length > 0,
     );
+
   };
 
   const disposeWeatherEffects = () => {
@@ -353,7 +355,9 @@ export function createWeatherManager({
           });
     const handle = particleSystem.emit(emitter);
     if (!handle) {
+
       const weatherState = ensureWeatherState();
+
       if (weatherState) {
         const previousFailures = Number.isFinite(weatherState.failedPrecipitationSpawns)
           ? weatherState.failedPrecipitationSpawns
