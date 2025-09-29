@@ -100,6 +100,59 @@ function cloneShaderMetadata(value) {
   }
 }
 
+const DEFAULT_WEATHER_DURATION = { min: 180, max: 420 };
+const MIN_WEATHER_DURATION = 30;
+
+function normaliseWeatherDuration(duration, fallback = DEFAULT_WEATHER_DURATION) {
+  const fallbackMin = Number.isFinite(fallback?.min)
+    ? fallback.min
+    : DEFAULT_WEATHER_DURATION.min;
+  const fallbackMax = Number.isFinite(fallback?.max)
+    ? fallback.max
+    : DEFAULT_WEATHER_DURATION.max;
+  const rawMin = Number.isFinite(duration?.min) ? duration.min : fallbackMin;
+  const rawMax = Number.isFinite(duration?.max) ? duration.max : fallbackMax;
+  const min = Math.max(MIN_WEATHER_DURATION, rawMin);
+  const max = Math.max(min, rawMax);
+  return { min, max };
+}
+
+function normaliseBiomeWeather(definition) {
+  if (!definition || typeof definition !== 'object') {
+    return null;
+  }
+
+  const candidatesSource = Array.isArray(definition.candidates)
+    ? definition.candidates
+    : Array.isArray(definition)
+    ? definition
+    : [];
+  const defaultDuration = normaliseWeatherDuration(definition.defaultDuration);
+
+  const candidates = candidatesSource
+    .filter((candidate) => candidate && typeof candidate.id === 'string')
+    .map((candidate) => {
+      const weightValue = Number(candidate.weight);
+      const weight = Number.isFinite(weightValue) ? Math.max(0, weightValue) : 1;
+      const duration = normaliseWeatherDuration(candidate.duration, defaultDuration);
+      return {
+        id: String(candidate.id),
+        weight,
+        duration,
+      };
+    })
+    .filter((candidate) => candidate.weight > 0);
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return {
+    candidates,
+    defaultDuration,
+  };
+}
+
 export function createBiomeEngine({
   THREE,
   seed = defaultWorldOptions.seedHash,
@@ -227,6 +280,7 @@ export function createBiomeEngine({
         hazards: cloneShaderMetadata(shaderDefinition.hazards),
         references: cloneShaderMetadata(shaderDefinition.references),
       },
+      weather: normaliseBiomeWeather(definition.weather),
     };
   });
 

@@ -68,6 +68,61 @@ const CATEGORY_DEFAULT_EFFECTS = {
 const DEFAULT_TICK_INTERVAL = 1.5;
 const DEFAULT_PRECIPITATION_UPDATE_INTERVAL = 0.22;
 const DEFAULT_AURORA_UPDATE_INTERVAL = 0.55;
+const MIN_WEATHER_DURATION_SECONDS = 30;
+const DEFAULT_BIOME_WEATHER_DURATION = { min: 180, max: 420 };
+
+export const DEFAULT_BIOME_WEATHER_ROTATION = Object.freeze([
+  {
+    id: 'clear_skies',
+    weight: 1,
+    duration: { ...DEFAULT_BIOME_WEATHER_DURATION },
+  },
+]);
+
+function cloneWeatherDuration(duration, fallback = DEFAULT_BIOME_WEATHER_DURATION) {
+  const fallbackMin = Number.isFinite(fallback?.min)
+    ? fallback.min
+    : DEFAULT_BIOME_WEATHER_DURATION.min;
+  const fallbackMax = Number.isFinite(fallback?.max)
+    ? fallback.max
+    : DEFAULT_BIOME_WEATHER_DURATION.max;
+  const rawMin = Number.isFinite(duration?.min) ? duration.min : fallbackMin;
+  const rawMax = Number.isFinite(duration?.max) ? duration.max : fallbackMax;
+  const min = Math.max(MIN_WEATHER_DURATION_SECONDS, rawMin);
+  const max = Math.max(min, rawMax);
+  return { min, max };
+}
+
+function cloneWeatherCandidate(candidate, fallbackDuration = DEFAULT_BIOME_WEATHER_DURATION) {
+  if (!candidate?.id) {
+    return null;
+  }
+  const weightValue = Number(candidate.weight);
+  const weight = Number.isFinite(weightValue) ? Math.max(0, weightValue) : 1;
+  if (weight <= 0) {
+    return null;
+  }
+  return {
+    id: String(candidate.id),
+    weight,
+    duration: cloneWeatherDuration(candidate.duration, fallbackDuration),
+  };
+}
+
+export function resolveBiomeWeatherRotation(biome) {
+  const weather = biome?.weather ?? null;
+  const source = Array.isArray(weather?.candidates) ? weather.candidates : [];
+  const fallbackDuration = weather?.defaultDuration ?? DEFAULT_BIOME_WEATHER_DURATION;
+  const resolved = source
+    .map((candidate) => cloneWeatherCandidate(candidate, fallbackDuration))
+    .filter(Boolean);
+  if (resolved.length > 0) {
+    return resolved;
+  }
+  return DEFAULT_BIOME_WEATHER_ROTATION.map((candidate) =>
+    cloneWeatherCandidate(candidate, DEFAULT_BIOME_WEATHER_DURATION),
+  ).filter(Boolean);
+}
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);

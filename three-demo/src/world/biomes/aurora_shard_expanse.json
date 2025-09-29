@@ -78,5 +78,24 @@
       "auroraGradient": "aurora_shard_expanse:ribbons",
       "gustField": "aurora_shard_expanse:electromagnetic"
     }
+  },
+  "weather": {
+    "candidates": [
+      {
+        "id": "clear_skies",
+        "weight": 3,
+        "duration": { "min": 260, "max": 520 }
+      },
+      {
+        "id": "misty_rain",
+        "weight": 1,
+        "duration": { "min": 140, "max": 260 }
+      },
+      {
+        "id": "charged_storm",
+        "weight": 2,
+        "duration": { "min": 110, "max": 220 }
+      }
+    ]
   }
 }

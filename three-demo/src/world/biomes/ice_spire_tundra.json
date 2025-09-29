@@ -62,5 +62,24 @@
         "description": "Supercooled squalls sap body heat within moments of exposure."
       }
     }
+  },
+  "weather": {
+    "candidates": [
+      {
+        "id": "clear_skies",
+        "weight": 2,
+        "duration": { "min": 200, "max": 420 }
+      },
+      {
+        "id": "misty_rain",
+        "weight": 1,
+        "duration": { "min": 130, "max": 240 }
+      },
+      {
+        "id": "charged_storm",
+        "weight": 3,
+        "duration": { "min": 90, "max": 180 }
+      }
+    ]
   }
 }
