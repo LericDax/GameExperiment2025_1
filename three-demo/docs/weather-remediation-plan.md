@@ -10,7 +10,7 @@
 
 ## Manual Testing Symptoms
 - The `/weather debug` subcommand reads particle-system statistics and prints whether any emitters labeled “weather” are alive, but the command must be rerun manually and provides no guidance on why emitters failed to appear.【F:src/player/dev-commands.js†L1532-L1587】
-- When `particleSystem.emit` returns a falsy handle, `spawnPrecipitationEffect` records a failure count and logs a warning, yet there is no proactive signal to surface the failure to players beyond consulting diagnostics after the fact.【F:src/world/weather/weather-manager.js†L338-L370】
+- When `particleSystem.emit` returns a falsy handle, `spawnPrecipitationEffect` records a failure count and (as of May 2025) queues a follow-up attempt that the overlay reports as a pending retry, keeping testers aware of self-healing behaviour without rerunning console probes.【F:src/world/weather/weather-manager.js†L258-L363】【F:src/ui/weather-debug-overlay.js†L86-L143】
 - Active precipitation emitters anchor themselves to the player each frame, so if spawning succeeds we expect to see rain or snow volumes following the camera; the absence of any visuals implies either emitters are not spawned, are culled immediately, or are suppressed before they can update.【F:src/world/weather/weather-manager.js†L338-L420】【F:src/world/weather/weather-manager.js†L500-L551】
 
 ## Candidate Root Causes
@@ -32,8 +32,9 @@
 ## 2025-05 Regression Coverage Updates
 - Added a node:test case that boots the real GPU billboard particle system, applies the `misty_rain` preset, and advances both managers until `particleSystem.getDebugInfo()` reports active “weather” emitters—proving end-to-end precipitation spawning works without mocks.【F:src/world/__tests__/weather-manager.test.js†L1-L127】
 - Remaining gaps: the suite still lacks automated checks for aurora ribbons, anchor repositioning against live player controls, and rotation-harness scheduling edge cases—these should follow once we expose lightweight test doubles for those systems.
+- Missing precipitation handles now trigger scheduled retries that are stored on `scene.userData.weather.pendingPrecipitationRetries`, increment `precipitationRecoveryAttempts`, and surface upcoming retry windows plus reasons in the overlay so live sessions show when the system will self-heal.【F:src/world/weather/weather-manager.js†L258-L381】【F:src/ui/weather-debug-overlay.js†L86-L143】
 
-> **Reminder for reviewers:** please continue keeping this remediation plan up to date whenever you touch weather logic or diagnostics so future investigators inherit an accurate coverage map.
+> **Reminder for reviewers:** please continue keeping this remediation plan up to date whenever you touch weather logic or diagnostics so future investigators inherit an accurate coverage map. Be especially diligent about updating the new retry/overlay notes whenever precipitation recovery logic or diagnostics evolve.
 
 Please continue appending follow-up findings or configuration changes here whenever the harness or emitter settings evolve.
 

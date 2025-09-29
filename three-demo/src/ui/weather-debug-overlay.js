@@ -132,6 +132,9 @@ function describePrecipitation(weatherState) {
   const emitters = Array.isArray(weatherState?.precipitationEmitters)
     ? weatherState.precipitationEmitters
     : [];
+  const pending = Array.isArray(weatherState?.pendingPrecipitationRetries)
+    ? weatherState.pendingPrecipitationRetries
+    : [];
   const totalParticles = Number.isFinite(weatherState?.precipitationActiveParticles)
     ? weatherState.precipitationActiveParticles
     : null;
@@ -143,15 +146,31 @@ function describePrecipitation(weatherState) {
       ? 'Precipitation: none active'
       : `Precipitation: none active (particles=${totalParticles})`;
     const failure = weatherState?.lastPrecipitationFailure ?? null;
+    const lines = [`${baseSummary}${recoveries > 0 ? ` (recoveries=${recoveries})` : ''}.`];
+    if (pending.length > 0) {
+      lines.push(`  Pending retries (${pending.length}):`);
+      pending.forEach((retry, index) => {
+        const attempt = Number.isFinite(retry.attempt) ? retry.attempt : '?';
+        const maxAttempts = Number.isFinite(retry.maxAttempts) ? retry.maxAttempts : '?';
+        const nextRetry = Number.isFinite(retry.nextRetryIn)
+          ? `, retry in ${formatTime(retry.nextRetryIn)}`
+          : '';
+        const retryAt = Number.isFinite(retry.retryAt)
+          ? ` (target ${formatTime(retry.retryAt)})`
+          : '';
+        const reason = retry.reason ? `, reason=${retry.reason}` : '';
+        lines.push(
+          `    #${index + 1} ${retry.type ?? 'precipitation'} — attempt ${attempt}/${maxAttempts}${nextRetry}${retryAt}${reason}.`,
+        );
+      });
+    }
     if (failure) {
       const reason = failure.reason ? `, reason=${failure.reason}` : '';
-      return `${baseSummary}. Last failure ${failure.type ?? 'unknown'} @ ${formatTime(
-        failure.elapsedTime,
-      )}${reason}.`;
+      lines.push(
+        `  Last failure ${failure.type ?? 'unknown'} @ ${formatTime(failure.elapsedTime)}${reason}.`,
+      );
     }
-    return recoveries > 0
-      ? `${baseSummary} (recoveries=${recoveries}).`
-      : `${baseSummary}.`;
+    return lines.join('\n');
   }
   const summaryParts = [`Precipitation: ${emitters.length} active`];
   if (Number.isFinite(totalParticles)) {
@@ -182,6 +201,23 @@ function describePrecipitation(weatherState) {
       `  #${index + 1} ${label} (${type}) — particles=${particles}, attempt ${attempts}/${maxAttempts}, status=${status}${retryText}${spawnedText}.`,
     );
   });
+  if (pending.length > 0) {
+    lines.push(`  Pending retries (${pending.length}):`);
+    pending.forEach((retry, index) => {
+      const attempt = Number.isFinite(retry.attempt) ? retry.attempt : '?';
+      const maxAttempts = Number.isFinite(retry.maxAttempts) ? retry.maxAttempts : '?';
+      const nextRetry = Number.isFinite(retry.nextRetryIn)
+        ? `, retry in ${formatTime(retry.nextRetryIn)}`
+        : '';
+      const reason = retry.reason ? `, reason=${retry.reason}` : '';
+      const retryAt = Number.isFinite(retry.retryAt)
+        ? ` (target ${formatTime(retry.retryAt)})`
+        : '';
+      lines.push(
+        `    #${index + 1} ${retry.type ?? 'precipitation'} — attempt ${attempt}/${maxAttempts}${nextRetry}${retryAt}${reason}.`,
+      );
+    });
+  }
   const failure = weatherState?.lastPrecipitationFailure ?? null;
   if (failure) {
     const reason = failure.reason ? `, reason=${failure.reason}` : '';
