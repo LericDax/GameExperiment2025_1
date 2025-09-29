@@ -1,6 +1,7 @@
 import { createAuroraRibbonEmitter } from '../../rendering/particles/aurora-effects.js';
 import { createWeatherRainEmitter } from '../../rendering/particles/weather-rain.js';
 import { createWeatherSnowEmitter } from '../../rendering/particles/weather-snow.js';
+import { createWeatherAudioController } from '../../audio/weather-audio.js';
 
 const DEFAULT_WEATHER_PRESETS = {
   clear_skies: {
@@ -218,6 +219,7 @@ export function createWeatherManager({
   particleSystem,
   registerDiagnosticOverlay,
 } = {}) {
+  const audioController = createWeatherAudioController();
   const weatherPresets = new Map(
     Object.entries(DEFAULT_WEATHER_PRESETS).map(([key, value]) => [key, { ...value }]),
   );
@@ -515,10 +517,15 @@ export function createWeatherManager({
     if (activeWeather && activeWeather.id === nextWeather.id) {
       return activeWeather;
     }
+    const previousWeatherId = activeWeather?.id ?? null;
     disposeWeatherEffects();
     activeWeather = nextWeather;
     needsEffectRefresh = true;
     applyWeatherEffects(activeWeather);
+    audioController.handleTransition({
+      previousWeatherId,
+      nextWeatherId: activeWeather?.id ?? null,
+    });
     return activeWeather;
   };
 
@@ -582,6 +589,7 @@ export function createWeatherManager({
     tickListeners.clear();
     scheduledTransitions.length = 0;
     needsEffectRefresh = false;
+    audioController.dispose();
     if (diagnosticOverlayDisposer) {
       try {
         diagnosticOverlayDisposer();
