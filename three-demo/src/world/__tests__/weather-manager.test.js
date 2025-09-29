@@ -46,7 +46,7 @@ test('setWeather emits precipitation for rainy presets', () => {
 });
 
 test('failed precipitation spawns are recorded for diagnostics', () => {
-  const { manager, scene } = createManager({
+  const { manager, scene, particleSystem } = createManager({
     emitImplementation: () => null,
   });
 
@@ -56,6 +56,11 @@ test('failed precipitation spawns are recorded for diagnostics', () => {
   const weatherState = scene.userData.weather;
 
   assert.ok(weatherState, 'expected weather diagnostics state to exist');
+  assert.equal(
+    particleSystem.emitted.length,
+    0,
+    'expected no handles when particle system emit returned null',
+  );
   assert.equal(weatherState.failedPrecipitationSpawns, 1);
   assert.deepEqual(weatherState.lastPrecipitationFailure, {
     elapsedTime: 2,
