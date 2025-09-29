@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { createGpuBillboardEmitter } from './gpu-billboard-emitter.js';
 
 function clamp(value, min, max) {
@@ -38,7 +39,8 @@ export function createWeatherRainEmitter({
     drag: 0.12,
     fadeIn: 0.06,
     fadeOut: 0.22,
-    opacity: 0.68,
+    opacity: 0.82,
+    blending: THREE.NormalBlending,
     depthWrite: false,
     renderOrder: 5,
   });
