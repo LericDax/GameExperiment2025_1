@@ -106,15 +106,24 @@ function describeFailures(weatherState) {
   const failures = Number.isFinite(weatherState.failedPrecipitationSpawns)
     ? weatherState.failedPrecipitationSpawns
     : 0;
+  const recoveries = Number.isFinite(weatherState.precipitationRecoveryAttempts)
+    ? weatherState.precipitationRecoveryAttempts
+    : 0;
   if (failures <= 0) {
-    return 'Failures: none';
+    return recoveries > 0
+      ? `Failures: none (recoveries=${recoveries})`
+      : 'Failures: none';
   }
   const recent = weatherState.lastPrecipitationFailure ?? null;
   if (!recent) {
-    return `Failures: ${failures}`;
+    return recoveries > 0
+      ? `Failures: ${failures} (recoveries=${recoveries})`
+      : `Failures: ${failures}`;
   }
   const type = recent.type ?? 'unknown';
-  return `Failures: ${failures} (last ${type} @ ${formatTime(recent.elapsedTime)})`;
+  const reason = recent.reason ? `, reason=${recent.reason}` : '';
+  const recoveriesText = recoveries > 0 ? `, recoveries=${recoveries}` : '';
+  return `Failures: ${failures} (last ${type} @ ${formatTime(recent.elapsedTime)}${reason}${recoveriesText})`;
 }
 
 function describeDebugSample(weatherState, stats) {

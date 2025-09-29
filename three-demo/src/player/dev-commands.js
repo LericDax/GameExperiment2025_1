@@ -1553,8 +1553,13 @@ export function registerDeveloperCommands({
               const elapsed = Number.isFinite(failure.elapsedTime)
                 ? `${failure.elapsedTime.toFixed(2)}s`
                 : 'unknown';
+              const reason = failure.reason ? `, reason=${failure.reason}` : '';
+              const recoveries = Number.isFinite(weatherState.precipitationRecoveryAttempts)
+                ? weatherState.precipitationRecoveryAttempts
+                : 0;
+              const recoveryText = recoveries > 0 ? `, recoveries=${recoveries}` : '';
               info(
-                `[weather debug] Most recent failure — type=${failure.type}, elapsedTime=${elapsed}.`,
+                `[weather debug] Most recent failure — type=${failure.type}, elapsedTime=${elapsed}${reason}${recoveryText}.`,
               );
             }
           } else {
