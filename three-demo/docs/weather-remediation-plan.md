@@ -53,6 +53,16 @@ Please continue appending follow-up findings or configuration changes here whene
 - Switched the raindrop shader to additive blending with a `0.55` opacity multiplier to increase contrast when precipitation particles are occluded, providing a clearer fallback cue for QA when rain volumes underperform.【F:src/rendering/effects/raindrop-overlay.js†L1-L86】
 - Added a unit test that locks the overlay intensity maths to the new tuning so future adjustments must update this plan and QA expectations in tandem—treat the stronger overlay as the fallback visibility requirement during manual checks.【F:src/world/__tests__/weather-manager.test.js†L1-L138】
 
+## 2025-09 High-Contrast Rain Refresh
+- Reworked `createWeatherRainEmitter` with thicker billboards, a dark-to-ice-blue color ramp, and normal blending so rain streaks retain contrast during daylight scenes.【F:src/rendering/particles/weather-rain.js†L9-L55】
+- Increased spawn and lifetime budgets to keep at least 30 active particles during the regression harness and renamed the debug label to `WeatherRainEmitter/HighContrast` so tooling can confirm the look is active.【F:src/rendering/particles/weather-rain.js†L15-L55】【F:src/world/__tests__/weather-manager.test.js†L170-L203】
+- Updated the regression test to assert both the higher particle floor and the high-contrast label—future changes must update this plan *and* the test expectations together to avoid silent drift.【F:src/world/__tests__/weather-manager.test.js†L170-L203】
+- **QA checklist:**
+  - Trigger `/weather misty_rain` (or cycle via the harness) at midday lighting and verify streaks remain visible against bright terrain.
+  - Confirm the weather debug overlay reports the `WeatherRainEmitter/HighContrast` label and at least 30 active particles once the emitter stabilises.
+  - Re-run `/weather debug` to ensure the darker-core ramp remains readable when the overlay is disabled, noting any deviations here.
+- **Reminder:** When retuning rain visuals or thresholds, update this section, the automated test expectations, and any overlay heuristics so QA retains a single source of truth.
+
 ## Work Orders
 1. **Gameplay-driven rotation**
    - Sample the player’s biome each frame (reusing the `sampleBiomeAt` helper from `/weather status`) and resolve the preset rotation with `resolveBiomeWeatherRotation`, storing timing metadata per biome.【F:src/player/dev-commands.js†L1532-L1562】【F:src/world/weather/weather-manager.js†L76-L127】
