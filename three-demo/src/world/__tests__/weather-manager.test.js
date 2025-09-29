@@ -5,6 +5,10 @@ import * as THREE from 'three';
 const { createWeatherManager } = await import('../weather/weather-manager.js');
 const { createParticleSystem } = await import('../../rendering/particle-system.js');
 
+const RAIN_OVERLAY_TEST_MIN = 0.24;
+const RAIN_OVERLAY_TEST_MAX = 1.35;
+const RAIN_OVERLAY_TEST_SCALE = 0.95;
+
 function createManager({ emitImplementation }) {
   const emit = emitImplementation ?? (() => ({ stop() {} }));
   const particleSystem = {
@@ -18,7 +22,17 @@ function createManager({ emitImplementation }) {
     },
   };
 
-  const scene = { userData: {} };
+  const scene = {
+    userData: {},
+    added: [],
+    removed: [],
+    add(object) {
+      this.added.push(object);
+    },
+    remove(object) {
+      this.removed.push(object);
+    },
+  };
 
   const manager = createWeatherManager({
     scene,
@@ -26,6 +40,16 @@ function createManager({ emitImplementation }) {
   });
 
   return { manager, particleSystem, scene };
+}
+
+function approxEqual(actual, expected, epsilon = 1e-3) {
+  return Math.abs(actual - expected) <= epsilon;
+}
+
+function expectedOverlayIntensity(precipIntensity) {
+  const scaled = precipIntensity * RAIN_OVERLAY_TEST_SCALE;
+  const raised = Math.max(scaled, RAIN_OVERLAY_TEST_MIN);
+  return Math.min(raised, RAIN_OVERLAY_TEST_MAX);
 }
 
 test('setWeather emits precipitation for rainy presets', () => {
@@ -45,6 +69,91 @@ test('setWeather emits precipitation for rainy presets', () => {
   assert.equal(emitCount, 1, 'expected precipitation emitter to be spawned once');
   assert.equal(particleSystem.emitted.length, 1, 'expected particle handle to be stored');
   assert.ok(handles[0], 'expected precipitation emitter details to be captured');
+});
+
+test('raindrop overlay intensity follows precipitation tuning', () => {
+  const { manager } = createManager({
+    emitImplementation: (emitter) => ({
+      ...emitter,
+      stop() {},
+      getActiveParticleCount() {
+        return 24;
+      },
+    }),
+  });
+
+  manager.setWeather('misty_rain');
+  manager.update({ delta: 0.016, elapsedTime: 1 });
+
+  let overlay = manager.getRaindropOverlayState();
+  let weather = manager.getCurrentWeather();
+  let precipitationIntensity = weather?.effects?.precipitation?.intensity ?? 0;
+  let expected = expectedOverlayIntensity(precipitationIntensity);
+  assert.ok(overlay.enabled, 'expected raindrop overlay to enable for rainy preset');
+  assert.ok(overlay.visible, 'expected raindrop overlay mesh to be created for rainy preset');
+  assert.ok(
+    approxEqual(overlay.baseIntensity, expected, 1e-4),
+    `expected misty rain overlay intensity (${overlay.baseIntensity}) to match tuning (${expected})`,
+  );
+
+  manager.registerWeatherPreset({
+    id: 'qa_downpour',
+    label: 'QA Downpour',
+    category: 'storm',
+    intensity: 1.8,
+    effects: {
+      precipitation: {
+        type: 'rain',
+        intensity: 2.2,
+      },
+    },
+  });
+
+  manager.setWeather('qa_downpour');
+  manager.update({ delta: 0.016, elapsedTime: 2 });
+
+  overlay = manager.getRaindropOverlayState();
+  weather = manager.getCurrentWeather();
+  precipitationIntensity = weather?.effects?.precipitation?.intensity ?? 0;
+  expected = expectedOverlayIntensity(precipitationIntensity);
+  assert.ok(overlay.enabled, 'expected overlay to remain enabled for heavy rain');
+  assert.ok(
+    overlay.baseIntensity > expectedOverlayIntensity(0.45),
+    'expected heavier precipitation to drive a stronger overlay response',
+  );
+  assert.ok(
+    approxEqual(overlay.baseIntensity, expected, 1e-4),
+    `expected heavy rain overlay intensity (${overlay.baseIntensity}) to clamp using tuning (${expected})`,
+  );
+
+  manager.registerWeatherPreset({
+    id: 'qa_extreme_downpour',
+    label: 'QA Extreme Downpour',
+    category: 'storm',
+    intensity: 2.4,
+    effects: {
+      precipitation: {
+        type: 'rain',
+        intensity: 4.4,
+      },
+    },
+  });
+
+  manager.setWeather('qa_extreme_downpour');
+  manager.update({ delta: 0.016, elapsedTime: 3 });
+
+  const extremeOverlay = manager.getRaindropOverlayState();
+  const extremeWeather = manager.getCurrentWeather();
+  const extremePrecipitationIntensity = extremeWeather?.effects?.precipitation?.intensity ?? 0;
+  const extremeExpected = expectedOverlayIntensity(extremePrecipitationIntensity);
+  assert.ok(
+    approxEqual(extremeOverlay.baseIntensity, extremeExpected, 1e-4),
+    `expected extreme rain overlay intensity (${extremeOverlay.baseIntensity}) to clamp to tuned maximum (${extremeExpected})`,
+  );
+  assert.ok(
+    approxEqual(extremeOverlay.baseIntensity, overlay.baseIntensity, 1e-4),
+    'expected overlay to clamp so extreme rain matches heavy rain output',
+  );
 });
 
 test('failed precipitation spawns are recorded for diagnostics', () => {

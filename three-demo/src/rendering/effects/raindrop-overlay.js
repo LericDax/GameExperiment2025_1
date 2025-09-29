@@ -21,7 +21,7 @@ function createOverlayMaterial(intensity = DEFAULT_INTENSITY) {
     transparent: true,
     depthTest: false,
     depthWrite: false,
-    blending: THREE.NormalBlending,
+    blending: THREE.AdditiveBlending,
     vertexShader: /* glsl */ `
       varying vec2 vUv;
 
@@ -57,7 +57,7 @@ function createOverlayMaterial(intensity = DEFAULT_INTENSITY) {
         float offset = raindropMask(vUv * vec2(1.0, 1.6) + vec2(0.35, 0.0), 0.12, -0.05);
         float fine = raindropMask(vUv * vec2(1.0, 1.1) + vec2(-0.2, 0.1), 0.06, -0.1);
         float mask = clamp(base + offset * 0.8 + fine * 0.6, 0.0, 1.0);
-        float opacity = mask * clamp(uIntensity, 0.0, ${MAX_INTENSITY.toFixed(1)}) * 0.35;
+        float opacity = mask * clamp(uIntensity, 0.0, ${MAX_INTENSITY.toFixed(1)}) * 0.55;
         if (opacity <= 0.001) {
           discard;
         }
