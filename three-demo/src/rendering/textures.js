@@ -269,6 +269,58 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
         return { ...shade, a: 1 };
       },
     }),
+    snow: engine.createTexture('snow', {
+      size: 128,
+      generator: ({ bands, noise, worley, color, mix, lighten }) => {
+        const base = color('#f4f9ff');
+        const shadow = color('#d9e4ff');
+        const highlight = lighten(base, 0.32);
+
+        const drifts = bands({
+          frequency: 3.5,
+          angle: 22,
+          thickness: 4.8,
+          turbulence: 0.42,
+          variant: 'snow:drifts',
+        });
+        const powder = noise({
+          scale: 16,
+          octaves: 3,
+          persistence: 0.58,
+          variant: 'snow:powder',
+        });
+        const crust = noise({
+          scale: 7.5,
+          octaves: 2,
+          persistence: 0.52,
+          variant: 'snow:crust',
+        });
+        const crystals = worley({
+          scale: 11,
+          jitter: 0.74,
+          distancePower: 2,
+          variant: 'snow:crystal',
+        });
+
+        const driftMask = Math.pow(drifts, 1.35);
+        const powderCentered = powder - 0.5;
+        const crustMask = Math.pow(crust, 1.6);
+        const crystalShadow = Math.pow(crystals, 2.2);
+        const crystalHighlight = Math.pow(1 - crystals, 3);
+
+        let shade = mix(
+          base,
+          shadow,
+          driftMask * 0.55 + Math.max(powderCentered, 0) * 0.25 + crystalShadow * 0.18,
+        );
+        const sparkleMask = Math.pow(Math.max(-powderCentered, 0), 1.8);
+        shade = mix(shade, highlight, sparkleMask * 0.18);
+        shade = mix(shade, highlight, crystalHighlight * 0.16);
+        shade = mix(shade, highlight, crustMask * 0.12);
+
+        return { ...shade, a: 1 };
+      },
+    }),
     chromatic_sod: engine.createTexture('chromatic_sod', {
       size: 128,
       generator: ({ noise, bands, color, mix, darken, lighten }) => {
@@ -887,6 +939,14 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
       {
         tintStrength: 0.9,
         name: 'FrostbloomMossMaterial',
+      },
+    ),
+    snow: createStandardBlockMaterial(
+      textures.snow,
+      { roughness: 0.92, metalness: 0.02 },
+      {
+        tintStrength: 0.7,
+        name: 'SnowBiomeMaterial',
       },
     ),
     chromatic_sod: createStandardBlockMaterial(
