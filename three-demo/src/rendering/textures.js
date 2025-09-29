@@ -274,6 +274,7 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
       generator: ({ bands, noise, worley, color, mix, lighten }) => {
         const base = color('#f4f9ff');
         const shadow = color('#d9e4ff');
+
         const highlight = lighten(base, 0.32);
 
         const drifts = bands({
@@ -298,9 +299,11 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
         const crystals = worley({
           scale: 11,
           jitter: 0.74,
+
           distancePower: 2,
           variant: 'snow:crystal',
         });
+
 
         const driftMask = Math.pow(drifts, 1.35);
         const powderCentered = powder - 0.5;
@@ -317,6 +320,7 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
         shade = mix(shade, highlight, sparkleMask * 0.18);
         shade = mix(shade, highlight, crystalHighlight * 0.16);
         shade = mix(shade, highlight, crustMask * 0.12);
+
 
         return { ...shade, a: 1 };
       },
