@@ -44,5 +44,19 @@
     "fogColor": "#2a3945",
     "tintColor": "#3de0f0",
     "tintStrength": 0.55
+  },
+  "weather": {
+    "candidates": [
+      {
+        "id": "clear_skies",
+        "weight": 3,
+        "duration": { "min": 220, "max": 460 }
+      },
+      {
+        "id": "misty_rain",
+        "weight": 3,
+        "duration": { "min": 150, "max": 280 }
+      }
+    ]
   }
 }
