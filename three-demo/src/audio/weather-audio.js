@@ -1,11 +1,15 @@
-const cueImports = import.meta.glob(
-  '../sounds/sound_effects/weather/**/{start,stop}.{mp3,MP3,wav,WAV,ogg,OGG}',
-  {
-    eager: true,
-    import: 'default',
-    query: '?url',
-  },
-)
+const hasImportGlob = typeof import.meta.glob === 'function'
+
+const cueImports = hasImportGlob
+  ? import.meta.glob(
+      '../sounds/sound_effects/weather/**/{start,stop}.{mp3,MP3,wav,WAV,ogg,OGG}',
+      {
+        eager: true,
+        import: 'default',
+        query: '?url',
+      },
+    )
+  : {}
 
 const SUPPORTED_CUE_TYPES = new Set(['start', 'stop'])
 
