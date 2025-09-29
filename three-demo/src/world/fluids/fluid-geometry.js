@@ -182,7 +182,9 @@ export function buildFluidGeometry({ THREE, columns }) {
     const auroraGlow = column.localAuroraGlow ?? column.localAuroraIntensity ?? 0;
 
     const dropSurface = surfaceY;
-    const dropBottom = Math.min(bottomY, neighborInfo.bottomY);
+    const dropBottom = neighborInfo.hasFluid
+      ? Math.min(bottomY, neighborInfo.bottomY ?? bottomY)
+      : bottomY;
     if (!(dropSurface > dropBottom + 0.01)) {
       return;
     }
