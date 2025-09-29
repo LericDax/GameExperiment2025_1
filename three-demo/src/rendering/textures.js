@@ -274,32 +274,53 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
       generator: ({ bands, noise, worley, color, mix, lighten }) => {
         const base = color('#f4f9ff');
         const shadow = color('#d9e4ff');
-        const highlight = lighten(color('#ffffff'), 0.02);
+
+        const highlight = lighten(base, 0.32);
 
         const drifts = bands({
-          frequency: 3.6,
-          angle: 21,
-          thickness: 5,
-          turbulence: 0.45,
+          frequency: 3.5,
+          angle: 22,
+          thickness: 4.8,
+          turbulence: 0.42,
           variant: 'snow:drifts',
         });
         const powder = noise({
-          scale: 18,
+          scale: 16,
           octaves: 3,
-          persistence: 0.6,
+          persistence: 0.58,
           variant: 'snow:powder',
+        });
+        const crust = noise({
+          scale: 7.5,
+          octaves: 2,
+          persistence: 0.52,
+          variant: 'snow:crust',
         });
         const crystals = worley({
           scale: 11,
-          jitter: 0.75,
+          jitter: 0.74,
+
           distancePower: 2,
           variant: 'snow:crystal',
         });
 
-        const driftMask = Math.pow(drifts, 1.4);
-        let shade = mix(base, shadow, driftMask * 0.55 + powder * 0.25);
-        shade = mix(shade, highlight, Math.pow(1 - crystals, 2.2) * 0.5);
-        shade = mix(shade, highlight, Math.pow(powder, 1.6) * 0.25);
+
+        const driftMask = Math.pow(drifts, 1.35);
+        const powderCentered = powder - 0.5;
+        const crustMask = Math.pow(crust, 1.6);
+        const crystalShadow = Math.pow(crystals, 2.2);
+        const crystalHighlight = Math.pow(1 - crystals, 3);
+
+        let shade = mix(
+          base,
+          shadow,
+          driftMask * 0.55 + Math.max(powderCentered, 0) * 0.25 + crystalShadow * 0.18,
+        );
+        const sparkleMask = Math.pow(Math.max(-powderCentered, 0), 1.8);
+        shade = mix(shade, highlight, sparkleMask * 0.18);
+        shade = mix(shade, highlight, crystalHighlight * 0.16);
+        shade = mix(shade, highlight, crustMask * 0.12);
+
 
         return { ...shade, a: 1 };
       },
