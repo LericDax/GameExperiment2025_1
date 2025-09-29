@@ -23,6 +23,8 @@ export function buildFluidGeometry({ THREE, columns }) {
   const edgeFoam = [];
   const depths = [];
   const shorelines = [];
+  const ribbonDirections = [];
+  const auroraGlowValues = [];
 
   const pushVertex = (
     vertex,
@@ -35,6 +37,8 @@ export function buildFluidGeometry({ THREE, columns }) {
     foam,
     depthValue,
     shorelineValue,
+    ribbonDir,
+    auroraGlow,
     surfaceRole,
   ) => {
     positions.push(vertex.x, vertex.y, vertex.z);
@@ -48,6 +52,8 @@ export function buildFluidGeometry({ THREE, columns }) {
     edgeFoam.push(foam);
     depths.push(depthValue);
     shorelines.push(shorelineValue);
+    ribbonDirections.push(ribbonDir?.x ?? 0, ribbonDir?.y ?? 1);
+    auroraGlowValues.push(auroraGlow ?? 0);
   };
 
   const tempColor = new THREE.Color();
@@ -64,6 +70,8 @@ export function buildFluidGeometry({ THREE, columns }) {
     const foam = foamAmount ?? 0;
     const depthValue = depth ?? Math.max(0.05, surfaceY - column.bottomY);
     const shorelineValue = shoreline ?? 0;
+    const ribbonDir = column.ribbonVector ?? flowDir;
+    const auroraGlow = column.localAuroraGlow ?? column.localAuroraIntensity ?? 0;
 
     const tint = tempColor.copy(color);
 
@@ -78,6 +86,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.SURFACE,
     );
     pushVertex(
@@ -91,6 +101,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.SURFACE,
     );
     pushVertex(
@@ -104,6 +116,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.SURFACE,
     );
 
@@ -118,6 +132,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.SURFACE,
     );
     pushVertex(
@@ -131,6 +147,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.SURFACE,
     );
     pushVertex(
@@ -144,6 +162,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.SURFACE,
     );
   };
@@ -158,6 +178,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       shoreline ?? 0,
       neighborInfo.foamHint ? Math.min(1, neighborInfo.foamHint * 0.75) : 0,
     );
+    const ribbonDir = column.ribbonVector ?? flowDir;
+    const auroraGlow = column.localAuroraGlow ?? column.localAuroraIntensity ?? 0;
 
     const dropSurface = surfaceY;
     const dropBottom = Math.min(bottomY, neighborInfo.bottomY);
@@ -222,6 +244,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.EDGE_TOP,
     );
     pushVertex(
@@ -235,6 +259,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.EDGE_BOTTOM,
     );
     pushVertex(
@@ -248,6 +274,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.EDGE_BOTTOM,
     );
 
@@ -262,6 +290,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.EDGE_TOP,
     );
     pushVertex(
@@ -275,6 +305,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.EDGE_BOTTOM,
     );
     pushVertex(
@@ -288,6 +320,8 @@ export function buildFluidGeometry({ THREE, columns }) {
       foam,
       depthValue,
       shorelineValue,
+      ribbonDir,
+      auroraGlow,
       SURFACE_ROLES.EDGE_TOP,
     );
   };
@@ -332,6 +366,14 @@ export function buildFluidGeometry({ THREE, columns }) {
   geometry.setAttribute('edgeFoam', new THREE.Float32BufferAttribute(edgeFoam, 1));
   geometry.setAttribute('depth', new THREE.Float32BufferAttribute(depths, 1));
   geometry.setAttribute('shoreline', new THREE.Float32BufferAttribute(shorelines, 1));
+  geometry.setAttribute(
+    'ribbonVector',
+    new THREE.Float32BufferAttribute(ribbonDirections, 2),
+  );
+  geometry.setAttribute(
+    'auroraGlow',
+    new THREE.Float32BufferAttribute(auroraGlowValues, 1),
+  );
 
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();

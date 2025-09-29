@@ -700,6 +700,12 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         auroraIntensitySamples: 0,
         orientationVector: { x: 0, z: 0 },
         orientationSamples: 0,
+        glowBiasSum: 0,
+        glowBiasSamples: 0,
+        pulseRateSum: 0,
+        pulseRateSamples: 0,
+        ridgeStrengthSum: 0,
+        ridgeStrengthSamples: 0,
       };
       columns.set(columnKey, column);
     } else {
@@ -724,6 +730,25 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     if (Number.isFinite(metadata.auroraIntensity)) {
       column.auroraIntensitySum += metadata.auroraIntensity;
       column.auroraIntensitySamples += 1;
+    }
+    if (typeof metadata.colorHex === 'string') {
+      try {
+        column.color = new THREE.Color(metadata.colorHex);
+      } catch (error) {
+        // ignore invalid color strings
+      }
+    }
+    if (Number.isFinite(metadata.glowBias)) {
+      column.glowBiasSum += metadata.glowBias;
+      column.glowBiasSamples += 1;
+    }
+    if (Number.isFinite(metadata.pulseRate)) {
+      column.pulseRateSum += metadata.pulseRate;
+      column.pulseRateSamples += 1;
+    }
+    if (Number.isFinite(metadata.ridgeStrength)) {
+      column.ridgeStrengthSum += metadata.ridgeStrength;
+      column.ridgeStrengthSamples += 1;
     }
     if (Number.isFinite(metadata.ribbonOrientation)) {
       const angle = metadata.ribbonOrientation;
@@ -1120,7 +1145,10 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       const hasAuroraRibbonCue = Boolean(
         lumenCues && lumenCues.includes('aurora_ribbon'),
       );
-      if (hasAuroraRibbonCue) {
+      const columnWasFlooded = height < waterLevel;
+      const shouldSkipLumenSurface =
+        columnWasFlooded || isUnderwater || isShore;
+      if (hasAuroraRibbonCue && !shouldSkipLumenSurface) {
         registerFluidPresence({
           type: 'lumen_bloom',
           x: worldX,
@@ -1166,13 +1194,79 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       logFluidDebug('processing water columns', columns.size);
     }
 
+    const THREE = ensureThree();
+    const auroraBaseColor =
+      type === 'lumen_bloom' ? new THREE.Color('#74f7ff') : null;
+    const auroraHighlightColor =
+      type === 'lumen_bloom' ? new THREE.Color('#ffb1ff') : null;
+    const auroraBlendColor =
+      type === 'lumen_bloom' ? new THREE.Color('#74f7ff') : null;
+
     columns.forEach((column) => {
       column.surfaceY = column.maxY;
       column.bottomY = column.minY;
       if (!column.color) {
         column.color = new THREE.Color('#3a79c5');
       }
-      column.depth = Math.max(0.05, column.surfaceY - column.bottomY);
+      const baseDepth = Math.max(0.05, column.surfaceY - column.bottomY);
+      column.depth = baseDepth;
+      if (type === 'lumen_bloom') {
+        const averageAuroraIntensity =
+          column.auroraIntensitySamples > 0
+            ? column.auroraIntensitySum / column.auroraIntensitySamples
+            : 0;
+        column.localAuroraIntensity = averageAuroraIntensity;
+        const averageGlowBias =
+          column.glowBiasSamples > 0
+            ? column.glowBiasSum / column.glowBiasSamples
+            : Math.min(1, averageAuroraIntensity / 3);
+        column.localAuroraGlow = averageGlowBias;
+        column.localPulseRate =
+          column.pulseRateSamples > 0
+            ? column.pulseRateSum / column.pulseRateSamples
+            : null;
+        column.ridgeStrength =
+          column.ridgeStrengthSamples > 0
+            ? column.ridgeStrengthSum / column.ridgeStrengthSamples
+            : column.ridgeStrength ?? 0;
+        if (column.orientationSamples > 0) {
+          const ribbonOrientation = Math.atan2(
+            column.orientationVector.z,
+            column.orientationVector.x,
+          );
+          column.ribbonOrientation = ribbonOrientation;
+          column.ribbonVector = {
+            x: Math.cos(ribbonOrientation),
+            y: Math.sin(ribbonOrientation),
+          };
+        } else {
+          column.ribbonOrientation = null;
+          column.ribbonVector = { x: 0, y: 1 };
+        }
+
+        const orientationMix = column.ribbonOrientation
+          ? (Math.sin(column.ribbonOrientation) + 1) * 0.5
+          : 0.5;
+        const auroraBlend = auroraBlendColor
+          ? auroraBlendColor.copy(auroraBaseColor).lerp(
+              auroraHighlightColor,
+              orientationMix,
+            )
+          : null;
+        const colorBlend = Math.min(
+          0.75,
+          (column.localAuroraGlow ?? 0) * 0.65 + (column.ridgeStrength ?? 0) * 0.5,
+        );
+        if (auroraBlend) {
+          column.color.lerp(auroraBlend, colorBlend);
+        }
+        column.color.offsetHSL(0, Math.min(0.2, colorBlend * 0.35), colorBlend * 0.25);
+
+        const depthBoost =
+          Math.max(0, column.ridgeStrength ?? 0) * 0.35 +
+          (column.localAuroraGlow ?? 0) * 0.25;
+        column.depth = Math.max(baseDepth, baseDepth + depthBoost);
+      }
     });
 
     if (type === 'water') {
@@ -1246,7 +1340,19 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       const dropNz = Math.max(0, centerSurface - (neighbors.nz?.surfaceY ?? centerSurface));
 
       const flowVector = new THREE.Vector2(dropPx - dropNx, dropPz - dropNz);
-      const flowStrength = Math.min(1, flowVector.length() * 0.6);
+      let flowStrength = Math.min(1, flowVector.length() * 0.6);
+      if (type === 'lumen_bloom' && column.ribbonVector) {
+        const targetX = column.ribbonVector.x ?? 0;
+        const targetZ = column.ribbonVector.y ?? 1;
+        flowVector.set(targetX, targetZ);
+        flowStrength = Math.max(
+          flowStrength,
+          Math.min(
+            1,
+            (column.localAuroraGlow ?? 0) * 0.8 + (column.ridgeStrength ?? 0) * 0.6,
+          ),
+        );
+      }
       if (flowStrength > 0.001) {
         flowVector.normalize();
       } else {
@@ -1256,7 +1362,12 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       column.neighbors = neighbors;
       column.flowDirection = flowVector;
       column.flowStrength = flowStrength;
-      column.foamAmount = Math.min(1, foamExposure * 0.18 + flowStrength * 0.4);
+      column.foamAmount = Math.min(
+        1,
+        type === 'lumen_bloom'
+          ? foamExposure * 0.1 + flowStrength * 0.25
+          : foamExposure * 0.18 + flowStrength * 0.4,
+      );
       const dropMax = Math.max(dropPx, dropNx, dropPz, dropNz);
       const neighborFluidCount = neighborOffsets.reduce((acc, offset) => {
         return acc + (neighbors[offset.key]?.hasFluid ? 1 : 0);
