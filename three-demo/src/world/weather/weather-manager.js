@@ -238,6 +238,7 @@ export function createWeatherManager({
       return;
     }
     scene.userData = scene.userData || {};
+    const previousOverlayUpdate = scene.userData.weather?.lastOverlayUpdate ?? null;
     const resolvedEffects = resolveWeatherEffects(weather);
     scene.userData.weather = {
       id: weather.id,
@@ -246,6 +247,9 @@ export function createWeatherManager({
       category: weather.category,
       precipitation: resolvedEffects.precipitation?.type ?? null,
       aurora: Boolean(resolvedEffects.aurora && Object.keys(resolvedEffects.aurora).length > 0),
+      failedPrecipitationSpawns: 0,
+      lastPrecipitationFailure: null,
+      lastOverlayUpdate: previousOverlayUpdate,
     };
   };
 
@@ -278,6 +282,20 @@ export function createWeatherManager({
           });
     const handle = particleSystem.emit(emitter);
     if (!handle) {
+      const weatherState = scene?.userData?.weather;
+      if (weatherState) {
+        const previousFailures = Number.isFinite(weatherState.failedPrecipitationSpawns)
+          ? weatherState.failedPrecipitationSpawns
+          : 0;
+        weatherState.failedPrecipitationSpawns = previousFailures + 1;
+        weatherState.lastPrecipitationFailure = {
+          elapsedTime: context?.elapsedTime ?? null,
+          type: config.type,
+        };
+      }
+      console.warn('Weather precipitation emitter failed to spawn; no handle was returned.', {
+        type: config.type,
+      });
       return;
     }
     let updateInterval = config.updateInterval;
