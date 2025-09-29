@@ -83,7 +83,8 @@ void main() {
   vec3 center = integrateMotion(aOrigin, aVelocity, uGravity, uDrag, age);
 
   float sizeScale = sampleSizeCurve(normalizedAge);
-  float particleSize = aSize.x * sizeScale;
+  float particleWidth = aSize.x * sizeScale;
+  float particleHeight = aSize.y * sizeScale;
 
   float fadeIn = smoothstep(0.0, max(uFadeInOut.x, 0.0001), normalizedAge);
   float fadeOut = 1.0 - smoothstep(1.0 - max(uFadeInOut.y, 0.0001), 1.0, normalizedAge);
@@ -95,7 +96,7 @@ void main() {
   vec3 billboardRight = normalize(vec3(modelViewMatrix[0][0], modelViewMatrix[1][0], modelViewMatrix[2][0]));
   vec3 billboardUp = normalize(vec3(modelViewMatrix[0][1], modelViewMatrix[1][1], modelViewMatrix[2][1]));
 
-  vec3 offset = billboardRight * position.x * particleSize + billboardUp * position.y * particleSize;
+  vec3 offset = billboardRight * position.x * particleWidth + billboardUp * position.y * particleHeight;
 
   vec4 mvCenter = modelViewMatrix * vec4(center, 1.0);
   vec3 mvPosition = mvCenter.xyz + offset;
