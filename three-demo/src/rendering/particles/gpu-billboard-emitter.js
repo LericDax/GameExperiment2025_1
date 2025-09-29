@@ -269,6 +269,7 @@ export function createGpuBillboardEmitter(options = {}) {
 
   let pool = null
   let material = null
+  let threeModule = null
   let basePosition
   let positionNoise
   let baseVelocity
@@ -283,6 +284,7 @@ export function createGpuBillboardEmitter(options = {}) {
   const liveParticles = []
   let tempPosition = null
   let tempVelocity = null
+  let pendingBasePosition = null
 
   function ensureTempVectors(THREE) {
     if (!tempPosition) {
@@ -336,6 +338,7 @@ export function createGpuBillboardEmitter(options = {}) {
   return {
     initialize({ THREE, createInstancedPool, getElapsedTime }) {
       ensureTempVectors(THREE)
+      threeModule = THREE
       basePosition = resolveVector3(THREE, position, new THREE.Vector3())
       positionNoise = positionJitter
         ? resolveVector3(THREE, positionJitter, new THREE.Vector3())
@@ -397,6 +400,12 @@ export function createGpuBillboardEmitter(options = {}) {
 
       const now = getElapsedTime?.() ?? 0
       material.uniforms.uTime.value = now
+
+      if (pendingBasePosition) {
+        const resolved = resolveVector3(THREE, pendingBasePosition, basePosition)
+        basePosition.copy(resolved)
+        pendingBasePosition = null
+      }
     },
 
     update({ delta, getElapsedTime }) {
@@ -428,10 +437,26 @@ export function createGpuBillboardEmitter(options = {}) {
       return pool ? pool.getActiveCount() : 0
     },
 
+    setBasePosition(value) {
+      if (value === undefined || value === null) {
+        return
+      }
+      if (!basePosition || !threeModule) {
+        pendingBasePosition = value
+        return
+      }
+      const resolved = resolveVector3(threeModule, value, basePosition)
+      basePosition.copy(resolved)
+      pendingBasePosition = null
+    },
+
     dispose() {
       liveParticles.length = 0
       pool = null
       material = null
+      basePosition = undefined
+      threeModule = null
+      pendingBasePosition = null
     },
   }
 }
