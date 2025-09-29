@@ -1427,7 +1427,7 @@ export function registerDeveloperCommands({
     },
   });
 
-  const weatherCommandUsage = '/weather [on|off|status|help|weatherId]';
+  const weatherCommandUsage = '/weather [on|off|status|help|debug|weatherId]';
 
   registerCommand({
     name: 'weather',
@@ -1508,6 +1508,73 @@ export function registerDeveloperCommands({
       if (subcommand === 'help') {
         info(`[weather] Usage: ${weatherCommandUsage}.`);
         logVerboseWeatherPresetSummary();
+        return;
+      }
+
+      if (subcommand === 'debug') {
+        if (!particleSystem) {
+          warn('[weather debug] Particle system is not available.');
+          return;
+        }
+        if (typeof particleSystem.getDebugInfo !== 'function') {
+          warn('[weather debug] Particle system debug info is unavailable.');
+          return;
+        }
+        const debugInfo = particleSystem.getDebugInfo();
+        if (!debugInfo) {
+          warn('[weather debug] Particle system did not return debug info.');
+          return;
+        }
+        const emitters = Array.isArray(debugInfo.emitters) ? debugInfo.emitters : [];
+        const weatherEmitters = emitters.filter((emitter) => {
+          if (!emitter || typeof emitter.label !== 'string') {
+            return false;
+          }
+          return emitter.label.toLowerCase().includes('weather');
+        });
+        if (weatherEmitters.length === 0) {
+          info('[weather debug] No weather emitters are active.');
+          const weatherState = scene?.userData?.weather;
+          if (weatherState?.failedPrecipitationSpawns > 0) {
+            info(
+              `[weather debug] Detected ${weatherState.failedPrecipitationSpawns} precipitation spawn failure(s).`,
+            );
+            const failure = weatherState.lastPrecipitationFailure ?? null;
+            if (failure?.type) {
+              const elapsed = Number.isFinite(failure.elapsedTime)
+                ? `${failure.elapsedTime.toFixed(2)}s`
+                : 'unknown';
+              info(
+                `[weather debug] Most recent failure — type=${failure.type}, elapsedTime=${elapsed}.`,
+              );
+            }
+          } else {
+            info('[weather debug] Clear skies or suppressed weather may be active.');
+          }
+          return;
+        }
+        const totalActiveParticles = weatherEmitters.reduce(
+          (sum, emitter) => sum + (Number.isFinite(emitter.activeParticles) ? emitter.activeParticles : 0),
+          0,
+        );
+        info(
+          `[weather debug] Active weather emitters: ${weatherEmitters.length} (particles=${totalActiveParticles}).`,
+        );
+        weatherEmitters.forEach((emitter, index) => {
+          const status = emitter.pendingRemoval ? ' (pending removal)' : '';
+          info(
+            `[weather debug]   #${index + 1} ${emitter.label} — particles=${emitter.activeParticles}${status}.`,
+          );
+        });
+        const nonWeatherEmitters = emitters.length - weatherEmitters.length;
+        const emitterCount = Number.isFinite(debugInfo.emitterCount)
+          ? debugInfo.emitterCount
+          : emitters.length;
+        if (nonWeatherEmitters > 0) {
+          info(
+            `[weather debug] ${nonWeatherEmitters} additional non-weather emitters are active (total emitters=${emitterCount}).`,
+          );
+        }
         return;
       }
 
