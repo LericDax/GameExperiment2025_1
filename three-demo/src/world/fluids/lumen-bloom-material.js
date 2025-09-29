@@ -6,6 +6,8 @@ const LUMEN_SETTINGS = Object.freeze({
   pulseStrength: 0.65,
   opacity: 0.78,
   pulseSpeed: 1.9,
+  ribbonWaveAmplitude: 0.32,
+  ribbonWaveFrequency: 1.45,
 });
 
 export function createLumenBloomMaterial({ THREE }) {
@@ -35,6 +37,9 @@ export function createLumenBloomMaterial({ THREE }) {
     uColorRampA: { value: new THREE.Color('#3ac8ff') },
     uColorRampB: { value: new THREE.Color('#ff77d8') },
     uColorRampC: { value: new THREE.Color('#ffe066') },
+    uRibbonWaveAmplitude: { value: LUMEN_SETTINGS.ribbonWaveAmplitude },
+    uRibbonWaveFrequency: { value: LUMEN_SETTINGS.ribbonWaveFrequency },
+    uRibbonWavePhase: { value: 0 },
   };
 
   material.userData.uniforms = uniforms;
@@ -56,20 +61,23 @@ export function createLumenBloomMaterial({ THREE }) {
     shader.uniforms.uColorRampA = uniforms.uColorRampA;
     shader.uniforms.uColorRampB = uniforms.uColorRampB;
     shader.uniforms.uColorRampC = uniforms.uColorRampC;
+    shader.uniforms.uRibbonWaveAmplitude = uniforms.uRibbonWaveAmplitude;
+    shader.uniforms.uRibbonWaveFrequency = uniforms.uRibbonWaveFrequency;
+    shader.uniforms.uRibbonWavePhase = uniforms.uRibbonWavePhase;
 
     shader.vertexShader = shader.vertexShader.replace(
       '#include <common>',
-      `#include <common>\nattribute float surfaceType;\nattribute float surfaceRole;\nattribute vec2 flowDirection;\nattribute float flowStrength;\nattribute vec2 ribbonVector;\nattribute float auroraGlow;\nvarying float vSurfaceType;\nvarying float vSurfaceRole;\nvarying vec2 vFlowDirection;\nvarying float vFlowStrength;\nvarying vec2 vRibbonVector;\nvarying float vAuroraGlow;`,
+      `#include <common>\nattribute float surfaceType;\nattribute float surfaceRole;\nattribute vec2 flowDirection;\nattribute float flowStrength;\nattribute vec2 ribbonVector;\nattribute float auroraGlow;\nattribute float ribbonHeightFraction;\nvarying float vSurfaceType;\nvarying float vSurfaceRole;\nvarying vec2 vFlowDirection;\nvarying float vFlowStrength;\nvarying vec2 vRibbonVector;\nvarying float vAuroraGlow;\nvarying float vRibbonHeight;\nuniform float uTime;\nuniform vec2 uRibbonOrientation;\nuniform float uRibbonWaveAmplitude;\nuniform float uRibbonWaveFrequency;\nuniform float uRibbonWavePhase;`,
     );
 
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
-      `#include <begin_vertex>\n\tvSurfaceType = surfaceType;\n\tvSurfaceRole = surfaceRole;\n\tvFlowDirection = flowDirection;\n\tvFlowStrength = flowStrength;\n\tvRibbonVector = ribbonVector;\n\tvAuroraGlow = auroraGlow;`,
+      `#include <begin_vertex>\n\tvSurfaceType = surfaceType;\n\tvSurfaceRole = surfaceRole;\n\tvFlowDirection = flowDirection;\n\tvFlowStrength = flowStrength;\n\tvRibbonVector = ribbonVector;\n\tvAuroraGlow = auroraGlow;\n\tvRibbonHeight = ribbonHeightFraction;\n\tvec2 swayVector = ribbonVector;\n\tif (length(swayVector) < 0.001) {\n\t  swayVector = uRibbonOrientation;\n\t}\n\tvec3 swayDirection = vec3(0.0);\n\tif (length(swayVector) > 0.001) {\n\t  swayDirection = normalize(vec3(swayVector.x, 0.0, swayVector.y));\n\t}\n\tif (length(swayDirection) < 0.001) {\n\t  swayDirection = normalize(normal);\n\t}\n\tfloat heightPhase = ribbonHeightFraction * 6.28318;\n\tfloat ribbonSway = sin(uRibbonWavePhase + uTime * uRibbonWaveFrequency + heightPhase) * uRibbonWaveAmplitude;\n\ttransformed += swayDirection * ribbonSway;`,
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <common>',
-      `#include <common>\nvarying float vSurfaceType;\nvarying float vSurfaceRole;\nvarying vec2 vFlowDirection;\nvarying float vFlowStrength;\nvarying vec2 vRibbonVector;\nvarying float vAuroraGlow;\nuniform float uTime;\nuniform float uEdgeGlow;\nuniform float uPulseStrength;\nuniform float uPulseSpeed;\nuniform vec2 uRibbonOrientation;\nuniform float uAuroraHighlight;\nuniform float uNoisePhase;\nuniform float uViewAngleBias;\nuniform vec3 uColorRampA;\nuniform vec3 uColorRampB;\nuniform vec3 uColorRampC;`,
+      `#include <common>\nvarying float vSurfaceType;\nvarying float vSurfaceRole;\nvarying vec2 vFlowDirection;\nvarying float vFlowStrength;\nvarying vec2 vRibbonVector;\nvarying float vAuroraGlow;\nvarying float vRibbonHeight;\nuniform float uTime;\nuniform float uEdgeGlow;\nuniform float uPulseStrength;\nuniform float uPulseSpeed;\nuniform vec2 uRibbonOrientation;\nuniform float uAuroraHighlight;\nuniform float uNoisePhase;\nuniform float uViewAngleBias;\nuniform vec3 uColorRampA;\nuniform vec3 uColorRampB;\nuniform vec3 uColorRampC;`,
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -79,13 +87,16 @@ export function createLumenBloomMaterial({ THREE }) {
   };
 
   material.customProgramCacheKey = () =>
-    `lumen-bloom-fluid-${LUMEN_SETTINGS.edgeGlow}-${LUMEN_SETTINGS.pulseStrength}`;
+    `lumen-bloom-fluid-${LUMEN_SETTINGS.edgeGlow}-${LUMEN_SETTINGS.pulseStrength}-${LUMEN_SETTINGS.ribbonWaveAmplitude}-${LUMEN_SETTINGS.ribbonWaveFrequency}`;
 
   const surfacePulseOffsets = new WeakMap();
   let elapsed = 0;
   const clamp = THREE.MathUtils?.clamp
     ? (value, min, max) => THREE.MathUtils.clamp(value, min, max)
     : (value, min, max) => Math.min(max, Math.max(min, value));
+  const lerp = THREE.MathUtils?.lerp
+    ? (start, end, alpha) => THREE.MathUtils.lerp(start, end, alpha)
+    : (start, end, alpha) => start + (end - start) * alpha;
 
   const wrapHue = (value) => {
     const modulo = value % 1;
@@ -109,6 +120,9 @@ export function createLumenBloomMaterial({ THREE }) {
     uniforms.uTime.value = elapsed;
     uniforms.uNoisePhase.value = elapsed * 0.65;
 
+    const amplitudeUniform = uniforms.uRibbonWaveAmplitude;
+    const frequencyUniform = uniforms.uRibbonWaveFrequency;
+
     const animatedBias = 0.65 + Math.sin(elapsed * 0.45) * 0.35;
     uniforms.uViewAngleBias.value = clamp(animatedBias, 0, 1);
 
@@ -128,6 +142,17 @@ export function createLumenBloomMaterial({ THREE }) {
         2,
       );
       uniforms.uRibbonOrientation.value.set(0, 1);
+      uniforms.uRibbonWavePhase.value = elapsed * 0.45;
+      amplitudeUniform.value = lerp(
+        amplitudeUniform.value,
+        LUMEN_SETTINGS.ribbonWaveAmplitude * 0.25,
+        clamp(delta * 1.8, 0, 1),
+      );
+      frequencyUniform.value = lerp(
+        frequencyUniform.value,
+        LUMEN_SETTINGS.ribbonWaveFrequency,
+        clamp(delta * 1.2, 0, 1),
+      );
       return;
     }
 
@@ -136,6 +161,8 @@ export function createLumenBloomMaterial({ THREE }) {
     let orientationX = 0;
     let orientationY = 0;
     let orientationSamples = 0;
+    let phaseOffsetTotal = 0;
+    let phaseSamples = 0;
     surfaces.forEach((mesh) => {
       const offset = ensureOffset(mesh);
       const auroraIntensity = Number.isFinite(mesh.userData?.auroraIntensity)
@@ -145,6 +172,8 @@ export function createLumenBloomMaterial({ THREE }) {
       biasTotal +=
         (0.85 + Math.sin(elapsed * 0.3 + offset) * 0.08) * auroraWeight;
       highlightTotal += auroraIntensity;
+      phaseOffsetTotal += offset;
+      phaseSamples += 1;
       const ribbonOrientation = mesh.userData?.ribbonOrientation;
       if (Number.isFinite(ribbonOrientation)) {
         orientationX += Math.cos(ribbonOrientation);
@@ -177,6 +206,32 @@ export function createLumenBloomMaterial({ THREE }) {
       uniforms.uAuroraHighlight.value + (targetHighlight - uniforms.uAuroraHighlight.value) * 0.2,
       0,
       2,
+    );
+
+    const averagePhaseOffset = phaseSamples > 0 ? phaseOffsetTotal / phaseSamples : 0;
+    uniforms.uRibbonWavePhase.value = averagePhaseOffset + elapsed * 0.45;
+
+    const amplitudeTarget = clamp(
+      LUMEN_SETTINGS.ribbonWaveAmplitude * (0.6 + targetHighlight * 0.45 + clamp(averageBias - 1, -0.5, 0.75) * 0.3),
+      0.05,
+      1.2,
+    );
+    amplitudeUniform.value = lerp(
+      amplitudeUniform.value,
+      amplitudeTarget,
+      clamp(delta * 2.4, 0, 1),
+    );
+
+    const frequencyPulse = 1 + Math.sin(elapsed * 0.18 + averagePhaseOffset * 0.25) * 0.1;
+    const frequencyTarget = clamp(
+      LUMEN_SETTINGS.ribbonWaveFrequency * (frequencyPulse + targetHighlight * 0.25),
+      0.2,
+      5,
+    );
+    frequencyUniform.value = lerp(
+      frequencyUniform.value,
+      frequencyTarget,
+      clamp(delta * 1.6, 0, 1),
     );
   };
 
