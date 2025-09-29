@@ -48,6 +48,11 @@ Please continue appending follow-up findings or configuration changes here whene
 - Exposed `/weather overlay` developer-console controls to toggle the overlay, adjust manual intensity, or reset to automatic behaviour for quick regression probes without touching presets.【F:src/player/dev-commands.js†L1443-L1542】
 - **Reminder:** keep this remediation plan current whenever the overlay visuals or tooling change so future weather investigators inherit accurate guidance.
 
+## 2025-08 Rain Overlay Visibility Tuning
+- Boosted the automatic raindrop overlay scaling (min `0.24`, scale `0.95`, max `1.35`) so rainy presets, including `/weather misty_rain`, now drive the effect close to full strength without relying on manual overrides.【F:src/world/weather/weather-manager.js†L68-L115】【F:src/world/weather/weather-manager.js†L229-L248】
+- Switched the raindrop shader to additive blending with a `0.55` opacity multiplier to increase contrast when precipitation particles are occluded, providing a clearer fallback cue for QA when rain volumes underperform.【F:src/rendering/effects/raindrop-overlay.js†L1-L86】
+- Added a unit test that locks the overlay intensity maths to the new tuning so future adjustments must update this plan and QA expectations in tandem—treat the stronger overlay as the fallback visibility requirement during manual checks.【F:src/world/__tests__/weather-manager.test.js†L1-L138】
+
 ## Work Orders
 1. **Gameplay-driven rotation**
    - Sample the player’s biome each frame (reusing the `sampleBiomeAt` helper from `/weather status`) and resolve the preset rotation with `resolveBiomeWeatherRotation`, storing timing metadata per biome.【F:src/player/dev-commands.js†L1532-L1562】【F:src/world/weather/weather-manager.js†L76-L127】
