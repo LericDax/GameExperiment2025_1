@@ -1427,20 +1427,89 @@ export function registerDeveloperCommands({
     },
   });
 
+  const weatherCommandUsage = '/weather [on|off|status|help|weatherId]';
+
   registerCommand({
     name: 'weather',
     description: 'Inspect and override the active weather preset.',
-    usage: '/weather <on|off|status|weatherId>',
+    usage: weatherCommandUsage,
     handler: ({ args, success, warn, info }) => {
       if (!weatherManager || typeof weatherManager.setWeather !== 'function') {
         warn('Weather manager is not available yet.');
         return;
       }
+
+      const getRegisteredWeatherPresets = () => {
+        if (typeof weatherManager.listWeatherPresets !== 'function') {
+          warn('[weather] Weather preset registry accessor is unavailable; cannot enumerate presets.');
+          return null;
+        }
+        try {
+          const presets = weatherManager.listWeatherPresets();
+          const array = Array.isArray(presets) ? presets : Array.from(presets ?? []);
+          return array
+            .map((preset) => (preset && typeof preset === 'object' ? { ...preset } : null))
+            .filter(Boolean);
+        } catch (error) {
+          console.warn('Failed to enumerate weather presets:', error);
+          warn('[weather] Unable to enumerate weather presets due to an internal error.');
+          return null;
+        }
+      };
+
+      const logWeatherPresetSummary = ({ prefix = '[weather]' } = {}) => {
+        const presets = getRegisteredWeatherPresets();
+        if (!presets) {
+          info(`${prefix} Weather preset list unavailable.`);
+          return presets;
+        }
+        if (presets.length === 0) {
+          info(`${prefix} No weather presets are registered.`);
+          return presets;
+        }
+        info(`${prefix} Available presets:`);
+        presets.forEach((preset) => {
+          const label = preset.label ?? preset.id;
+          const intensity = Number.isFinite(preset.intensity)
+            ? preset.intensity.toFixed(2)
+            : 'n/a';
+          info(`${prefix}  - ${preset.id} — ${label} (intensity ${intensity})`);
+        });
+        return presets;
+      };
+
+      const logVerboseWeatherPresetSummary = () => {
+        const presets = getRegisteredWeatherPresets();
+        if (!presets) {
+          info('[weather help] Weather preset list unavailable.');
+          return;
+        }
+        if (presets.length === 0) {
+          info('[weather help] No weather presets are registered.');
+          return;
+        }
+        info('[weather help] Preset catalogue:');
+        info('[weather help]   id | label | category | description');
+        presets.forEach((preset) => {
+          const label = preset.label ?? 'Unnamed';
+          const category = preset.category ?? 'uncategorised';
+          const description = preset.description ?? '—';
+          info(`[weather help]   ${preset.id} | ${label} | ${category} | ${description}`);
+        });
+      };
+
       if (args.length === 0) {
-        throw new Error('Usage: /weather <on|off|status|weatherId>.');
+        logWeatherPresetSummary();
+        return;
       }
 
       const subcommand = String(args[0] ?? '').toLowerCase();
+
+      if (subcommand === 'help') {
+        info(`[weather] Usage: ${weatherCommandUsage}.`);
+        logVerboseWeatherPresetSummary();
+        return;
+      }
 
       if (subcommand === 'status') {
         const active = weatherManager.getCurrentWeather?.();
@@ -1501,6 +1570,7 @@ export function registerDeveloperCommands({
         } else {
           info('[weather status] Player position unavailable; cannot sample biome.');
         }
+        logWeatherPresetSummary({ prefix: '[weather status]' });
         return;
       }
 
@@ -1519,6 +1589,7 @@ export function registerDeveloperCommands({
         }
         weatherControlState.suppressed = true;
         success('[weather] Weather overrides disabled — clear skies enforced.');
+        logWeatherPresetSummary();
         return;
       }
 
@@ -1546,6 +1617,7 @@ export function registerDeveloperCommands({
           throw new Error('Failed to enable weather overrides.');
         }
         success(`[weather] Weather overrides enabled — ${describeWeather(restored)}.`);
+        logWeatherPresetSummary();
         return;
       }
 
@@ -1561,6 +1633,7 @@ export function registerDeveloperCommands({
       weatherControlState.lastManualWeatherId = applied.id;
       weatherControlState.suppressed = false;
       success(`[weather] Weather set to ${describeWeather(applied)}.`);
+      logWeatherPresetSummary();
     },
   });
 

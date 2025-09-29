@@ -553,6 +553,9 @@ export function createWeatherManager({
     weatherPresets.set(weather.id, { ...weather });
   };
 
+  const listWeatherPresets = () =>
+    Array.from(weatherPresets.values()).map((preset) => ({ ...preset }));
+
   const getCurrentWeather = () => (activeWeather ? { ...activeWeather } : null);
 
   const update = (context = {}) => {
@@ -598,6 +601,7 @@ export function createWeatherManager({
     scheduleWeatherChange,
     registerTickListener,
     registerWeatherPreset,
+    listWeatherPresets,
     getCurrentWeather,
     dispose,
   };
