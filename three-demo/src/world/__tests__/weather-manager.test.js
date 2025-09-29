@@ -187,6 +187,50 @@ test('failed precipitation spawns are recorded for diagnostics', () => {
   assert.equal(pendingRetry.reason, 'no_handle');
 });
 
+test('manual precipitation overrides adjust rain uniforms', () => {
+  let capturedEmitter = null;
+  const { manager, scene } = createManager({
+    emitImplementation: (emitter) => {
+      capturedEmitter = emitter;
+      return {
+        stop() {},
+        getActiveParticleCount() {
+          return 42;
+        },
+      };
+    },
+  });
+
+  const state = scene.userData.weather;
+  assert.ok(state?.manualOverrides?.precipitation, 'expected precipitation manual overrides to exist');
+
+  state.manualOverrides.precipitation.windTilt = 0.31;
+  state.manualOverrides.precipitation.streakNoise = 0.72;
+  state.manualOverrides.precipitation.highlightWidth = 0.12;
+  state.manualOverrides.precipitation.intensity = 0.95;
+
+  manager.setWeather('misty_rain');
+  manager.update({ delta: 0.05, elapsedTime: 0.5 });
+
+  assert.ok(capturedEmitter, 'expected precipitation emitter to spawn with manual overrides');
+  let uniforms = capturedEmitter.getWeatherRainShaderUniforms?.();
+  assert.ok(uniforms, 'expected rain emitter to expose shader uniforms');
+  assert.ok(approxEqual(uniforms.windTilt, 0.31, 1e-4));
+  assert.ok(approxEqual(uniforms.streakNoise, 0.72, 1e-4));
+  assert.ok(approxEqual(uniforms.highlightWidth, 0.12, 1e-4));
+
+  state.manualOverrides.precipitation.windTilt = 0.42;
+  state.manualOverrides.precipitation.streakNoise = 0.86;
+  state.manualOverrides.precipitation.highlightWidth = 0.18;
+
+  manager.update({ delta: 0.05, elapsedTime: 0.55 });
+
+  uniforms = capturedEmitter.getWeatherRainShaderUniforms?.();
+  assert.ok(approxEqual(uniforms.windTilt, 0.42, 1e-4));
+  assert.ok(approxEqual(uniforms.streakNoise, 0.86, 1e-4));
+  assert.ok(approxEqual(uniforms.highlightWidth, 0.18, 1e-4));
+});
+
 test('precipitation spawn retries recover after missing handles', () => {
   let emitCount = 0;
   const handles = [null, null, { stop() {}, getActiveParticleCount() { return 12; } }];
@@ -290,10 +334,10 @@ test('rain preset spawns active particles with the real particle system', () => 
 
     let elapsedTime = 0;
     let peakWeatherParticles = 0;
-    let observedHighContrastLabel = false;
+    let observedBrightStreakLabel = false;
 
     const frameDelta = 1 / 60;
-    const minimumParticles = 30;
+    const minimumParticles = 34;
     for (let frame = 0; frame < 300; frame += 1) {
       elapsedTime += frameDelta;
       manager.update({ delta: frameDelta, elapsedTime });
@@ -304,8 +348,8 @@ test('rain preset spawns active particles with the real particle system', () => 
         typeof emitter.label === 'string' && emitter.label.toLowerCase().includes('weather'),
       );
       if (weatherEmitter) {
-        if (weatherEmitter.label.includes('HighContrast')) {
-          observedHighContrastLabel = true;
+        if (weatherEmitter.label.includes('BrightStreakPass')) {
+          observedBrightStreakLabel = true;
         }
         const activeParticles = Number(weatherEmitter.activeParticles) || 0;
         if (activeParticles > peakWeatherParticles) {
@@ -322,8 +366,8 @@ test('rain preset spawns active particles with the real particle system', () => 
       `expected real weather emitter to accumulate at least ${minimumParticles} active particles after ticking the system (received ${peakWeatherParticles})`,
     );
     assert.ok(
-      observedHighContrastLabel,
-      'expected live weather emitter debug label to advertise the high-contrast tuning',
+      observedBrightStreakLabel,
+      'expected live weather emitter debug label to advertise the bright streak pass',
     );
   } finally {
     particleSystem.dispose();

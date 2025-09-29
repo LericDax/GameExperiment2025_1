@@ -1,17 +1,84 @@
-import * as THREE from 'three';
-import { createGpuBillboardEmitter } from './gpu-billboard-emitter.js';
+import * as THREE from 'three'
+import { createGpuBillboardEmitter } from './gpu-billboard-emitter.js'
+import { weatherRainStreakFragmentShader } from '../shaders/weather-rain-streak.glsl.js'
 
 function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
+  return Math.min(Math.max(value, min), max)
 }
 
 export function createWeatherRainEmitter({
   intensity = 0.6,
   radius = 12,
   heightOffset = 14,
+  windTilt = null,
+  streakNoise = null,
+  highlightWidth = null,
 } = {}) {
-  const density = clamp(intensity, 0.2, 2.4);
-  const spawnRadius = Math.max(6, radius);
+  const density = clamp(intensity, 0.2, 2.4)
+  const normalized = clamp((density - 0.2) / (2.4 - 0.2), 0, 1)
+  const spawnRadius = Math.max(6, radius)
+  const baseWindTilt = THREE.MathUtils.lerp(0.045, 0.28, normalized)
+  const baseStreakNoise = THREE.MathUtils.lerp(0.38, 0.9, normalized)
+  const baseHighlightWidth = THREE.MathUtils.lerp(0.22, 0.095, normalized)
+
+  const uniformState = {
+    windTilt: Number.isFinite(windTilt) ? windTilt : baseWindTilt,
+    streakNoise: Number.isFinite(streakNoise) ? streakNoise : baseStreakNoise,
+    highlightWidth: Number.isFinite(highlightWidth)
+      ? Math.max(0.02, highlightWidth)
+      : baseHighlightWidth,
+  }
+
+  const baseUniforms = {
+    windTilt: baseWindTilt,
+    streakNoise: baseStreakNoise,
+    highlightWidth: baseHighlightWidth,
+  }
+
+  let materialRef = null
+
+  const applyUniforms = () => {
+    if (!materialRef) {
+      return
+    }
+    if (materialRef.uniforms.uWindTilt) {
+      materialRef.uniforms.uWindTilt.value = uniformState.windTilt
+    }
+    if (materialRef.uniforms.uStreakNoise) {
+      materialRef.uniforms.uStreakNoise.value = uniformState.streakNoise
+    }
+    if (materialRef.uniforms.uHighlightWidth) {
+      materialRef.uniforms.uHighlightWidth.value = uniformState.highlightWidth
+    }
+    materialRef.uniformsNeedUpdate = true
+    materialRef.needsUpdate = true
+  }
+
+  const setUniformOverrides = (overrides = {}) => {
+    if (overrides.windTilt !== undefined) {
+      if (overrides.windTilt === null) {
+        uniformState.windTilt = baseUniforms.windTilt
+      } else if (Number.isFinite(overrides.windTilt)) {
+        uniformState.windTilt = overrides.windTilt
+      }
+    }
+    if (overrides.streakNoise !== undefined) {
+      if (overrides.streakNoise === null) {
+        uniformState.streakNoise = baseUniforms.streakNoise
+      } else if (Number.isFinite(overrides.streakNoise)) {
+        uniformState.streakNoise = overrides.streakNoise
+      }
+    }
+    if (overrides.highlightWidth !== undefined) {
+      if (overrides.highlightWidth === null) {
+        uniformState.highlightWidth = baseUniforms.highlightWidth
+      } else if (Number.isFinite(overrides.highlightWidth)) {
+        uniformState.highlightWidth = Math.max(0.02, overrides.highlightWidth)
+      }
+    }
+    applyUniforms()
+  }
+
   const emitter = createGpuBillboardEmitter({
     spawnRate: Math.min(560 * density, 960),
     maxParticles: Math.ceil(Math.min(900 * density, 1180)),
@@ -34,8 +101,8 @@ export function createWeatherRainEmitter({
     positionJitter: { x: spawnRadius, y: 1.4, z: spawnRadius },
     velocity: { x: 0, y: -12.4 - density * 4.6, z: 0 },
     velocityJitter: { x: 0.9, y: 2.9, z: 0.9 },
-    size: { min: 0.22, max: 0.36 },
-    sizeJitter: 0.06,
+    size: { min: 0.35, max: 0.45 },
+    sizeJitter: 0.08,
     lengthMultiplier: { min: 9, max: 14 },
     gravity: { x: 0, y: -21.6, z: 0 },
     drag: 0.12,
@@ -45,10 +112,30 @@ export function createWeatherRainEmitter({
     blending: THREE.NormalBlending,
     depthWrite: false,
     renderOrder: 4,
-  });
-  emitter.debugLabel = 'WeatherRainEmitter/HighContrast';
-  emitter.weatherAnchorOffset = { x: 0, y: heightOffset, z: 0 };
-  emitter.weatherUpdateInterval = 0.12;
-  emitter.weatherMinAnchorDistance = Math.max(spawnRadius * 0.2, 1.6);
-  return emitter;
+    materialFactory: ({ defaultFactory }) => {
+      const material = defaultFactory()
+      material.fragmentShader = weatherRainStreakFragmentShader
+      material.uniforms.uWindTilt = { value: uniformState.windTilt }
+      material.uniforms.uStreakNoise = { value: uniformState.streakNoise }
+      material.uniforms.uHighlightWidth = { value: uniformState.highlightWidth }
+      materialRef = material
+      applyUniforms()
+      return material
+    },
+  })
+  emitter.debugLabel = 'WeatherRainEmitter/BrightStreakPass'
+  emitter.weatherAnchorOffset = { x: 0, y: heightOffset, z: 0 }
+  emitter.weatherUpdateInterval = 0.12
+  emitter.weatherMinAnchorDistance = Math.max(spawnRadius * 0.2, 1.6)
+  emitter.weatherWind = {
+    base: { ...baseUniforms },
+    current: () => ({ ...uniformState }),
+  }
+  emitter.getWeatherRainShaderUniforms = () => ({ ...uniformState })
+  emitter.getWeatherRainShaderBaseUniforms = () => ({ ...baseUniforms })
+  emitter.setWeatherRainShaderUniforms = (overrides) => {
+    setUniformOverrides(overrides)
+  }
+
+  return emitter
 }

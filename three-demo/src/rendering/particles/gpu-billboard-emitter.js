@@ -241,7 +241,23 @@ function jitterVector(base, jitter, target) {
  * @param {boolean} [options.depthWrite=false] Whether the particles should write to the depth buffer.
  * @param {boolean} [options.depthTest=true] Whether the particles participate in depth testing.
  * @param {number} [options.renderOrder] Optional render order override for the instanced mesh.
- */
+ * @param {(context: {
+ *   THREE: typeof import('three')
+ *   defaultFactory: () => import('three').ShaderMaterial
+ *   options: {
+ *     gravity: import('three').Vector3
+ *     drag: number
+ *     fadeIn: number
+ *     fadeOut: number
+ *     colorRamp: any
+ *     sizeOverLifetime: any
+ *     blending: import('three').Blending | undefined
+ *     depthWrite: boolean | undefined
+ *     depthTest: boolean | undefined
+ *   }
+ * }) => import('three').ShaderMaterial} [options.materialFactory]
+ *   Optional factory to build a custom ShaderMaterial. When omitted, a default billboard material is created.
+*/
 export function createGpuBillboardEmitter(options = {}) {
   const {
     spawnRate = 24,
@@ -266,6 +282,7 @@ export function createGpuBillboardEmitter(options = {}) {
     depthWrite = undefined,
     depthTest = undefined,
     renderOrder = undefined,
+    materialFactory = null,
   } = options
 
   const clampedOpacity = Math.max(0, Math.min(1, opacity))
@@ -373,7 +390,7 @@ export function createGpuBillboardEmitter(options = {}) {
       lifetimeRange.max = Math.max(lifetimeRange.min, lifetimeRange.max)
       gravityVector = resolveVector3(THREE, gravity ?? { x: 0, y: -9.81, z: 0 }, new THREE.Vector3(0, -9.81, 0))
 
-      material = createMaterial(THREE, {
+      const materialOptions = {
         gravity: gravityVector,
         drag,
         fadeIn,
@@ -383,7 +400,22 @@ export function createGpuBillboardEmitter(options = {}) {
         blending,
         depthWrite,
         depthTest,
-      })
+      }
+
+      if (typeof materialFactory === 'function') {
+        const defaultFactory = () => createMaterial(THREE, materialOptions)
+        material = materialFactory({ THREE, defaultFactory, options: materialOptions })
+      } else {
+        material = null
+      }
+
+      if (!material) {
+        material = createMaterial(THREE, materialOptions)
+      }
+
+      if (material && typeof material === 'object') {
+        material.uniformsNeedUpdate = true
+      }
 
       const baseGeometry = getQuadGeometry(THREE)
 
