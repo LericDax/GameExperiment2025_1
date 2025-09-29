@@ -529,6 +529,8 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
     const coordinateKey = entry.coordinateKey;
     const key = entry.key;
+    const existingEntry = coordinateKey ? blockLookup.get(coordinateKey) : null;
+    const replaceExisting = options.replaceExisting === true;
 
     const isWater = type === 'water';
     const isFluid = isFluidType(type);
@@ -610,6 +612,38 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     entry.isWater = isWater;
     entry.destructible = destructible;
     entry.collisionMode = collisionMode;
+
+    const existingIsSolid =
+      existingEntry?.isSolid === true || existingEntry?.collisionMode === 'solid';
+    const shouldReplaceExisting =
+      !!existingEntry &&
+      !existingEntry.isDecoration &&
+      (replaceExisting || collisionMode === 'solid');
+
+    if (
+      shouldReplaceExisting &&
+      (replaceExisting || existingIsSolid || isSolid)
+    ) {
+      const existingEntries = instancedData.get(existingEntry.type);
+      if (existingEntries) {
+        const existingIndex = existingEntries.indexOf(existingEntry);
+        if (existingIndex !== -1) {
+          existingEntries.splice(existingIndex, 1);
+        }
+      }
+
+      if (existingEntry.key) {
+        blockLookup.delete(existingEntry.key);
+      }
+      if (existingEntry.coordinateKey) {
+        blockLookup.delete(existingEntry.coordinateKey);
+      }
+
+      if (existingEntry.coordinateKey) {
+        solidBlockKeys.delete(existingEntry.coordinateKey);
+        softBlockKeys.delete(existingEntry.coordinateKey);
+      }
+    }
 
     instancedData.get(type).push(entry);
     blockLookup.set(key, entry);
