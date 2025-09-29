@@ -1,5 +1,10 @@
 import { SURFACE_ROLES } from './fluid-geometry.js';
 
+const auroraRibbonUrl = new URL(
+  '../../textures/nonprocedural/texture_aurora_1.png',
+  import.meta.url,
+).href;
+
 const LUMEN_SETTINGS = Object.freeze({
   baseEmissiveIntensity: 1.1,
   edgeGlow: 0.7,
@@ -40,7 +45,25 @@ export function createLumenBloomMaterial({ THREE }) {
     uRibbonWaveAmplitude: { value: LUMEN_SETTINGS.ribbonWaveAmplitude },
     uRibbonWaveFrequency: { value: LUMEN_SETTINGS.ribbonWaveFrequency },
     uRibbonWavePhase: { value: 0 },
+    uAuroraMap: { value: null },
   };
+
+  if (THREE.TextureLoader) {
+    const textureLoader = new THREE.TextureLoader();
+    const auroraRibbonTexture = textureLoader.load(auroraRibbonUrl);
+    auroraRibbonTexture.wrapS = THREE.MirroredRepeatWrapping;
+    auroraRibbonTexture.wrapT = THREE.ClampToEdgeWrapping;
+    if ('SRGBColorSpace' in THREE) {
+      auroraRibbonTexture.colorSpace = THREE.SRGBColorSpace;
+    } else if ('sRGBEncoding' in THREE) {
+      auroraRibbonTexture.encoding = THREE.sRGBEncoding;
+    }
+    uniforms.uAuroraMap.value = auroraRibbonTexture;
+  }
+
+  if (!uniforms.uAuroraMap.value) {
+    uniforms.uAuroraMap.value = new THREE.Texture();
+  }
 
   material.userData.uniforms = uniforms;
 
@@ -64,30 +87,33 @@ export function createLumenBloomMaterial({ THREE }) {
     shader.uniforms.uRibbonWaveAmplitude = uniforms.uRibbonWaveAmplitude;
     shader.uniforms.uRibbonWaveFrequency = uniforms.uRibbonWaveFrequency;
     shader.uniforms.uRibbonWavePhase = uniforms.uRibbonWavePhase;
+    shader.uniforms.uAuroraMap = uniforms.uAuroraMap;
 
     shader.vertexShader = shader.vertexShader.replace(
       '#include <common>',
-      `#include <common>\nattribute float surfaceType;\nattribute float surfaceRole;\nattribute vec2 flowDirection;\nattribute float flowStrength;\nattribute vec2 ribbonVector;\nattribute float auroraGlow;\nattribute float ribbonHeightFraction;\nvarying float vSurfaceType;\nvarying float vSurfaceRole;\nvarying vec2 vFlowDirection;\nvarying float vFlowStrength;\nvarying vec2 vRibbonVector;\nvarying float vAuroraGlow;\nvarying float vRibbonHeight;\nuniform float uTime;\nuniform vec2 uRibbonOrientation;\nuniform float uRibbonWaveAmplitude;\nuniform float uRibbonWaveFrequency;\nuniform float uRibbonWavePhase;`,
+      `#include <common>\nattribute float surfaceType;\nattribute float surfaceRole;\nattribute vec2 flowDirection;\nattribute float flowStrength;\nattribute vec2 ribbonVector;\nattribute float auroraGlow;\nattribute float ribbonHeightFraction;\nvarying float vSurfaceType;\nvarying float vSurfaceRole;\nvarying vec2 vFlowDirection;\nvarying float vFlowStrength;\nvarying vec2 vRibbonVector;\nvarying float vAuroraGlow;\nvarying float vRibbonHeight;\nvarying vec2 vUv;\nuniform float uTime;\nuniform vec2 uRibbonOrientation;\nuniform float uRibbonWaveAmplitude;\nuniform float uRibbonWaveFrequency;\nuniform float uRibbonWavePhase;`,
     );
 
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
-      `#include <begin_vertex>\n\tvSurfaceType = surfaceType;\n\tvSurfaceRole = surfaceRole;\n\tvFlowDirection = flowDirection;\n\tvFlowStrength = flowStrength;\n\tvRibbonVector = ribbonVector;\n\tvAuroraGlow = auroraGlow;\n\tvRibbonHeight = ribbonHeightFraction;\n\tvec2 swayVector = ribbonVector;\n\tif (length(swayVector) < 0.001) {\n\t  swayVector = uRibbonOrientation;\n\t}\n\tvec3 swayDirection = vec3(0.0);\n\tif (length(swayVector) > 0.001) {\n\t  swayDirection = normalize(vec3(swayVector.x, 0.0, swayVector.y));\n\t}\n\tif (length(swayDirection) < 0.001) {\n\t  swayDirection = normalize(normal);\n\t}\n\tfloat heightPhase = ribbonHeightFraction * 6.28318;\n\tfloat ribbonSway = sin(uRibbonWavePhase + uTime * uRibbonWaveFrequency + heightPhase) * uRibbonWaveAmplitude;\n\ttransformed += swayDirection * ribbonSway;`,
+      `#include <begin_vertex>\n\tvSurfaceType = surfaceType;\n\tvSurfaceRole = surfaceRole;\n\tvFlowDirection = flowDirection;\n\tvFlowStrength = flowStrength;\n\tvRibbonVector = ribbonVector;\n\tvAuroraGlow = auroraGlow;\n\tvRibbonHeight = ribbonHeightFraction;\n\tvUv = uv;\n\tvec2 swayVector = ribbonVector;\n\tif (length(swayVector) < 0.001) {\n\t  swayVector = uRibbonOrientation;\n\t}\n\tvec3 swayDirection = vec3(0.0);\n\tif (length(swayVector) > 0.001) {\n\t  swayDirection = normalize(vec3(swayVector.x, 0.0, swayVector.y));\n\t}\n\tif (length(swayDirection) < 0.001) {\n\t  swayDirection = normalize(normal);\n\t}\n\tfloat heightPhase = ribbonHeightFraction * 6.28318;\n\tfloat ribbonSway = sin(uRibbonWavePhase + uTime * uRibbonWaveFrequency + heightPhase) * uRibbonWaveAmplitude;\n\ttransformed += swayDirection * ribbonSway;`,
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <common>',
-      `#include <common>\nvarying float vSurfaceType;\nvarying float vSurfaceRole;\nvarying vec2 vFlowDirection;\nvarying float vFlowStrength;\nvarying vec2 vRibbonVector;\nvarying float vAuroraGlow;\nvarying float vRibbonHeight;\nuniform float uTime;\nuniform float uEdgeGlow;\nuniform float uPulseStrength;\nuniform float uPulseSpeed;\nuniform vec2 uRibbonOrientation;\nuniform float uAuroraHighlight;\nuniform float uNoisePhase;\nuniform float uViewAngleBias;\nuniform vec3 uColorRampA;\nuniform vec3 uColorRampB;\nuniform vec3 uColorRampC;`,
+      `#include <common>\nvarying float vSurfaceType;\nvarying float vSurfaceRole;\nvarying vec2 vFlowDirection;\nvarying float vFlowStrength;\nvarying vec2 vRibbonVector;\nvarying float vAuroraGlow;\nvarying float vRibbonHeight;\nvarying vec2 vUv;\nuniform float uTime;\nuniform float uEdgeGlow;\nuniform float uPulseStrength;\nuniform float uPulseSpeed;\nuniform vec2 uRibbonOrientation;\nuniform float uAuroraHighlight;\nuniform float uNoisePhase;\nuniform float uViewAngleBias;\nuniform vec3 uColorRampA;\nuniform vec3 uColorRampB;\nuniform vec3 uColorRampC;\nuniform sampler2D uAuroraMap;`,
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <emissivemap_fragment>',
-      `#include <emissivemap_fragment>\n\nvec2 ribbonDir = vRibbonVector;\nif (length(ribbonDir) < 0.001) {\n  ribbonDir = uRibbonOrientation;\n}\nif (length(ribbonDir) < 0.001) {\n  ribbonDir = vec2(0.0, 1.0);\n}\nribbonDir = normalize(ribbonDir);\nvec2 flowDir = vFlowDirection;\nif (length(flowDir) < 0.001) {\n  flowDir = ribbonDir;\n} else {\n  flowDir = normalize(flowDir);\n}\nfloat surfaceBand = smoothstep(0.5, 1.5, vSurfaceType);\nfloat roleBand = smoothstep(${EDGE_TOP_MIN}, ${EDGE_TOP_MAX}, vSurfaceRole);\nroleBand += smoothstep(${EDGE_BOTTOM_MIN}, ${EDGE_BOTTOM_MAX}, vSurfaceRole);\nfloat edgeGlow = clamp(surfaceBand + roleBand, 0.0, 2.0);\nfloat auroraEnergy = clamp(vAuroraGlow + uAuroraHighlight, 0.0, 2.0);\nauroraEnergy += clamp(vFlowStrength, 0.0, 1.0) * 0.25;\nvec3 viewDir = normalize(-vViewPosition);\nvec3 viewNormal = normalize(normal);\nfloat viewAlignment = clamp(dot(viewDir, viewNormal), -1.0, 1.0);\nfloat grazing = pow(1.0 - max(viewAlignment, 0.0), 2.0);\nfloat biasStrength = mix(0.35, 1.25, clamp(uViewAngleBias, 0.0, 1.0));\nfloat grazingBias = clamp(grazing * biasStrength, 0.0, 1.0);\nfloat ribbonPhase = dot(flowDir, ribbonDir);\nfloat ribbonWave = sin(uTime * (uPulseSpeed + auroraEnergy * 1.2) + ribbonPhase * 6.0);\nfloat softPulse = sin(uTime * uPulseSpeed + vSurfaceType * 1.35);\nfloat auroraPulse = max(0.0, ribbonWave) * (0.5 + auroraEnergy * 0.7);\nfloat luminance = max(0.0, softPulse) * (uPulseStrength + auroraEnergy * 0.35) + edgeGlow * uEdgeGlow + auroraPulse;\nfloat noiseTrail = sin(uNoisePhase + ribbonPhase * 4.0 + viewDir.y * 3.0 + vSurfaceType * 0.9);\nfloat swirl = sin(uNoisePhase * 0.7 + viewDir.x * 2.5 + flowDir.y * 3.5);\nfloat hueAB = clamp(grazingBias * 0.8 + (noiseTrail * 0.5 + 0.5) * (1.0 - grazingBias * 0.3), 0.0, 1.0);\nfloat hueBC = clamp((1.0 - hueAB) * 0.55 + (swirl * 0.5 + 0.5) * 0.45 + auroraEnergy * 0.2, 0.0, 1.0);\nfloat hueCA = clamp(1.0 - hueAB - hueBC, 0.0, 1.0);\nfloat weightSum = hueAB + hueBC + hueCA + 1e-5;\nvec3 oilColor = (uColorRampA * hueAB + uColorRampB * hueBC + uColorRampC * hueCA) / weightSum;\nfloat spectralBlend = clamp(auroraEnergy * 0.35 + grazingBias * 0.25, 0.0, 1.0);\nvec3 auroraTint = mix(oilColor, uColorRampB, spectralBlend);\ntotalEmissiveRadiance += auroraTint * luminance;\nfloat colorBlend = clamp(auroraEnergy * 0.45 + grazingBias * 0.4, 0.0, 1.0);\ndiffuseColor.rgb = mix(diffuseColor.rgb, oilColor, colorBlend);\ndiffuseColor.a = clamp(diffuseColor.a + edgeGlow * 0.12 + colorBlend * 0.1, 0.0, 1.0);`,
+      `#include <emissivemap_fragment>\n\nvec2 ribbonDir = vRibbonVector;\nif (length(ribbonDir) < 0.001) {\n  ribbonDir = uRibbonOrientation;\n}\nif (length(ribbonDir) < 0.001) {\n  ribbonDir = vec2(0.0, 1.0);\n}\nribbonDir = normalize(ribbonDir);\nvec2 flowDir = vFlowDirection;\nif (length(flowDir) < 0.001) {\n  flowDir = ribbonDir;\n} else {\n  flowDir = normalize(flowDir);\n}\nfloat surfaceBand = smoothstep(0.5, 1.5, vSurfaceType);\nfloat roleBand = smoothstep(${EDGE_TOP_MIN}, ${EDGE_TOP_MAX}, vSurfaceRole);\nroleBand += smoothstep(${EDGE_BOTTOM_MIN}, ${EDGE_BOTTOM_MAX}, vSurfaceRole);\nfloat edgeGlow = clamp(surfaceBand + roleBand, 0.0, 2.0);\nfloat auroraEnergy = clamp(vAuroraGlow + uAuroraHighlight, 0.0, 2.0);\nauroraEnergy += clamp(vFlowStrength, 0.0, 1.0) * 0.25;\nvec3 viewDir = normalize(-vViewPosition);\nvec3 viewNormal = normalize(normal);\nfloat viewAlignment = clamp(dot(viewDir, viewNormal), -1.0, 1.0);\nfloat grazing = pow(1.0 - max(viewAlignment, 0.0), 2.0);\nfloat biasStrength = mix(0.35, 1.25, clamp(uViewAngleBias, 0.0, 1.0));\nfloat grazingBias = clamp(grazing * biasStrength, 0.0, 1.0);\nfloat ribbonPhase = dot(flowDir, ribbonDir);\nfloat ribbonWave = sin(uTime * (uPulseSpeed + auroraEnergy * 1.2) + ribbonPhase * 6.0);\nfloat softPulse = sin(uTime * uPulseSpeed + vSurfaceType * 1.35);\nfloat auroraPulse = max(0.0, ribbonWave) * (0.5 + auroraEnergy * 0.7);\nfloat luminance = max(0.0, softPulse) * (uPulseStrength + auroraEnergy * 0.35) + edgeGlow * uEdgeGlow + auroraPulse;\nfloat noiseTrail = sin(uNoisePhase + ribbonPhase * 4.0 + viewDir.y * 3.0 + vSurfaceType * 0.9);\nfloat swirl = sin(uNoisePhase * 0.7 + viewDir.x * 2.5 + flowDir.y * 3.5);\nfloat hueAB = clamp(grazingBias * 0.8 + (noiseTrail * 0.5 + 0.5) * (1.0 - grazingBias * 0.3), 0.0, 1.0);\nfloat hueBC = clamp((1.0 - hueAB) * 0.55 + (swirl * 0.5 + 0.5) * 0.45 + auroraEnergy * 0.2, 0.0, 1.0);\nfloat hueCA = clamp(1.0 - hueAB - hueBC, 0.0, 1.0);\nfloat weightSum = hueAB + hueBC + hueCA + 1e-5;\nvec3 oilColor = (uColorRampA * hueAB + uColorRampB * hueBC + uColorRampC * hueCA) / weightSum;\nfloat spectralBlend = clamp(auroraEnergy * 0.35 + grazingBias * 0.25, 0.0, 1.0);\nvec3 auroraTint = mix(oilColor, uColorRampB, spectralBlend);\nvec2 auroraUv = vec2(fract(vUv.x), clamp(vRibbonHeight, 0.0, 1.0));\nvec4 auroraSample = texture2D(uAuroraMap, auroraUv);\nfloat ribbonMask = clamp(auroraSample.a * 1.1, 0.0, 1.0);\nvec3 ribbonColor = mix(oilColor, auroraSample.rgb, ribbonMask);\nfloat ribbonEnergy = clamp(dot(auroraSample.rgb, vec3(0.299, 0.587, 0.114)) * 1.4, 0.0, 1.5);\nvec3 texturedAurora = mix(auroraTint, ribbonColor, ribbonMask);\nfloat luminanceBoost = mix(1.0, 1.35 + ribbonEnergy * 0.35, ribbonMask);\nluminance *= luminanceBoost;\ntotalEmissiveRadiance += texturedAurora * luminance;\nfloat colorBlend = clamp(auroraEnergy * 0.45 + grazingBias * 0.4 + ribbonMask * 0.35, 0.0, 1.0);\ndiffuseColor.rgb = mix(diffuseColor.rgb, mix(oilColor, texturedAurora, ribbonMask * 0.8), colorBlend);\ndiffuseColor.a = clamp(diffuseColor.a + edgeGlow * 0.12 + colorBlend * 0.1 + ribbonMask * 0.25, 0.0, 1.0);`,
     );
   };
 
-  material.customProgramCacheKey = () =>
-    `lumen-bloom-fluid-${LUMEN_SETTINGS.edgeGlow}-${LUMEN_SETTINGS.pulseStrength}-${LUMEN_SETTINGS.ribbonWaveAmplitude}-${LUMEN_SETTINGS.ribbonWaveFrequency}`;
+  material.customProgramCacheKey = () => {
+    const auroraMap = uniforms.uAuroraMap.value;
+    return `lumen-bloom-fluid-${LUMEN_SETTINGS.edgeGlow}-${LUMEN_SETTINGS.pulseStrength}-${LUMEN_SETTINGS.ribbonWaveAmplitude}-${LUMEN_SETTINGS.ribbonWaveFrequency}-${auroraMap ? auroraMap.uuid : 'no-map'}`;
+  };
 
   const surfacePulseOffsets = new WeakMap();
   let elapsed = 0;
