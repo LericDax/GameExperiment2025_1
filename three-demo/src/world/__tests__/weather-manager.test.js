@@ -290,9 +290,10 @@ test('rain preset spawns active particles with the real particle system', () => 
 
     let elapsedTime = 0;
     let peakWeatherParticles = 0;
+    let observedHighContrastLabel = false;
 
     const frameDelta = 1 / 60;
-    const minimumParticles = 18;
+    const minimumParticles = 30;
     for (let frame = 0; frame < 300; frame += 1) {
       elapsedTime += frameDelta;
       manager.update({ delta: frameDelta, elapsedTime });
@@ -303,6 +304,9 @@ test('rain preset spawns active particles with the real particle system', () => 
         typeof emitter.label === 'string' && emitter.label.toLowerCase().includes('weather'),
       );
       if (weatherEmitter) {
+        if (weatherEmitter.label.includes('HighContrast')) {
+          observedHighContrastLabel = true;
+        }
         const activeParticles = Number(weatherEmitter.activeParticles) || 0;
         if (activeParticles > peakWeatherParticles) {
           peakWeatherParticles = activeParticles;
@@ -316,6 +320,10 @@ test('rain preset spawns active particles with the real particle system', () => 
     assert.ok(
       peakWeatherParticles >= minimumParticles,
       `expected real weather emitter to accumulate at least ${minimumParticles} active particles after ticking the system (received ${peakWeatherParticles})`,
+    );
+    assert.ok(
+      observedHighContrastLabel,
+      'expected live weather emitter debug label to advertise the high-contrast tuning',
     );
   } finally {
     particleSystem.dispose();
