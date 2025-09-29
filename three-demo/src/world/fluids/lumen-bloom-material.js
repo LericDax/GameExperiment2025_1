@@ -30,6 +30,11 @@ export function createLumenBloomMaterial({ THREE }) {
     uPulseSpeed: { value: LUMEN_SETTINGS.pulseSpeed },
     uAuroraHighlight: { value: 0 },
     uRibbonOrientation: { value: new THREE.Vector2(0, 1) },
+    uNoisePhase: { value: 0 },
+    uViewAngleBias: { value: 0.75 },
+    uColorRampA: { value: new THREE.Color('#3ac8ff') },
+    uColorRampB: { value: new THREE.Color('#ff77d8') },
+    uColorRampC: { value: new THREE.Color('#ffe066') },
   };
 
   material.userData.uniforms = uniforms;
@@ -46,6 +51,11 @@ export function createLumenBloomMaterial({ THREE }) {
     shader.uniforms.uPulseSpeed = uniforms.uPulseSpeed;
     shader.uniforms.uAuroraHighlight = uniforms.uAuroraHighlight;
     shader.uniforms.uRibbonOrientation = uniforms.uRibbonOrientation;
+    shader.uniforms.uNoisePhase = uniforms.uNoisePhase;
+    shader.uniforms.uViewAngleBias = uniforms.uViewAngleBias;
+    shader.uniforms.uColorRampA = uniforms.uColorRampA;
+    shader.uniforms.uColorRampB = uniforms.uColorRampB;
+    shader.uniforms.uColorRampC = uniforms.uColorRampC;
 
     shader.vertexShader = shader.vertexShader.replace(
       '#include <common>',
@@ -59,12 +69,12 @@ export function createLumenBloomMaterial({ THREE }) {
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <common>',
-      `#include <common>\nvarying float vSurfaceType;\nvarying float vSurfaceRole;\nvarying vec2 vFlowDirection;\nvarying float vFlowStrength;\nvarying vec2 vRibbonVector;\nvarying float vAuroraGlow;\nuniform float uTime;\nuniform float uEdgeGlow;\nuniform float uPulseStrength;\nuniform float uPulseSpeed;\nuniform vec2 uRibbonOrientation;\nuniform float uAuroraHighlight;`,
+      `#include <common>\nvarying float vSurfaceType;\nvarying float vSurfaceRole;\nvarying vec2 vFlowDirection;\nvarying float vFlowStrength;\nvarying vec2 vRibbonVector;\nvarying float vAuroraGlow;\nuniform float uTime;\nuniform float uEdgeGlow;\nuniform float uPulseStrength;\nuniform float uPulseSpeed;\nuniform vec2 uRibbonOrientation;\nuniform float uAuroraHighlight;\nuniform float uNoisePhase;\nuniform float uViewAngleBias;\nuniform vec3 uColorRampA;\nuniform vec3 uColorRampB;\nuniform vec3 uColorRampC;`,
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <emissivemap_fragment>',
-      `#include <emissivemap_fragment>\n\nvec2 ribbonDir = vRibbonVector;\nif (length(ribbonDir) < 0.001) {\n  ribbonDir = uRibbonOrientation;\n}\nif (length(ribbonDir) < 0.001) {\n  ribbonDir = vec2(0.0, 1.0);\n}\nribbonDir = normalize(ribbonDir);\nvec2 flowDir = vFlowDirection;\nif (length(flowDir) < 0.001) {\n  flowDir = ribbonDir;\n} else {\n  flowDir = normalize(flowDir);\n}\nfloat surfaceBand = smoothstep(0.5, 1.5, vSurfaceType);\nfloat roleBand = smoothstep(${EDGE_TOP_MIN}, ${EDGE_TOP_MAX}, vSurfaceRole);\nroleBand += smoothstep(${EDGE_BOTTOM_MIN}, ${EDGE_BOTTOM_MAX}, vSurfaceRole);\nfloat edgeGlow = clamp(surfaceBand + roleBand, 0.0, 2.0);\nfloat auroraEnergy = clamp(vAuroraGlow + uAuroraHighlight, 0.0, 2.0);\nauroraEnergy += clamp(vFlowStrength, 0.0, 1.0) * 0.25;\nfloat ribbonPhase = dot(flowDir, ribbonDir);\nfloat ribbonWave = sin(uTime * (uPulseSpeed + auroraEnergy * 1.2) + ribbonPhase * 6.0);\nfloat softPulse = sin(uTime * uPulseSpeed + vSurfaceType * 1.35);\nfloat auroraPulse = max(0.0, ribbonWave) * (0.5 + auroraEnergy * 0.7);\nfloat luminance = max(0.0, softPulse) * (uPulseStrength + auroraEnergy * 0.35) + edgeGlow * uEdgeGlow + auroraPulse;\nvec3 auroraTintA = vec3(0.28, 0.84, 1.05);\nvec3 auroraTintB = vec3(1.05, 0.52, 1.18);\nfloat tintBlend = clamp(0.5 + ribbonPhase * 0.45, 0.0, 1.0);\nvec3 auroraTint = mix(auroraTintA, auroraTintB, tintBlend);\ntotalEmissiveRadiance += auroraTint * luminance;\nfloat colorBlend = clamp(auroraEnergy * 0.55, 0.0, 1.0);\ndiffuseColor.rgb = mix(diffuseColor.rgb, auroraTint, colorBlend);\ndiffuseColor.a = clamp(diffuseColor.a + edgeGlow * 0.12 + colorBlend * 0.1, 0.0, 1.0);`,
+      `#include <emissivemap_fragment>\n\nvec2 ribbonDir = vRibbonVector;\nif (length(ribbonDir) < 0.001) {\n  ribbonDir = uRibbonOrientation;\n}\nif (length(ribbonDir) < 0.001) {\n  ribbonDir = vec2(0.0, 1.0);\n}\nribbonDir = normalize(ribbonDir);\nvec2 flowDir = vFlowDirection;\nif (length(flowDir) < 0.001) {\n  flowDir = ribbonDir;\n} else {\n  flowDir = normalize(flowDir);\n}\nfloat surfaceBand = smoothstep(0.5, 1.5, vSurfaceType);\nfloat roleBand = smoothstep(${EDGE_TOP_MIN}, ${EDGE_TOP_MAX}, vSurfaceRole);\nroleBand += smoothstep(${EDGE_BOTTOM_MIN}, ${EDGE_BOTTOM_MAX}, vSurfaceRole);\nfloat edgeGlow = clamp(surfaceBand + roleBand, 0.0, 2.0);\nfloat auroraEnergy = clamp(vAuroraGlow + uAuroraHighlight, 0.0, 2.0);\nauroraEnergy += clamp(vFlowStrength, 0.0, 1.0) * 0.25;\nvec3 viewDir = normalize(-vViewPosition);\nvec3 viewNormal = normalize(normal);\nfloat viewAlignment = clamp(dot(viewDir, viewNormal), -1.0, 1.0);\nfloat grazing = pow(1.0 - max(viewAlignment, 0.0), 2.0);\nfloat biasStrength = mix(0.35, 1.25, clamp(uViewAngleBias, 0.0, 1.0));\nfloat grazingBias = clamp(grazing * biasStrength, 0.0, 1.0);\nfloat ribbonPhase = dot(flowDir, ribbonDir);\nfloat ribbonWave = sin(uTime * (uPulseSpeed + auroraEnergy * 1.2) + ribbonPhase * 6.0);\nfloat softPulse = sin(uTime * uPulseSpeed + vSurfaceType * 1.35);\nfloat auroraPulse = max(0.0, ribbonWave) * (0.5 + auroraEnergy * 0.7);\nfloat luminance = max(0.0, softPulse) * (uPulseStrength + auroraEnergy * 0.35) + edgeGlow * uEdgeGlow + auroraPulse;\nfloat noiseTrail = sin(uNoisePhase + ribbonPhase * 4.0 + viewDir.y * 3.0 + vSurfaceType * 0.9);\nfloat swirl = sin(uNoisePhase * 0.7 + viewDir.x * 2.5 + flowDir.y * 3.5);\nfloat hueAB = clamp(grazingBias * 0.8 + (noiseTrail * 0.5 + 0.5) * (1.0 - grazingBias * 0.3), 0.0, 1.0);\nfloat hueBC = clamp((1.0 - hueAB) * 0.55 + (swirl * 0.5 + 0.5) * 0.45 + auroraEnergy * 0.2, 0.0, 1.0);\nfloat hueCA = clamp(1.0 - hueAB - hueBC, 0.0, 1.0);\nfloat weightSum = hueAB + hueBC + hueCA + 1e-5;\nvec3 oilColor = (uColorRampA * hueAB + uColorRampB * hueBC + uColorRampC * hueCA) / weightSum;\nfloat spectralBlend = clamp(auroraEnergy * 0.35 + grazingBias * 0.25, 0.0, 1.0);\nvec3 auroraTint = mix(oilColor, uColorRampB, spectralBlend);\ntotalEmissiveRadiance += auroraTint * luminance;\nfloat colorBlend = clamp(auroraEnergy * 0.45 + grazingBias * 0.4, 0.0, 1.0);\ndiffuseColor.rgb = mix(diffuseColor.rgb, oilColor, colorBlend);\ndiffuseColor.a = clamp(diffuseColor.a + edgeGlow * 0.12 + colorBlend * 0.1, 0.0, 1.0);`,
     );
   };
 
@@ -76,6 +86,11 @@ export function createLumenBloomMaterial({ THREE }) {
   const clamp = THREE.MathUtils?.clamp
     ? (value, min, max) => THREE.MathUtils.clamp(value, min, max)
     : (value, min, max) => Math.min(max, Math.max(min, value));
+
+  const wrapHue = (value) => {
+    const modulo = value % 1;
+    return modulo < 0 ? modulo + 1 : modulo;
+  };
 
   const ensureOffset = (mesh) => {
     if (surfacePulseOffsets.has(mesh)) {
@@ -92,6 +107,18 @@ export function createLumenBloomMaterial({ THREE }) {
     }
     elapsed += delta;
     uniforms.uTime.value = elapsed;
+    uniforms.uNoisePhase.value = elapsed * 0.65;
+
+    const animatedBias = 0.65 + Math.sin(elapsed * 0.45) * 0.35;
+    uniforms.uViewAngleBias.value = clamp(animatedBias, 0, 1);
+
+    const baseHue = wrapHue(0.58 + Math.sin(elapsed * 0.21) * 0.07);
+    const rampA = uniforms.uColorRampA.value;
+    const rampB = uniforms.uColorRampB.value;
+    const rampC = uniforms.uColorRampC.value;
+    rampA.setHSL(baseHue, 0.82, 0.55);
+    rampB.setHSL(wrapHue(baseHue + 0.32 + Math.sin(elapsed * 0.13) * 0.03), 0.78, 0.58);
+    rampC.setHSL(wrapHue(baseHue + 0.58 + Math.cos(elapsed * 0.29) * 0.04), 0.65, 0.6);
 
     if (!surfaces || surfaces.size === 0) {
       material.emissiveIntensity = LUMEN_SETTINGS.baseEmissiveIntensity;
