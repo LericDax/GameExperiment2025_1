@@ -1,3 +1,4 @@
+
 # Weather Visuals Investigation
 
 ## Observed Gaps
@@ -31,3 +32,4 @@
 3. **Regression coverage**
    - Create `src/world/__tests__/weather-manager.test.js` that mocks `particleSystem.emit` to verify precipitation emitters spawn and that failure counters increment when handles are missing.【F:src/world/weather/weather-manager.js†L338-L370】【F:src/world/weather/weather-manager.js†L506-L569】
    - Integrate the new suite into the existing `npm test` workflow so CI guards against future weather visual regressions.【F:package.json†L6-L11】
+
