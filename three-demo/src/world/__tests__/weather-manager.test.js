@@ -180,9 +180,10 @@ test('rain preset spawns active particles with the real particle system', () => 
     manager.setWeather('misty_rain');
 
     let elapsedTime = 0;
-    let weatherParticles = 0;
+    let peakWeatherParticles = 0;
 
     const frameDelta = 1 / 60;
+    const minimumParticles = 18;
     for (let frame = 0; frame < 300; frame += 1) {
       elapsedTime += frameDelta;
       manager.update({ delta: frameDelta, elapsedTime });
@@ -192,15 +193,20 @@ test('rain preset spawns active particles with the real particle system', () => 
       const weatherEmitter = emitters.find((emitter) =>
         typeof emitter.label === 'string' && emitter.label.toLowerCase().includes('weather'),
       );
-      if (weatherEmitter?.activeParticles > 0) {
-        weatherParticles = weatherEmitter.activeParticles;
-        break;
+      if (weatherEmitter) {
+        const activeParticles = Number(weatherEmitter.activeParticles) || 0;
+        if (activeParticles > peakWeatherParticles) {
+          peakWeatherParticles = activeParticles;
+        }
+        if (peakWeatherParticles >= minimumParticles) {
+          break;
+        }
       }
     }
 
     assert.ok(
-      weatherParticles > 0,
-      'expected real weather emitter to accumulate active particles after ticking the system',
+      peakWeatherParticles >= minimumParticles,
+      `expected real weather emitter to accumulate at least ${minimumParticles} active particles after ticking the system (received ${peakWeatherParticles})`,
     );
   } finally {
     particleSystem.dispose();

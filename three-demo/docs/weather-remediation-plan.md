@@ -38,6 +38,11 @@
 
 Please continue appending follow-up findings or configuration changes here whenever the harness or emitter settings evolve.
 
+## 2025-06 Misty Rain Visual Pass
+- Retuned `createWeatherRainEmitter` with a brighter cyan-to-white color ramp, additive blending, and an increased spawn budget so misty rain stands out alongside the water bubble effects.【F:src/rendering/particles/weather-rain.js†L9-L52】
+- The end-to-end precipitation regression test now requires the live rain emitter to reach at least 18 active particles, matching the new readability targets.【F:src/world/__tests__/weather-manager.test.js†L170-L198】
+- **Reminder:** keep this section updated whenever precipitation visuals or thresholds change so QA can track expectation shifts alongside the documented plan.
+
 ## Work Orders
 1. **Gameplay-driven rotation**
    - Sample the player’s biome each frame (reusing the `sampleBiomeAt` helper from `/weather status`) and resolve the preset rotation with `resolveBiomeWeatherRotation`, storing timing metadata per biome.【F:src/player/dev-commands.js†L1532-L1562】【F:src/world/weather/weather-manager.js†L76-L127】
