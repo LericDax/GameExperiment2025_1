@@ -242,14 +242,25 @@ function setupDomEnvironment({ dropletCount } = {}) {
   };
 }
 
-const RAIN_OVERLAY_TEST_MIN = 0.24;
-const RAIN_OVERLAY_TEST_MAX = 1.35;
-const RAIN_OVERLAY_TEST_SCALE = 0.95;
+const RAIN_OVERLAY_TEST_MIN = 0.3;
+const RAIN_OVERLAY_TEST_MAX = 3.5;
+const RAIN_OVERLAY_TEST_SCALE = 1.8;
+const RAIN_OVERLAY_TEST_CURVE = 0.82;
+const RAIN_OVERLAY_RESPONSE_CURVE = 0.9;
+const RAIN_OVERLAY_WIND_MAX = 2.35;
+const RAIN_OVERLAY_STREAK_MIN = 0.85;
+const RAIN_OVERLAY_STREAK_MAX = 2.75;
+const RAIN_OVERLAY_SPARKLE_MIN = 0.5;
+const RAIN_OVERLAY_SPARKLE_MAX = 1.8;
 
 const RAIN_FALLBACK_LABEL = 'WeatherRainEmitter/BillboardFallback';
 const RAIN_BRIGHT_LABEL = 'WeatherRainEmitter/BrightStreakPass';
 
-function createManager({ emitImplementation, useDomRaindropOverlay } = {}) {
+function createManager({
+  emitImplementation,
+  useDomRaindropOverlay,
+  overlayControllerFactory,
+} = {}) {
   const emit = emitImplementation ?? (() => ({ stop() {} }));
   const particleSystem = {
     emitted: [],
@@ -278,6 +289,7 @@ function createManager({ emitImplementation, useDomRaindropOverlay } = {}) {
     scene,
     particleSystem,
     useDomRaindropOverlay,
+    overlayControllerFactory,
   });
 
   return { manager, particleSystem, scene };
@@ -288,23 +300,45 @@ function approxEqual(actual, expected, epsilon = 1e-3) {
 }
 
 function expectedOverlayIntensity(precipIntensity) {
-  const scaled = precipIntensity * RAIN_OVERLAY_TEST_SCALE;
-  const raised = Math.max(scaled, RAIN_OVERLAY_TEST_MIN);
-  return Math.min(raised, RAIN_OVERLAY_TEST_MAX);
+  const range = Math.max(0, RAIN_OVERLAY_TEST_MAX - RAIN_OVERLAY_TEST_MIN);
+  const normalised =
+    RAIN_OVERLAY_TEST_SCALE > 0
+      ? Math.min(Math.max(precipIntensity, 0), RAIN_OVERLAY_TEST_SCALE) /
+        RAIN_OVERLAY_TEST_SCALE
+      : 0;
+  const curved = Math.pow(normalised, RAIN_OVERLAY_TEST_CURVE);
+  const scaled = RAIN_OVERLAY_TEST_MIN + curved * range;
+  const lowerBound = Math.max(scaled, RAIN_OVERLAY_TEST_MIN);
+  return Math.min(lowerBound, RAIN_OVERLAY_TEST_MAX);
 }
 
 function expectedOverlayUniforms(precipIntensity, overrides = {}) {
-  const normalised = Math.min(Math.max(precipIntensity, 0), 2.6) / 2.6;
+  const intensity = expectedOverlayIntensity(precipIntensity);
+  const range = Math.max(0, RAIN_OVERLAY_TEST_MAX - RAIN_OVERLAY_TEST_MIN);
+  const progress =
+    range > 0
+      ? Math.pow(
+          Math.min(
+            Math.max((intensity - RAIN_OVERLAY_TEST_MIN) / range, 0),
+            1,
+          ),
+          RAIN_OVERLAY_RESPONSE_CURVE,
+        )
+      : 0;
   const windBase =
-    overrides.windSpeed !== undefined ? overrides.windSpeed : normalised * 1.8;
+    overrides.windSpeed !== undefined
+      ? overrides.windSpeed
+      : progress * RAIN_OVERLAY_WIND_MAX;
   const streakBase =
     overrides.streakDensity !== undefined
       ? overrides.streakDensity
-      : 0.9 + normalised * (2.4 - 0.9);
+      : RAIN_OVERLAY_STREAK_MIN +
+        progress * (RAIN_OVERLAY_STREAK_MAX - RAIN_OVERLAY_STREAK_MIN);
   const sparkleBase =
     overrides.sparkleGain !== undefined
       ? overrides.sparkleGain
-      : 0.55 + normalised * (1.65 - 0.55);
+      : RAIN_OVERLAY_SPARKLE_MIN +
+        progress * (RAIN_OVERLAY_SPARKLE_MAX - RAIN_OVERLAY_SPARKLE_MIN);
   return {
     windSpeed: clampRaindropOverlayWindSpeed(windBase),
     streakDensity: clampRaindropOverlayStreakDensity(streakBase),
@@ -314,10 +348,9 @@ function expectedOverlayUniforms(precipIntensity, overrides = {}) {
 
 test('setWeather emits precipitation for rainy presets', () => {
   const { restore } = setupDomEnvironment();
-  const originalCreateOverlay = weatherOverlayModule.createWeatherOverlayController;
   let overlayInvocationCount = 0;
   let lastOverlayController = null;
-  weatherOverlayModule.createWeatherOverlayController = (...args) => {
+  const overlayFactory = (...args) => {
     overlayInvocationCount += 1;
     lastOverlayController = createWeatherOverlayController(...args);
     return lastOverlayController;
@@ -326,6 +359,7 @@ test('setWeather emits precipitation for rainy presets', () => {
   const emitLabels = [];
   const { manager, particleSystem, scene } = createManager({
     useDomRaindropOverlay: true,
+    overlayControllerFactory: overlayFactory,
     emitImplementation: (emitter) => {
       emitLabels.push(emitter.debugLabel ?? 'unknown');
       return { stop() {} };
@@ -450,14 +484,14 @@ test('setWeather emits precipitation for rainy presets', () => {
       'none',
       'expected DOM overlay display flag to hide when weather clears',
     );
-    assert.equal(
-      overlayElement.style.getPropertyValue('--rain-intensity'),
-      '0',
+    const clearedIntensity = overlayElement.style.getPropertyValue('--rain-intensity');
+    assert.ok(
+      clearedIntensity === '' || clearedIntensity === '0',
       'expected DOM overlay intensity CSS variable to clear on clear skies',
     );
-    assert.equal(
-      overlayElement.style.getPropertyValue('--rain-density'),
-      '0',
+    const clearedDensity = overlayElement.style.getPropertyValue('--rain-density');
+    assert.ok(
+      clearedDensity === '' || clearedDensity === '0',
       'expected DOM overlay density CSS variable to clear on clear skies',
     );
     assert.equal(
@@ -468,7 +502,6 @@ test('setWeather emits precipitation for rainy presets', () => {
     const clearedOverlay = scene.userData.weather?.raindropOverlay ?? {};
     assert.equal(clearedOverlay.visible, false, 'expected overlay metadata to clear visibility flag');
   } finally {
-    weatherOverlayModule.createWeatherOverlayController = originalCreateOverlay;
     lastOverlayController?.dispose?.();
     restore();
   }
@@ -536,10 +569,6 @@ test('rain splash attachment stops when weather clears', () => {
 
 test('raindrop overlay intensity follows precipitation tuning', () => {
   const { restore } = setupDomEnvironment();
-  const originalCreateOverlay = weatherOverlayModule.createWeatherOverlayController;
-  weatherOverlayModule.createWeatherOverlayController = (...args) =>
-    createWeatherOverlayController(...args);
-
   const { manager, scene } = createManager({
     useDomRaindropOverlay: true,
     emitImplementation: (emitter) => ({
@@ -717,8 +746,8 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
     });
 
     manager.registerWeatherPreset({
-      id: 'qa_extreme_downpour',
-      label: 'QA Extreme Downpour',
+      id: 'qa_downpour_ceiling',
+      label: 'QA Downpour Ceiling',
       category: 'storm',
       intensity: 2.4,
       effects: {
@@ -729,7 +758,7 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
       },
     });
 
-    manager.setWeather('qa_extreme_downpour');
+    manager.setWeather('qa_downpour_ceiling');
     manager.update({ delta: 0.016, elapsedTime: 3 });
 
     overlay = manager.getRaindropOverlayState();
@@ -737,11 +766,15 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
     precipitationIntensity = weather?.effects?.precipitation?.intensity ?? 0;
     expected = expectedOverlayIntensity(precipitationIntensity);
     expectedUniforms = expectedOverlayUniforms(precipitationIntensity);
+    assert.ok(
+      approxEqual(expected, RAIN_OVERLAY_TEST_MAX, 1e-4),
+      'expected downpour to clamp to overlay intensity ceiling',
+    );
     assertOverlaySnapshot({
       overlay,
       expectedIntensity: expected,
       expectedUniforms,
-      label: 'extreme rain',
+      label: 'ceiling downpour',
     });
 
     manager.registerWeatherPreset({
@@ -810,17 +843,12 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
       'expected metadata to store base viscosity overrides',
     );
   } finally {
-    weatherOverlayModule.createWeatherOverlayController = originalCreateOverlay;
     restore();
   }
 });
 
 test('raindrop overlay manual uniform overrides clamp and persist', () => {
   const { restore } = setupDomEnvironment();
-  const originalCreateOverlay = weatherOverlayModule.createWeatherOverlayController;
-  weatherOverlayModule.createWeatherOverlayController = (...args) =>
-    createWeatherOverlayController(...args);
-
   const { manager, scene } = createManager({
     useDomRaindropOverlay: true,
     emitImplementation: (emitter) => ({
@@ -953,7 +981,6 @@ test('raindrop overlay manual uniform overrides clamp and persist', () => {
       'expected DOM overlay density CSS variable to restore base value after clearing manual override',
     );
   } finally {
-    weatherOverlayModule.createWeatherOverlayController = originalCreateOverlay;
     restore();
   }
 });

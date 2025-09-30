@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 const OVERLAY_DISTANCE = 0.65;
 const MIN_INTENSITY = 0;
-const MAX_INTENSITY = 2.4;
+const MAX_INTENSITY = 3.6;
 const DEFAULT_INTENSITY = 0.45;
 
 const MIN_WIND_SPEED = -2.5;

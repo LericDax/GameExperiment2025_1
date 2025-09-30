@@ -88,9 +88,16 @@ const PRECIPITATION_SPAWN_MAX_RETRIES = 2;
 const MIN_WEATHER_DURATION_SECONDS = 30;
 const DEFAULT_BIOME_WEATHER_DURATION = { min: 180, max: 420 };
 const ROTATION_HARNESS_TAG = 'weather-rotation-harness';
-const RAIN_OVERLAY_INTENSITY_MIN = 0.24;
-const RAIN_OVERLAY_INTENSITY_MAX = 1.35;
-const RAIN_OVERLAY_INTENSITY_SCALE = 0.95;
+const RAIN_OVERLAY_INTENSITY_MIN = 0.3;
+const RAIN_OVERLAY_INTENSITY_MAX = 3.5;
+const RAIN_OVERLAY_INTENSITY_SCALE = 1.8;
+const RAIN_OVERLAY_INTENSITY_CURVE = 0.82;
+const RAIN_OVERLAY_RESPONSE_CURVE = 0.9;
+const RAIN_OVERLAY_WIND_MAX = 2.35;
+const RAIN_OVERLAY_STREAK_MIN = 0.85;
+const RAIN_OVERLAY_STREAK_MAX = 2.75;
+const RAIN_OVERLAY_SPARKLE_MIN = 0.5;
+const RAIN_OVERLAY_SPARKLE_MAX = 1.8;
 
 export const DEFAULT_BIOME_WEATHER_ROTATION = Object.freeze([
   {
@@ -396,25 +403,46 @@ function resolveRainOverlayResponse(precipitation) {
   if (!precipitation) {
     return defaults;
   }
-  const base = Number.isFinite(precipitation.intensity) ? precipitation.intensity : 0;
-  const scaled = clamp(
-    base * RAIN_OVERLAY_INTENSITY_SCALE,
-    RAIN_OVERLAY_INTENSITY_MIN,
-    RAIN_OVERLAY_INTENSITY_MAX,
+  const base = Number.isFinite(precipitation.intensity)
+    ? Math.max(0, precipitation.intensity)
+    : 0;
+  const range = Math.max(0, RAIN_OVERLAY_INTENSITY_MAX - RAIN_OVERLAY_INTENSITY_MIN);
+  const normalisedBase =
+    RAIN_OVERLAY_INTENSITY_SCALE > 0
+      ? clamp(base, 0, RAIN_OVERLAY_INTENSITY_SCALE) / RAIN_OVERLAY_INTENSITY_SCALE
+      : 0;
+  const curvedBase = Math.pow(normalisedBase, RAIN_OVERLAY_INTENSITY_CURVE);
+  const scaledIntensity =
+    RAIN_OVERLAY_INTENSITY_MIN + curvedBase * range;
+  const intensity = clampRaindropOverlayIntensity(
+    clamp(scaledIntensity, RAIN_OVERLAY_INTENSITY_MIN, RAIN_OVERLAY_INTENSITY_MAX),
   );
-  const intensity = clampRaindropOverlayIntensity(scaled);
-  const normalised = clamp(base / 2.6, 0, 1);
+  const responseCurve =
+    range > 0
+      ? Math.pow(
+          clamp(
+            (intensity - RAIN_OVERLAY_INTENSITY_MIN) / range,
+            0,
+            1,
+          ),
+          RAIN_OVERLAY_RESPONSE_CURVE,
+        )
+      : 0;
   const overlayConfig = precipitation.raindropOverlay ?? {};
   const windSource =
-    overlayConfig.windSpeed !== undefined ? overlayConfig.windSpeed : normalised * 1.8;
+    overlayConfig.windSpeed !== undefined
+      ? overlayConfig.windSpeed
+      : responseCurve * RAIN_OVERLAY_WIND_MAX;
   const streakSource =
     overlayConfig.streakDensity !== undefined
       ? overlayConfig.streakDensity
-      : 0.9 + normalised * (2.4 - 0.9);
+      : RAIN_OVERLAY_STREAK_MIN +
+        responseCurve * (RAIN_OVERLAY_STREAK_MAX - RAIN_OVERLAY_STREAK_MIN);
   const sparkleSource =
     overlayConfig.sparkleGain !== undefined
       ? overlayConfig.sparkleGain
-      : 0.55 + normalised * (1.65 - 0.55);
+      : RAIN_OVERLAY_SPARKLE_MIN +
+        responseCurve * (RAIN_OVERLAY_SPARKLE_MAX - RAIN_OVERLAY_SPARKLE_MIN);
   const rippleScaleSource =
     overlayConfig.rippleScale !== undefined && Number.isFinite(overlayConfig.rippleScale)
       ? overlayConfig.rippleScale
@@ -444,6 +472,7 @@ export function createWeatherManager({
   particleSystem,
   registerDiagnosticOverlay,
   useDomRaindropOverlay: useDomRaindropOverlayFlag,
+  overlayControllerFactory = createWeatherOverlayController,
 } = {}) {
   const audioController = createWeatherAudioController();
   const weatherPresets = new Map(
@@ -517,7 +546,7 @@ export function createWeatherManager({
       return raindropOverlayController;
     }
     try {
-      raindropOverlayController = createWeatherOverlayController();
+      raindropOverlayController = overlayControllerFactory();
     } catch (error) {
       console.warn('Failed to initialise weather overlay controller, falling back to shader:', error);
       preferDomRaindropOverlay = false;
@@ -843,6 +872,7 @@ export function createWeatherManager({
 
   const disposeRaindropOverlayEffect = () => {
     if (raindropOverlayController) {
+      hideRaindropOverlayController();
       try {
         raindropOverlayController.dispose();
       } catch (error) {
@@ -953,7 +983,8 @@ export function createWeatherManager({
       raindropOverlayState.baseSparkleGain === nextSparkleGain &&
       raindropOverlayState.baseRippleScale === nextRippleScale &&
       raindropOverlayState.baseDropSpeed === nextDropSpeed &&
-      raindropOverlayState.baseViscosity === nextViscosity
+      raindropOverlayState.baseViscosity === nextViscosity &&
+      raindropOverlayVisible === nextActive
     ) {
       return;
     }
