@@ -74,7 +74,7 @@ Commands are grouped by the kind of developer workflow they support:
 
 ### Weather presets
 
-Cold biomes now ship with bespoke snow and aurora presets that can be inspected directly from the console. Use `/weather soft_snowfall` to summon calm crystalline flakes with the new puff-based screen overlay, `/weather polar_aurora` to spawn high-altitude ribbon curtains, or `/weather aurora_snowfall` to blend both effects. Once you are satisfied with the manual checks, run `/weather on` to resume automated rotation so the manager can schedule the new presets naturally. 【F:three-demo/src/world/weather/weather-manager.js†L20-L150】【F:three-demo/src/player/dev-commands.js†L1508-L1714】
+Cold biomes now ship with bespoke snow and aurora presets that can be inspected directly from the console. Use `/weather soft_snowfall` to summon calm crystalline flakes—the DOM overlay now switches to a dedicated snow mode with dense `snowflake`/`snowpuff` element pools driven by the new `--snowflake-density`/`--snowpuff-density` CSS variables—`/weather polar_aurora` to spawn high-altitude ribbon curtains, or `/weather aurora_snowfall` to blend both effects. Once you are satisfied with the manual checks, run `/weather on` to resume automated rotation so the manager can schedule the new presets naturally. 【F:three-demo/src/world/weather/weather-manager.js†L20-L150】【F:three-demo/src/ui/weather-overlay-controller.js†L1-L456】【F:three-demo/index.html†L120-L360】【F:three-demo/src/player/dev-commands.js†L1508-L1714】
 
 ## Performance Instrumentation
 
