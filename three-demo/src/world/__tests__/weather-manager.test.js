@@ -5,6 +5,7 @@ import * as THREE from 'three';
 const { createWeatherManager } = await import('../weather/weather-manager.js');
 const { createParticleSystem } = await import('../../rendering/particle-system.js');
 const {
+  clampRaindropOverlayIntensity,
   clampRaindropOverlayWindSpeed,
   clampRaindropOverlayStreakDensity,
   clampRaindropOverlaySparkleGain,
@@ -1019,6 +1020,84 @@ test('snow presets spawn snow emitter and puff overlay', () => {
       overlayElement.querySelectorAll('.snowpuff').length > 0,
       'expected snow overlay to spawn snowpuff DOM elements',
     );
+  } finally {
+    restore();
+  }
+});
+
+test('polar blizzard saturates snow overlay and emitter ceilings', () => {
+  const { restore } = setupDomEnvironment();
+  const { manager, particleSystem, scene } = createManager({
+    useDomRaindropOverlay: true,
+    emitImplementation: () => ({
+      stop() {},
+    }),
+  });
+
+  try {
+    manager.setWeather('polar_blizzard');
+    manager.update({ delta: 0.08, elapsedTime: 1 });
+
+    assert.equal(
+      particleSystem.emitted.length,
+      1,
+      'expected blizzard preset to emit a single precipitation layer',
+    );
+    const snowEntry = particleSystem.emitted.find(
+      (entry) => entry.emitter.debugLabel === 'WeatherSnowEmitter',
+    );
+    assert.ok(snowEntry, 'expected blizzard to spawn a snow emitter');
+    const { emitter } = snowEntry;
+    assert.ok(
+      emitter.weatherSpawnRate >= 520,
+      `expected blizzard snow spawn rate to exceed 520, received ${emitter.weatherSpawnRate}`,
+    );
+    assert.ok(
+      emitter.weatherMaxParticles >= 780,
+      `expected blizzard snow particle budget to exceed 780, received ${emitter.weatherMaxParticles}`,
+    );
+    assert.ok(
+      emitter.weatherFallSpeed <= -6,
+      `expected blizzard flakes to fall rapidly, received ${emitter.weatherFallSpeed}`,
+    );
+    assert.ok(
+      emitter.weatherIntensity >= 3.3,
+      `expected blizzard emitter to inherit high intensity, received ${emitter.weatherIntensity}`,
+    );
+
+    const weatherState = scene.userData.weather ?? {};
+    assert.equal(
+      weatherState.precipitationLayers?.primary?.label,
+      'WeatherSnowEmitter',
+      'expected precipitation metadata to point at the blizzard snow emitter',
+    );
+
+    const overlayState = manager.getRaindropOverlayState();
+    const overlayMetadata = weatherState.raindropOverlay ?? {};
+    const overlayElement = document.getElementById('weather-overlay');
+    const overlayCeiling = clampRaindropOverlayIntensity(12);
+
+    assert.ok(overlayState.baseActive, 'expected blizzard overlay to be active');
+    assert.ok(overlayMetadata.visible, 'expected blizzard overlay metadata to flag visibility');
+    assert.ok(
+      approxEqual(overlayMetadata.intensity ?? 0, overlayCeiling, 1e-4),
+      `expected blizzard overlay to clamp at ceiling intensity (${overlayCeiling})`,
+    );
+    assert.ok(
+      overlayMetadata.windSpeed !== undefined && overlayMetadata.windSpeed >= 1.8,
+      'expected blizzard overlay wind to reflect severe gusts',
+    );
+    assert.ok(
+      overlayMetadata.flakeDensity !== undefined && overlayMetadata.flakeDensity >= 6,
+      'expected blizzard overlay to drive high snowflake density',
+    );
+    assert.ok(
+      overlayMetadata.puffDensity !== undefined && overlayMetadata.puffDensity >= 4,
+      'expected blizzard overlay to drive high snowpuff density',
+    );
+    assert.equal(overlayMetadata.mode, 'snow', 'expected blizzard overlay mode to remain snow');
+    assert.ok(overlayElement, 'expected DOM overlay element during blizzard');
+    assert.equal(overlayElement?.getAttribute('data-weather-mode'), 'snow');
   } finally {
     restore();
   }

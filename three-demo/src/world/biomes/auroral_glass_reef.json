@@ -61,6 +61,11 @@
         "id": "soft_snowfall",
         "weight": 1,
         "duration": { "min": 150, "max": 280 }
+      },
+      {
+        "id": "polar_blizzard",
+        "weight": 0.08,
+        "duration": { "min": 90, "max": 180 }
       }
     ]
   }
