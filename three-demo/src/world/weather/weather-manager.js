@@ -101,13 +101,19 @@ const DEFAULT_WEATHER_PRESETS = {
     temperature: 0.1,
     effects: {
       aurora: {
-        intensity: 1.15,
-        span: 12,
-        count: 3,
-        anchorHeight: 28,
-        forwardOffset: 44,
-        lateralOffset: 12,
-        orientationJitter: Math.PI / 14,
+        intensity: 1.85,
+        span: 18,
+        count: 5,
+        layers: 2,
+        layerSpacing: 22,
+        layerHeightStep: 3.2,
+        layerSpanScale: 0.42,
+        layerLateralScale: 0.55,
+        layerIntensityFalloff: 0.8,
+        anchorHeight: 34,
+        forwardOffset: 58,
+        lateralOffset: 14,
+        orientationJitter: Math.PI / 16,
         alignWithHeading: true,
       },
     },
@@ -140,13 +146,19 @@ const DEFAULT_WEATHER_PRESETS = {
         },
       },
       aurora: {
-        intensity: 0.95,
-        span: 11,
-        count: 2,
-        anchorHeight: 26,
-        forwardOffset: 42,
-        lateralOffset: 9,
-        orientationJitter: Math.PI / 12,
+        intensity: 1.45,
+        span: 16,
+        count: 4,
+        layers: 2,
+        layerSpacing: 20,
+        layerHeightStep: 2.6,
+        layerSpanScale: 0.38,
+        layerLateralScale: 0.48,
+        layerIntensityFalloff: 0.78,
+        anchorHeight: 30,
+        forwardOffset: 54,
+        lateralOffset: 12,
+        orientationJitter: Math.PI / 14,
         alignWithHeading: true,
       },
     },
@@ -196,7 +208,20 @@ const CATEGORY_DEFAULT_EFFECTS = {
     precipitation: { type: 'snow' },
   },
   aurora: {
-    aurora: { intensity: 1.1, span: 8 },
+    aurora: {
+      intensity: 1.35,
+      span: 14,
+      count: 4,
+      layers: 2,
+      layerSpacing: 18,
+      layerHeightStep: 2.4,
+      layerSpanScale: 0.36,
+      layerLateralScale: 0.45,
+      layerIntensityFalloff: 0.82,
+      anchorHeight: 30,
+      forwardOffset: 50,
+      lateralOffset: 12,
+    },
   },
 };
 
@@ -502,6 +527,20 @@ function normaliseAuroraEffect(weather, effect) {
   const anchorHeight = Number.isFinite(effect.anchorHeight) ? effect.anchorHeight : 20;
   const forwardOffset = Number.isFinite(effect.forwardOffset) ? effect.forwardOffset : 14;
   const lateralOffset = Number.isFinite(effect.lateralOffset) ? effect.lateralOffset : 5;
+  const layers = Number.isFinite(effect.layers) ? Math.max(1, Math.round(effect.layers)) : 1;
+  const layerSpacing = Number.isFinite(effect.layerSpacing) ? Math.max(0, effect.layerSpacing) : 12;
+  const layerHeightStep = Number.isFinite(effect.layerHeightStep)
+    ? effect.layerHeightStep
+    : 1.6;
+  const layerSpanScale = Number.isFinite(effect.layerSpanScale)
+    ? Math.max(0, effect.layerSpanScale)
+    : 0.3;
+  const layerLateralScale = Number.isFinite(effect.layerLateralScale)
+    ? Math.max(0, effect.layerLateralScale)
+    : 0.35;
+  const layerIntensityFalloff = Number.isFinite(effect.layerIntensityFalloff)
+    ? clamp(effect.layerIntensityFalloff, 0.2, 1)
+    : 0.85;
   const orientation = Number.isFinite(effect.orientation) ? effect.orientation : null;
   const orientationJitter = Number.isFinite(effect.orientationJitter)
     ? effect.orientationJitter
@@ -516,6 +555,12 @@ function normaliseAuroraEffect(weather, effect) {
     anchorHeight,
     forwardOffset,
     lateralOffset,
+    layers,
+    layerSpacing,
+    layerHeightStep,
+    layerSpanScale,
+    layerLateralScale,
+    layerIntensityFalloff,
     orientation,
     orientationJitter,
     updateInterval,
@@ -1422,6 +1467,46 @@ export function createWeatherManager({
       return;
     }
     state.activeEmitterCount = activeParticleEffects.length;
+    let auroraCount = 0;
+    let minForwardOffset = null;
+    let maxForwardOffset = null;
+    let minAnchorHeight = null;
+    let maxAnchorHeight = null;
+    for (const attachment of activeParticleEffects) {
+      if (attachment.type !== 'aurora') {
+        continue;
+      }
+      auroraCount += 1;
+      if (Number.isFinite(attachment.forwardOffset)) {
+        minForwardOffset =
+          minForwardOffset === null
+            ? attachment.forwardOffset
+            : Math.min(minForwardOffset, attachment.forwardOffset);
+        maxForwardOffset =
+          maxForwardOffset === null
+            ? attachment.forwardOffset
+            : Math.max(maxForwardOffset, attachment.forwardOffset);
+      }
+      if (Number.isFinite(attachment.anchorOffsetY)) {
+        minAnchorHeight =
+          minAnchorHeight === null
+            ? attachment.anchorOffsetY
+            : Math.min(minAnchorHeight, attachment.anchorOffsetY);
+        maxAnchorHeight =
+          maxAnchorHeight === null
+            ? attachment.anchorOffsetY
+            : Math.max(maxAnchorHeight, attachment.anchorOffsetY);
+      }
+    }
+    state.auroraActiveCount = auroraCount;
+    state.auroraForwardOffsetRange =
+      auroraCount > 0 && minForwardOffset !== null && maxForwardOffset !== null
+        ? { min: minForwardOffset, max: maxForwardOffset }
+        : null;
+    state.auroraAnchorHeightRange =
+      auroraCount > 0 && minAnchorHeight !== null && maxAnchorHeight !== null
+        ? { min: minAnchorHeight, max: maxAnchorHeight }
+        : null;
     if (state.activeEmitterCount === 0) {
       state.totalActiveParticles = 0;
     }
@@ -1837,9 +1922,19 @@ export function createWeatherManager({
     weatherState.intensity = weather.intensity;
     weatherState.category = weather.category;
     weatherState.precipitation = resolvedEffects.precipitation?.type ?? null;
-    weatherState.aurora = Boolean(
-      resolvedEffects.aurora && Object.keys(resolvedEffects.aurora).length > 0,
-    );
+    const resolvedAurora = normaliseAuroraEffect(weather, resolvedEffects.aurora);
+    weatherState.aurora = Boolean(resolvedAurora);
+    weatherState.auroraRibbonConfig = resolvedAurora
+      ? {
+          count: resolvedAurora.count,
+          layers: resolvedAurora.layers ?? 1,
+          intensity: resolvedAurora.intensity,
+          span: resolvedAurora.span,
+          forwardOffset: resolvedAurora.forwardOffset,
+          lateralOffset: resolvedAurora.lateralOffset,
+        }
+      : null;
+    weatherState.auroraActiveCount = resolvedAurora ? weatherState.auroraActiveCount ?? 0 : 0;
 
   };
 
@@ -2261,44 +2356,59 @@ export function createWeatherManager({
     const playerControls = context.playerControls;
     const yawPitch = playerControls?.getYawPitch?.();
     const headingYaw = yawPitch?.yaw ?? 0;
-    const count = config.count;
+    const count = Math.max(1, Math.round(config.count ?? 0));
+    const layers = Math.max(1, Math.round(config.layers ?? 1));
     const centerIndex = (count - 1) / 2;
-    for (let i = 0; i < count; i += 1) {
-      const offsetIndex = i - centerIndex;
-      const orientationOffset = offsetIndex * 0.35;
-      const jitter = (Math.random() - 0.5) * config.orientationJitter;
-      const baseOrientation = config.alignWithHeading
-        ? headingYaw
-        : config.orientation ?? headingYaw;
-      const ribbonOrientation = baseOrientation + orientationOffset + jitter;
-      const emitter = createAuroraRibbonEmitter({
-        position: { x: 0, y: config.anchorHeight, z: 0 },
-        span: config.span,
-        intensity: config.intensity,
-        orientation: ribbonOrientation,
-      });
-      emitter.debugLabel = emitter.debugLabel ?? 'WeatherAuroraRibbon';
-      const handle = particleSystem.emit(emitter);
-      if (!handle) {
-        continue;
+    let spawned = 0;
+    for (let layerIndex = 0; layerIndex < layers; layerIndex += 1) {
+      const layerScale = layerIndex === 0
+        ? 1
+        : Math.pow(config.layerIntensityFalloff ?? 1, layerIndex);
+      const layerIntensity = Math.max(0.2, config.intensity * layerScale);
+      const spanMultiplier = 1 + layerIndex * (config.layerSpanScale ?? 0);
+      const layerSpan = Math.max(4, config.span * spanMultiplier);
+      const lateralStep = config.lateralOffset * (1 + layerIndex * (config.layerLateralScale ?? 0));
+      const forwardOffset = config.forwardOffset + layerIndex * (config.layerSpacing ?? 0);
+      const anchorHeight = config.anchorHeight + layerIndex * (config.layerHeightStep ?? 0);
+      const orientationSpacing = 0.26 + layerIndex * 0.08;
+      for (let i = 0; i < count; i += 1) {
+        const offsetIndex = i - centerIndex;
+        const orientationOffset = offsetIndex * orientationSpacing;
+        const jitter = (Math.random() - 0.5) * config.orientationJitter;
+        const baseOrientation = config.alignWithHeading
+          ? headingYaw
+          : config.orientation ?? headingYaw;
+        const ribbonOrientation = baseOrientation + orientationOffset + jitter;
+        const emitter = createAuroraRibbonEmitter({
+          position: { x: 0, y: anchorHeight, z: 0 },
+          span: layerSpan,
+          intensity: layerIntensity,
+          orientation: ribbonOrientation,
+        });
+        emitter.debugLabel = emitter.debugLabel ?? 'WeatherAuroraRibbon';
+        const handle = particleSystem.emit(emitter);
+        if (!handle) {
+          continue;
+        }
+        const attachment = {
+          type: 'aurora',
+          handle,
+          emitter,
+          anchorOffsetY: anchorHeight,
+          updateInterval: Math.max(0.25, config.updateInterval),
+          forwardOffset,
+          lateralOffset: offsetIndex * lateralStep,
+          alignWithHeading: config.alignWithHeading,
+          orientationOffset: orientationOffset + jitter,
+          baseHeadingAtSpawn: headingYaw,
+          staticOrientation: ribbonOrientation,
+          lastUpdateTime: -Infinity,
+        };
+        activeParticleEffects.push(attachment);
+        spawned += 1;
       }
-      const attachment = {
-        type: 'aurora',
-        handle,
-        emitter,
-        anchorOffsetY: config.anchorHeight,
-        updateInterval: Math.max(0.25, config.updateInterval),
-        forwardOffset: config.forwardOffset,
-        lateralOffset: offsetIndex * config.lateralOffset,
-        alignWithHeading: config.alignWithHeading,
-        orientationOffset: orientationOffset + jitter,
-        baseHeadingAtSpawn: headingYaw,
-        staticOrientation: ribbonOrientation,
-        lastUpdateTime: -Infinity,
-      };
-      activeParticleEffects.push(attachment);
     }
-    if (count > 0) {
+    if (spawned > 0) {
       syncEmitterState();
     }
   };
