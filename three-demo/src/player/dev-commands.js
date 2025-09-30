@@ -62,6 +62,10 @@ export function registerDeveloperCommands({
   const scanDirection = new THREE.Vector3(0, 0, -1);
   const scanOrigin = new THREE.Vector3();
   const DEFAULT_SCAN_DISTANCE = 12;
+  const spawnEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+  const spawnDirection = new THREE.Vector3(0, 0, -1);
+  const SPAWN_FORWARD_DISTANCE = 4.5;
+  const SPAWN_HEIGHT_OFFSET = 1.5;
   const scanWatchState = {
     disposer: null,
     options: null,
@@ -121,6 +125,21 @@ export function registerDeveloperCommands({
     }
     return 0;
   }
+
+  const ensureEntityManagerAvailable = () => {
+    if (
+      !entityManager ||
+      typeof entityManager.listEntityTypes !== 'function' ||
+      typeof entityManager.spawnEntity !== 'function'
+    ) {
+      commandConsole.log(
+        'Entity management systems are not available; spawn commands are disabled in this build.',
+        'warn',
+      );
+      throw new Error('Entity manager is not available.');
+    }
+    return entityManager;
+  };
 
   const normalizeWeatherKey = (value) => normalizeBiomeKey(value);
 
@@ -1212,6 +1231,177 @@ export function registerDeveloperCommands({
         }
       }
       commandConsole.log('Use /entities types to list registered entity definitions.');
+    },
+  });
+
+  registerCommand({
+    name: 'spawn',
+    description:
+      'Spawn registered entities in front of the player for debugging and rapid iteration.',
+    usage: '/spawn entity list | /spawn entity <id|number>',
+    handler: async ({ args }) => {
+      if (args.length === 0) {
+        throw new Error('Usage: /spawn entity list | /spawn entity <id|number>.');
+      }
+
+      const mode = args[0].toLowerCase();
+      if (mode !== 'entity') {
+        throw new Error('Usage: /spawn entity list | /spawn entity <id|number>.');
+      }
+
+      let manager;
+      try {
+        manager = ensureEntityManagerAvailable();
+      } catch (error) {
+        console.warn('Spawn command requires an active entity manager.');
+        throw error;
+      }
+
+      let entityTypes;
+      try {
+        const result = manager.listEntityTypes?.();
+        const resolved = await Promise.resolve(result ?? []);
+        entityTypes = Array.isArray(resolved) ? resolved : [];
+      } catch (error) {
+        console.error('Failed to retrieve entity type definitions:', error);
+        commandConsole.log('Unable to access entity definitions at this time.', 'error');
+        throw new Error('Entity definitions are unavailable.');
+      }
+
+      if (!Array.isArray(entityTypes) || entityTypes.length === 0) {
+        commandConsole.log('No entity types are registered. Use /entities types after loading assets.', 'warn');
+        return;
+      }
+
+      const action = args[1]?.toLowerCase();
+      if (!action || action === 'list') {
+        commandConsole.log(`Registered entity types (${entityTypes.length}):`);
+        entityTypes.forEach((type, index) => {
+          const label = type.label && type.label !== type.id ? `${type.label} [${type.id}]` : type.id;
+          const numericAliases = Array.isArray(type.metadata?.aliases?.numeric)
+            ? type.metadata.aliases.numeric.filter((alias) => Number.isFinite(Number(alias)))
+            : [];
+          const aliasInfo = numericAliases.length > 0 ? ` (aliases: ${numericAliases.join(', ')})` : '';
+          commandConsole.log(`  ${index + 1}. ${label}${aliasInfo}`);
+        });
+        commandConsole.log('Use /spawn entity <id|number> to create one of the entries above.');
+        return;
+      }
+
+      const query = args[1];
+      const normalizedQuery = String(query ?? '').trim().toLowerCase();
+      if (!normalizedQuery) {
+        throw new Error('Specify an entity identifier or use /spawn entity list.');
+      }
+
+      const numericQuery = Number(normalizedQuery);
+      let targetType = null;
+      if (Number.isFinite(numericQuery)) {
+        const aliasIndex = Math.trunc(numericQuery);
+        const aliasMap = new Map();
+        entityTypes.forEach((type, index) => {
+          aliasMap.set(index + 1, type);
+          const numericAliases = Array.isArray(type.metadata?.aliases?.numeric)
+            ? type.metadata.aliases.numeric
+            : [];
+          numericAliases.forEach((alias) => {
+            const parsed = Number(alias);
+            if (Number.isFinite(parsed)) {
+              aliasMap.set(parsed, type);
+            }
+          });
+        });
+        targetType = aliasMap.get(aliasIndex) ?? aliasMap.get(numericQuery);
+      }
+
+      if (!targetType) {
+        targetType = entityTypes.find((type) => {
+          if (!type) {
+            return false;
+          }
+          const idMatch = String(type.id ?? '').toLowerCase() === normalizedQuery;
+          const labelMatch = String(type.label ?? '').toLowerCase() === normalizedQuery;
+          return idMatch || labelMatch;
+        });
+      }
+
+      if (!targetType) {
+        commandConsole.log(
+          `Unknown entity "${query}". Use /spawn entity list to see available identifiers.`,
+          'warn',
+        );
+        throw new Error('Entity type not found.');
+      }
+
+      const origin = playerControls.getPosition?.() ?? { x: 0, y: 0, z: 0 };
+      const orientation = playerControls.getYawPitch?.() ?? { yaw: 0, pitch: 0 };
+
+      spawnEuler.set(orientation.pitch ?? 0, orientation.yaw ?? 0, 0, 'YXZ');
+      spawnDirection.set(0, 0, -1);
+      spawnDirection.applyEuler(spawnEuler);
+      spawnDirection.multiplyScalar(SPAWN_FORWARD_DISTANCE);
+
+      const spawnPosition = {
+        x: (origin.x ?? 0) + spawnDirection.x,
+        y: (origin.y ?? 0) + spawnDirection.y,
+        z: (origin.z ?? 0) + spawnDirection.z,
+      };
+
+      if (typeof terrainHeight === 'function') {
+        try {
+          const surface = terrainHeight(spawnPosition.x, spawnPosition.z);
+          if (Number.isFinite(surface)) {
+            const desiredHeight = surface + SPAWN_HEIGHT_OFFSET;
+            spawnPosition.y = Math.max(desiredHeight, spawnPosition.y);
+          }
+        } catch (error) {
+          console.warn('Failed to sample terrain height for spawn command:', error);
+        }
+      }
+
+      const spawnRotation = {
+        yaw: orientation.yaw ?? 0,
+        pitch: orientation.pitch ?? 0,
+        roll: 0,
+      };
+
+      const spawnPayload = {
+        typeId: targetType.id,
+        position: spawnPosition,
+        rotation: spawnRotation,
+        source: 'command',
+      };
+
+      let spawnedEntity = null;
+      try {
+        if (manager.spawnEntity.length <= 1) {
+          spawnedEntity = await manager.spawnEntity(spawnPayload);
+        } else {
+          spawnedEntity = await manager.spawnEntity(targetType.id, spawnPayload);
+        }
+      } catch (error) {
+        console.error('Failed to spawn entity via /spawn command:', error);
+        commandConsole.log(
+          `Failed to spawn ${targetType.label ?? targetType.id}: ${error.message ?? error}.`,
+          'error',
+        );
+        throw new Error('Entity spawn failed.');
+      }
+
+      const spawnedId = spawnedEntity?.id ?? 'unknown-id';
+      commandConsole.log(
+        `Spawned ${targetType.label ?? targetType.id} (${targetType.id}) as ${spawnedId} at X=${spawnPosition.x.toFixed(
+          2,
+        )} Y=${spawnPosition.y.toFixed(2)} Z=${spawnPosition.z.toFixed(2)}.`,
+      );
+      console.info(
+        'Spawn command created entity',
+        spawnedId,
+        'of type',
+        targetType.id,
+        'at',
+        spawnPosition,
+      );
     },
   });
 
