@@ -161,6 +161,7 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
     overlay,
     expectedIntensity,
     expectedUniforms,
+    expectedMetadata = {},
     label,
   }) => {
     assert.ok(overlay.enabled, `expected overlay to enable for ${label}`);
@@ -198,6 +199,40 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
       approxEqual(metadata.sparkleGain ?? 0, expectedUniforms.sparkleGain, 1e-4),
       'expected overlay metadata to publish sparkle gain',
     );
+    const expectValue = (key, expectedValue) => {
+      const overlayValue = overlay[key];
+      const metadataValue = metadata[key];
+      if (expectedValue === undefined || expectedValue === null) {
+        assert.strictEqual(
+          overlayValue ?? null,
+          null,
+          `expected overlay ${key} to default to null`,
+        );
+        assert.strictEqual(
+          metadataValue ?? null,
+          null,
+          `expected overlay metadata ${key} to default to null`,
+        );
+        return;
+      }
+      assert.ok(
+        approxEqual(overlayValue ?? 0, expectedValue, 1e-4),
+        `expected overlay ${key} to match provided value`,
+      );
+      assert.ok(
+        approxEqual(metadataValue ?? 0, expectedValue, 1e-4),
+        `expected overlay metadata ${key} to match provided value`,
+      );
+    };
+    expectValue('rippleScale', expectedMetadata.rippleScale);
+    expectValue('dropSpeed', expectedMetadata.dropSpeed);
+    expectValue('viscosity', expectedMetadata.viscosity);
+    expectValue('baseRippleScale', expectedMetadata.baseRippleScale ?? expectedMetadata.rippleScale ?? null);
+    expectValue('baseDropSpeed', expectedMetadata.baseDropSpeed ?? expectedMetadata.dropSpeed ?? null);
+    expectValue('baseViscosity', expectedMetadata.baseViscosity ?? expectedMetadata.viscosity ?? null);
+    expectValue('manualRippleScale', expectedMetadata.manualRippleScale ?? null);
+    expectValue('manualDropSpeed', expectedMetadata.manualDropSpeed ?? null);
+    expectValue('manualViscosity', expectedMetadata.manualViscosity ?? null);
   };
 
   manager.setWeather('misty_rain');
@@ -288,6 +323,9 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
           windSpeed: 3.25,
           streakDensity: 0.2,
           sparkleGain: 2.5,
+          rippleScale: 0.82,
+          dropSpeed: 1.35,
+          viscosity: 0.44,
         },
       },
     },
@@ -309,6 +347,11 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
     overlay,
     expectedIntensity: expected,
     expectedUniforms,
+    expectedMetadata: {
+      rippleScale: 0.82,
+      dropSpeed: 1.35,
+      viscosity: 0.44,
+    },
     label: 'override rain',
   });
   const metadata = scene.userData.weather?.raindropOverlay ?? {};
@@ -319,6 +362,18 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
   assert.ok(
     approxEqual(metadata.baseStreakDensity ?? 0, overlay.baseStreakDensity, 1e-4),
     'expected metadata to store base streak density overrides',
+  );
+  assert.ok(
+    approxEqual(metadata.baseRippleScale ?? 0, 0.82, 1e-4),
+    'expected metadata to store base ripple scale overrides',
+  );
+  assert.ok(
+    approxEqual(metadata.baseDropSpeed ?? 0, 1.35, 1e-4),
+    'expected metadata to store base drop speed overrides',
+  );
+  assert.ok(
+    approxEqual(metadata.baseViscosity ?? 0, 0.44, 1e-4),
+    'expected metadata to store base viscosity overrides',
   );
 });
 
@@ -382,6 +437,21 @@ test('raindrop overlay manual uniform overrides clamp and persist', () => {
     ),
     'expected metadata to record clamped manual sparkle override',
   );
+  assert.strictEqual(
+    metadata.manualRippleScale,
+    null,
+    'expected metadata ripple scale manual override to remain unset',
+  );
+  assert.strictEqual(
+    metadata.manualDropSpeed,
+    null,
+    'expected metadata drop speed manual override to remain unset',
+  );
+  assert.strictEqual(
+    metadata.manualViscosity,
+    null,
+    'expected metadata viscosity manual override to remain unset',
+  );
 
   manager.setRaindropOverlayManualWindSpeed(null);
   manager.setRaindropOverlayManualStreakDensity(null);
@@ -404,6 +474,9 @@ test('raindrop overlay manual uniform overrides clamp and persist', () => {
   assert.equal(clearedMetadata.manualWindSpeed, null);
   assert.equal(clearedMetadata.manualStreakDensity, null);
   assert.equal(clearedMetadata.manualSparkleGain, null);
+  assert.equal(clearedMetadata.manualRippleScale, null);
+  assert.equal(clearedMetadata.manualDropSpeed, null);
+  assert.equal(clearedMetadata.manualViscosity, null);
 });
 
 test('failed precipitation spawns are recorded for diagnostics', () => {
@@ -460,6 +533,9 @@ test('manual precipitation overrides adjust rain uniforms', () => {
   state.manualOverrides.precipitation.streakNoise = 0.72;
   state.manualOverrides.precipitation.highlightWidth = 0.12;
   state.manualOverrides.precipitation.intensity = 0.95;
+  state.manualOverrides.precipitation.rippleScale = 1.58;
+  state.manualOverrides.precipitation.dropSpeed = 1.14;
+  state.manualOverrides.precipitation.viscosity = 0.42;
 
   manager.setWeather('misty_rain');
   manager.update({ delta: 0.05, elapsedTime: 0.5 });
@@ -470,10 +546,32 @@ test('manual precipitation overrides adjust rain uniforms', () => {
   assert.ok(approxEqual(uniforms.windTilt, 0.31, 1e-4));
   assert.ok(approxEqual(uniforms.streakNoise, 0.72, 1e-4));
   assert.ok(approxEqual(uniforms.highlightWidth, 0.12, 1e-4));
+  assert.ok(approxEqual(uniforms.rippleScale ?? 0, 1.58, 1e-4));
+  const dropSpeedUniform = uniforms.dropSpeed ?? uniforms.dropDensity;
+  const viscosityUniform = uniforms.viscosity ?? uniforms.timerBias;
+  assert.ok(approxEqual(dropSpeedUniform ?? 0, 1.14, 1e-4));
+  assert.ok(approxEqual(viscosityUniform ?? 0, 0.42, 1e-4));
+
+  const summaries = scene.userData.weather?.precipitationEmitters ?? [];
+  if (summaries.length > 0) {
+    const primarySummary = summaries.find((summary) =>
+      summary.label?.includes('WeatherRainEmitter'),
+    );
+    assert.ok(primarySummary, 'expected precipitation summary for rain emitter');
+    assert.equal(primarySummary.manualOverrides.dropSpeed, 1.14);
+    assert.equal(primarySummary.manualOverrides.viscosity, 0.42);
+    assert.equal(primarySummary.manualOverrides.rippleScale, 1.58);
+    assert.ok(approxEqual(primarySummary.shaderUniforms.dropSpeed ?? 0, 1.14, 1e-4));
+    assert.ok(approxEqual(primarySummary.shaderUniforms.viscosity ?? 0, 0.42, 1e-4));
+    assert.ok(approxEqual(primarySummary.shaderUniforms.rippleScale ?? 0, 1.58, 1e-4));
+  }
 
   state.manualOverrides.precipitation.windTilt = 0.42;
   state.manualOverrides.precipitation.streakNoise = 0.86;
   state.manualOverrides.precipitation.highlightWidth = 0.18;
+  state.manualOverrides.precipitation.rippleScale = 1.21;
+  state.manualOverrides.precipitation.dropSpeed = 1.08;
+  state.manualOverrides.precipitation.viscosity = 0.5;
 
   manager.update({ delta: 0.05, elapsedTime: 0.55 });
 
@@ -481,6 +579,11 @@ test('manual precipitation overrides adjust rain uniforms', () => {
   assert.ok(approxEqual(uniforms.windTilt, 0.42, 1e-4));
   assert.ok(approxEqual(uniforms.streakNoise, 0.86, 1e-4));
   assert.ok(approxEqual(uniforms.highlightWidth, 0.18, 1e-4));
+  assert.ok(approxEqual(uniforms.rippleScale ?? 0, 1.21, 1e-4));
+  const updatedDropSpeed = uniforms.dropSpeed ?? uniforms.dropDensity;
+  const updatedViscosity = uniforms.viscosity ?? uniforms.timerBias;
+  assert.ok(approxEqual(updatedDropSpeed ?? 0, 1.08, 1e-4));
+  assert.ok(approxEqual(updatedViscosity ?? 0, 0.5, 1e-4));
 });
 
 test('precipitation spawn retries recover after missing handles', () => {

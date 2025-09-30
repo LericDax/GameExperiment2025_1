@@ -148,6 +148,73 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+function normaliseRainUniformSnapshot(uniforms) {
+  if (!uniforms) {
+    return null;
+  }
+  const snapshot = {};
+  const assign = (targetKey, sourceKey = targetKey) => {
+    if (uniforms[sourceKey] !== undefined) {
+      snapshot[targetKey] = uniforms[sourceKey];
+    }
+  };
+  assign('windTilt');
+  assign('streakNoise');
+  assign('highlightWidth');
+  assign('rippleScale');
+  if (uniforms.dropSpeed !== undefined) {
+    snapshot.dropSpeed = uniforms.dropSpeed;
+  } else if (uniforms.dropDensity !== undefined) {
+    snapshot.dropSpeed = uniforms.dropDensity;
+    snapshot.dropDensity = uniforms.dropDensity;
+  }
+  if (uniforms.viscosity !== undefined) {
+    snapshot.viscosity = uniforms.viscosity;
+  } else if (uniforms.timerBias !== undefined) {
+    snapshot.viscosity = uniforms.timerBias;
+    snapshot.timerBias = uniforms.timerBias;
+  }
+  return snapshot;
+}
+
+function normaliseManualPrecipitationOverridesSnapshot(overrides) {
+  if (!overrides) {
+    return null;
+  }
+  const snapshot = {};
+  const assign = (key, value) => {
+    if (value !== undefined) {
+      snapshot[key] = value;
+    }
+  };
+  assign('intensity', overrides.intensity);
+  assign('windTilt', overrides.windTilt);
+  assign('streakNoise', overrides.streakNoise);
+  assign('highlightWidth', overrides.highlightWidth);
+  assign('rippleScale', overrides.rippleScale);
+  const dropSpeedValue =
+    overrides.dropSpeed !== undefined
+      ? overrides.dropSpeed
+      : overrides.dropDensity !== undefined
+      ? overrides.dropDensity
+      : undefined;
+  assign('dropSpeed', dropSpeedValue);
+  const viscosityValue =
+    overrides.viscosity !== undefined
+      ? overrides.viscosity
+      : overrides.timerBias !== undefined
+      ? overrides.timerBias
+      : undefined;
+  assign('viscosity', viscosityValue);
+  if (overrides.dropDensity !== undefined) {
+    snapshot.dropDensity = overrides.dropDensity;
+  }
+  if (overrides.timerBias !== undefined) {
+    snapshot.timerBias = overrides.timerBias;
+  }
+  return snapshot;
+}
+
 function resolveWeatherEffects(weather) {
   if (!weather) {
     return { precipitation: null, aurora: null };
@@ -202,6 +269,15 @@ function normalisePrecipitationEffect(weather, effect) {
     }
     if (Number.isFinite(overlayEffect.sparkleGain)) {
       overlayConfig.sparkleGain = clampRaindropOverlaySparkleGain(overlayEffect.sparkleGain);
+    }
+    if (Number.isFinite(overlayEffect.rippleScale)) {
+      overlayConfig.rippleScale = overlayEffect.rippleScale;
+    }
+    if (Number.isFinite(overlayEffect.dropSpeed)) {
+      overlayConfig.dropSpeed = overlayEffect.dropSpeed;
+    }
+    if (Number.isFinite(overlayEffect.viscosity)) {
+      overlayConfig.viscosity = overlayEffect.viscosity;
     }
     if (Object.keys(overlayConfig).length > 0) {
       raindropOverlay = overlayConfig;
@@ -283,12 +359,27 @@ function resolveRainOverlayResponse(precipitation) {
     overlayConfig.sparkleGain !== undefined
       ? overlayConfig.sparkleGain
       : 0.55 + normalised * (1.65 - 0.55);
+  const rippleScaleSource =
+    overlayConfig.rippleScale !== undefined && Number.isFinite(overlayConfig.rippleScale)
+      ? overlayConfig.rippleScale
+      : null;
+  const dropSpeedSource =
+    overlayConfig.dropSpeed !== undefined && Number.isFinite(overlayConfig.dropSpeed)
+      ? overlayConfig.dropSpeed
+      : null;
+  const viscositySource =
+    overlayConfig.viscosity !== undefined && Number.isFinite(overlayConfig.viscosity)
+      ? overlayConfig.viscosity
+      : null;
   return {
     active: intensity > 0,
     intensity,
     windSpeed: clampRaindropOverlayWindSpeed(windSource),
     streakDensity: clampRaindropOverlayStreakDensity(streakSource),
     sparkleGain: clampRaindropOverlaySparkleGain(sparkleSource),
+    rippleScale: rippleScaleSource,
+    dropSpeed: dropSpeedSource,
+    viscosity: viscositySource,
   };
 }
 
@@ -335,11 +426,17 @@ export function createWeatherManager({
     baseWindSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
     baseStreakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
     baseSparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
+    baseRippleScale: null,
+    baseDropSpeed: null,
+    baseViscosity: null,
     manualEnabled: null,
     manualIntensity: null,
     manualWindSpeed: null,
     manualStreakDensity: null,
     manualSparkleGain: null,
+    manualRippleScale: null,
+    manualDropSpeed: null,
+    manualViscosity: null,
   };
 
   const resolveOverlayTargets = () => {
@@ -373,6 +470,12 @@ export function createWeatherManager({
         clampRaindropOverlaySparkleGain,
         DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
       ),
+      rippleScale:
+        raindropOverlayState.manualRippleScale ?? raindropOverlayState.baseRippleScale ?? null,
+      dropSpeed:
+        raindropOverlayState.manualDropSpeed ?? raindropOverlayState.baseDropSpeed ?? null,
+      viscosity:
+        raindropOverlayState.manualViscosity ?? raindropOverlayState.baseViscosity ?? null,
     };
   };
 
@@ -431,16 +534,25 @@ export function createWeatherManager({
         baseWindSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
         baseStreakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
         baseSparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
+        baseRippleScale: null,
+        baseDropSpeed: null,
+        baseViscosity: null,
         manualEnabled: null,
         manualIntensity: null,
         manualWindSpeed: null,
         manualStreakDensity: null,
         manualSparkleGain: null,
+        manualRippleScale: null,
+        manualDropSpeed: null,
+        manualViscosity: null,
         enabled: false,
         intensity: 0,
         windSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
         streakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
         sparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
+        rippleScale: null,
+        dropSpeed: null,
+        viscosity: null,
         visible: false,
       };
     }
@@ -465,6 +577,21 @@ export function createWeatherManager({
     }
     if (!('highlightWidth' in precipitationOverrides)) {
       precipitationOverrides.highlightWidth = null;
+    }
+    if (!('rippleScale' in precipitationOverrides)) {
+      precipitationOverrides.rippleScale = null;
+    }
+    if (!('dropSpeed' in precipitationOverrides)) {
+      precipitationOverrides.dropSpeed =
+        precipitationOverrides.dropDensity !== undefined
+          ? precipitationOverrides.dropDensity
+          : null;
+    }
+    if (!('viscosity' in precipitationOverrides)) {
+      precipitationOverrides.viscosity =
+        precipitationOverrides.timerBias !== undefined
+          ? precipitationOverrides.timerBias
+          : null;
     }
     if (!state.rotationHarness) {
       state.rotationHarness = {
@@ -498,11 +625,17 @@ export function createWeatherManager({
     overlay.baseWindSpeed = raindropOverlayState.baseWindSpeed;
     overlay.baseStreakDensity = raindropOverlayState.baseStreakDensity;
     overlay.baseSparkleGain = raindropOverlayState.baseSparkleGain;
+    overlay.baseRippleScale = raindropOverlayState.baseRippleScale;
+    overlay.baseDropSpeed = raindropOverlayState.baseDropSpeed;
+    overlay.baseViscosity = raindropOverlayState.baseViscosity;
     overlay.manualEnabled = manualEnabled;
     overlay.manualIntensity = raindropOverlayState.manualIntensity;
     overlay.manualWindSpeed = raindropOverlayState.manualWindSpeed;
     overlay.manualStreakDensity = raindropOverlayState.manualStreakDensity;
     overlay.manualSparkleGain = raindropOverlayState.manualSparkleGain;
+    overlay.manualRippleScale = raindropOverlayState.manualRippleScale;
+    overlay.manualDropSpeed = raindropOverlayState.manualDropSpeed;
+    overlay.manualViscosity = raindropOverlayState.manualViscosity;
     const targets = resolveOverlayTargets();
     overlay.enabled = Boolean((manualEnabled ?? baseActive) && targets.intensity > 0);
     overlay.intensity = raindropOverlay?.getIntensity?.() ?? targets.intensity;
@@ -511,6 +644,9 @@ export function createWeatherManager({
       raindropOverlay?.getStreakDensity?.() ?? targets.streakDensity;
     overlay.sparkleGain =
       raindropOverlay?.getSparkleGain?.() ?? targets.sparkleGain;
+    overlay.rippleScale = targets.rippleScale;
+    overlay.dropSpeed = targets.dropSpeed;
+    overlay.viscosity = targets.viscosity;
     overlay.visible = Boolean(raindropOverlay);
   };
 
@@ -532,11 +668,23 @@ export function createWeatherManager({
       }
       return undefined;
     };
+    const pickValue = (primaryKey, fallbackKey) => {
+      if (primaryKey && overrides[primaryKey] !== undefined) {
+        return normalise(overrides[primaryKey]);
+      }
+      if (fallbackKey && overrides[fallbackKey] !== undefined) {
+        return normalise(overrides[fallbackKey]);
+      }
+      return undefined;
+    };
     return {
-      intensity: normalise(overrides.intensity),
-      windTilt: normalise(overrides.windTilt),
-      streakNoise: normalise(overrides.streakNoise),
-      highlightWidth: normalise(overrides.highlightWidth),
+      intensity: pickValue('intensity'),
+      windTilt: pickValue('windTilt'),
+      streakNoise: pickValue('streakNoise'),
+      highlightWidth: pickValue('highlightWidth'),
+      rippleScale: pickValue('rippleScale'),
+      dropSpeed: pickValue('dropSpeed', 'dropDensity'),
+      viscosity: pickValue('viscosity', 'timerBias'),
     };
   };
 
@@ -611,6 +759,9 @@ export function createWeatherManager({
     windSpeed,
     streakDensity,
     sparkleGain,
+    rippleScale,
+    dropSpeed,
+    viscosity,
   }) => {
     const nextActive = Boolean(active);
     const nextIntensity = Number.isFinite(intensity)
@@ -625,12 +776,27 @@ export function createWeatherManager({
     const nextSparkleGain = Number.isFinite(sparkleGain)
       ? clampRaindropOverlaySparkleGain(sparkleGain)
       : DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN;
+    const resolveOptionalNumber = (value, currentValue) => {
+      if (value === undefined) {
+        return currentValue;
+      }
+      if (value === null) {
+        return null;
+      }
+      return Number.isFinite(value) ? Number(value) : currentValue ?? null;
+    };
+    const nextRippleScale = resolveOptionalNumber(rippleScale, raindropOverlayState.baseRippleScale);
+    const nextDropSpeed = resolveOptionalNumber(dropSpeed, raindropOverlayState.baseDropSpeed);
+    const nextViscosity = resolveOptionalNumber(viscosity, raindropOverlayState.baseViscosity);
     if (
       raindropOverlayState.baseActive === nextActive &&
       raindropOverlayState.baseIntensity === nextIntensity &&
       raindropOverlayState.baseWindSpeed === nextWindSpeed &&
       raindropOverlayState.baseStreakDensity === nextStreakDensity &&
-      raindropOverlayState.baseSparkleGain === nextSparkleGain
+      raindropOverlayState.baseSparkleGain === nextSparkleGain &&
+      raindropOverlayState.baseRippleScale === nextRippleScale &&
+      raindropOverlayState.baseDropSpeed === nextDropSpeed &&
+      raindropOverlayState.baseViscosity === nextViscosity
     ) {
       return;
     }
@@ -639,6 +805,9 @@ export function createWeatherManager({
     raindropOverlayState.baseWindSpeed = nextWindSpeed;
     raindropOverlayState.baseStreakDensity = nextStreakDensity;
     raindropOverlayState.baseSparkleGain = nextSparkleGain;
+    raindropOverlayState.baseRippleScale = nextRippleScale;
+    raindropOverlayState.baseDropSpeed = nextDropSpeed;
+    raindropOverlayState.baseViscosity = nextViscosity;
     syncRaindropOverlay();
   };
 
@@ -730,16 +899,25 @@ export function createWeatherManager({
       windSpeed,
       streakDensity,
       sparkleGain,
+      rippleScale: targets.rippleScale,
+      dropSpeed: targets.dropSpeed,
+      viscosity: targets.viscosity,
       baseActive,
       baseIntensity: raindropOverlayState.baseIntensity,
       baseWindSpeed: raindropOverlayState.baseWindSpeed,
       baseStreakDensity: raindropOverlayState.baseStreakDensity,
       baseSparkleGain: raindropOverlayState.baseSparkleGain,
+      baseRippleScale: raindropOverlayState.baseRippleScale,
+      baseDropSpeed: raindropOverlayState.baseDropSpeed,
+      baseViscosity: raindropOverlayState.baseViscosity,
       manualEnabled,
       manualIntensity: raindropOverlayState.manualIntensity,
       manualWindSpeed: raindropOverlayState.manualWindSpeed,
       manualStreakDensity: raindropOverlayState.manualStreakDensity,
       manualSparkleGain: raindropOverlayState.manualSparkleGain,
+      manualRippleScale: raindropOverlayState.manualRippleScale,
+      manualDropSpeed: raindropOverlayState.manualDropSpeed,
+      manualViscosity: raindropOverlayState.manualViscosity,
     };
   };
 
@@ -1232,23 +1410,36 @@ export function createWeatherManager({
             radius: config.radius,
             heightOffset: config.anchorHeight,
           })
-        : createWeatherRainEmitter({
-            intensity: appliedIntensity,
-            radius: config.radius,
-            heightOffset: config.anchorHeight,
-            windTilt:
-              manualOverrides && manualOverrides.windTilt !== undefined
-                ? manualOverrides.windTilt
-                : undefined,
-            streakNoise:
-              manualOverrides && manualOverrides.streakNoise !== undefined
-                ? manualOverrides.streakNoise
-                : undefined,
-            highlightWidth:
-              manualOverrides && manualOverrides.highlightWidth !== undefined
-                ? manualOverrides.highlightWidth
-                : undefined,
-          });
+        : (() => {
+            const rainOptions = {
+              intensity: appliedIntensity,
+              radius: config.radius,
+              heightOffset: config.anchorHeight,
+            };
+            if (manualOverrides) {
+              if (manualOverrides.windTilt !== undefined) {
+                rainOptions.windTilt = manualOverrides.windTilt;
+              }
+              if (manualOverrides.streakNoise !== undefined) {
+                rainOptions.streakNoise = manualOverrides.streakNoise;
+              }
+              if (manualOverrides.highlightWidth !== undefined) {
+                rainOptions.highlightWidth = manualOverrides.highlightWidth;
+              }
+              if (manualOverrides.rippleScale !== undefined) {
+                rainOptions.rippleScale = manualOverrides.rippleScale;
+              }
+              if (manualOverrides.dropSpeed !== undefined) {
+                rainOptions.dropSpeed = manualOverrides.dropSpeed;
+                rainOptions.dropDensity = manualOverrides.dropSpeed;
+              }
+              if (manualOverrides.viscosity !== undefined) {
+                rainOptions.viscosity = manualOverrides.viscosity;
+                rainOptions.timerBias = manualOverrides.viscosity;
+              }
+            }
+            return createWeatherRainEmitter(rainOptions);
+          })();
     const handle = particleSystem.emit(emitter);
     if (!handle) {
       const now = Number.isFinite(context?.elapsedTime)
@@ -1413,20 +1604,22 @@ export function createWeatherManager({
         attachment.validationRetryAfter = null;
         attachment.validationPendingSince = null;
         attachment.appliedIntensity = appliedIntensity;
-        attachment.manualOverrides = manualOverrides;
+        attachment.manualOverrides = normaliseManualPrecipitationOverridesSnapshot(
+          manualOverrides,
+        );
         if (typeof emitter.getWeatherRainShaderBaseUniforms === 'function') {
-          attachment.baseRainUniforms = emitter.getWeatherRainShaderBaseUniforms();
+          attachment.baseRainUniforms = normaliseRainUniformSnapshot(
+            emitter.getWeatherRainShaderBaseUniforms(),
+          );
         }
         if (typeof emitter.getWeatherRainShaderUniforms === 'function') {
-          const uniforms = emitter.getWeatherRainShaderUniforms();
+          const uniforms = normaliseRainUniformSnapshot(
+            emitter.getWeatherRainShaderUniforms(),
+          );
           if (!attachment.baseRainUniforms) {
-            attachment.baseRainUniforms = { ...uniforms };
+            attachment.baseRainUniforms = uniforms ? { ...uniforms } : null;
           }
-          attachment.lastAppliedRainOverrides = {
-            windTilt: uniforms?.windTilt,
-            streakNoise: uniforms?.streakNoise,
-            highlightWidth: uniforms?.highlightWidth,
-          };
+          attachment.lastAppliedRainOverrides = uniforms;
         }
       }
       activeParticleEffects.push(attachment);
@@ -1455,56 +1648,62 @@ export function createWeatherManager({
       }
       const last = attachment.lastAppliedRainOverrides || {};
       const updates = {};
+      const snapshotUpdates = {};
       let changed = false;
-      if (overrides.windTilt !== undefined) {
-        const overrideValue = overrides.windTilt;
+      const applyOverride = (overrideValue, snapshotKey, uniformKey, extraUniformKeys = []) => {
         const target = Number.isFinite(overrideValue)
           ? overrideValue
           : overrideValue === null
           ? null
           : undefined;
-        if (target !== undefined && target !== last.windTilt) {
-          updates.windTilt = target;
-          changed = true;
+        if (target === undefined || last[snapshotKey] === target) {
+          return;
         }
+        updates[uniformKey] = target;
+        extraUniformKeys.forEach((key) => {
+          updates[key] = target;
+        });
+        snapshotUpdates[snapshotKey] = target;
+        changed = true;
+      };
+      if (overrides.windTilt !== undefined) {
+        applyOverride(overrides.windTilt, 'windTilt', 'windTilt');
       }
       if (overrides.streakNoise !== undefined) {
-        const overrideValue = overrides.streakNoise;
-        const target = Number.isFinite(overrideValue)
-          ? overrideValue
-          : overrideValue === null
-          ? null
-          : undefined;
-        if (target !== undefined && target !== last.streakNoise) {
-          updates.streakNoise = target;
-          changed = true;
-        }
+        applyOverride(overrides.streakNoise, 'streakNoise', 'streakNoise');
       }
       if (overrides.highlightWidth !== undefined) {
-        const overrideValue = overrides.highlightWidth;
-        const target = Number.isFinite(overrideValue)
-          ? overrideValue
-          : overrideValue === null
-          ? null
-          : undefined;
-        if (target !== undefined && target !== last.highlightWidth) {
-          updates.highlightWidth = target;
-          changed = true;
-        }
+        applyOverride(overrides.highlightWidth, 'highlightWidth', 'highlightWidth');
       }
-      attachment.manualOverrides = {
-        intensity: overrides.intensity,
-        windTilt: overrides.windTilt,
-        streakNoise: overrides.streakNoise,
-        highlightWidth: overrides.highlightWidth,
-      };
+      if (overrides.rippleScale !== undefined) {
+        applyOverride(overrides.rippleScale, 'rippleScale', 'rippleScale');
+      }
+      const dropSpeedOverride =
+        overrides.dropSpeed !== undefined
+          ? overrides.dropSpeed
+          : overrides.dropDensity !== undefined
+          ? overrides.dropDensity
+          : undefined;
+      if (dropSpeedOverride !== undefined) {
+        applyOverride(dropSpeedOverride, 'dropSpeed', 'dropSpeed', ['dropDensity']);
+      }
+      const viscosityOverride =
+        overrides.viscosity !== undefined
+          ? overrides.viscosity
+          : overrides.timerBias !== undefined
+          ? overrides.timerBias
+          : undefined;
+      if (viscosityOverride !== undefined) {
+        applyOverride(viscosityOverride, 'viscosity', 'viscosity', ['timerBias']);
+      }
+      attachment.manualOverrides = normaliseManualPrecipitationOverridesSnapshot(overrides);
       if (!changed) {
         return;
       }
       setter.call(attachment.emitter, updates);
       attachment.lastAppliedRainOverrides = {
         ...last,
-        ...updates,
+        ...snapshotUpdates,
       };
     });
   };
@@ -1572,6 +1771,9 @@ export function createWeatherManager({
       windSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
       streakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
       sparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
+      rippleScale: null,
+      dropSpeed: null,
+      viscosity: null,
     };
     if (precipitation) {
       spawnPrecipitationEffect(precipitation, context);
@@ -1583,6 +1785,9 @@ export function createWeatherManager({
           windSpeed: overlayResponse.windSpeed,
           streakDensity: overlayResponse.streakDensity,
           sparkleGain: overlayResponse.sparkleGain,
+          rippleScale: overlayResponse.rippleScale ?? null,
+          dropSpeed: overlayResponse.dropSpeed ?? null,
+          viscosity: overlayResponse.viscosity ?? null,
         };
       }
     }
@@ -1746,16 +1951,24 @@ export function createWeatherManager({
             appliedIntensity: Number.isFinite(attachment.appliedIntensity)
               ? attachment.appliedIntensity
               : null,
-            manualOverrides: attachment.manualOverrides ?? null,
+            manualOverrides: attachment.manualOverrides
+              ? { ...attachment.manualOverrides }
+              : null,
             shaderUniforms:
               typeof attachment.emitter?.getWeatherRainShaderUniforms === 'function'
-                ? attachment.emitter.getWeatherRainShaderUniforms()
+                ? normaliseRainUniformSnapshot(
+                    attachment.emitter.getWeatherRainShaderUniforms(),
+                  )
                 : null,
             shaderBase:
               typeof attachment.emitter?.getWeatherRainShaderBaseUniforms === 'function'
-                ? attachment.emitter.getWeatherRainShaderBaseUniforms()
+                ? normaliseRainUniformSnapshot(
+                    attachment.emitter.getWeatherRainShaderBaseUniforms(),
+                  )
                 : attachment.baseRainUniforms ?? null,
-            lastAppliedRainOverrides: attachment.lastAppliedRainOverrides ?? null,
+            lastAppliedRainOverrides: attachment.lastAppliedRainOverrides
+              ? { ...attachment.lastAppliedRainOverrides }
+              : null,
           };
         });
       weatherState.precipitationEmitters = precipitationSummaries;
