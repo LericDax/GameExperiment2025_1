@@ -102,6 +102,11 @@ Please continue appending follow-up findings or configuration changes here whene
 - The inline CSS block in `three-demo/index.html` documents the overlay’s variable contract (`--rain-intensity`, `--rain-wind`, `--rain-velocity`, `--rain-density`) and animation styling; extend this block alongside controller changes so new weather categories (e.g. sleet, ashfall) wire their own visual layers into the shared DOM host.【F:three-demo/index.html†L125-L210】
 - When extending the overlay to another precipitation type, register the effect inside `createWeatherOverlayController` (or a sibling module) and plumb the derived uniforms through `weather-manager`’s overlay resolver so metadata, console status, and CI tests continue to validate the DOM layer; update `weather-manager.test.js` with assertions for the new category to keep regressions visible.【F:src/ui/weather-overlay-controller.js†L1-L191】【F:src/world/weather/weather-manager.js†L2020-L2046】【F:src/world/__tests__/weather-manager.test.js†L318-L469】
 
+## 2026-02 Rain Overlay Range Expansion
+- Expanded the automatic raindrop overlay window to map precipitation into a 0.3–3.5 intensity range using a curved normalisation (rain effects saturate at a 1.8 precipitation intensity with an exponent of ~0.82) so drizzle remains visible while downpours now drive the DOM overlay near its ceiling.【F:src/world/weather/weather-manager.js†L401-L455】
+- Reworked the derived wind, streak-density, and sparkle gains to follow the same curve, topping out at 2.35/2.75/1.8 so the DOM variables (`--rain-wind`, `--rain-density`, `--rain-intensity`) stay in lock-step with the stronger overlay response.【F:src/world/weather/weather-manager.js†L420-L455】
+- Regression coverage now includes a dedicated downpour case that expects the DOM overlay to clamp at the new ceiling, ensuring future retuning updates this plan alongside the test helpers that compute the overlay response.【F:src/world/__tests__/weather-manager.test.js†L274-L347】
+
 ## Work Orders
 1. **Gameplay-driven rotation**
    - Sample the player’s biome each frame (reusing the `sampleBiomeAt` helper from `/weather status`) and resolve the preset rotation with `resolveBiomeWeatherRotation`, storing timing metadata per biome.【F:src/player/dev-commands.js†L1532-L1562】【F:src/world/weather/weather-manager.js†L76-L127】
