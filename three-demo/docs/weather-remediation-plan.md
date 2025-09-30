@@ -113,6 +113,13 @@ Please continue appending follow-up findings or configuration changes here whene
 - Updated cold and aurora biomes to favour the new weather IDs—snow is now the dominant condition in the Ice Spire Tundra and Frostbound Steppe, while aurora rotations are common across aurora-focused regions with only rare sightings in harsher tundra zones.【F:src/world/biomes/ice_spire_tundra.json†L63-L104】【F:src/world/biomes/tundra.json†L63-L106】【F:src/world/biomes/aurora_shard_expanse.json†L79-L124】【F:src/world/biomes/auroral_glass_reef.json†L60-L92】
 - Regression suite gains coverage for both the standalone snow preset and aurora combinations so CI confirms `spawnPrecipitationEffect` and `spawnAuroraEffects` keep emitting handles and updating the shared overlay metadata.【F:src/world/__tests__/weather-manager.test.js†L360-L480】
 
+## 2026-04 Polar Blizzard Whiteout
+- Added a `polar_blizzard` preset that pushes snow intensity near the overlay ceiling, introduces shear/downdraft metadata for the DOM overlay, and dramatically shortens update intervals so retries keep up with blizzard gusts.【F:src/world/weather/weather-manager.js†L120-L220】
+- Rebuilt the snow emitter scaling to remove the previous spawn clamps—intensity now drives spawn rate, particle budgets, and fall velocity so high-severity presets fill the screen with dense flake volumes.【F:src/rendering/particles/weather-snow.js†L1-L60】
+- Expanded the snow overlay resolver to honour high-intensity inputs, deriving wind, streak density, and viscosity without artificial clamps while still respecting the shader’s hard limits.【F:src/world/weather/weather-manager.js†L560-L640】【F:src/rendering/effects/raindrop-overlay.js†L1-L160】
+- Registered the blizzard across cold biomes with low weights and short durations so automated rotations surface rare whiteouts without overwhelming normal snow cadence.【F:src/world/biomes/ice_spire_tundra.json†L80-L108】【F:src/world/biomes/tundra.json†L80-L112】【F:src/world/biomes/aurora_shard_expanse.json†L96-L132】【F:src/world/biomes/auroral_glass_reef.json†L72-L104】
+- Regression suite now asserts that the blizzard preset spawns the high-budget snow emitter and clamps the overlay to its ceiling, guarding against future regressions in extreme weather handling.【F:src/world/__tests__/weather-manager.test.js†L1080-L1200】
+
 ## Work Orders
 1. **Gameplay-driven rotation**
    - Sample the player’s biome each frame (reusing the `sampleBiomeAt` helper from `/weather status`) and resolve the preset rotation with `resolveBiomeWeatherRotation`, storing timing metadata per biome.【F:src/player/dev-commands.js†L1532-L1562】【F:src/world/weather/weather-manager.js†L76-L127】

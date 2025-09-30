@@ -151,6 +151,38 @@ const DEFAULT_WEATHER_PRESETS = {
       },
     },
   },
+  polar_blizzard: {
+    id: 'polar_blizzard',
+    label: 'Polar Blizzard',
+    description:
+      'Cataclysmic katabatic gusts whip needle-sharp ice crystals into a blinding whiteout.',
+    intensity: 0.98,
+    category: 'snow',
+    moisture: 0.95,
+    temperature: 0.02,
+    effects: {
+      precipitation: {
+        type: 'snow',
+        intensity: 3.4,
+        radius: 16,
+        anchorHeight: 20,
+        updateInterval: 0.16,
+        raindropOverlay: {
+          intensity: 3.75,
+          windSpeed: 2.05,
+          streakDensity: 2.25,
+          sparkleGain: 1.62,
+          rippleScale: 0.94,
+          dropSpeed: 0.86,
+          viscosity: 0.62,
+          flakeDensity: 6.2,
+          puffDensity: 4.4,
+          shear: 1.6,
+          downdraft: 2.1,
+        },
+      },
+    },
+  },
 };
 
 const CATEGORY_DEFAULT_EFFECTS = {
@@ -442,9 +474,10 @@ function normalisePrecipitationEffect(weather, effect) {
       : effect.useBrightStreakShader === false
       ? false
       : undefined;
+  const maxIntensity = type === 'snow' ? 4 : 2.6;
   return {
     type,
-    intensity: clamp(baseIntensity, 0.15, 2.6),
+    intensity: clamp(baseIntensity, 0.15, maxIntensity),
     radius: Math.max(4, radius),
     anchorHeight,
     updateInterval: updateInterval ?? null,
@@ -583,18 +616,12 @@ function resolveSnowOverlayResponse(precipitation) {
     return defaults;
   }
   const overlayConfig = precipitation.raindropOverlay ?? {};
-  const baseIntensitySource = (() => {
-    const raw = Number.isFinite(precipitation.intensity)
-      ? Math.max(0, precipitation.intensity)
-      : 0;
-    const curved = Math.pow(Math.min(raw, 1.6), 0.78);
-    const scaled = RAIN_OVERLAY_INTENSITY_MIN + curved * 0.68;
-    return clamp(
-      scaled,
-      RAIN_OVERLAY_INTENSITY_MIN,
-      RAIN_OVERLAY_INTENSITY_MIN + (RAIN_OVERLAY_INTENSITY_MAX - RAIN_OVERLAY_INTENSITY_MIN) * 0.55,
-    );
-  })();
+  const rawIntensity = Number.isFinite(precipitation.intensity)
+    ? Math.max(0, precipitation.intensity)
+    : 0;
+  const baseIntensitySource = rawIntensity > 0
+    ? RAIN_OVERLAY_INTENSITY_MIN + Math.pow(rawIntensity, 0.78) * RAIN_OVERLAY_INTENSITY_SCALE
+    : 0;
   const intensitySource = Number.isFinite(overlayConfig.intensity)
     ? overlayConfig.intensity
     : baseIntensitySource;
@@ -602,35 +629,35 @@ function resolveSnowOverlayResponse(precipitation) {
   const windSource =
     overlayConfig.windSpeed !== undefined
       ? overlayConfig.windSpeed
-      : clampRaindropOverlayWindSpeed((precipitation.intensity ?? 0.4) * 0.12);
+      : (rawIntensity > 0 ? Math.pow(rawIntensity, 0.72) * 0.95 : 0);
   const streakSource =
     overlayConfig.streakDensity !== undefined
       ? overlayConfig.streakDensity
-      : clampRaindropOverlayStreakDensity(0.52 + Math.min(precipitation.intensity ?? 0.6, 1) * 0.08);
+      : 0.6 + Math.pow(rawIntensity, 0.8) * 0.95;
   const sparkleSource =
     overlayConfig.sparkleGain !== undefined
       ? overlayConfig.sparkleGain
-      : clampRaindropOverlaySparkleGain(0.7 + Math.min(precipitation.intensity ?? 0.6, 1.2) * 0.1);
+      : 0.78 + Math.pow(rawIntensity, 0.7) * 0.32;
   const rippleScaleSource =
     overlayConfig.rippleScale !== undefined && Number.isFinite(overlayConfig.rippleScale)
       ? overlayConfig.rippleScale
-      : 0.8;
+      : 0.86 + Math.min(rawIntensity, 3.5) * 0.04;
   const dropSpeedSource =
     overlayConfig.dropSpeed !== undefined && Number.isFinite(overlayConfig.dropSpeed)
       ? overlayConfig.dropSpeed
-      : 0.36;
+      : 0.36 + rawIntensity * 0.18;
   const viscositySource =
     overlayConfig.viscosity !== undefined && Number.isFinite(overlayConfig.viscosity)
       ? overlayConfig.viscosity
-      : 0.85;
+      : Math.max(0.42, 0.9 - rawIntensity * 0.08);
   const flakeSource =
     overlayConfig.flakeDensity !== undefined && Number.isFinite(overlayConfig.flakeDensity)
       ? overlayConfig.flakeDensity
-      : Math.max(0, 1.6 + (precipitation.intensity ?? 0.5) * 1.5);
+      : Math.max(0, 2 + rawIntensity * 2.4);
   const puffSource =
     overlayConfig.puffDensity !== undefined && Number.isFinite(overlayConfig.puffDensity)
       ? overlayConfig.puffDensity
-      : Math.max(0, 0.9 + (precipitation.intensity ?? 0.5) * 1.2);
+      : Math.max(0, 1.2 + rawIntensity * 1.85);
   return {
     active: intensity > 0,
     mode: 'snow',

@@ -62,6 +62,11 @@
         "duration": { "min": 200, "max": 360 }
       },
       {
+        "id": "polar_blizzard",
+        "weight": 0.1,
+        "duration": { "min": 80, "max": 170 }
+      },
+      {
         "id": "polar_aurora",
         "weight": 0.2,
         "duration": { "min": 220, "max": 400 }

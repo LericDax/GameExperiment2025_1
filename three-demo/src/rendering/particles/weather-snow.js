@@ -1,20 +1,19 @@
 import { createGpuBillboardEmitter } from './gpu-billboard-emitter.js';
 
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
 export function createWeatherSnowEmitter({
   intensity = 0.5,
   radius = 11,
   heightOffset = 12,
 } = {}) {
-  const density = clamp(intensity, 0.2, 1.8);
+  const clampedIntensity = Number.isFinite(intensity) ? Math.max(0.15, intensity) : 0.15;
   const spawnRadius = Math.max(6, radius);
+  const spawnRate = 160 * clampedIntensity;
+  const maxParticles = Math.ceil(240 * clampedIntensity);
+  const fallSpeed = -3.1 - clampedIntensity * 1.1;
   const emitter = createGpuBillboardEmitter({
-    spawnRate: 120 * density,
-    maxParticles: Math.ceil(200 * density),
-    lifetime: { min: 2.4, max: 3.6 },
+    spawnRate,
+    maxParticles,
+    lifetime: { min: 2.2, max: 3.9 },
     baseColor: '#f5fbff',
     colorRamp: [
       { time: 0, color: '#e3f3ff' },
@@ -27,21 +26,25 @@ export function createWeatherSnowEmitter({
       { time: 1, size: 0.3 },
     ],
     position: { x: 0, y: heightOffset, z: 0 },
-    positionJitter: { x: spawnRadius * 1.1, y: 0.8, z: spawnRadius * 1.1 },
-    velocity: { x: 0, y: -2.6 - density * 0.6, z: 0 },
-    velocityJitter: { x: 0.65, y: 0.95, z: 0.65 },
+    positionJitter: { x: spawnRadius * 1.1, y: 1.1, z: spawnRadius * 1.1 },
+    velocity: { x: 0, y: fallSpeed, z: 0 },
+    velocityJitter: { x: 0.95, y: 1.4, z: 0.95 },
     size: { min: 0.22, max: 0.56 },
-    gravity: { x: 0, y: -3.8, z: 0 },
-    drag: 1.25,
-    fadeIn: 0.15,
-    fadeOut: 0.35,
-    opacity: 0.78,
+    gravity: { x: 0, y: -4.2, z: 0 },
+    drag: 1.18,
+    fadeIn: 0.12,
+    fadeOut: 0.32,
+    opacity: 0.82,
     depthWrite: false,
     renderOrder: 5,
   });
   emitter.debugLabel = 'WeatherSnowEmitter';
   emitter.weatherAnchorOffset = { x: 0, y: heightOffset, z: 0 };
-  emitter.weatherUpdateInterval = 0.3;
-  emitter.weatherMinAnchorDistance = spawnRadius * 0.2;
+  emitter.weatherUpdateInterval = 0.22;
+  emitter.weatherMinAnchorDistance = spawnRadius * 0.18;
+  emitter.weatherSpawnRate = spawnRate;
+  emitter.weatherMaxParticles = maxParticles;
+  emitter.weatherFallSpeed = fallSpeed;
+  emitter.weatherIntensity = clampedIntensity;
   return emitter;
 }
