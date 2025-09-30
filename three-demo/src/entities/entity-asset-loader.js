@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { clone as cloneSkeleton, retargetClip } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 function ensureArray(value) {
   if (!value) {
@@ -70,11 +70,118 @@ function disposeMeshResources(object) {
   });
 }
 
+function findFirstSkinnedMesh(object) {
+  let skinned = null;
+  object.traverse((child) => {
+    if (!skinned && child.isSkinnedMesh && child.skeleton) {
+      skinned = child;
+    }
+  });
+  return skinned;
+}
+
+function normalizeVariantEntries(variantUrls) {
+  if (!variantUrls) {
+    return [];
+  }
+
+  const entries = [];
+  if (variantUrls instanceof Map) {
+    variantUrls.forEach((value, key) => {
+      const url = String(value ?? '');
+      if (url) {
+        entries.push({ name: String(key), url });
+      }
+    });
+  } else if (Array.isArray(variantUrls)) {
+    variantUrls.forEach((value, index) => {
+      const url = String(value ?? '');
+      if (url) {
+        entries.push({ name: String(index), url });
+      }
+    });
+  } else if (typeof variantUrls === 'object') {
+    Object.entries(variantUrls).forEach(([key, value]) => {
+      const url = String(value ?? '');
+      if (url) {
+        entries.push({ name: String(key), url });
+      }
+    });
+  } else {
+    const url = String(variantUrls ?? '');
+    if (url) {
+      entries.push({ name: 'default', url });
+    }
+  }
+
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+  return entries;
+}
+
+function normalizeAnimationMap(animationMap) {
+  const normalized = new Map();
+  if (!animationMap) {
+    return normalized;
+  }
+
+  const sourceEntries =
+    animationMap instanceof Map ? Array.from(animationMap.entries()) : Object.entries(animationMap);
+
+  sourceEntries.forEach(([variantName, mapping]) => {
+    if (!mapping) {
+      normalized.set(String(variantName), new Map());
+      return;
+    }
+
+    const renameMap = new Map();
+    if (mapping instanceof Map) {
+      mapping.forEach((targetName, sourceName) => {
+        renameMap.set(String(sourceName), String(targetName));
+      });
+    } else if (Array.isArray(mapping)) {
+      mapping.forEach((entry) => {
+        if (Array.isArray(entry) && entry.length >= 2) {
+          renameMap.set(String(entry[0]), String(entry[1]));
+        } else if (entry && typeof entry === 'object') {
+          if ('from' in entry && 'to' in entry) {
+            renameMap.set(String(entry.from), String(entry.to));
+          }
+        }
+      });
+    } else if (typeof mapping === 'object') {
+      Object.entries(mapping).forEach(([sourceName, targetName]) => {
+        renameMap.set(String(sourceName), String(targetName));
+      });
+    } else if (typeof mapping === 'string') {
+      renameMap.set('*', String(mapping));
+    }
+
+    normalized.set(String(variantName), renameMap);
+  });
+
+  return normalized;
+}
+
+function createVariantCacheKey(baseUrl, variantEntries, animationMap) {
+  const variantData = variantEntries.map(({ name, url }) => [name, url]);
+  const animationData = Array.from(animationMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([variantName, renameMap]) => {
+      const renameEntries = Array.from(renameMap.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([sourceName, targetName]) => [sourceName, targetName]);
+      return [variantName, renameEntries];
+    });
+
+  return JSON.stringify({ baseUrl, variants: variantData, animationMap: animationData });
+}
+
 export class EntityAssetLoader {
   constructor({ THREE: injectedTHREE = THREE } = {}) {
     this.THREE = injectedTHREE ?? THREE;
     this.loader = new GLTFLoader();
     this.cache = new Map();
+    this.variantCache = new Map();
   }
 
   async loadGLTF(url) {
@@ -117,16 +224,119 @@ export class EntityAssetLoader {
     };
   }
 
+  async createVariantInstance({ baseUrl, variantUrls, animationMap } = {}) {
+    const source = String(baseUrl ?? '');
+    if (!source) {
+      throw new Error('EntityAssetLoader.createVariantInstance requires a baseUrl.');
+    }
+
+    const baseGltf = await this.loadGLTF(source);
+    const variantEntries = normalizeVariantEntries(variantUrls);
+    const animationMapping = normalizeAnimationMap(animationMap);
+    const cacheKey = createVariantCacheKey(source, variantEntries, animationMapping);
+
+    let variantClips = null;
+    if (this.variantCache.has(cacheKey)) {
+      const entry = this.variantCache.get(cacheKey);
+      variantClips = entry.asset ?? (await entry.promise);
+    } else {
+      const entry = { urls: new Set([source]) };
+      variantEntries.forEach(({ url }) => {
+        entry.urls.add(url);
+      });
+      const promise = this._buildVariantClipCache({
+        baseScene: baseGltf.scene,
+        variantEntries,
+        animationMapping,
+      }).then((result) => {
+        entry.asset = result;
+        return result;
+      });
+      entry.promise = promise.catch((error) => {
+        this.variantCache.delete(cacheKey);
+        throw error;
+      });
+      this.variantCache.set(cacheKey, entry);
+      variantClips = await entry.promise;
+    }
+
+    const clonedScene = cloneSkeleton(baseGltf.scene);
+    cloneMeshResources(clonedScene);
+
+    const variants = {};
+    variantEntries.forEach(({ name }) => {
+      const clips = variantClips[name] ?? [];
+      variants[name] = clips.slice();
+    });
+
+    return {
+      scene: clonedScene,
+      animations: baseGltf.animations ?? [],
+      variants,
+      dispose: () => {
+        disposeMeshResources(clonedScene);
+      },
+    };
+  }
+
+  async _buildVariantClipCache({ baseScene, variantEntries, animationMapping }) {
+    if (!variantEntries.length) {
+      return {};
+    }
+
+    const results = {};
+    for (const { name, url } of variantEntries) {
+      const variantGltf = await this.loadGLTF(url);
+      const renameMap = animationMapping.get(name) ?? new Map();
+      const retargetedClips = [];
+
+      if (Array.isArray(variantGltf.animations) && variantGltf.animations.length > 0) {
+        const targetRig = cloneSkeleton(baseScene);
+        const sourceRig = cloneSkeleton(variantGltf.scene);
+        const target = findFirstSkinnedMesh(targetRig);
+        const source = findFirstSkinnedMesh(sourceRig);
+
+        if (target?.skeleton && source?.skeleton) {
+          variantGltf.animations.forEach((clip) => {
+            const clonedClip = clip.clone();
+            const remappedClip = retargetClip(target, source, clonedClip);
+            if (!remappedClip) {
+              return;
+            }
+            const directRename = renameMap.get(clonedClip.name) ?? renameMap.get(clip.name);
+            const wildcardRename = renameMap.get('*');
+            if (directRename) {
+              remappedClip.name = directRename;
+            } else if (wildcardRename) {
+              remappedClip.name = wildcardRename;
+            }
+            retargetedClips.push(remappedClip);
+          });
+        }
+      }
+
+      results[name] = retargetedClips;
+    }
+
+    return results;
+  }
+
   evict(url) {
     const source = String(url ?? '');
     if (!source || !this.cache.has(source)) {
       return;
     }
     this.cache.delete(source);
+    for (const [key, entry] of this.variantCache.entries()) {
+      if (entry.urls?.has(source)) {
+        this.variantCache.delete(key);
+      }
+    }
   }
 
   clear() {
     this.cache.clear();
+    this.variantCache.clear();
   }
 }
 
