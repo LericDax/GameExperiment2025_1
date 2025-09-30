@@ -188,6 +188,15 @@ export class CrownedGhostEntity extends BaseEntity {
       });
     }
 
+    const declaredVariants = Object.keys(MODEL_CONFIG.variantUrls ?? {});
+    declaredVariants.forEach((variantId) => {
+      if (!variantMap.has(variantId)) {
+        console.warn(
+          `CrownedGhostEntity: Missing animation variant "${variantId}" from loaded assets.`,
+        );
+      }
+    });
+
     return variantMap;
   }
 
@@ -217,6 +226,12 @@ export class CrownedGhostEntity extends BaseEntity {
     const desired = this.desiredAnimationVariant ?? DEFAULT_ANIMATION_VARIANT;
     const action = this.animationController.playVariant(desired);
     if (!action && desired !== DEFAULT_ANIMATION_VARIANT) {
+      const availableVariants = Array.from(this.variantClipMap.keys());
+      console.warn(
+        `CrownedGhostEntity: Failed to play animation variant "${desired}". Available variants: ${availableVariants.join(
+          ', ',
+        ) || 'none'}.`,
+      );
       if (this.variantClipMap.has(DEFAULT_ANIMATION_VARIANT)) {
         this.animationController.playVariant(DEFAULT_ANIMATION_VARIANT);
         this.desiredAnimationVariant = DEFAULT_ANIMATION_VARIANT;
