@@ -102,6 +102,14 @@ export function registerBuiltinEntities() {
           biomes: ['haunted', 'mistwood', 'luminous_cavern'],
           weather: ['clear', 'foggy', 'storm'],
         },
+        animations: {
+          default: 'idle',
+          variants: {
+            idle: 'Default hover idle loop from the base rig.',
+            runner: 'High-energy chase loop suitable for pursuit.',
+            walker: 'Leisurely patrol loop for ambient wandering.',
+          },
+        },
       },
     });
   }

@@ -25,6 +25,29 @@ export class EntityAnimationController {
     this.disposed = false;
   }
 
+  setVariantClips(variantClips) {
+    if (this.disposed) {
+      return;
+    }
+    try {
+      this.stop({ fadeDuration: 0 });
+    } catch (error) {
+      console.warn('Failed to stop active animation before updating variants.', error);
+    }
+    this.actions.forEach((action) => {
+      try {
+        action.stop?.();
+        action.reset?.();
+        action.enabled = false;
+      } catch (error) {
+        console.warn('Failed to reset animation action during variant update.', error);
+      }
+    });
+    this.actions.clear();
+    this.variantClips = this.#normalizeVariantClips(variantClips);
+    this.activeVariantId = null;
+  }
+
   #createMixer() {
     let mixer = null;
     if (this.manager?.registerMixerForEntity && this.entityId) {

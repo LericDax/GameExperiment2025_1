@@ -1,7 +1,25 @@
 import { BaseEntity } from './entity-base.js';
 import { getSharedEntityAssetLoader } from './entity-asset-loader.js';
+import { EntityAnimationController } from './entity-animation-controller.js';
 
-const MODEL_URL = new URL('../models/entity_ghost_guy_1_runner.glb', import.meta.url).href;
+const MODEL_CONFIG = {
+  baseUrl: new URL(
+    '../models/entity_ghost_guy_1/entity_ghost_guy_1_base.glb',
+    import.meta.url,
+  ).href,
+  variantUrls: {
+    runner: new URL(
+      '../models/entity_ghost_guy_1/entity_ghost_guy_1_runner.glb',
+      import.meta.url,
+    ).href,
+    walker: new URL(
+      '../models/entity_ghost_guy_1/entity_ghost_guy_1_walker.glb',
+      import.meta.url,
+    ).href,
+  },
+};
+
+const DEFAULT_ANIMATION_VARIANT = 'idle';
 const DESIRED_HEIGHT = 1.6;
 
 export class CrownedGhostEntity extends BaseEntity {
@@ -13,11 +31,14 @@ export class CrownedGhostEntity extends BaseEntity {
     this.visualRoot.name = 'CrownedGhost.VisualRoot';
     this.root.add(this.visualRoot);
 
-    this.mixer = null;
-    this.activeAction = null;
+    this.animationController = null;
+    this.variantClipMap = new Map();
     this.assetInstance = null;
     this.assetLoadPromise = null;
     this.isSpawned = false;
+    this.desiredAnimationVariant = this.normalizeAnimationVariantId(
+      params.options?.initialAnimation ?? params.initialAnimation ?? DEFAULT_ANIMATION_VARIANT,
+    );
 
     this.hoverPhase = Math.random() * Math.PI * 2;
     this.hoverSpeed = 1.15 + Math.random() * 0.35;
@@ -35,13 +56,14 @@ export class CrownedGhostEntity extends BaseEntity {
     this.forwardDirection = new this.THREE.Vector3(0, 0, 1);
 
     this.assetLoadPromise = this.assetLoader
-      .createInstance(MODEL_URL)
+      .createVariantInstance(MODEL_CONFIG)
       .then((instance) => {
         if (this.isDisposed) {
           instance.dispose?.();
           return null;
         }
         this.assetInstance = instance;
+        this.updateAnimationVariantsFromAsset();
         this.tryAttachAsset();
         return instance;
       })
@@ -51,8 +73,15 @@ export class CrownedGhostEntity extends BaseEntity {
       });
   }
 
-  onSpawn() {
+  onSpawn(spawnContext, options = {}) {
     this.isSpawned = true;
+    if (options?.initialAnimation) {
+      this.desiredAnimationVariant = this.normalizeAnimationVariantId(
+        options.initialAnimation,
+      );
+    }
+    this.ensureAnimationController();
+    this.applyDesiredAnimation();
     this.tryAttachAsset();
   }
 
@@ -67,7 +96,8 @@ export class CrownedGhostEntity extends BaseEntity {
 
     this.normalizeScene(scene);
     this.enableShadows(scene);
-    this.setupAnimation();
+    this.ensureAnimationController();
+    this.applyDesiredAnimation();
   }
 
   normalizeScene(scene) {
@@ -104,39 +134,136 @@ export class CrownedGhostEntity extends BaseEntity {
     });
   }
 
-  setupAnimation() {
-    if (!this.assetInstance || !this.manager) {
+  ensureAnimationController() {
+    if (this.animationController || !this.visualRoot || !this.isSpawned) {
       return;
     }
-    const animations = this.assetInstance.animations ?? [];
-    if (animations.length === 0) {
+    this.animationController = new EntityAnimationController({
+      THREE: this.THREE,
+      manager: this.manager ?? null,
+      entityId: this.id ?? null,
+      root: this.visualRoot,
+      variantClips: this.variantClipMap,
+    });
+  }
+
+  updateAnimationVariantsFromAsset() {
+    if (!this.assetInstance) {
       return;
     }
-    const runningClip =
-      animations.find((clip) =>
-        typeof clip?.name === 'string' && clip.name.toLowerCase().includes('run'),
-      ) ?? animations[0];
+    const nextMap = this.buildVariantClipMapFromInstance(this.assetInstance);
+    this.variantClipMap = nextMap;
+    if (this.animationController) {
+      this.animationController.setVariantClips(nextMap);
+    }
+    if (this.isSpawned) {
+      this.applyDesiredAnimation();
+    }
+  }
 
-    if (!runningClip) {
+  buildVariantClipMapFromInstance(instance) {
+    const variantMap = new Map();
+    if (!instance) {
+      return variantMap;
+    }
+
+    const baseAnimations = Array.isArray(instance.animations)
+      ? instance.animations.filter(Boolean)
+      : [];
+    const idleClip = this.selectClipByName(baseAnimations, ['idle', 'base', 'default']);
+    if (idleClip) {
+      variantMap.set(DEFAULT_ANIMATION_VARIANT, [idleClip]);
+    }
+
+    if (instance.variants && typeof instance.variants === 'object') {
+      Object.entries(instance.variants).forEach(([variantId, clips]) => {
+        if (!variantId) {
+          return;
+        }
+        const clipArray = Array.isArray(clips) ? clips.filter(Boolean) : [];
+        if (clipArray.length === 0) {
+          return;
+        }
+        variantMap.set(String(variantId), clipArray);
+      });
+    }
+
+    return variantMap;
+  }
+
+  selectClipByName(clips, preferredNames = []) {
+    if (!Array.isArray(clips) || clips.length === 0) {
+      return null;
+    }
+    const normalizedNames = preferredNames
+      .map((name) => (typeof name === 'string' ? name.toLowerCase() : null))
+      .filter(Boolean);
+    if (normalizedNames.length > 0) {
+      const matchingClip = clips.find((clip) => {
+        const clipName = typeof clip?.name === 'string' ? clip.name.toLowerCase() : '';
+        return normalizedNames.some((target) => clipName.includes(target));
+      });
+      if (matchingClip) {
+        return matchingClip;
+      }
+    }
+    return clips[0] ?? null;
+  }
+
+  applyDesiredAnimation() {
+    if (!this.animationController || this.variantClipMap.size === 0) {
       return;
     }
-
-    let mixer = null;
-    try {
-      mixer = this.manager.registerMixerForEntity?.(this.id, this.visualRoot);
-    } catch (error) {
-      console.warn('Failed to register mixer with manager; using local mixer.', error);
+    const desired = this.desiredAnimationVariant ?? DEFAULT_ANIMATION_VARIANT;
+    const action = this.animationController.playVariant(desired);
+    if (!action && desired !== DEFAULT_ANIMATION_VARIANT) {
+      if (this.variantClipMap.has(DEFAULT_ANIMATION_VARIANT)) {
+        this.animationController.playVariant(DEFAULT_ANIMATION_VARIANT);
+        this.desiredAnimationVariant = DEFAULT_ANIMATION_VARIANT;
+      }
     }
-    if (!mixer) {
-      mixer = new this.THREE.AnimationMixer(this.visualRoot);
-    }
+  }
 
-    this.mixer = mixer;
-    this.activeAction = mixer.clipAction(runningClip);
-    this.activeAction.setLoop(this.THREE.LoopRepeat, Infinity);
-    this.activeAction.clampWhenFinished = false;
-    this.activeAction.enable = true;
-    this.activeAction.play();
+  playAnimationVariant(variantId, options = {}) {
+    const normalized = this.normalizeAnimationVariantId(variantId);
+    this.desiredAnimationVariant = normalized;
+    this.ensureAnimationController();
+    if (!this.animationController) {
+      return null;
+    }
+    const action = this.animationController.playVariant(normalized, options);
+    if (!action && normalized !== DEFAULT_ANIMATION_VARIANT && options?.fallbackToDefault !== false) {
+      if (this.variantClipMap.has(DEFAULT_ANIMATION_VARIANT)) {
+        const fallback = this.animationController.playVariant(
+          DEFAULT_ANIMATION_VARIANT,
+          options,
+        );
+        if (fallback) {
+          this.desiredAnimationVariant = DEFAULT_ANIMATION_VARIANT;
+          return fallback;
+        }
+      }
+    }
+    return action;
+  }
+
+  setAnimationVariant(variantId, options = {}) {
+    return this.playAnimationVariant(variantId, options);
+  }
+
+  normalizeAnimationVariantId(variantId) {
+    if (typeof variantId !== 'string') {
+      return DEFAULT_ANIMATION_VARIANT;
+    }
+    const trimmed = variantId.trim();
+    return trimmed.length > 0 ? trimmed : DEFAULT_ANIMATION_VARIANT;
+  }
+
+  releaseVariantClips() {
+    if (!this.variantClipMap) {
+      return;
+    }
+    this.variantClipMap.clear();
   }
 
   update({ delta = 0, elapsedTime = 0 } = {}) {
@@ -168,24 +295,17 @@ export class CrownedGhostEntity extends BaseEntity {
     }
     this.isDisposed = true;
 
-    if (this.activeAction) {
+    if (this.animationController) {
       try {
-        this.activeAction.stop();
+        this.animationController.dispose();
       } catch (error) {
-        console.warn('Failed to stop Crowned Ghost animation action.', error);
+        console.warn('Failed to dispose Crowned Ghost animation controller.', error);
       }
     }
-
-    if (this.mixer) {
-      try {
-        this.mixer.stopAllAction?.();
-        this.mixer.uncacheRoot?.(this.visualRoot);
-      } catch (error) {
-        console.warn('Failed to dispose Crowned Ghost mixer.', error);
-      }
-    }
-    this.activeAction = null;
-    this.mixer = null;
+    this.animationController = null;
+    this.releaseVariantClips();
+    this.variantClipMap = new Map();
+    this.desiredAnimationVariant = DEFAULT_ANIMATION_VARIANT;
 
     if (this.visualRoot?.parent === this.root) {
       this.root.remove(this.visualRoot);
