@@ -93,6 +93,7 @@ Please continue appending follow-up findings or configuration changes here whene
 - Added `createWeatherRainBillboardEmitter` as the default rain streak path, keeping the bright-streak shader opt-in while exposing the new `WeatherRainEmitter/BillboardFallback` label for diagnostics and overlays.【F:src/rendering/particles/weather-rain.js†L1-L118】【F:src/world/weather/weather-manager.js†L1395-L1565】
 - Weather manager now records both the fallback and splash layers on `scene.userData.weather.precipitationLayers`, and regression tests confirm the metadata clears and repopulates as emitters stop, retry, and recover.【F:src/world/weather/weather-manager.js†L520-L611】【F:src/world/__tests__/weather-manager.test.js†L83-L210】
 - The end-to-end particle harness now looks for the fallback label with a 30-particle floor, restoring QA confidence when the bright shader is disabled.【F:src/world/__tests__/weather-manager.test.js†L720-L816】
+- Fallback billboards once again rely on normal blending (with the darker-core, bright-edge ramp) so daylight scenes regain streak contrast without overexposing terrain.【F:src/rendering/particles/weather-rain.js†L9-L52】
 
 ## Work Orders
 1. **Gameplay-driven rotation**
