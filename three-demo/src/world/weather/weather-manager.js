@@ -830,10 +830,12 @@ export function createWeatherManager({
     try {
       raindropOverlayController.setIntensity?.(0);
       raindropOverlayController.setDropletDensity?.(0);
+      raindropOverlayController.setVelocity?.(null);
     } catch (error) {
       console.warn('Failed to reset weather overlay controller state:', error);
     }
     if (raindropOverlayController.element) {
+      raindropOverlayController.element.setAttribute('aria-hidden', 'true');
       raindropOverlayController.element.hidden = true;
       raindropOverlayController.element.style.display = 'none';
     }
@@ -884,7 +886,9 @@ export function createWeatherManager({
       controller.setIntensity?.(targets.intensity);
       controller.setWindSway?.(targets.windSpeed);
       controller.setDropletDensity?.(targets.streakDensity);
+      controller.setVelocity?.(targets.dropSpeed ?? null);
       if (controller.element) {
+        controller.element.setAttribute('aria-hidden', 'false');
         controller.element.hidden = false;
         controller.element.style.display = '';
       }

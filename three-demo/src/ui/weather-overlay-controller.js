@@ -1,8 +1,9 @@
 const OVERLAY_ID = 'weather-overlay'
 const RAINDROP_CLASS = 'raindrop'
-const INTENSITY_VAR = '--weather-intensity'
-const WIND_SWAY_VAR = '--weather-wind-sway'
-const DENSITY_VAR = '--weather-droplet-density'
+const INTENSITY_VAR = '--rain-intensity'
+const WIND_SWAY_VAR = '--rain-wind'
+const DENSITY_VAR = '--rain-density'
+const VELOCITY_VAR = '--rain-velocity'
 
 function parseDensityPreference(root) {
   const source = root?.dataset?.weatherDropletCount ?? document.body?.dataset?.weatherDropletCount
@@ -62,7 +63,9 @@ export function createWeatherOverlayController({ root = document.body } = {}) {
     overlayElement.style.height = '100%'
     overlayElement.style.pointerEvents = 'none'
     overlayElement.style.overflow = 'hidden'
-    overlayElement.style.zIndex = '70'
+    overlayElement.style.zIndex = '80'
+    overlayElement.hidden = true
+    overlayElement.style.display = 'none'
   }
 
   const desiredCount = parseDensityPreference(host) ?? 24
@@ -125,6 +128,18 @@ export function createWeatherOverlayController({ root = document.body } = {}) {
     overlayElement.style.setProperty(DENSITY_VAR, `${resolved}`)
   }
 
+  const setVelocity = (value) => {
+    if (!overlayElement) {
+      return
+    }
+    const resolved = sanitiseCssValue(value)
+    if (resolved === null) {
+      overlayElement.style.removeProperty(VELOCITY_VAR)
+      return
+    }
+    overlayElement.style.setProperty(VELOCITY_VAR, `${resolved}`)
+  }
+
   const update = ({ delta } = {}) => {
     void delta
   }
@@ -136,6 +151,7 @@ export function createWeatherOverlayController({ root = document.body } = {}) {
     setIntensity(null)
     setWindSway(null)
     setDropletDensity(null)
+    setVelocity(null)
     raindrops.forEach((drop) => {
       if (drop.parentElement === overlayElement) {
         overlayElement.removeChild(drop)
@@ -152,6 +168,7 @@ export function createWeatherOverlayController({ root = document.body } = {}) {
     setIntensity,
     setWindSway,
     setDropletDensity,
+    setVelocity,
     update,
     dispose,
   }
