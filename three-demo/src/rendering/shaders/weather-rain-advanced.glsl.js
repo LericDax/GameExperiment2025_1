@@ -120,9 +120,13 @@ void main() {
   float rippleStrength = clamp(1.0 - rippleHeight * 4.0, 0.0, 1.0);
   float rippleHighlight = smoothstep(0.1, 0.85, rippleStrength);
 
-  float brightness = clamp(body * 0.9 + shimmer * 0.75 + rippleHighlight * 0.6, 0.0, 1.95);
-  vec3 color = vColor.rgb * (0.6 + brightness);
-  float alpha = vColor.a * clamp(body * 0.85 + shimmer * 0.45, 0.0, 1.0) * taper;
+  float brightness = clamp(
+    body * 0.95 + shimmer * 0.9 + rippleHighlight * 0.75,
+    0.0,
+    2.6
+  );
+  vec3 color = vColor.rgb * (0.85 + brightness * 1.1);
+  float alpha = vColor.a * clamp(body * 0.85 + shimmer * 0.55, 0.0, 1.35) * taper;
   alpha *= mix(0.85, 1.25, rippleHighlight);
 
   gl_FragColor = vec4(color, alpha);
