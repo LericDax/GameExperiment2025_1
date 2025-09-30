@@ -1374,11 +1374,7 @@ export function registerDeveloperCommands({
 
       let spawnedEntity = null;
       try {
-        if (manager.spawnEntity.length <= 1) {
-          spawnedEntity = await manager.spawnEntity(spawnPayload);
-        } else {
-          spawnedEntity = await manager.spawnEntity(targetType.id, spawnPayload);
-        }
+        spawnedEntity = await manager.spawnEntity(targetType.id, spawnPayload);
       } catch (error) {
         console.error('Failed to spawn entity via /spawn command:', error);
         commandConsole.log(
