@@ -12,6 +12,7 @@ import {
   createEntityAssetLoader,
   getSharedEntityAssetLoader,
 } from './entity-asset-loader.js';
+import { EntityAnimationController } from './entity-animation-controller.js';
 import { CrownedGhostEntity } from './crowned-ghost.js';
 
 export {
@@ -25,6 +26,7 @@ export {
   EntityAssetLoader,
   createEntityAssetLoader,
   getSharedEntityAssetLoader,
+  EntityAnimationController,
   CrownedGhostEntity,
 };
 
