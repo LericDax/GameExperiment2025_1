@@ -190,9 +190,29 @@
       }
 
       #weather-overlay .raindrop {
+        --raindrop-start: -120vh;
+        --raindrop-end: 120vh;
+        --raindrop-sway: 0px;
         position: absolute;
-        top: -120vh;
+        top: 0;
         left: var(--raindrop-left, 50%);
+        transform-origin: center;
+        animation-delay: var(--raindrop-delay, 0s);
+        animation-duration: calc(
+          var(--raindrop-duration, 1.4s) / max(var(--rain-velocity, 1), 0.2)
+        );
+        animation-timing-function: linear;
+        animation-iteration-count: infinite;
+        animation-fill-mode: both;
+        animation-play-state: paused;
+        will-change: transform, opacity;
+      }
+
+      #weather-overlay:not([hidden]) .raindrop {
+        animation-play-state: running;
+      }
+
+      #weather-overlay .raindrop--streak {
         width: 2px;
         height: calc(70vh * var(--raindrop-scale, 1));
         background: linear-gradient(
@@ -205,20 +225,9 @@
         opacity: calc(var(--rain-density-alpha) * 0.9);
         transform: translate3d(0, 0, 0);
         animation-name: rainStreakFall;
-        animation-duration: calc(
-          var(--raindrop-duration, 1.4s) / max(var(--rain-velocity, 1), 0.2)
-        );
-        animation-timing-function: linear;
-        animation-delay: var(--raindrop-delay, 0s);
-        animation-iteration-count: infinite;
-        animation-play-state: paused;
       }
 
-      #weather-overlay:not([hidden]) .raindrop {
-        animation-play-state: running;
-      }
-
-      #weather-overlay .raindrop::after {
+      #weather-overlay .raindrop--streak::after {
         content: "";
         position: absolute;
         inset: -120% -160% 40% -160%;
@@ -231,30 +240,207 @@
         filter: blur(10px);
       }
 
+      #weather-overlay .raindrop--droplet {
+        width: calc(14px * var(--raindrop-scale, 1));
+        height: calc(14px * var(--raindrop-scale, 1));
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(230, 240, 255, 0.7) 0%,
+          rgba(180, 210, 255, 0.38) 52%,
+          rgba(120, 165, 220, 0.06) 100%
+        );
+        box-shadow: 0 0 24px rgba(140, 190, 255, 0.28);
+        opacity: calc(var(--rain-density-alpha) * 0.68);
+        transform: translate3d(-50%, 0, 0) scale(var(--raindrop-scale, 1));
+        animation-name: rainDropletGlide;
+        mix-blend-mode: screen;
+      }
+
+      #weather-overlay .raindrop--droplet::after {
+        content: "";
+        position: absolute;
+        inset: 10% 18% 30% 18%;
+        background: radial-gradient(
+          circle at 35% 35%,
+          rgba(255, 255, 255, 0.55) 0%,
+          rgba(255, 255, 255, 0.05) 80%
+        );
+        opacity: calc(var(--rain-density-alpha) * 0.5);
+        filter: blur(3px);
+      }
+
+      #weather-overlay .raindrop--droplette {
+        width: calc(6px * var(--raindrop-scale, 1));
+        height: calc(6px * var(--raindrop-scale, 1));
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 255, 255, 0.85) 0%,
+          rgba(200, 225, 255, 0.4) 45%,
+          rgba(150, 190, 255, 0) 100%
+        );
+        box-shadow: 0 0 18px rgba(160, 210, 255, 0.32);
+        opacity: calc(var(--rain-density-alpha) * 0.55);
+        transform: translate3d(-50%, 0, 0) scale(var(--raindrop-scale, 1));
+        animation-name: rainDropletteSpark;
+        filter: blur(0.4px);
+        mix-blend-mode: screen;
+      }
+
+      #weather-overlay .raindrop--droplette::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          circle,
+          rgba(255, 255, 255, 0.65) 0%,
+          rgba(255, 255, 255, 0) 75%
+        );
+        opacity: calc(var(--rain-intensity-alpha) * 0.4);
+      }
+
       @keyframes rainStreakFall {
         0% {
           transform: translate3d(
-            calc(var(--rain-wind, 0) * -18px),
-            -120vh,
-            0
-          );
+              calc(
+                var(--rain-wind, 0) * -18px + var(--raindrop-sway, 0px) * -0.35
+              ),
+              var(--raindrop-start, -120vh),
+              0
+            )
+            scale(var(--raindrop-scale, 1));
           opacity: 0;
         }
 
         12% {
-          opacity: calc(0.4 + var(--rain-intensity-alpha) * 0.5);
+          opacity: calc(0.32 + var(--rain-intensity-alpha) * 0.5);
         }
 
         55% {
-          opacity: calc(0.8 + var(--rain-intensity-alpha) * 0.2);
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * 8px + var(--raindrop-sway, 0px) * 0.4
+              ),
+              calc(
+                var(--raindrop-start, -120vh) * 0.35 +
+                  var(--raindrop-end, 120vh) * 0.45
+              ),
+              0
+            )
+            scale(var(--raindrop-scale, 1));
+          opacity: calc(0.72 + var(--rain-intensity-alpha) * 0.2);
         }
 
         100% {
           transform: translate3d(
-            calc(var(--rain-wind, 0) * 22px),
-            120vh,
-            0
-          );
+              calc(
+                var(--rain-wind, 0) * 22px + var(--raindrop-sway, 0px)
+              ),
+              var(--raindrop-end, 120vh),
+              0
+            )
+            scale(var(--raindrop-scale, 1));
+          opacity: 0;
+        }
+      }
+
+      @keyframes rainDropletGlide {
+        0% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * -12px + var(--raindrop-sway, 0px) * -0.6
+              ),
+              var(--raindrop-start, -24vh),
+              0
+            )
+            scale(var(--raindrop-scale, 1));
+          opacity: 0;
+        }
+
+        25% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * -4px + var(--raindrop-sway, 0px) * -0.35
+              ),
+              calc(var(--raindrop-start, -24vh) * 0.5),
+              0
+            )
+            scale(var(--raindrop-scale, 1));
+          opacity: calc(0.35 + var(--rain-intensity-alpha) * 0.3);
+        }
+
+        60% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * 10px + var(--raindrop-sway, 0px) * 0.45
+              ),
+              calc(var(--raindrop-end, 80vh) * 0.55),
+              0
+            )
+            scale(var(--raindrop-scale, 1));
+          opacity: calc(0.6 + var(--rain-intensity-alpha) * 0.25);
+        }
+
+        100% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * 18px + var(--raindrop-sway, 0px)
+              ),
+              var(--raindrop-end, 80vh),
+              0
+            )
+            scale(var(--raindrop-scale, 1));
+          opacity: 0;
+        }
+      }
+
+      @keyframes rainDropletteSpark {
+        0% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * -8px + var(--raindrop-sway, 0px) * -0.5
+              ),
+              var(--raindrop-start, -36vh),
+              0
+            )
+            scale(var(--raindrop-scale, 1));
+          opacity: 0;
+        }
+
+        30% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * -2px + var(--raindrop-sway, 0px) * -0.15
+              ),
+              calc(var(--raindrop-start, -36vh) * 0.35),
+              0
+            )
+            scale(var(--raindrop-scale, 1));
+          opacity: calc(0.4 + var(--rain-intensity-alpha) * 0.25);
+        }
+
+        70% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * 12px + var(--raindrop-sway, 0px) * 0.35
+              ),
+              calc(var(--raindrop-end, 60vh) * 0.65),
+              0
+            )
+            scale(var(--raindrop-scale, 1));
+          opacity: calc(0.6 + var(--rain-intensity-alpha) * 0.25);
+        }
+
+        100% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * 20px + var(--raindrop-sway, 0px)
+              ),
+              var(--raindrop-end, 60vh),
+              0
+            )
+            scale(var(--raindrop-scale, 1));
           opacity: 0;
         }
       }

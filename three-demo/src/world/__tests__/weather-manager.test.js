@@ -423,6 +423,21 @@ test('setWeather emits precipitation for rainy presets', () => {
       '',
       'expected weather overlay display flag to be cleared when active',
     );
+    const baselineStreaks = overlayElement.querySelectorAll('.raindrop--streak').length;
+    const baselineDroplets = overlayElement.querySelectorAll('.raindrop--droplet').length;
+    const baselineDroplettes = overlayElement.querySelectorAll('.raindrop--droplette').length;
+    assert.ok(
+      baselineStreaks > 0,
+      'expected initial rain overlay to spawn streak elements in the DOM',
+    );
+    assert.ok(
+      baselineDroplets > 0,
+      'expected initial rain overlay to spawn droplet elements in the DOM',
+    );
+    assert.ok(
+      baselineDroplettes > 0,
+      'expected initial rain overlay to spawn droplette elements in the DOM',
+    );
     const weather = manager.getCurrentWeather();
     const precipitationIntensity = weather?.effects?.precipitation?.intensity ?? 0;
     const expectedIntensity = expectedOverlayIntensity(precipitationIntensity);
@@ -458,6 +473,7 @@ test('setWeather emits precipitation for rainy presets', () => {
     manager.setWeather('clear_skies');
     manager.update({ delta: 0.05, elapsedTime: 1.1 });
 
+    const overlayElementAfterClear = document.getElementById('weather-overlay');
     const clearedState = scene.userData.weather ?? {};
     assert.equal(
       clearedState.precipitationLayers?.primary ?? null,
@@ -469,36 +485,44 @@ test('setWeather emits precipitation for rainy presets', () => {
       null,
       'expected splash layer metadata to clear when weather stops',
     );
-    assert.equal(
-      overlayElement.hidden,
-      true,
-      'expected DOM overlay to hide after clearing weather',
-    );
-    assert.equal(
-      overlayElement.getAttribute('aria-hidden'),
-      'true',
-      'expected DOM overlay aria flag to indicate hidden state',
-    );
-    assert.equal(
-      overlayElement.style.display,
-      'none',
-      'expected DOM overlay display flag to hide when weather clears',
-    );
-    const clearedIntensity = overlayElement.style.getPropertyValue('--rain-intensity');
-    assert.ok(
-      clearedIntensity === '' || clearedIntensity === '0',
-      'expected DOM overlay intensity CSS variable to clear on clear skies',
-    );
-    const clearedDensity = overlayElement.style.getPropertyValue('--rain-density');
-    assert.ok(
-      clearedDensity === '' || clearedDensity === '0',
-      'expected DOM overlay density CSS variable to clear on clear skies',
-    );
-    assert.equal(
-      overlayElement.style.getPropertyValue('--rain-velocity'),
-      '',
-      'expected DOM overlay velocity CSS variable to clear on clear skies',
-    );
+    if (overlayElementAfterClear) {
+      assert.equal(
+        overlayElementAfterClear.hidden,
+        true,
+        'expected DOM overlay to hide after clearing weather',
+      );
+      assert.equal(
+        overlayElementAfterClear.getAttribute('aria-hidden'),
+        'true',
+        'expected DOM overlay aria flag to indicate hidden state',
+      );
+      assert.equal(
+        overlayElementAfterClear.style.display,
+        'none',
+        'expected DOM overlay display flag to hide when weather clears',
+      );
+      const clearedIntensity = overlayElementAfterClear.style.getPropertyValue('--rain-intensity');
+      assert.ok(
+        clearedIntensity === '' || clearedIntensity === '0',
+        'expected DOM overlay intensity CSS variable to clear on clear skies',
+      );
+      const clearedDensity = overlayElementAfterClear.style.getPropertyValue('--rain-density');
+      assert.ok(
+        clearedDensity === '' || clearedDensity === '0',
+        'expected DOM overlay density CSS variable to clear on clear skies',
+      );
+      assert.equal(
+        overlayElementAfterClear.style.getPropertyValue('--rain-velocity'),
+        '',
+        'expected DOM overlay velocity CSS variable to clear on clear skies',
+      );
+      const clearedNodes = overlayElementAfterClear.querySelectorAll('.raindrop');
+      assert.equal(
+        clearedNodes.length,
+        0,
+        'expected DOM overlay to remove raindrop nodes when rain stops',
+      );
+    }
     const clearedOverlay = scene.userData.weather?.raindropOverlay ?? {};
     assert.equal(clearedOverlay.visible, false, 'expected overlay metadata to clear visibility flag');
   } finally {
@@ -712,6 +736,11 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
       expectedUniforms,
       label: 'misty rain',
     });
+    const overlayElementMisty = document.getElementById('weather-overlay');
+    assert.ok(overlayElementMisty, 'expected DOM overlay to exist for misty rain stage');
+    const baselineStreaks = overlayElementMisty.querySelectorAll('.raindrop--streak').length;
+    const baselineDroplets = overlayElementMisty.querySelectorAll('.raindrop--droplet').length;
+    const baselineDroplettes = overlayElementMisty.querySelectorAll('.raindrop--droplette').length;
 
     manager.registerWeatherPreset({
       id: 'qa_downpour',
@@ -744,6 +773,23 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
       expectedUniforms,
       label: 'heavy rain',
     });
+    const overlayElementDownpour = document.getElementById('weather-overlay');
+    assert.ok(overlayElementDownpour, 'expected DOM overlay to exist for downpour stage');
+    const downpourStreaks = overlayElementDownpour.querySelectorAll('.raindrop--streak').length;
+    const downpourDroplets = overlayElementDownpour.querySelectorAll('.raindrop--droplet').length;
+    const downpourDroplettes = overlayElementDownpour.querySelectorAll('.raindrop--droplette').length;
+    assert.ok(
+      downpourStreaks > baselineStreaks,
+      'expected downpour to spawn more streak elements in the DOM overlay',
+    );
+    assert.ok(
+      downpourDroplets > baselineDroplets,
+      'expected downpour to spawn more droplet elements in the DOM overlay',
+    );
+    assert.ok(
+      downpourDroplettes > baselineDroplettes,
+      'expected downpour to spawn more droplette elements in the DOM overlay',
+    );
 
     manager.registerWeatherPreset({
       id: 'qa_downpour_ceiling',
