@@ -120,6 +120,11 @@ Please continue appending follow-up findings or configuration changes here whene
 - Registered the blizzard across cold biomes with low weights and short durations so automated rotations surface rare whiteouts without overwhelming normal snow cadence.【F:src/world/biomes/ice_spire_tundra.json†L80-L108】【F:src/world/biomes/tundra.json†L80-L112】【F:src/world/biomes/aurora_shard_expanse.json†L96-L132】【F:src/world/biomes/auroral_glass_reef.json†L72-L104】
 - Regression suite now asserts that the blizzard preset spawns the high-budget snow emitter and clamps the overlay to its ceiling, guarding against future regressions in extreme weather handling.【F:src/world/__tests__/weather-manager.test.js†L1080-L1200】
 
+## 2026-05 Aurora Ribbon Intensification
+- Rebuilt `createAuroraRibbonEmitter` with a brighter teal-magenta ramp, higher spawn budgets, and longer lifetimes so aurora curtains read as luminous bands that linger and billow across the horizon.【F:src/rendering/particles/aurora-effects.js†L1-L60】
+- Aurora presets now layer multiple ribbon bands with configurable spacing and metadata tracking; the weather manager records active counts, depth ranges, and ribbon config so diagnostics and docs can confirm the stronger look.【F:src/world/weather/weather-manager.js†L20-L190】【F:src/world/weather/weather-manager.js†L430-L560】【F:src/world/weather/weather-manager.js†L1410-L1490】【F:src/world/weather/weather-manager.js†L2220-L2340】
+- Regression coverage locks in the higher ribbon counts, intensity targets, and layered offsets for both aurora-only and aurora-snowfall presets, ensuring future tweaks update expectations alongside the visuals.【F:src/world/__tests__/weather-manager.test.js†L1100-L1250】
+
 ## Work Orders
 1. **Gameplay-driven rotation**
    - Sample the player’s biome each frame (reusing the `sampleBiomeAt` helper from `/weather status`) and resolve the preset rotation with `resolveBiomeWeatherRotation`, storing timing metadata per biome.【F:src/player/dev-commands.js†L1532-L1562】【F:src/world/weather/weather-manager.js†L76-L127】

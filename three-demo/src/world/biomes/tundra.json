@@ -58,7 +58,7 @@
       },
       {
         "id": "aurora_snowfall",
-        "weight": 0.55,
+        "weight": 0.8,
         "duration": { "min": 200, "max": 360 }
       },
       {
@@ -68,12 +68,12 @@
       },
       {
         "id": "polar_aurora",
-        "weight": 0.2,
+        "weight": 0.45,
         "duration": { "min": 220, "max": 400 }
       },
       {
         "id": "misty_rain",
-        "weight": 0.8,
+        "weight": 0.6,
         "duration": { "min": 140, "max": 260 }
       }
     ]

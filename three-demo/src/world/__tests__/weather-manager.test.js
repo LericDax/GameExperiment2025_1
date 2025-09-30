@@ -1116,15 +1116,45 @@ test('aurora presets spawn ribbon emitters', () => {
   manager.update({ delta: 0.1, elapsedTime: 1 });
 
   const ribbonCount = emitLabels.filter((label) => label === 'AuroraRibbonEmitter').length;
-  assert.equal(ribbonCount, 3, 'expected polar aurora preset to spawn three aurora ribbons');
+  assert.equal(ribbonCount, 10, 'expected polar aurora preset to spawn ten aurora ribbons');
   assert.equal(
     particleSystem.emitted.length,
-    3,
+    10,
     'expected aurora preset to emit one ribbon handle per spawn',
   );
 
   const weatherState = scene.userData.weather ?? {};
   assert.equal(weatherState.aurora, true, 'expected aurora metadata to mark active ribbons');
+  assert.equal(
+    weatherState.auroraRibbonConfig?.layers,
+    2,
+    'expected aurora ribbon config to record both layers for polar aurora',
+  );
+  assert.ok(
+    approxEqual(weatherState.auroraRibbonConfig?.count ?? 0, 5, 1e-4),
+    'expected aurora ribbon config to retain five-ribbon base count',
+  );
+  assert.ok(
+    approxEqual(weatherState.auroraRibbonConfig?.intensity ?? 0, 1.85, 1e-4),
+    'expected aurora ribbon config to expose intensified brightness',
+  );
+  assert.equal(
+    weatherState.auroraActiveCount,
+    10,
+    'expected aurora metadata to record all active ribbon handles',
+  );
+  assert.ok(
+    weatherState.auroraForwardOffsetRange &&
+      approxEqual(weatherState.auroraForwardOffsetRange.min ?? 0, 58, 1e-4) &&
+      approxEqual(weatherState.auroraForwardOffsetRange.max ?? 0, 80, 1e-4),
+    'expected aurora metadata to record layered forward offsets',
+  );
+  assert.ok(
+    weatherState.auroraAnchorHeightRange &&
+      approxEqual(weatherState.auroraAnchorHeightRange.min ?? 0, 34, 1e-4) &&
+      approxEqual(weatherState.auroraAnchorHeightRange.max ?? 0, 37.2, 1e-3),
+    'expected aurora metadata to track vertical staggering for layered ribbons',
+  );
   assert.equal(
     weatherState.precipitationLayers?.primary ?? null,
     null,
@@ -1150,15 +1180,45 @@ test('aurora snowfall combines snow emitters and aurora ribbons', () => {
     const snowCount = emitLabels.filter((label) => label === 'WeatherSnowEmitter').length;
     const auroraCount = emitLabels.filter((label) => label === 'AuroraRibbonEmitter').length;
     assert.equal(snowCount, 1, 'expected combined preset to spawn a snow emitter');
-    assert.equal(auroraCount, 2, 'expected combined preset to spawn two aurora ribbons');
+    assert.equal(auroraCount, 8, 'expected combined preset to spawn eight aurora ribbons');
     assert.equal(
       particleSystem.emitted.length,
-      3,
+      9,
       'expected combined preset to emit both snow and aurora handles',
     );
 
     const weatherState = scene.userData.weather ?? {};
     assert.equal(weatherState.aurora, true, 'expected combined preset to flag aurora activity');
+    assert.equal(
+      weatherState.auroraRibbonConfig?.layers,
+      2,
+      'expected combined preset to retain two-layer aurora config',
+    );
+    assert.ok(
+      approxEqual(weatherState.auroraRibbonConfig?.count ?? 0, 4, 1e-4),
+      'expected combined preset to report four-ribbon base count',
+    );
+    assert.ok(
+      approxEqual(weatherState.auroraRibbonConfig?.intensity ?? 0, 1.45, 1e-4),
+      'expected combined preset to expose intensified aurora brightness',
+    );
+    assert.equal(
+      weatherState.auroraActiveCount,
+      8,
+      'expected combined preset metadata to track active aurora handles',
+    );
+    assert.ok(
+      weatherState.auroraForwardOffsetRange &&
+        approxEqual(weatherState.auroraForwardOffsetRange.min ?? 0, 54, 1e-4) &&
+        approxEqual(weatherState.auroraForwardOffsetRange.max ?? 0, 74, 1e-4),
+      'expected combined preset to stagger aurora layers across the horizon',
+    );
+    assert.ok(
+      weatherState.auroraAnchorHeightRange &&
+        approxEqual(weatherState.auroraAnchorHeightRange.min ?? 0, 30, 1e-4) &&
+        approxEqual(weatherState.auroraAnchorHeightRange.max ?? 0, 32.6, 1e-3),
+      'expected combined preset to offset aurora ribbon heights for layering',
+    );
     assert.equal(
       weatherState.precipitationLayers?.primary?.label,
       'WeatherSnowEmitter',

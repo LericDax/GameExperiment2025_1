@@ -83,17 +83,17 @@
     "candidates": [
       {
         "id": "clear_skies",
-        "weight": 2,
+        "weight": 1.5,
         "duration": { "min": 260, "max": 520 }
       },
       {
         "id": "polar_aurora",
-        "weight": 6,
+        "weight": 9,
         "duration": { "min": 260, "max": 520 }
       },
       {
         "id": "aurora_snowfall",
-        "weight": 4,
+        "weight": 6,
         "duration": { "min": 220, "max": 460 }
       },
       {

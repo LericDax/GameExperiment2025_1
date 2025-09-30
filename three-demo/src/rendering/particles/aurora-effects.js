@@ -11,41 +11,43 @@ export function createAuroraRibbonEmitter({
   orientation = 0,
 } = {}) {
   const ribbonSpan = Math.max(1.2, span);
-  const energy = clamp(intensity, 0.35, 3.2);
-  const drift = 0.18 + energy * 0.12;
+  const energy = clamp(intensity, 0.45, 3.6);
+  const drift = 0.24 + energy * 0.14;
   const dirX = Math.cos(orientation);
   const dirZ = Math.sin(orientation);
 
   const emitter = createGpuBillboardEmitter({
-    spawnRate: 26 * energy,
-    maxParticles: Math.ceil(140 * energy),
-    lifetime: { min: 2.2, max: 4.6 },
-    baseColor: '#ffe4ff',
+    spawnRate: 42 * energy,
+    maxParticles: Math.ceil(220 * energy),
+    lifetime: { min: 3.4, max: 7.6 },
+    baseColor: '#f8ffff',
     colorRamp: [
-      { time: 0, color: '#6ffcff' },
-      { time: 0.35, color: '#ff96f6' },
-      { time: 0.7, color: '#ffe4ff' },
-      { time: 1, color: '#7fd4ff' },
+      { time: 0, color: '#82ffdf' },
+      { time: 0.23, color: '#5cecff' },
+      { time: 0.52, color: '#ffe8ff' },
+      { time: 0.78, color: '#ffd2ff' },
+      { time: 1, color: '#7dd6ff' },
     ],
     sizeOverLifetime: [
-      { time: 0, size: 1.05 * energy },
-      { time: 0.55, size: 1.8 * energy },
-      { time: 1, size: 0.45 * energy },
+      { time: 0, size: 1.35 * energy },
+      { time: 0.45, size: 2.45 * energy },
+      { time: 0.82, size: 2.1 * energy },
+      { time: 1, size: 0.95 * energy },
     ],
     position,
-    positionJitter: { x: ribbonSpan * 0.62, y: 0.55, z: ribbonSpan * 0.62 },
+    positionJitter: { x: ribbonSpan * 0.92, y: 0.85, z: ribbonSpan * 0.92 },
     velocity: {
       x: dirX * drift,
-      y: 0.38 + energy * 0.12,
+      y: 0.46 + energy * 0.14,
       z: dirZ * drift,
     },
-    velocityJitter: { x: 0.28, y: 0.24, z: 0.28 },
-    size: { min: 0.9 * energy, max: 1.9 * energy },
-    gravity: { x: 0, y: 0.12, z: 0 },
-    drag: 0.64,
-    fadeIn: 0.2,
-    fadeOut: 0.42,
-    opacity: 0.6,
+    velocityJitter: { x: 0.36, y: 0.32, z: 0.36 },
+    size: { min: 1.15 * energy, max: 2.6 * energy },
+    gravity: { x: 0, y: 0.08, z: 0 },
+    drag: 0.52,
+    fadeIn: 0.28,
+    fadeOut: 0.58,
+    opacity: 0.82,
     renderOrder: 6,
   });
 
