@@ -893,6 +893,160 @@ test('raindrop overlay intensity follows precipitation tuning', () => {
   }
 });
 
+test('snow presets spawn snow emitter and puff overlay', () => {
+  const { restore } = setupDomEnvironment();
+  const emitLabels = [];
+  const { manager, particleSystem, scene } = createManager({
+    useDomRaindropOverlay: true,
+    emitImplementation: (emitter) => {
+      emitLabels.push(emitter.debugLabel ?? 'unknown');
+      return { stop() {} };
+    },
+  });
+
+  try {
+    manager.setWeather('soft_snowfall');
+    manager.update({ delta: 0.1, elapsedTime: 1 });
+
+    const snowEmitters = emitLabels.filter((label) => label === 'WeatherSnowEmitter');
+    assert.equal(
+      snowEmitters.length,
+      1,
+      'expected snow preset to spawn a single snow emitter',
+    );
+    assert.equal(
+      particleSystem.emitted.length,
+      1,
+      'expected snow presets to only emit the primary precipitation layer',
+    );
+
+    const weatherState = scene.userData.weather ?? {};
+    assert.equal(
+      weatherState.precipitationLayers?.primary?.label,
+      'WeatherSnowEmitter',
+      'expected precipitation metadata to report the snow emitter label',
+    );
+
+    const overlayElement = document.getElementById('weather-overlay');
+    assert.ok(overlayElement, 'expected DOM weather overlay to be appended for snow presets');
+    assert.equal(overlayElement.hidden, false, 'expected weather overlay to be visible for snow');
+
+    const overlayMetadata = weatherState.raindropOverlay ?? {};
+    assert.ok(overlayMetadata.visible, 'expected snow overlay metadata to flag visibility');
+    assert.ok(
+      approxEqual(overlayMetadata.intensity ?? 0, 0.82, 1e-4),
+      'expected snow overlay intensity to follow preset puff tuning',
+    );
+    assert.ok(
+      approxEqual(overlayMetadata.windSpeed ?? 0, 0.12, 1e-4),
+      'expected snow overlay wind to remain gentle',
+    );
+    assert.ok(
+      approxEqual(overlayMetadata.streakDensity ?? 0, 0.54, 1e-4),
+      'expected snow overlay to favour rounded droplet density',
+    );
+    assert.ok(
+      approxEqual(overlayMetadata.sparkleGain ?? 0, 0.72, 1e-4),
+      'expected snow overlay sparkle gain to match preset config',
+    );
+    assert.ok(
+      approxEqual(overlayMetadata.baseDropSpeed ?? 0, 0.34, 1e-4),
+      'expected snow overlay metadata to capture puff drop speed',
+    );
+    assert.ok(
+      approxEqual(overlayMetadata.baseViscosity ?? 0, 0.88, 1e-4),
+      'expected snow overlay viscosity to match preset config',
+    );
+
+    const cssIntensity = Number.parseFloat(
+      overlayElement.style.getPropertyValue('--rain-intensity') || '0',
+    );
+    assert.ok(
+      approxEqual(cssIntensity, 0.82, 1e-4),
+      'expected DOM overlay intensity CSS variable to follow snow puff tuning',
+    );
+  } finally {
+    restore();
+  }
+});
+
+test('aurora presets spawn ribbon emitters', () => {
+  const emitLabels = [];
+  const { manager, particleSystem, scene } = createManager({
+    emitImplementation: (emitter) => {
+      emitLabels.push(emitter.debugLabel ?? 'unknown');
+      return { stop() {} };
+    },
+  });
+
+  manager.setWeather('polar_aurora');
+  manager.update({ delta: 0.1, elapsedTime: 1 });
+
+  const ribbonCount = emitLabels.filter((label) => label === 'AuroraRibbonEmitter').length;
+  assert.equal(ribbonCount, 3, 'expected polar aurora preset to spawn three aurora ribbons');
+  assert.equal(
+    particleSystem.emitted.length,
+    3,
+    'expected aurora preset to emit one ribbon handle per spawn',
+  );
+
+  const weatherState = scene.userData.weather ?? {};
+  assert.equal(weatherState.aurora, true, 'expected aurora metadata to mark active ribbons');
+  assert.equal(
+    weatherState.precipitationLayers?.primary ?? null,
+    null,
+    'expected aurora-only preset to avoid precipitation layers',
+  );
+});
+
+test('aurora snowfall combines snow emitters and aurora ribbons', () => {
+  const { restore } = setupDomEnvironment();
+  const emitLabels = [];
+  const { manager, particleSystem, scene } = createManager({
+    useDomRaindropOverlay: true,
+    emitImplementation: (emitter) => {
+      emitLabels.push(emitter.debugLabel ?? 'unknown');
+      return { stop() {} };
+    },
+  });
+
+  try {
+    manager.setWeather('aurora_snowfall');
+    manager.update({ delta: 0.1, elapsedTime: 1 });
+
+    const snowCount = emitLabels.filter((label) => label === 'WeatherSnowEmitter').length;
+    const auroraCount = emitLabels.filter((label) => label === 'AuroraRibbonEmitter').length;
+    assert.equal(snowCount, 1, 'expected combined preset to spawn a snow emitter');
+    assert.equal(auroraCount, 2, 'expected combined preset to spawn two aurora ribbons');
+    assert.equal(
+      particleSystem.emitted.length,
+      3,
+      'expected combined preset to emit both snow and aurora handles',
+    );
+
+    const weatherState = scene.userData.weather ?? {};
+    assert.equal(weatherState.aurora, true, 'expected combined preset to flag aurora activity');
+    assert.equal(
+      weatherState.precipitationLayers?.primary?.label,
+      'WeatherSnowEmitter',
+      'expected precipitation metadata to point to snow emitter for combined preset',
+    );
+
+    const overlayMetadata = weatherState.raindropOverlay ?? {};
+    assert.ok(overlayMetadata.visible, 'expected combined preset to keep puff overlay active');
+    assert.ok(
+      approxEqual(overlayMetadata.intensity ?? 0, 0.92, 1e-4),
+      'expected combined preset to use brighter puff overlay intensity',
+    );
+    assert.ok(
+      approxEqual(overlayMetadata.windSpeed ?? 0, 0.18, 1e-4),
+      'expected combined preset to apply documented wind drift',
+    );
+  } finally {
+    restore();
+  }
+});
+
 test('raindrop overlay manual uniform overrides clamp and persist', () => {
   const { restore } = setupDomEnvironment();
   const { manager, scene } = createManager({

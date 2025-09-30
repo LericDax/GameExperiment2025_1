@@ -107,6 +107,11 @@ Please continue appending follow-up findings or configuration changes here whene
 - Reworked the derived wind, streak-density, and sparkle gains to follow the same curve, topping out at 2.35/2.75/1.8 so the DOM variables (`--rain-wind`, `--rain-density`, `--rain-intensity`) stay in lock-step with the stronger overlay response.【F:src/world/weather/weather-manager.js†L420-L455】
 - Regression coverage now includes a dedicated downpour case that expects the DOM overlay to clamp at the new ceiling, ensuring future retuning updates this plan alongside the test helpers that compute the overlay response.【F:src/world/__tests__/weather-manager.test.js†L274-L347】
 
+## 2026-03 Polar Snow & Aurora Presets
+- Introduced dedicated `soft_snowfall`, `polar_aurora`, and `aurora_snowfall` presets so QA can spawn snowflakes and aurora ribbons without tweaking ad-hoc configs. Snow presets now reuse the DOM raindrop overlay with puff-centric tuning (low wind, rounded streak density, and custom drop-speed metadata) to guarantee visibility in frozen biomes.【F:src/world/weather/weather-manager.js†L20-L150】【F:src/world/weather/weather-manager.js†L395-L470】【F:src/world/weather/weather-manager.js†L2060-L2085】
+- Updated cold and aurora biomes to favour the new weather IDs—snow is now the dominant condition in the Ice Spire Tundra and Frostbound Steppe, while aurora rotations are common across aurora-focused regions with only rare sightings in harsher tundra zones.【F:src/world/biomes/ice_spire_tundra.json†L63-L104】【F:src/world/biomes/tundra.json†L63-L106】【F:src/world/biomes/aurora_shard_expanse.json†L79-L124】【F:src/world/biomes/auroral_glass_reef.json†L60-L92】
+- Regression suite gains coverage for both the standalone snow preset and aurora combinations so CI confirms `spawnPrecipitationEffect` and `spawnAuroraEffects` keep emitting handles and updating the shared overlay metadata.【F:src/world/__tests__/weather-manager.test.js†L360-L480】
+
 ## Work Orders
 1. **Gameplay-driven rotation**
    - Sample the player’s biome each frame (reusing the `sampleBiomeAt` helper from `/weather status`) and resolve the preset rotation with `resolveBiomeWeatherRotation`, storing timing metadata per biome.【F:src/player/dev-commands.js†L1532-L1562】【F:src/world/weather/weather-manager.js†L76-L127】

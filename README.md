@@ -72,6 +72,10 @@ Commands are grouped by the kind of developer workflow they support:
 - **ASCII tooling** – `/asciimap` renders a top-down ASCII slice, `/asciioptions` saves default radii/offsets/watch cadence, and `/asciiwatch` keeps the map refreshing on demand. 【F:three-demo/src/player/dev-commands.js†L919-L1039】
 - **VFX inspection** – `/vfx overlay [on|off|toggle]` adds a particle debugging overlay, while `/vfx list` dumps live emitter and fluid surface stats to the console. 【F:three-demo/src/player/dev-commands.js†L780-L823】
 
+### Weather presets
+
+Cold biomes now ship with bespoke snow and aurora presets that can be inspected directly from the console. Use `/weather soft_snowfall` to summon calm crystalline flakes with the new puff-based screen overlay, `/weather polar_aurora` to spawn high-altitude ribbon curtains, or `/weather aurora_snowfall` to blend both effects. Once you are satisfied with the manual checks, run `/weather on` to resume automated rotation so the manager can schedule the new presets naturally. 【F:three-demo/src/world/weather/weather-manager.js†L20-L150】【F:three-demo/src/player/dev-commands.js†L1508-L1714】
+
 ## Performance Instrumentation
 
 When the sandbox is running in the Vite dev server, the browser exposes a debug namespace at `window.__VOXEL_DEBUG__`. You can launch an automated "perf flight" from the DevTools console to gather renderer and world metrics while the avatar flies forward for a fixed window. 【F:three-demo/src/main.js†L250-L318】
