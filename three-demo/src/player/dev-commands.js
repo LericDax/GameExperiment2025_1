@@ -1318,6 +1318,13 @@ export function registerDeveloperCommands({
             : [];
           const aliasInfo = numericAliases.length > 0 ? ` (aliases: ${numericAliases.join(', ')})` : '';
           commandConsole.log(`  ${index + 1}. ${label}${aliasInfo}`);
+          const variantIds = collectAnimationVariantIds(type);
+          if (variantIds.length > 0) {
+            const summary = variantIds
+              .map((variantId, variantIndex) => `[${variantIndex + 1}] ${variantId}`)
+              .join(', ');
+            commandConsole.log(`      animations: ${summary}`);
+          }
         });
         commandConsole.log('Use /spawn entity <id|number> to create one of the entries above.');
         return;
