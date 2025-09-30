@@ -289,30 +289,77 @@ export class EntityAssetLoader {
       const variantGltf = await this.loadGLTF(url);
       const renameMap = animationMapping.get(name) ?? new Map();
       const retargetedClips = [];
+      const sourceClips = Array.isArray(variantGltf.animations)
+        ? variantGltf.animations.filter((clip) => !!clip)
+        : [];
+      let retargetFailureReason = null;
 
-      if (Array.isArray(variantGltf.animations) && variantGltf.animations.length > 0) {
+      if (sourceClips.length > 0) {
         const targetRig = cloneSkeleton(baseScene);
         const sourceRig = cloneSkeleton(variantGltf.scene);
         const target = findFirstSkinnedMesh(targetRig);
         const source = findFirstSkinnedMesh(sourceRig);
 
+        const applyRename = (clip, originalName) => {
+          const directRename = renameMap.get(originalName ?? clip.name) ?? renameMap.get(clip.name);
+          const wildcardRename = renameMap.get('*');
+          if (directRename) {
+            clip.name = directRename;
+          } else if (wildcardRename) {
+            clip.name = wildcardRename;
+          }
+          return clip;
+        };
+
         if (target?.skeleton && source?.skeleton) {
-          variantGltf.animations.forEach((clip) => {
+          sourceClips.forEach((clip) => {
+            const originalName = typeof clip?.name === 'string' ? clip.name : null;
             const clonedClip = clip.clone();
             const remappedClip = retargetClip(target, source, clonedClip);
             if (!remappedClip) {
               return;
             }
-            const directRename = renameMap.get(clonedClip.name) ?? renameMap.get(clip.name);
-            const wildcardRename = renameMap.get('*');
-            if (directRename) {
-              remappedClip.name = directRename;
-            } else if (wildcardRename) {
-              remappedClip.name = wildcardRename;
-            }
-            retargetedClips.push(remappedClip);
+            retargetedClips.push(applyRename(remappedClip, originalName));
           });
+          if (retargetedClips.length === 0) {
+            retargetFailureReason =
+              'Retargeting produced no animation tracks despite variant clips being present.';
+          }
+        } else {
+          retargetFailureReason =
+            'Unable to locate compatible skinned meshes on the base or variant model for retargeting.';
         }
+
+        if (retargetedClips.length === 0) {
+          const fallbackClips = sourceClips
+            .map((clip) => {
+              if (!clip?.clone) {
+                return null;
+              }
+              const clonedClip = clip.clone();
+              return applyRename(clonedClip, typeof clip.name === 'string' ? clip.name : null);
+            })
+            .filter(Boolean);
+
+          if (fallbackClips.length > 0) {
+            if (retargetFailureReason) {
+              console.warn(
+                `EntityAssetLoader: ${retargetFailureReason} Falling back to source clips for variant "${name}" from ${url}.`,
+              );
+            }
+            retargetedClips.push(...fallbackClips);
+          } else {
+            console.error(
+              `EntityAssetLoader: Unable to clone fallback clips for variant "${name}" from ${url}.`,
+            );
+          }
+        }
+      }
+
+      if (retargetedClips.length === 0 && sourceClips.length === 0) {
+        console.warn(
+          `EntityAssetLoader: Variant "${name}" at ${url} does not provide any animation clips.`,
+        );
       }
 
       results[name] = retargetedClips;
