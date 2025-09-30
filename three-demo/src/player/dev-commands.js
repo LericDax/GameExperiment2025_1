@@ -20,6 +20,7 @@ export function registerDeveloperCommands({
   registerDiagnosticOverlay,
   particleSystem = null,
   weatherManager = null,
+  entityManager = null,
 }) {
   if (!commandConsole) {
     throw new Error('registerDeveloperCommands requires a commandConsole instance.');
@@ -1171,6 +1172,46 @@ export function registerDeveloperCommands({
       commandConsole.log(
         `Position set to X=${position.x.toFixed(2)} Y=${position.y.toFixed(2)} Z=${position.z.toFixed(2)}.`,
       );
+    },
+  });
+
+  registerCommand({
+    name: 'entities',
+    description: 'Inspect registered entity types and active runtime entities.',
+    usage: '/entities [types]',
+    handler: ({ args }) => {
+      if (!entityManager) {
+        commandConsole.log('Entity manager is not available in this build.', 'warn');
+        return;
+      }
+      const mode = (args[0] ?? '').toLowerCase();
+      if (mode === 'types') {
+        const types = entityManager.listEntityTypes?.() ?? [];
+        if (types.length === 0) {
+          commandConsole.log('No entity types are currently registered.');
+          return;
+        }
+        commandConsole.log(`Registered entity types (${types.length}):`);
+        types.forEach((type) => {
+          const label = type.label && type.label !== type.id ? `${type.label} [${type.id}]` : type.id;
+          commandConsole.log(`- ${label}`);
+        });
+        return;
+      }
+      const count = entityManager.getEntityCount?.() ?? 0;
+      commandConsole.log(`Active entities: ${count}`);
+      if (count > 0 && typeof entityManager.getEntities === 'function') {
+        const entries = entityManager.getEntities().slice(0, 12);
+        entries.forEach((entry, index) => {
+          const id = entry?.id ?? `entity-${index + 1}`;
+          const typeId = entry?.typeId ?? 'unknown';
+          commandConsole.log(`- ${id} (${typeId})`);
+        });
+        if (count > entries.length) {
+          commandConsole.log(`  (+${count - entries.length} more…)`);
+        }
+      }
+      commandConsole.log('Use /entities types to list registered entity definitions.');
     },
   });
 

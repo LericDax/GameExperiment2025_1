@@ -6,6 +6,7 @@ import {
   initializeWorldGeneration,
   terrainHeight,
   getWorldOptions,
+  sampleBiomeAt,
 } from './world/generation.js'
 import { createChunkManager } from './world/chunk-manager.js'
 import { createPlayerControls } from './player/controls.js'
@@ -25,6 +26,7 @@ import { createWaterSurfaceMistEmitter } from './rendering/particles/water-effec
 import { createAuroraRibbonEmitter } from './rendering/particles/aurora-effects.js'
 import { createLumenBloomMotesEmitter } from './rendering/particles/lumen-bloom-effects.js'
 import { createWeatherManager } from './world/weather/weather-manager.js'
+import { createEntityManager } from './entities/index.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -205,6 +207,7 @@ let chunkManager
 let particleSystem
 let playerControls
 let weatherManager
+let entityManager
 let initializationError = null
 
 try {
@@ -329,6 +332,17 @@ try {
   chunkManager.update(playerControls.getPosition(), { camera })
   updateHud(playerControls.getState())
 
+  entityManager = createEntityManager({
+    THREE,
+    scene,
+    camera,
+    chunkManager,
+    playerControls,
+    terrainHeight,
+    sampleBiomeAt,
+    weatherManager,
+  })
+
   if (import.meta.env.DEV) {
     const debugNamespace = (window.__VOXEL_DEBUG__ = window.__VOXEL_DEBUG__ || {})
     debugNamespace.chunkSnapshot = () => chunkManager.debugSnapshot?.()
@@ -340,6 +354,7 @@ try {
     }
     debugNamespace.registerDiagnosticOverlay = registerDiagnosticOverlay
     debugNamespace.weather = weatherManager
+    debugNamespace.entities = entityManager
 
     let perfFlightModulePromise = null
     const resolvePerfFlightModule = () => {
@@ -401,6 +416,7 @@ try {
     registerDiagnosticOverlay,
     particleSystem,
     weatherManager,
+    entityManager,
   })
 
   commandConsole.log(
@@ -445,6 +461,12 @@ if (!initializationError) {
       elapsedTime,
       playerControls,
     })
+    entityManager?.update({
+      delta,
+      elapsedTime,
+      playerControls,
+      camera,
+    })
 
     if (diagnosticOverlayCallbacks.size > 0) {
       const callbacks = Array.from(diagnosticOverlayCallbacks)
@@ -474,5 +496,6 @@ if (!initializationError) {
     musicSystem?.dispose()
     particleSystem?.dispose()
     weatherManager?.dispose?.()
+    entityManager?.dispose()
   })
 }
