@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { createGpuBillboardEmitter } from './gpu-billboard-emitter.js'
-import { weatherRainStreakFragmentShader } from '../shaders/weather-rain-streak.glsl.js'
+import { weatherRainAdvancedFragmentShader } from '../shaders/weather-rain-advanced.glsl.js'
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
@@ -13,6 +13,9 @@ export function createWeatherRainEmitter({
   windTilt = null,
   streakNoise = null,
   highlightWidth = null,
+  rippleScale = null,
+  dropDensity = null,
+  timerBias = null,
 } = {}) {
   const density = clamp(intensity, 0.2, 2.4)
   const normalized = clamp((density - 0.2) / (2.4 - 0.2), 0, 1)
@@ -20,6 +23,9 @@ export function createWeatherRainEmitter({
   const baseWindTilt = THREE.MathUtils.lerp(0.045, 0.28, normalized)
   const baseStreakNoise = THREE.MathUtils.lerp(0.38, 0.9, normalized)
   const baseHighlightWidth = THREE.MathUtils.lerp(0.22, 0.095, normalized)
+  const baseRippleScale = THREE.MathUtils.lerp(1.6, 0.95, normalized)
+  const baseDropDensity = THREE.MathUtils.lerp(0.6, 1.35, normalized)
+  const baseTimerBias = THREE.MathUtils.lerp(0.22, 0.46, normalized)
 
   const uniformState = {
     windTilt: Number.isFinite(windTilt) ? windTilt : baseWindTilt,
@@ -27,12 +33,22 @@ export function createWeatherRainEmitter({
     highlightWidth: Number.isFinite(highlightWidth)
       ? Math.max(0.02, highlightWidth)
       : baseHighlightWidth,
+    rippleScale: Number.isFinite(rippleScale)
+      ? Math.max(0.25, rippleScale)
+      : baseRippleScale,
+    dropDensity: Number.isFinite(dropDensity)
+      ? Math.max(0.1, dropDensity)
+      : baseDropDensity,
+    timerBias: Number.isFinite(timerBias) ? timerBias : baseTimerBias,
   }
 
   const baseUniforms = {
     windTilt: baseWindTilt,
     streakNoise: baseStreakNoise,
     highlightWidth: baseHighlightWidth,
+    rippleScale: baseRippleScale,
+    dropDensity: baseDropDensity,
+    timerBias: baseTimerBias,
   }
 
   let materialRef = null
@@ -49,6 +65,15 @@ export function createWeatherRainEmitter({
     }
     if (materialRef.uniforms.uHighlightWidth) {
       materialRef.uniforms.uHighlightWidth.value = uniformState.highlightWidth
+    }
+    if (materialRef.uniforms.uRippleScale) {
+      materialRef.uniforms.uRippleScale.value = uniformState.rippleScale
+    }
+    if (materialRef.uniforms.uDropDensity) {
+      materialRef.uniforms.uDropDensity.value = uniformState.dropDensity
+    }
+    if (materialRef.uniforms.uTimerBias) {
+      materialRef.uniforms.uTimerBias.value = uniformState.timerBias
     }
     materialRef.uniformsNeedUpdate = true
     materialRef.needsUpdate = true
@@ -74,6 +99,27 @@ export function createWeatherRainEmitter({
         uniformState.highlightWidth = baseUniforms.highlightWidth
       } else if (Number.isFinite(overrides.highlightWidth)) {
         uniformState.highlightWidth = Math.max(0.02, overrides.highlightWidth)
+      }
+    }
+    if (overrides.rippleScale !== undefined) {
+      if (overrides.rippleScale === null) {
+        uniformState.rippleScale = baseUniforms.rippleScale
+      } else if (Number.isFinite(overrides.rippleScale)) {
+        uniformState.rippleScale = Math.max(0.25, overrides.rippleScale)
+      }
+    }
+    if (overrides.dropDensity !== undefined) {
+      if (overrides.dropDensity === null) {
+        uniformState.dropDensity = baseUniforms.dropDensity
+      } else if (Number.isFinite(overrides.dropDensity)) {
+        uniformState.dropDensity = Math.max(0.1, overrides.dropDensity)
+      }
+    }
+    if (overrides.timerBias !== undefined) {
+      if (overrides.timerBias === null) {
+        uniformState.timerBias = baseUniforms.timerBias
+      } else if (Number.isFinite(overrides.timerBias)) {
+        uniformState.timerBias = overrides.timerBias
       }
     }
     applyUniforms()
@@ -114,10 +160,13 @@ export function createWeatherRainEmitter({
     renderOrder: 4,
     materialFactory: ({ defaultFactory }) => {
       const material = defaultFactory()
-      material.fragmentShader = weatherRainStreakFragmentShader
+      material.fragmentShader = weatherRainAdvancedFragmentShader
       material.uniforms.uWindTilt = { value: uniformState.windTilt }
       material.uniforms.uStreakNoise = { value: uniformState.streakNoise }
       material.uniforms.uHighlightWidth = { value: uniformState.highlightWidth }
+      material.uniforms.uRippleScale = { value: uniformState.rippleScale }
+      material.uniforms.uDropDensity = { value: uniformState.dropDensity }
+      material.uniforms.uTimerBias = { value: uniformState.timerBias }
       materialRef = material
       applyUniforms()
       return material
