@@ -1,5 +1,6 @@
 import { createAuroraRibbonEmitter } from '../../rendering/particles/aurora-effects.js';
 import { createWeatherRainEmitter } from '../../rendering/particles/weather-rain.js';
+import { createWeatherRainSplashEmitter } from '../../rendering/particles/weather-rain-splashes.js';
 import { createWeatherSnowEmitter } from '../../rendering/particles/weather-snow.js';
 import {
   clampRaindropOverlayIntensity,
@@ -1187,6 +1188,24 @@ export function createWeatherManager({
     syncEmitterState();
   };
 
+  const stopLinkedPrecipitationAttachments = (source) => {
+    if (!source?.precipitationGroup) {
+      return;
+    }
+    for (let i = activeParticleEffects.length - 1; i >= 0; i -= 1) {
+      const attachment = activeParticleEffects[i];
+      if (attachment === source) {
+        continue;
+      }
+      if (attachment.precipitationGroup !== source.precipitationGroup) {
+        continue;
+      }
+      stopAttachmentHandle(attachment);
+      activeParticleEffects.splice(i, 1);
+    }
+    syncEmitterState();
+  };
+
   const disposeWeatherEffects = () => {
     for (const attachment of activeParticleEffects) {
       stopAttachmentHandle(attachment);
@@ -1272,6 +1291,10 @@ export function createWeatherManager({
       }
       return;
     }
+    const resolvedAnchorHeight = Number.isFinite(config.anchorHeight)
+      ? config.anchorHeight
+      : 0;
+    const groupId = config.type === 'rain' ? Symbol('weather-precipitation-group') : null;
     let updateInterval = config.updateInterval;
     if (!Number.isFinite(updateInterval) && Number.isFinite(emitter.weatherUpdateInterval)) {
       updateInterval = emitter.weatherUpdateInterval;
@@ -1283,67 +1306,133 @@ export function createWeatherManager({
     ) {
       minAnchorDistance = emitter.weatherMinAnchorDistance;
     }
-    const attachment = {
+    const resolvedUpdateInterval = Number.isFinite(updateInterval)
+      ? Math.max(0.05, updateInterval)
+      : DEFAULT_PRECIPITATION_UPDATE_INTERVAL;
+    const resolvedMinAnchorDistance = Number.isFinite(minAnchorDistance)
+      ? Math.max(0, minAnchorDistance)
+      : emitter.weatherMinAnchorDistance ?? 0;
+    const attachments = [];
+    const precipitationAttachment = {
       type: 'precipitation',
       handle,
       emitter,
-      anchorOffsetY: config.anchorHeight,
-      updateInterval: Number.isFinite(updateInterval)
-        ? Math.max(0.05, updateInterval)
-        : DEFAULT_PRECIPITATION_UPDATE_INTERVAL,
-      minDistanceSq: Number.isFinite(minAnchorDistance)
-        ? Math.max(0, minAnchorDistance) ** 2
-        : (emitter.weatherMinAnchorDistance ?? 0) ** 2,
+      anchorOffsetY: resolvedAnchorHeight,
+      updateInterval: resolvedUpdateInterval,
+      minDistanceSq: resolvedMinAnchorDistance ** 2,
       lastUpdateTime: -Infinity,
       lastAnchor: {
         x: Number.POSITIVE_INFINITY,
         y: Number.POSITIVE_INFINITY,
         z: Number.POSITIVE_INFINITY,
       },
+      precipitationGroup: groupId,
     };
+    attachments.push(precipitationAttachment);
+
+    if (config.type === 'rain') {
+      const splashEmitter = createWeatherRainSplashEmitter({
+        intensity: appliedIntensity,
+        radius: config.radius,
+        anchorHeight: resolvedAnchorHeight,
+      });
+      const splashHandle = particleSystem.emit(splashEmitter);
+      if (splashHandle) {
+        let splashInterval = config.updateInterval;
+        if (
+          !Number.isFinite(splashInterval) &&
+          Number.isFinite(splashEmitter.weatherUpdateInterval)
+        ) {
+          splashInterval = splashEmitter.weatherUpdateInterval;
+        }
+        let splashDistance = config.minAnchorDistance;
+        if (
+          !Number.isFinite(splashDistance) &&
+          Number.isFinite(splashEmitter.weatherMinAnchorDistance)
+        ) {
+          splashDistance = splashEmitter.weatherMinAnchorDistance;
+        }
+        const splashAttachment = {
+          type: 'precipitation_splash',
+          handle: splashHandle,
+          emitter: splashEmitter,
+          anchorOffsetY: resolvedAnchorHeight,
+          updateInterval: Number.isFinite(splashInterval)
+            ? Math.max(0.05, splashInterval)
+            : resolvedUpdateInterval,
+          minDistanceSq: (Number.isFinite(splashDistance)
+            ? Math.max(0, splashDistance)
+            : splashEmitter.weatherMinAnchorDistance ?? resolvedMinAnchorDistance) ** 2,
+          lastUpdateTime: -Infinity,
+          lastAnchor: {
+            x: Number.POSITIVE_INFINITY,
+            y: Number.POSITIVE_INFINITY,
+            z: Number.POSITIVE_INFINITY,
+          },
+          precipitationGroup: groupId,
+          spawnConfig: { ...config, intensity: appliedIntensity },
+          spawnAttempt: attempt,
+          spawnElapsedTime: context.elapsedTime ?? 0,
+        };
+        attachments.push(splashAttachment);
+      } else {
+        console.warn('Weather rain splash emitter failed to spawn.', {
+          type: config.type,
+        });
+      }
+    }
+
     const playerPosition = context.playerControls?.getPosition?.();
     const elapsedTime = context.elapsedTime ?? 0;
     if (playerPosition) {
-      emitter.setBasePosition?.({
-        x: playerPosition.x,
-        y: playerPosition.y + config.anchorHeight,
-        z: playerPosition.z,
-      });
-      attachment.lastAnchor = {
-        x: playerPosition.x,
-        y: playerPosition.y,
-        z: playerPosition.z,
-      };
-      attachment.lastUpdateTime = elapsedTime;
+      for (const attachment of attachments) {
+        attachment.emitter?.setBasePosition?.({
+          x: playerPosition.x,
+          y: playerPosition.y + attachment.anchorOffsetY,
+          z: playerPosition.z,
+        });
+        attachment.lastAnchor = {
+          x: playerPosition.x,
+          y: playerPosition.y,
+          z: playerPosition.z,
+        };
+        attachment.lastUpdateTime = elapsedTime;
+      }
       recordAnchorUpdate(elapsedTime);
     }
-    activeParticleEffects.push(attachment);
-    attachment.spawnConfig = { ...config, intensity: appliedIntensity };
-    attachment.spawnAttempt = attempt;
-    attachment.spawnElapsedTime = elapsedTime;
-    attachment.validationReadyTime = Number.isFinite(elapsedTime)
-      ? elapsedTime + PRECIPITATION_HANDLE_VALIDATION_DELAY
-      : Number.POSITIVE_INFINITY;
-    attachment.validationStatus = 'pending';
-    attachment.validationRetryAfter = null;
-    attachment.validationPendingSince = null;
-    recordPrecipitationSpawn({ type: config.type, elapsedTime });
-    attachment.appliedIntensity = appliedIntensity;
-    attachment.manualOverrides = manualOverrides;
-    if (typeof emitter.getWeatherRainShaderBaseUniforms === 'function') {
-      attachment.baseRainUniforms = emitter.getWeatherRainShaderBaseUniforms();
-    }
-    if (typeof emitter.getWeatherRainShaderUniforms === 'function') {
-      const uniforms = emitter.getWeatherRainShaderUniforms();
-      if (!attachment.baseRainUniforms) {
-        attachment.baseRainUniforms = { ...uniforms };
+
+    for (const attachment of attachments) {
+      attachment.spawnConfig = attachment.spawnConfig ?? { ...config, intensity: appliedIntensity };
+      attachment.spawnAttempt = attachment.spawnAttempt ?? attempt;
+      attachment.spawnElapsedTime = attachment.spawnElapsedTime ?? elapsedTime;
+      if (attachment.type === 'precipitation') {
+        attachment.validationReadyTime = Number.isFinite(elapsedTime)
+          ? elapsedTime + PRECIPITATION_HANDLE_VALIDATION_DELAY
+          : Number.POSITIVE_INFINITY;
+        attachment.validationStatus = 'pending';
+        attachment.validationRetryAfter = null;
+        attachment.validationPendingSince = null;
+        attachment.appliedIntensity = appliedIntensity;
+        attachment.manualOverrides = manualOverrides;
+        if (typeof emitter.getWeatherRainShaderBaseUniforms === 'function') {
+          attachment.baseRainUniforms = emitter.getWeatherRainShaderBaseUniforms();
+        }
+        if (typeof emitter.getWeatherRainShaderUniforms === 'function') {
+          const uniforms = emitter.getWeatherRainShaderUniforms();
+          if (!attachment.baseRainUniforms) {
+            attachment.baseRainUniforms = { ...uniforms };
+          }
+          attachment.lastAppliedRainOverrides = {
+            windTilt: uniforms?.windTilt,
+            streakNoise: uniforms?.streakNoise,
+            highlightWidth: uniforms?.highlightWidth,
+          };
+        }
       }
-      attachment.lastAppliedRainOverrides = {
-        windTilt: uniforms?.windTilt,
-        streakNoise: uniforms?.streakNoise,
-        highlightWidth: uniforms?.highlightWidth,
-      };
+      activeParticleEffects.push(attachment);
     }
+
+    recordPrecipitationSpawn({ type: config.type, elapsedTime });
     syncEmitterState();
   };
 
@@ -1524,7 +1613,7 @@ export function createWeatherManager({
       if (interval > 0 && elapsedTime - (attachment.lastUpdateTime ?? -Infinity) < interval) {
         continue;
       }
-      if (attachment.type === 'precipitation') {
+      if (attachment.type === 'precipitation' || attachment.type === 'precipitation_splash') {
         const dx = playerPosition.x - attachment.lastAnchor.x;
         const dy = playerPosition.y - attachment.lastAnchor.y;
         const dz = playerPosition.z - attachment.lastAnchor.z;
@@ -1783,6 +1872,7 @@ export function createWeatherManager({
         reason: 'zero_particles',
       });
       stopAttachmentHandle(attachment);
+      stopLinkedPrecipitationAttachments(attachment);
       removeAttachment(attachment);
 
       const state = ensureWeatherState();

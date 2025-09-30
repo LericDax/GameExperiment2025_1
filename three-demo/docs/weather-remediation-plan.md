@@ -80,6 +80,15 @@ Please continue appending follow-up findings or configuration changes here whene
 - `/weather overlay wind|density` commands apply those manual overrides, extend the status readout, and a new regression checks the clamps, metadata persistence, and override clearing so CI guards the documented intensity scale—update this plan alongside future tuning shifts.【F:src/player/dev-commands.js†L1780-L1900】【F:src/world/__tests__/weather-manager.test.js†L132-L268】
 - **Reminder:** keep this section synchronized whenever you touch the overlay shader, uniform maths, or console tooling so QA expectations, metadata snapshots, and tests stay aligned.
 
+## 2025-12 Rain Splash Layer
+- Introduced `createWeatherRainSplashEmitter`, a short-lived additive spark emitter that jitters around the player using the active precipitation radius so rainy presets now feature upward splash bursts near ground contact.【F:src/rendering/particles/weather-rain-splashes.js†L1-L54】
+- Weather manager spawns the splash layer alongside rain streaks, anchors it with the same radius/height offsets, and stops both handles together when presets change, preventing orphan emitters during retries.【F:src/world/weather/weather-manager.js†L1193-L1428】【F:src/world/weather/weather-manager.js†L1849-L1886】
+- Regression coverage now asserts that rainy presets surface a splash handle, validates it is disposed when weather clears, and updates retry expectations to account for the extra emitter—future tweaks must adjust these tests and this plan in tandem.【F:src/world/__tests__/weather-manager.test.js†L83-L158】【F:src/world/__tests__/weather-manager.test.js†L430-L640】
+- **QA checklist:**
+  - Trigger `/weather misty_rain` (or cycle via the harness) and stand near ground; confirm bright streaks are accompanied by fast upward splash sparks within the precipitation radius, concentrated around the player’s feet.【F:src/rendering/particles/weather-rain-splashes.js†L15-L47】
+  - Watch the weather debug overlay for both the bright-streak and splash debug labels, ensuring the splash handle appears/disappears as presets switch and that retries clean up the previous layer.【F:src/world/weather/weather-manager.js†L1334-L1418】【F:src/world/__tests__/weather-manager.test.js†L94-L158】
+- **Reminder:** Keep this splash section current whenever you retune intensity, spawn budgets, or cleanup logic so QA and diagnostics stay aligned.
+
 ## Work Orders
 1. **Gameplay-driven rotation**
    - Sample the player’s biome each frame (reusing the `sampleBiomeAt` helper from `/weather status`) and resolve the preset rotation with `resolveBiomeWeatherRotation`, storing timing metadata per biome.【F:src/player/dev-commands.js†L1532-L1562】【F:src/world/weather/weather-manager.js†L76-L127】
