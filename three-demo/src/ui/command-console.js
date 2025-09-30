@@ -320,6 +320,14 @@ export function createCommandConsole(options = {}) {
     input.value = '';
   }
 
+  function handleWheel(event) {
+    if (!isOpen) {
+      return;
+    }
+    event.preventDefault();
+    logElement.scrollTop += event.deltaY;
+  }
+
   function handleInputKeydown(event) {
 
 
@@ -361,11 +369,13 @@ export function createCommandConsole(options = {}) {
   document.addEventListener('keydown', handleDocumentKeydown);
   form.addEventListener('submit', handleFormSubmit);
   input.addEventListener('keydown', handleInputKeydown);
+  container.addEventListener('wheel', handleWheel, { passive: false });
 
   const dispose = () => {
     document.removeEventListener('keydown', handleDocumentKeydown);
     form.removeEventListener('submit', handleFormSubmit);
     input.removeEventListener('keydown', handleInputKeydown);
+    container.removeEventListener('wheel', handleWheel);
     container.remove();
   };
 
