@@ -129,13 +129,13 @@ export function createWeatherRainEmitter({
     spawnRate: Math.min(560 * density, 960),
     maxParticles: Math.ceil(Math.min(900 * density, 1180)),
     lifetime: { min: 1.35, max: 2.25 },
-    baseColor: '#204c7a',
+    baseColor: '#3f8bdb',
     colorRamp: [
-      { time: 0, color: '#081629' },
-      { time: 0.18, color: '#0f2f57' },
-      { time: 0.45, color: '#1e6bc0' },
-      { time: 0.78, color: '#6faef5' },
-      { time: 1, color: '#d6ecff' },
+      { time: 0, color: '#0d213b' },
+      { time: 0.18, color: '#17477e' },
+      { time: 0.45, color: '#2f88ec' },
+      { time: 0.78, color: '#7bd2ff' },
+      { time: 1, color: '#eef9ff' },
     ],
     sizeOverLifetime: [
       { time: 0, size: 1.5 },
@@ -155,7 +155,7 @@ export function createWeatherRainEmitter({
     fadeIn: 0.06,
     fadeOut: 0.34,
     opacity: 0.94,
-    blending: THREE.NormalBlending,
+    blending: THREE.AdditiveBlending,
     depthWrite: false,
     renderOrder: 4,
     materialFactory: ({ defaultFactory }) => {
