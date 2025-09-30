@@ -14,6 +14,9 @@ const RAIN_OVERLAY_TEST_MIN = 0.24;
 const RAIN_OVERLAY_TEST_MAX = 1.35;
 const RAIN_OVERLAY_TEST_SCALE = 0.95;
 
+const RAIN_FALLBACK_LABEL = 'WeatherRainEmitter/BillboardFallback';
+const RAIN_BRIGHT_LABEL = 'WeatherRainEmitter/BrightStreakPass';
+
 function createManager({ emitImplementation }) {
   const emit = emitImplementation ?? (() => ({ stop() {} }));
   const particleSystem = {
@@ -78,7 +81,7 @@ function expectedOverlayUniforms(precipIntensity, overrides = {}) {
 
 test('setWeather emits precipitation for rainy presets', () => {
   const emitLabels = [];
-  const { manager, particleSystem } = createManager({
+  const { manager, particleSystem, scene } = createManager({
     emitImplementation: (emitter) => {
       emitLabels.push(emitter.debugLabel ?? 'unknown');
       return { stop() {} };
@@ -94,8 +97,8 @@ test('setWeather emits precipitation for rainy presets', () => {
     'expected rain weather to spawn both primary precipitation and splash emitters',
   );
   assert.ok(
-    emitLabels.includes('WeatherRainEmitter/BrightStreakPass'),
-    'expected rain streak emitter to spawn',
+    emitLabels.includes(RAIN_FALLBACK_LABEL),
+    'expected fallback rain emitter to spawn',
   );
   assert.ok(
     emitLabels.includes('WeatherRainSplashEmitter'),
@@ -106,28 +109,66 @@ test('setWeather emits precipitation for rainy presets', () => {
     2,
     'expected precipitation emitters to be tracked',
   );
+  const weatherState = scene.userData.weather ?? {};
+  assert.equal(
+    weatherState.precipitationLayers?.primary?.label,
+    RAIN_FALLBACK_LABEL,
+    'expected primary precipitation layer label to match fallback emitter',
+  );
+  assert.equal(
+    weatherState.precipitationLayers?.primary?.shader,
+    'billboard',
+    'expected primary precipitation layer to report billboard shader',
+  );
+  assert.equal(
+    weatherState.precipitationLayers?.splash?.label,
+    'WeatherRainSplashEmitter',
+    'expected splash precipitation layer label to match splash emitter',
+  );
 });
 
 test('rain splash attachment stops when weather clears', () => {
   const stoppedLabels = [];
-  const { manager } = createManager({
+  const { manager, scene } = createManager({
     emitImplementation: (emitter) => ({
       stop() {
         stoppedLabels.push(emitter.debugLabel ?? 'unknown');
       },
       getActiveParticleCount() {
-        return emitter.debugLabel === 'WeatherRainEmitter/BrightStreakPass' ? 24 : 12;
+        return emitter.debugLabel === RAIN_FALLBACK_LABEL ? 24 : 12;
       },
     }),
   });
 
   manager.setWeather('misty_rain');
   manager.update({ delta: 0.05, elapsedTime: 1 });
+  let weatherState = scene.userData.weather ?? {};
+  assert.equal(
+    weatherState.precipitationLayers?.primary?.label,
+    RAIN_FALLBACK_LABEL,
+    'expected precipitation layer label to match fallback emitter before clearing',
+  );
+  assert.equal(
+    weatherState.precipitationLayers?.splash?.label,
+    'WeatherRainSplashEmitter',
+    'expected splash layer label to be recorded before clearing',
+  );
   manager.setWeather('clear_skies');
   manager.update({ delta: 0.05, elapsedTime: 1.1 });
+  weatherState = scene.userData.weather ?? {};
+  assert.equal(
+    weatherState.precipitationLayers?.primary ?? null,
+    null,
+    'expected precipitation layer metadata to clear when weather stops',
+  );
+  assert.equal(
+    weatherState.precipitationLayers?.splash ?? null,
+    null,
+    'expected splash layer metadata to clear when weather stops',
+  );
 
   assert.ok(
-    stoppedLabels.includes('WeatherRainEmitter/BrightStreakPass'),
+    stoppedLabels.includes(RAIN_FALLBACK_LABEL),
     'expected primary rain emitter to be stopped when weather clears',
   );
   assert.ok(
@@ -135,7 +176,7 @@ test('rain splash attachment stops when weather clears', () => {
     'expected rain splash emitter to be stopped when weather clears',
   );
   assert.equal(
-    stoppedLabels.filter((label) => label === 'WeatherRainEmitter/BrightStreakPass').length,
+    stoppedLabels.filter((label) => label === RAIN_FALLBACK_LABEL).length,
     1,
     'expected primary emitter to be stopped exactly once',
   );
@@ -514,13 +555,13 @@ test('manual precipitation overrides adjust rain uniforms', () => {
   let capturedEmitter = null;
   const { manager, scene } = createManager({
     emitImplementation: (emitter) => {
-      if (emitter.debugLabel === 'WeatherRainEmitter/BrightStreakPass') {
+      if (emitter.debugLabel === RAIN_BRIGHT_LABEL) {
         capturedEmitter = emitter;
       }
       return {
         stop() {},
         getActiveParticleCount() {
-          return emitter.debugLabel === 'WeatherRainEmitter/BrightStreakPass' ? 42 : 18;
+          return emitter.debugLabel === RAIN_BRIGHT_LABEL ? 42 : 18;
         },
       };
     },
@@ -529,6 +570,7 @@ test('manual precipitation overrides adjust rain uniforms', () => {
   const state = scene.userData.weather;
   assert.ok(state?.manualOverrides?.precipitation, 'expected precipitation manual overrides to exist');
 
+  state.manualOverrides.precipitation.shader = 'bright';
   state.manualOverrides.precipitation.windTilt = 0.31;
   state.manualOverrides.precipitation.streakNoise = 0.72;
   state.manualOverrides.precipitation.highlightWidth = 0.12;
@@ -541,6 +583,22 @@ test('manual precipitation overrides adjust rain uniforms', () => {
   manager.update({ delta: 0.05, elapsedTime: 0.5 });
 
   assert.ok(capturedEmitter, 'expected precipitation emitter to spawn with manual overrides');
+  assert.equal(
+    capturedEmitter.debugLabel,
+    RAIN_BRIGHT_LABEL,
+    'expected manual overrides to upgrade emitter to bright streak shader',
+  );
+  const precipitationLayers = scene.userData.weather?.precipitationLayers ?? {};
+  assert.equal(
+    precipitationLayers.primary?.shader,
+    'bright',
+    'expected precipitation layer metadata to reflect bright shader override',
+  );
+  assert.equal(
+    precipitationLayers.primary?.label,
+    RAIN_BRIGHT_LABEL,
+    'expected precipitation layer label to match bright shader emitter',
+  );
   let uniforms = capturedEmitter.getWeatherRainShaderUniforms?.();
   assert.ok(uniforms, 'expected rain emitter to expose shader uniforms');
   assert.ok(approxEqual(uniforms.windTilt, 0.31, 1e-4));
@@ -558,6 +616,7 @@ test('manual precipitation overrides adjust rain uniforms', () => {
       summary.label?.includes('WeatherRainEmitter'),
     );
     assert.ok(primarySummary, 'expected precipitation summary for rain emitter');
+    assert.equal(primarySummary.label, RAIN_BRIGHT_LABEL);
     assert.equal(primarySummary.manualOverrides.dropSpeed, 1.14);
     assert.equal(primarySummary.manualOverrides.viscosity, 0.42);
     assert.equal(primarySummary.manualOverrides.rippleScale, 1.58);
@@ -621,6 +680,11 @@ test('precipitation spawn retries recover after missing handles', () => {
   assert.equal(weatherState.precipitationRecoveryAttempts, 1);
   assert.equal(weatherState.pendingPrecipitationRetries.length, 1);
   assert.equal(weatherState.pendingPrecipitationRetries[0].attempt, 2);
+  assert.equal(
+    weatherState.precipitationLayers?.primary ?? null,
+    null,
+    'expected precipitation layer to remain empty after failed spawn',
+  );
 
   manager.update({ delta: 0.4, elapsedTime: 0.5 });
   weatherState = scene.userData.weather;
@@ -643,6 +707,16 @@ test('precipitation spawn retries recover after missing handles', () => {
   assert.equal(weatherState.pendingPrecipitationRetries.length, 0);
   assert.equal(weatherState.failedPrecipitationSpawns, 2);
   assert.equal(weatherState.precipitationRecoveryAttempts, 2);
+  assert.equal(
+    weatherState.precipitationLayers?.primary?.label,
+    RAIN_FALLBACK_LABEL,
+    'expected precipitation layer to record fallback emitter after recovery',
+  );
+  assert.equal(
+    weatherState.precipitationLayers?.splash?.label,
+    'WeatherRainSplashEmitter',
+    'expected splash layer to record splash emitter after recovery',
+  );
 });
 
 test('zero-particle precipitation handles trigger retries and diagnostics', () => {
@@ -710,6 +784,16 @@ test('zero-particle precipitation handles trigger retries and diagnostics', () =
     type: 'rain',
     reason: 'zero_particles',
   });
+  assert.equal(
+    weatherState.precipitationLayers?.primary?.label,
+    RAIN_FALLBACK_LABEL,
+    'expected precipitation layer to record fallback emitter after retry succeeds',
+  );
+  assert.equal(
+    weatherState.precipitationLayers?.splash?.label,
+    'WeatherRainSplashEmitter',
+    'expected splash layer to record splash emitter after retry succeeds',
+  );
 });
 
 test('rain preset spawns active particles with the real particle system', () => {
@@ -722,10 +806,10 @@ test('rain preset spawns active particles with the real particle system', () => 
 
     let elapsedTime = 0;
     let peakWeatherParticles = 0;
-    let observedBrightStreakLabel = false;
+    let observedFallbackLabel = false;
 
     const frameDelta = 1 / 60;
-    const minimumParticles = 34;
+    const minimumParticles = 30;
     for (let frame = 0; frame < 300; frame += 1) {
       elapsedTime += frameDelta;
       manager.update({ delta: frameDelta, elapsedTime });
@@ -736,8 +820,8 @@ test('rain preset spawns active particles with the real particle system', () => 
         typeof emitter.label === 'string' && emitter.label.toLowerCase().includes('weather'),
       );
       if (weatherEmitter) {
-        if (weatherEmitter.label.includes('BrightStreakPass')) {
-          observedBrightStreakLabel = true;
+        if (weatherEmitter.label.includes('BillboardFallback')) {
+          observedFallbackLabel = true;
         }
         const activeParticles = Number(weatherEmitter.activeParticles) || 0;
         if (activeParticles > peakWeatherParticles) {
@@ -754,8 +838,8 @@ test('rain preset spawns active particles with the real particle system', () => 
       `expected real weather emitter to accumulate at least ${minimumParticles} active particles after ticking the system (received ${peakWeatherParticles})`,
     );
     assert.ok(
-      observedBrightStreakLabel,
-      'expected live weather emitter debug label to advertise the bright streak pass',
+      observedFallbackLabel,
+      'expected live weather emitter debug label to advertise the fallback billboard pass',
     );
   } finally {
     particleSystem.dispose();

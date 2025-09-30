@@ -6,7 +6,54 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
 }
 
-export function createWeatherRainEmitter({
+export function createWeatherRainBillboardEmitter({
+  intensity = 0.6,
+  radius = 12,
+  heightOffset = 14,
+} = {}) {
+  const density = clamp(intensity, 0.2, 2.4)
+  const spawnRadius = Math.max(6, radius)
+  const emitter = createGpuBillboardEmitter({
+    spawnRate: Math.min(520 * density, 880),
+    maxParticles: Math.ceil(Math.min(820 * density, 1080)),
+    lifetime: { min: 1.2, max: 2.1 },
+    baseColor: '#3f8bdb',
+    colorRamp: [
+      { time: 0, color: '#13263d' },
+      { time: 0.28, color: '#2d6abd' },
+      { time: 0.68, color: '#7ac7ff' },
+      { time: 1, color: '#eef8ff' },
+    ],
+    sizeOverLifetime: [
+      { time: 0, size: 1.36 },
+      { time: 0.35, size: 1.14 },
+      { time: 1, size: 0.92 },
+    ],
+    position: { x: 0, y: heightOffset, z: 0 },
+    positionJitter: { x: spawnRadius, y: 1.2, z: spawnRadius },
+    velocity: { x: 0, y: -11.6 - density * 4.4, z: 0 },
+    velocityJitter: { x: 0.78, y: 2.6, z: 0.78 },
+    size: { min: 0.32, max: 0.44 },
+    sizeJitter: 0.08,
+    lengthMultiplier: { min: 8.5, max: 13.5 },
+    gravity: { x: 0, y: -19.6, z: 0 },
+    drag: 0.18,
+    fadeIn: 0.08,
+    fadeOut: 0.36,
+    opacity: 0.88,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    renderOrder: 4,
+  })
+  emitter.debugLabel = 'WeatherRainEmitter/BillboardFallback'
+  emitter.weatherAnchorOffset = { x: 0, y: heightOffset, z: 0 }
+  emitter.weatherUpdateInterval = 0.12
+  emitter.weatherMinAnchorDistance = Math.max(spawnRadius * 0.2, 1.6)
+  emitter.usesBrightStreakShader = false
+  return emitter
+}
+
+function createWeatherRainBrightStreakEmitter({
   intensity = 0.6,
   radius = 12,
   heightOffset = 14,
@@ -185,6 +232,60 @@ export function createWeatherRainEmitter({
   emitter.setWeatherRainShaderUniforms = (overrides) => {
     setUniformOverrides(overrides)
   }
+  emitter.usesBrightStreakShader = true
 
   return emitter
+}
+
+export function createWeatherRainEmitter({
+  shader = null,
+  useBrightStreakShader = undefined,
+  windTilt = undefined,
+  streakNoise = undefined,
+  highlightWidth = undefined,
+  rippleScale = undefined,
+  dropDensity = undefined,
+  timerBias = undefined,
+  ...rest
+} = {}) {
+  const preferBrightShader = (() => {
+    if (useBrightStreakShader === true) {
+      return true
+    }
+    if (useBrightStreakShader === false) {
+      return false
+    }
+    if (typeof shader === 'string') {
+      const normalised = shader.toLowerCase()
+      if (normalised === 'bright' || normalised === 'brightstreak' || normalised === 'bright_streak') {
+        return true
+      }
+      if (normalised === 'billboard' || normalised === 'fallback') {
+        return false
+      }
+    }
+    const advancedOverrides = [
+      windTilt,
+      streakNoise,
+      highlightWidth,
+      rippleScale,
+      dropDensity,
+      timerBias,
+    ].some((value) => value !== undefined && value !== null)
+    return advancedOverrides
+  })()
+
+  if (preferBrightShader) {
+    return createWeatherRainBrightStreakEmitter({
+      ...rest,
+      windTilt,
+      streakNoise,
+      highlightWidth,
+      rippleScale,
+      dropDensity,
+      timerBias,
+    })
+  }
+
+  return createWeatherRainBillboardEmitter(rest)
 }

@@ -148,6 +148,28 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+function normalisePrecipitationShaderValue(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (typeof value === 'boolean') {
+    return value ? 'bright' : 'billboard';
+  }
+  if (typeof value === 'string') {
+    const normalised = value.toLowerCase();
+    if (normalised === 'bright' || normalised === 'brightstreak' || normalised === 'bright_streak') {
+      return 'bright';
+    }
+    if (normalised === 'billboard' || normalised === 'fallback') {
+      return 'billboard';
+    }
+  }
+  return undefined;
+}
+
 function normaliseRainUniformSnapshot(uniforms) {
   if (!uniforms) {
     return null;
@@ -188,6 +210,7 @@ function normaliseManualPrecipitationOverridesSnapshot(overrides) {
     }
   };
   assign('intensity', overrides.intensity);
+  assign('radius', overrides.radius);
   assign('windTilt', overrides.windTilt);
   assign('streakNoise', overrides.streakNoise);
   assign('highlightWidth', overrides.highlightWidth);
@@ -211,6 +234,18 @@ function normaliseManualPrecipitationOverridesSnapshot(overrides) {
   }
   if (overrides.timerBias !== undefined) {
     snapshot.timerBias = overrides.timerBias;
+  }
+  const shaderValue = (() => {
+    if (overrides.shader !== undefined) {
+      return normalisePrecipitationShaderValue(overrides.shader);
+    }
+    if (overrides.useBrightStreakShader !== undefined) {
+      return normalisePrecipitationShaderValue(overrides.useBrightStreakShader);
+    }
+    return undefined;
+  })();
+  if (shaderValue !== undefined) {
+    snapshot.shader = shaderValue;
   }
   return snapshot;
 }
@@ -283,6 +318,24 @@ function normalisePrecipitationEffect(weather, effect) {
       raindropOverlay = overlayConfig;
     }
   }
+  let shaderPreference = normalisePrecipitationShaderValue(effect.shader);
+  if (shaderPreference === undefined) {
+    shaderPreference = normalisePrecipitationShaderValue(effect.brightStreakShader);
+  }
+  if (shaderPreference === undefined) {
+    shaderPreference = normalisePrecipitationShaderValue(effect.useBrightStreakShader);
+  }
+  const resolvedShader = shaderPreference ?? null;
+  const resolvedShaderFlag =
+    resolvedShader === 'bright'
+      ? true
+      : resolvedShader === 'billboard'
+      ? false
+      : effect.useBrightStreakShader === true
+      ? true
+      : effect.useBrightStreakShader === false
+      ? false
+      : undefined;
   return {
     type,
     intensity: clamp(baseIntensity, 0.15, 2.6),
@@ -291,6 +344,8 @@ function normalisePrecipitationEffect(weather, effect) {
     updateInterval: updateInterval ?? null,
     minAnchorDistance: minAnchorDistance ?? null,
     raindropOverlay,
+    shader: resolvedShader,
+    useBrightStreakShader: resolvedShaderFlag,
   };
 }
 
@@ -559,6 +614,9 @@ export function createWeatherManager({
     if (!Array.isArray(state.pendingPrecipitationRetries)) {
       state.pendingPrecipitationRetries = [];
     }
+    if (!state.precipitationLayers) {
+      state.precipitationLayers = { primary: null, splash: null };
+    }
     if (!state.manualOverrides) {
       state.manualOverrides = {};
     }
@@ -581,6 +639,9 @@ export function createWeatherManager({
     if (!('rippleScale' in precipitationOverrides)) {
       precipitationOverrides.rippleScale = null;
     }
+    if (!('radius' in precipitationOverrides)) {
+      precipitationOverrides.radius = null;
+    }
     if (!('dropSpeed' in precipitationOverrides)) {
       precipitationOverrides.dropSpeed =
         precipitationOverrides.dropDensity !== undefined
@@ -592,6 +653,9 @@ export function createWeatherManager({
         precipitationOverrides.timerBias !== undefined
           ? precipitationOverrides.timerBias
           : null;
+    }
+    if (!('shader' in precipitationOverrides)) {
+      precipitationOverrides.shader = null;
     }
     if (!state.rotationHarness) {
       state.rotationHarness = {
@@ -677,14 +741,25 @@ export function createWeatherManager({
       }
       return undefined;
     };
+    const shaderOverride = (() => {
+      if (overrides.shader !== undefined) {
+        return normalisePrecipitationShaderValue(overrides.shader);
+      }
+      if (overrides.useBrightStreakShader !== undefined) {
+        return normalisePrecipitationShaderValue(overrides.useBrightStreakShader);
+      }
+      return undefined;
+    })();
     return {
       intensity: pickValue('intensity'),
+      radius: pickValue('radius'),
       windTilt: pickValue('windTilt'),
       streakNoise: pickValue('streakNoise'),
       highlightWidth: pickValue('highlightWidth'),
       rippleScale: pickValue('rippleScale'),
       dropSpeed: pickValue('dropSpeed', 'dropDensity'),
       viscosity: pickValue('viscosity', 'timerBias'),
+      shader: shaderOverride,
     };
   };
 
@@ -921,6 +996,50 @@ export function createWeatherManager({
     };
   };
 
+  const syncPrecipitationLayerState = () => {
+    const state = ensureWeatherState();
+    if (!state) {
+      return;
+    }
+    const layers = state.precipitationLayers || (state.precipitationLayers = {
+      primary: null,
+      splash: null,
+    });
+    const primaryAttachment = activeParticleEffects.find(
+      (attachment) => attachment.type === 'precipitation',
+    );
+    if (primaryAttachment) {
+      const { emitter, appliedIntensity, spawnConfig, anchorOffsetY } = primaryAttachment;
+      layers.primary = {
+        label: emitter?.debugLabel ?? 'WeatherPrecipitationEmitter',
+        shader: emitter?.usesBrightStreakShader ? 'bright' : 'billboard',
+        intensity: Number.isFinite(appliedIntensity)
+          ? appliedIntensity
+          : Number.isFinite(spawnConfig?.intensity)
+          ? spawnConfig.intensity
+          : null,
+        radius: Number.isFinite(spawnConfig?.radius) ? spawnConfig.radius : null,
+        heightOffset: Number.isFinite(anchorOffsetY) ? anchorOffsetY : null,
+      };
+    } else {
+      layers.primary = null;
+    }
+    const splashAttachment = activeParticleEffects.find(
+      (attachment) => attachment.type === 'precipitation_splash',
+    );
+    if (splashAttachment) {
+      const { emitter, spawnConfig, anchorOffsetY } = splashAttachment;
+      layers.splash = {
+        label: emitter?.debugLabel ?? 'WeatherRainSplashEmitter',
+        intensity: Number.isFinite(spawnConfig?.intensity) ? spawnConfig.intensity : null,
+        radius: Number.isFinite(spawnConfig?.radius) ? spawnConfig.radius : null,
+        heightOffset: Number.isFinite(anchorOffsetY) ? anchorOffsetY : null,
+      };
+    } else {
+      layers.splash = null;
+    }
+  };
+
   const syncEmitterState = () => {
     const state = ensureWeatherState();
     if (!state) {
@@ -930,6 +1049,7 @@ export function createWeatherManager({
     if (state.activeEmitterCount === 0) {
       state.totalActiveParticles = 0;
     }
+    syncPrecipitationLayerState();
   };
 
   const recordAnchorUpdate = (elapsedTime) => {
@@ -1400,46 +1520,95 @@ export function createWeatherManager({
     }
     const manualOverrides = getManualPrecipitationOverrides();
     const intensityOverride = manualOverrides?.intensity;
+    const radiusOverride = manualOverrides?.radius;
     const appliedIntensity = Number.isFinite(intensityOverride)
       ? intensityOverride
       : config.intensity;
+    const appliedRadius = Number.isFinite(radiusOverride)
+      ? Math.max(4, radiusOverride)
+      : config.radius;
+    const shaderOverride = manualOverrides?.shader;
+    const hasAdvancedManualOverrides = [
+      manualOverrides?.windTilt,
+      manualOverrides?.streakNoise,
+      manualOverrides?.highlightWidth,
+      manualOverrides?.rippleScale,
+      manualOverrides?.dropSpeed,
+      manualOverrides?.viscosity,
+    ].some((value) => value !== undefined && value !== null);
+    const configShaderPreference = normalisePrecipitationShaderValue(config.shader);
+    let useBrightStreakShader;
+    if (configShaderPreference === 'bright') {
+      useBrightStreakShader = true;
+    } else if (configShaderPreference === 'billboard') {
+      useBrightStreakShader = false;
+    } else if (config.useBrightStreakShader === true) {
+      useBrightStreakShader = true;
+    } else if (config.useBrightStreakShader === false) {
+      useBrightStreakShader = false;
+    }
+    if (shaderOverride === 'bright') {
+      useBrightStreakShader = true;
+    } else if (shaderOverride === 'billboard') {
+      useBrightStreakShader = false;
+    }
+    if (useBrightStreakShader === undefined && hasAdvancedManualOverrides) {
+      useBrightStreakShader = true;
+    }
+    const rainOptions = {
+      intensity: appliedIntensity,
+      radius: appliedRadius,
+      heightOffset: config.anchorHeight,
+    };
+    if (useBrightStreakShader !== undefined) {
+      rainOptions.useBrightStreakShader = useBrightStreakShader;
+      rainOptions.shader = useBrightStreakShader ? 'bright' : 'billboard';
+    }
+    if (manualOverrides) {
+      if (manualOverrides.windTilt !== undefined) {
+        rainOptions.windTilt = manualOverrides.windTilt;
+      }
+      if (manualOverrides.streakNoise !== undefined) {
+        rainOptions.streakNoise = manualOverrides.streakNoise;
+      }
+      if (manualOverrides.highlightWidth !== undefined) {
+        rainOptions.highlightWidth = manualOverrides.highlightWidth;
+      }
+      if (manualOverrides.rippleScale !== undefined) {
+        rainOptions.rippleScale = manualOverrides.rippleScale;
+      }
+      if (manualOverrides.dropSpeed !== undefined) {
+        rainOptions.dropSpeed = manualOverrides.dropSpeed;
+        rainOptions.dropDensity = manualOverrides.dropSpeed;
+      }
+      if (manualOverrides.viscosity !== undefined) {
+        rainOptions.viscosity = manualOverrides.viscosity;
+        rainOptions.timerBias = manualOverrides.viscosity;
+      }
+    }
     const emitter =
       config.type === 'snow'
         ? createWeatherSnowEmitter({
             intensity: appliedIntensity,
-            radius: config.radius,
+            radius: appliedRadius,
             heightOffset: config.anchorHeight,
           })
-        : (() => {
-            const rainOptions = {
-              intensity: appliedIntensity,
-              radius: config.radius,
-              heightOffset: config.anchorHeight,
-            };
-            if (manualOverrides) {
-              if (manualOverrides.windTilt !== undefined) {
-                rainOptions.windTilt = manualOverrides.windTilt;
-              }
-              if (manualOverrides.streakNoise !== undefined) {
-                rainOptions.streakNoise = manualOverrides.streakNoise;
-              }
-              if (manualOverrides.highlightWidth !== undefined) {
-                rainOptions.highlightWidth = manualOverrides.highlightWidth;
-              }
-              if (manualOverrides.rippleScale !== undefined) {
-                rainOptions.rippleScale = manualOverrides.rippleScale;
-              }
-              if (manualOverrides.dropSpeed !== undefined) {
-                rainOptions.dropSpeed = manualOverrides.dropSpeed;
-                rainOptions.dropDensity = manualOverrides.dropSpeed;
-              }
-              if (manualOverrides.viscosity !== undefined) {
-                rainOptions.viscosity = manualOverrides.viscosity;
-                rainOptions.timerBias = manualOverrides.viscosity;
-              }
-            }
-            return createWeatherRainEmitter(rainOptions);
-          })();
+        : createWeatherRainEmitter(rainOptions);
+    const spawnConfig = {
+      ...config,
+      intensity: appliedIntensity,
+      radius: appliedRadius,
+      shader:
+        useBrightStreakShader === undefined
+          ? config.shader ?? null
+          : useBrightStreakShader
+          ? 'bright'
+          : 'billboard',
+      useBrightStreakShader:
+        useBrightStreakShader === undefined
+          ? config.useBrightStreakShader
+          : useBrightStreakShader,
+    };
     const handle = particleSystem.emit(emitter);
     if (!handle) {
       const now = Number.isFinite(context?.elapsedTime)
@@ -1459,7 +1628,7 @@ export function createWeatherManager({
           ? now + PRECIPITATION_HANDLE_RECHECK_INTERVAL
           : null;
         queuePrecipitationRetry({
-          config,
+          config: spawnConfig,
           attempt: nextAttempt,
           readyTime: retryReadyTime,
           reason: 'no_handle',
@@ -1518,13 +1687,14 @@ export function createWeatherManager({
         z: Number.POSITIVE_INFINITY,
       },
       precipitationGroup: groupId,
+      spawnConfig,
     };
     attachments.push(precipitationAttachment);
 
     if (config.type === 'rain') {
       const splashEmitter = createWeatherRainSplashEmitter({
         intensity: appliedIntensity,
-        radius: config.radius,
+        radius: appliedRadius,
         anchorHeight: resolvedAnchorHeight,
       });
       const splashHandle = particleSystem.emit(splashEmitter);
@@ -1561,7 +1731,7 @@ export function createWeatherManager({
             z: Number.POSITIVE_INFINITY,
           },
           precipitationGroup: groupId,
-          spawnConfig: { ...config, intensity: appliedIntensity },
+          spawnConfig: { ...spawnConfig },
           spawnAttempt: attempt,
           spawnElapsedTime: context.elapsedTime ?? 0,
         };
