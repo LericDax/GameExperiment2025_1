@@ -77,12 +77,10 @@ function expectedOverlayUniforms(precipIntensity, overrides = {}) {
 }
 
 test('setWeather emits precipitation for rainy presets', () => {
-  let emitCount = 0;
-  const handles = [];
+  const emitLabels = [];
   const { manager, particleSystem } = createManager({
     emitImplementation: (emitter) => {
-      emitCount += 1;
-      handles.push(emitter);
+      emitLabels.push(emitter.debugLabel ?? 'unknown');
       return { stop() {} };
     },
   });
@@ -90,9 +88,62 @@ test('setWeather emits precipitation for rainy presets', () => {
   manager.setWeather('misty_rain');
   manager.update({ delta: 0.1, elapsedTime: 1 });
 
-  assert.equal(emitCount, 1, 'expected precipitation emitter to be spawned once');
-  assert.equal(particleSystem.emitted.length, 1, 'expected particle handle to be stored');
-  assert.ok(handles[0], 'expected precipitation emitter details to be captured');
+  assert.equal(
+    emitLabels.length,
+    2,
+    'expected rain weather to spawn both primary precipitation and splash emitters',
+  );
+  assert.ok(
+    emitLabels.includes('WeatherRainEmitter/BrightStreakPass'),
+    'expected rain streak emitter to spawn',
+  );
+  assert.ok(
+    emitLabels.includes('WeatherRainSplashEmitter'),
+    'expected rain splash emitter to spawn',
+  );
+  assert.equal(
+    particleSystem.emitted.length,
+    2,
+    'expected precipitation emitters to be tracked',
+  );
+});
+
+test('rain splash attachment stops when weather clears', () => {
+  const stoppedLabels = [];
+  const { manager } = createManager({
+    emitImplementation: (emitter) => ({
+      stop() {
+        stoppedLabels.push(emitter.debugLabel ?? 'unknown');
+      },
+      getActiveParticleCount() {
+        return emitter.debugLabel === 'WeatherRainEmitter/BrightStreakPass' ? 24 : 12;
+      },
+    }),
+  });
+
+  manager.setWeather('misty_rain');
+  manager.update({ delta: 0.05, elapsedTime: 1 });
+  manager.setWeather('clear_skies');
+  manager.update({ delta: 0.05, elapsedTime: 1.1 });
+
+  assert.ok(
+    stoppedLabels.includes('WeatherRainEmitter/BrightStreakPass'),
+    'expected primary rain emitter to be stopped when weather clears',
+  );
+  assert.ok(
+    stoppedLabels.includes('WeatherRainSplashEmitter'),
+    'expected rain splash emitter to be stopped when weather clears',
+  );
+  assert.equal(
+    stoppedLabels.filter((label) => label === 'WeatherRainEmitter/BrightStreakPass').length,
+    1,
+    'expected primary emitter to be stopped exactly once',
+  );
+  assert.equal(
+    stoppedLabels.filter((label) => label === 'WeatherRainSplashEmitter').length,
+    1,
+    'expected splash emitter to be stopped exactly once',
+  );
 });
 
 test('raindrop overlay intensity follows precipitation tuning', () => {
@@ -390,11 +441,13 @@ test('manual precipitation overrides adjust rain uniforms', () => {
   let capturedEmitter = null;
   const { manager, scene } = createManager({
     emitImplementation: (emitter) => {
-      capturedEmitter = emitter;
+      if (emitter.debugLabel === 'WeatherRainEmitter/BrightStreakPass') {
+        capturedEmitter = emitter;
+      }
       return {
         stop() {},
         getActiveParticleCount() {
-          return 42;
+          return emitter.debugLabel === 'WeatherRainEmitter/BrightStreakPass' ? 42 : 18;
         },
       };
     },
@@ -431,13 +484,26 @@ test('manual precipitation overrides adjust rain uniforms', () => {
 });
 
 test('precipitation spawn retries recover after missing handles', () => {
-  let emitCount = 0;
-  const handles = [null, null, { stop() {}, getActiveParticleCount() { return 12; } }];
+  let primaryEmitCount = 0;
+  let splashEmitCount = 0;
+  const primaryHandles = [null, null, { stop() {}, getActiveParticleCount() { return 12; } }];
 
   const { manager, scene, particleSystem } = createManager({
-    emitImplementation: () => {
-      const handle = emitCount < handles.length ? handles[emitCount] : handles.at(-1);
-      emitCount += 1;
+    emitImplementation: (emitter) => {
+      if (emitter.debugLabel === 'WeatherRainSplashEmitter') {
+        splashEmitCount += 1;
+        return {
+          stop() {},
+          getActiveParticleCount() {
+            return 10;
+          },
+        };
+      }
+      const handle =
+        primaryEmitCount < primaryHandles.length
+          ? primaryHandles[primaryEmitCount]
+          : primaryHandles.at(-1);
+      primaryEmitCount += 1;
       return handle;
     },
   });
@@ -447,7 +513,7 @@ test('precipitation spawn retries recover after missing handles', () => {
   manager.update({ delta: 0.1, elapsedTime: 0.1 });
 
   let weatherState = scene.userData.weather;
-  assert.equal(emitCount, 1, 'expected initial precipitation emit call');
+  assert.equal(primaryEmitCount, 1, 'expected initial precipitation emit call');
   assert.equal(weatherState.failedPrecipitationSpawns, 1);
   assert.equal(weatherState.precipitationRecoveryAttempts, 1);
   assert.equal(weatherState.pendingPrecipitationRetries.length, 1);
@@ -455,12 +521,12 @@ test('precipitation spawn retries recover after missing handles', () => {
 
   manager.update({ delta: 0.4, elapsedTime: 0.5 });
   weatherState = scene.userData.weather;
-  assert.equal(emitCount, 1, 'expected retry to wait until the interval has elapsed');
+  assert.equal(primaryEmitCount, 1, 'expected retry to wait until the interval has elapsed');
   assert.equal(weatherState.pendingPrecipitationRetries.length, 1);
 
   manager.update({ delta: 0.3, elapsedTime: 0.8 });
   weatherState = scene.userData.weather;
-  assert.equal(emitCount, 2, 'expected queued retry to fire after the interval');
+  assert.equal(primaryEmitCount, 2, 'expected queued retry to fire after the interval');
   assert.equal(weatherState.failedPrecipitationSpawns, 2);
   assert.equal(weatherState.precipitationRecoveryAttempts, 2);
   assert.equal(weatherState.pendingPrecipitationRetries.length, 1);
@@ -468,20 +534,23 @@ test('precipitation spawn retries recover after missing handles', () => {
 
   manager.update({ delta: 0.7, elapsedTime: 1.5 });
   weatherState = scene.userData.weather;
-  assert.equal(emitCount, 3, 'expected final retry to execute');
-  assert.equal(particleSystem.emitted.length, 1, 'expected successful handle to be recorded');
+  assert.equal(primaryEmitCount, 3, 'expected final retry to execute');
+  assert.equal(splashEmitCount, 1, 'expected splash emitter to spawn once after recovery');
+  assert.equal(particleSystem.emitted.length, 2, 'expected successful handles to be recorded');
   assert.equal(weatherState.pendingPrecipitationRetries.length, 0);
   assert.equal(weatherState.failedPrecipitationSpawns, 2);
   assert.equal(weatherState.precipitationRecoveryAttempts, 2);
 });
 
 test('zero-particle precipitation handles trigger retries and diagnostics', () => {
-  let stopCalls = 0;
-  let emitCount = 0;
-  const handles = [
+  let primaryStopCalls = 0;
+  let splashStopCalls = 0;
+  let primaryEmitCount = 0;
+  let splashEmitCount = 0;
+  const primaryHandles = [
     {
       stop() {
-        stopCalls += 1;
+        primaryStopCalls += 1;
       },
       getActiveParticleCount() {
         return 0;
@@ -496,9 +565,20 @@ test('zero-particle precipitation handles trigger retries and diagnostics', () =
   ];
 
   const { manager, scene, particleSystem } = createManager({
-    emitImplementation: () => {
-      const handle = handles[emitCount] ?? null;
-      emitCount += 1;
+    emitImplementation: (emitter) => {
+      if (emitter.debugLabel === 'WeatherRainSplashEmitter') {
+        splashEmitCount += 1;
+        return {
+          stop() {
+            splashStopCalls += 1;
+          },
+          getActiveParticleCount() {
+            return 6;
+          },
+        };
+      }
+      const handle = primaryHandles[primaryEmitCount] ?? primaryHandles.at(-1);
+      primaryEmitCount += 1;
       return handle;
     },
   });
@@ -511,9 +591,15 @@ test('zero-particle precipitation handles trigger retries and diagnostics', () =
 
   const weatherState = scene.userData.weather;
 
-  assert.equal(emitCount, 2, 'expected precipitation spawn to retry once');
-  assert.equal(stopCalls, 1, 'expected inactive precipitation handle to be stopped');
-  assert.equal(particleSystem.emitted.length, 2, 'expected two precipitation handles to be tracked');
+  assert.equal(primaryEmitCount, 2, 'expected precipitation spawn to retry once');
+  assert.equal(
+    splashEmitCount,
+    2,
+    'expected splash emitter to spawn alongside each precipitation attempt',
+  );
+  assert.equal(primaryStopCalls, 1, 'expected inactive precipitation handle to be stopped');
+  assert.equal(splashStopCalls, 1, 'expected splash handle to stop when the primary emitter fails');
+  assert.equal(particleSystem.emitted.length, 4, 'expected both primary and splash handles to be tracked');
   assert.equal(weatherState.failedPrecipitationSpawns, 1);
   assert.equal(weatherState.precipitationRecoveryAttempts, 1);
   assert.deepEqual(weatherState.lastPrecipitationFailure, {
