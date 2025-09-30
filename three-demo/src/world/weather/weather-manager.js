@@ -14,6 +14,7 @@ import {
 } from '../../rendering/effects/raindrop-overlay.js';
 import { createWeatherAudioController } from '../../audio/weather-audio.js';
 import { createWeatherDebugOverlay } from '../../ui/weather-debug-overlay.js';
+import { createWeatherOverlayController } from '../../ui/weather-overlay-controller.js';
 
 const DEFAULT_WEATHER_PRESETS = {
   clear_skies: {
@@ -442,6 +443,7 @@ export function createWeatherManager({
   scene,
   particleSystem,
   registerDiagnosticOverlay,
+  useDomRaindropOverlay: useDomRaindropOverlayFlag,
 } = {}) {
   const audioController = createWeatherAudioController();
   const weatherPresets = new Map(
@@ -475,6 +477,8 @@ export function createWeatherManager({
 
   let overlayUi = null;
   let raindropOverlay = null;
+  let raindropOverlayController = null;
+  let raindropOverlayVisible = false;
   const raindropOverlayState = {
     baseActive: false,
     baseIntensity: 0,
@@ -492,6 +496,35 @@ export function createWeatherManager({
     manualRippleScale: null,
     manualDropSpeed: null,
     manualViscosity: null,
+  };
+
+  let preferDomRaindropOverlay;
+  if (useDomRaindropOverlayFlag === undefined) {
+    preferDomRaindropOverlay = typeof document !== 'undefined';
+  } else {
+    preferDomRaindropOverlay = Boolean(useDomRaindropOverlayFlag);
+  }
+
+  const ensureRaindropOverlayController = () => {
+    if (!preferDomRaindropOverlay) {
+      return null;
+    }
+    if (typeof document === 'undefined') {
+      preferDomRaindropOverlay = false;
+      return null;
+    }
+    if (raindropOverlayController) {
+      return raindropOverlayController;
+    }
+    try {
+      raindropOverlayController = createWeatherOverlayController();
+    } catch (error) {
+      console.warn('Failed to initialise weather overlay controller, falling back to shader:', error);
+      preferDomRaindropOverlay = false;
+      raindropOverlayController = null;
+      return null;
+    }
+    return raindropOverlayController;
   };
 
   const resolveOverlayTargets = () => {
@@ -711,7 +744,7 @@ export function createWeatherManager({
     overlay.rippleScale = targets.rippleScale;
     overlay.dropSpeed = targets.dropSpeed;
     overlay.viscosity = targets.viscosity;
-    overlay.visible = Boolean(raindropOverlay);
+    overlay.visible = Boolean(raindropOverlayVisible);
   };
 
   const getManualPrecipitationOverrides = () => {
@@ -763,7 +796,7 @@ export function createWeatherManager({
     };
   };
 
-  const ensureRaindropOverlayEffect = (targets) => {
+  const ensureShaderRaindropOverlayEffect = (targets) => {
     if (raindropOverlay || !scene) {
       if (raindropOverlay && targets) {
         raindropOverlay.setIntensity(targets.intensity);
@@ -785,12 +818,39 @@ export function createWeatherManager({
     overlay.mesh.visible = true;
     scene.add(overlay.mesh);
     raindropOverlay = overlay;
+    raindropOverlayVisible = true;
     updateRaindropOverlayMetadata();
     return raindropOverlay;
   };
 
+  const hideRaindropOverlayController = () => {
+    if (!raindropOverlayController) {
+      return;
+    }
+    try {
+      raindropOverlayController.setIntensity?.(0);
+      raindropOverlayController.setDropletDensity?.(0);
+    } catch (error) {
+      console.warn('Failed to reset weather overlay controller state:', error);
+    }
+    if (raindropOverlayController.element) {
+      raindropOverlayController.element.hidden = true;
+      raindropOverlayController.element.style.display = 'none';
+    }
+  };
+
   const disposeRaindropOverlayEffect = () => {
+    if (raindropOverlayController) {
+      try {
+        raindropOverlayController.dispose();
+      } catch (error) {
+        console.warn('Failed to dispose weather overlay controller:', error);
+      }
+      raindropOverlayController = null;
+    }
     if (!raindropOverlay) {
+      raindropOverlayVisible = false;
+      updateRaindropOverlayMetadata();
       return;
     }
     try {
@@ -799,6 +859,7 @@ export function createWeatherManager({
       console.warn('Failed to dispose raindrop overlay effect:', error);
     }
     raindropOverlay = null;
+    raindropOverlayVisible = false;
     updateRaindropOverlayMetadata();
   };
 
@@ -808,14 +869,30 @@ export function createWeatherManager({
     const shouldShow = manualEnabled !== null ? manualEnabled : baseActive;
     const targets = resolveOverlayTargets();
     if (!shouldShow || targets.intensity <= 0) {
+      if (raindropOverlayController) {
+        hideRaindropOverlayController();
+      }
       if (raindropOverlay) {
         disposeRaindropOverlayEffect();
-      } else {
-        updateRaindropOverlayMetadata();
       }
+      raindropOverlayVisible = false;
+      updateRaindropOverlayMetadata();
       return;
     }
-    const overlay = ensureRaindropOverlayEffect(targets);
+    const controller = ensureRaindropOverlayController();
+    if (controller) {
+      controller.setIntensity?.(targets.intensity);
+      controller.setWindSway?.(targets.windSpeed);
+      controller.setDropletDensity?.(targets.streakDensity);
+      if (controller.element) {
+        controller.element.hidden = false;
+        controller.element.style.display = '';
+      }
+      raindropOverlayVisible = true;
+      updateRaindropOverlayMetadata();
+      return;
+    }
+    const overlay = ensureShaderRaindropOverlayEffect(targets);
     if (overlay) {
       overlay.setIntensity(targets.intensity);
       overlay.setWindSpeed(targets.windSpeed);
@@ -824,6 +901,7 @@ export function createWeatherManager({
       if (overlay.mesh) {
         overlay.mesh.visible = true;
       }
+      raindropOverlayVisible = true;
     }
     updateRaindropOverlayMetadata();
   };
@@ -969,7 +1047,7 @@ export function createWeatherManager({
     const sparkleGain = raindropOverlay?.getSparkleGain?.() ?? targets.sparkleGain;
     return {
       enabled: Boolean((manualEnabled ?? baseActive) && intensity > 0),
-      visible: Boolean(raindropOverlay),
+      visible: Boolean(raindropOverlayVisible),
       intensity,
       windSpeed,
       streakDensity,
@@ -2382,6 +2460,9 @@ export function createWeatherManager({
     validatePrecipitationHandles({ ...context, elapsedTime: lastElapsedTime });
     if (raindropOverlay) {
       raindropOverlay.update({ delta, elapsedTime: lastElapsedTime });
+    }
+    if (raindropOverlayController) {
+      raindropOverlayController.update?.({ delta });
     }
     updateRotationHarnessTick({ elapsedTime: lastElapsedTime });
     tickAccumulator += Number.isFinite(delta) ? delta : 0;
