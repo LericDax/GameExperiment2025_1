@@ -7,6 +7,12 @@ import {
   listEntityDefinitions,
   applyRegistryToManager,
 } from './entity-registry.js';
+import {
+  EntityAssetLoader,
+  createEntityAssetLoader,
+  getSharedEntityAssetLoader,
+} from './entity-asset-loader.js';
+import { CrownedGhostEntity } from './crowned-ghost.js';
 
 export {
   createEntityManager,
@@ -16,6 +22,10 @@ export {
   getEntityDefinition,
   listEntityDefinitions,
   applyRegistryToManager,
+  EntityAssetLoader,
+  createEntityAssetLoader,
+  getSharedEntityAssetLoader,
+  CrownedGhostEntity,
 };
 
 export function registerEntityFactory(idOrDefinition, factory, options = {}) {
@@ -67,4 +77,32 @@ export function registerEntityClass({
     autoload,
     create: factory,
   });
+}
+
+let builtinsRegistered = false;
+
+export function registerBuiltinEntities() {
+  if (builtinsRegistered) {
+    return;
+  }
+
+  const existing = getEntityDefinition('crowned_ghost');
+  if (!existing) {
+    registerEntityClass({
+      id: 'crowned_ghost',
+      label: 'Crowned Ghost',
+      EntityClass: CrownedGhostEntity,
+      metadata: {
+        aliases: {
+          numeric: [1],
+        },
+        tags: {
+          biomes: ['haunted', 'mistwood', 'luminous_cavern'],
+          weather: ['clear', 'foggy', 'storm'],
+        },
+      },
+    });
+  }
+
+  builtinsRegistered = true;
 }

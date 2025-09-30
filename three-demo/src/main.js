@@ -26,7 +26,7 @@ import { createWaterSurfaceMistEmitter } from './rendering/particles/water-effec
 import { createAuroraRibbonEmitter } from './rendering/particles/aurora-effects.js'
 import { createLumenBloomMotesEmitter } from './rendering/particles/lumen-bloom-effects.js'
 import { createWeatherManager } from './world/weather/weather-manager.js'
-import { createEntityManager } from './entities/index.js'
+import { createEntityManager, registerBuiltinEntities } from './entities/index.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -331,6 +331,8 @@ try {
 
   chunkManager.update(playerControls.getPosition(), { camera })
   updateHud(playerControls.getState())
+
+  registerBuiltinEntities()
 
   entityManager = createEntityManager({
     THREE,
