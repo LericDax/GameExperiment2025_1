@@ -85,6 +85,41 @@ export function registerDeveloperCommands({
     lastSuppressedWeatherId: null,
   };
 
+  const collectAnimationVariantIds = (targetType) => {
+    if (!targetType) {
+      return [];
+    }
+    const variantsSource = targetType.metadata?.animations?.variants;
+    const ordered = [];
+    const seen = new Set();
+    const append = (value) => {
+      const id = String(value ?? '').trim();
+      if (!id || seen.has(id)) {
+        return;
+      }
+      seen.add(id);
+      ordered.push(id);
+    };
+
+    append(targetType.metadata?.animations?.default);
+
+    if (Array.isArray(variantsSource)) {
+      variantsSource.forEach((entry) => {
+        if (typeof entry === 'string' || typeof entry === 'number') {
+          append(entry);
+          return;
+        }
+        if (entry && typeof entry === 'object' && 'id' in entry) {
+          append(entry.id);
+        }
+      });
+    } else if (variantsSource && typeof variantsSource === 'object') {
+      Object.keys(variantsSource).forEach(append);
+    }
+
+    return ordered;
+  };
+
   const setWeatherSuppressionState = (isSuppressed) => {
     if (!scene) {
       return;
@@ -1238,15 +1273,15 @@ export function registerDeveloperCommands({
     name: 'spawn',
     description:
       'Spawn registered entities in front of the player for debugging and rapid iteration.',
-    usage: '/spawn entity list | /spawn entity <id|number>',
+    usage: '/spawn entity list | /spawn entity <id|number> [animation <index|id>]',
     handler: async ({ args }) => {
       if (args.length === 0) {
-        throw new Error('Usage: /spawn entity list | /spawn entity <id|number>.');
+        throw new Error('Usage: /spawn entity list | /spawn entity <id|number> [animation <index|id>].');
       }
 
       const mode = args[0].toLowerCase();
       if (mode !== 'entity') {
-        throw new Error('Usage: /spawn entity list | /spawn entity <id|number>.');
+        throw new Error('Usage: /spawn entity list | /spawn entity <id|number> [animation <index|id>].');
       }
 
       let manager;
@@ -1333,6 +1368,32 @@ export function registerDeveloperCommands({
         throw new Error('Entity type not found.');
       }
 
+      const trailingArgs = args.slice(2);
+      let requestedAnimation = null;
+      for (let index = 0; index < trailingArgs.length; index += 1) {
+        const token = trailingArgs[index];
+        if (!token) {
+          continue;
+        }
+        const normalizedToken = String(token).toLowerCase();
+        if (normalizedToken === 'animation') {
+          if (requestedAnimation !== null) {
+            throw new Error('Animation variant specified multiple times.');
+          }
+          const value = trailingArgs[index + 1];
+          if (!value) {
+            throw new Error('Usage: /spawn entity <id|number> [animation <index|id>].');
+          }
+          requestedAnimation = value;
+          index += 1;
+          continue;
+        }
+
+        throw new Error(
+          `Unknown argument "${token}". Usage: /spawn entity <id|number> [animation <index|id>].`,
+        );
+      }
+
       const origin = playerControls.getPosition?.() ?? { x: 0, y: 0, z: 0 };
       const orientation = playerControls.getYawPitch?.() ?? { yaw: 0, pitch: 0 };
 
@@ -1372,6 +1433,48 @@ export function registerDeveloperCommands({
         source: 'command',
       };
 
+      let selectedAnimationId = null;
+      let selectedAnimationIndex = null;
+      if (requestedAnimation !== null) {
+        const availableVariants = collectAnimationVariantIds(targetType);
+        if (availableVariants.length === 0) {
+          throw new Error(
+            `Entity "${targetType.id}" does not define selectable animations. Valid options: (none).`,
+          );
+        }
+
+        const normalizedRequest = String(requestedAnimation).trim();
+        const numericCandidate = Number(normalizedRequest);
+        if (normalizedRequest && Number.isFinite(numericCandidate)) {
+          const variantIndex = Math.trunc(numericCandidate);
+          if (variantIndex >= 1 && variantIndex <= availableVariants.length) {
+            selectedAnimationIndex = variantIndex;
+            selectedAnimationId = availableVariants[variantIndex - 1];
+          }
+        }
+
+        if (!selectedAnimationId && normalizedRequest) {
+          const matchIndex = availableVariants.findIndex(
+            (id) => id.toLowerCase() === normalizedRequest.toLowerCase(),
+          );
+          if (matchIndex !== -1) {
+            selectedAnimationIndex = matchIndex + 1;
+            selectedAnimationId = availableVariants[matchIndex];
+          }
+        }
+
+        if (!selectedAnimationId) {
+          const optionsDescription = availableVariants
+            .map((id, index) => `[${index + 1}] ${id}`)
+            .join(', ');
+          throw new Error(
+            `Invalid animation "${requestedAnimation}". Valid options: ${optionsDescription}.`,
+          );
+        }
+
+        spawnPayload.initialAnimation = selectedAnimationId;
+      }
+
       let spawnedEntity = null;
       try {
         spawnedEntity = await manager.spawnEntity(targetType.id, spawnPayload);
@@ -1385,10 +1488,14 @@ export function registerDeveloperCommands({
       }
 
       const spawnedId = spawnedEntity?.id ?? 'unknown-id';
+      const animationSummary =
+        selectedAnimationId && selectedAnimationIndex
+          ? ` using animation [${selectedAnimationIndex}] ${selectedAnimationId}`
+          : '';
       commandConsole.log(
         `Spawned ${targetType.label ?? targetType.id} (${targetType.id}) as ${spawnedId} at X=${spawnPosition.x.toFixed(
           2,
-        )} Y=${spawnPosition.y.toFixed(2)} Z=${spawnPosition.z.toFixed(2)}.`,
+        )} Y=${spawnPosition.y.toFixed(2)} Z=${spawnPosition.z.toFixed(2)}${animationSummary}.`,
       );
       console.info(
         'Spawn command created entity',
