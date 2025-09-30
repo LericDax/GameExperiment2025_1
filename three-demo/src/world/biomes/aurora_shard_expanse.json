@@ -83,17 +83,32 @@
     "candidates": [
       {
         "id": "clear_skies",
-        "weight": 3,
+        "weight": 2,
         "duration": { "min": 260, "max": 520 }
       },
       {
+        "id": "polar_aurora",
+        "weight": 6,
+        "duration": { "min": 260, "max": 520 }
+      },
+      {
+        "id": "aurora_snowfall",
+        "weight": 4,
+        "duration": { "min": 220, "max": 460 }
+      },
+      {
+        "id": "soft_snowfall",
+        "weight": 3,
+        "duration": { "min": 180, "max": 360 }
+      },
+      {
         "id": "misty_rain",
-        "weight": 1,
+        "weight": 0.6,
         "duration": { "min": 140, "max": 260 }
       },
       {
         "id": "charged_storm",
-        "weight": 2,
+        "weight": 0.8,
         "duration": { "min": 110, "max": 220 }
       }
     ]

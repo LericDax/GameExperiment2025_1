@@ -128,6 +128,8 @@
           --rain-velocity: fall-speed multiplier applied to each raindrop animation.
           --rain-density: opacity multiplier for individual streaks (typical range 0-3).
           --rain-density-alpha: normalized helper mapping --rain-density into [0, 1] for opacity calculations.
+        Snow presets reuse these variables with gentle wind, rounded densities, and lower velocities to render soft puff flakes
+        across the same DOM host.
       */
       #weather-overlay {
         --rain-intensity: 0;

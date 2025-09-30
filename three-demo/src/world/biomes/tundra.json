@@ -47,14 +47,29 @@
         "duration": { "min": 240, "max": 500 }
       },
       {
-        "id": "misty_rain",
-        "weight": 2,
-        "duration": { "min": 150, "max": 260 }
+        "id": "soft_snowfall",
+        "weight": 4,
+        "duration": { "min": 170, "max": 320 }
       },
       {
         "id": "charged_storm",
         "weight": 1,
         "duration": { "min": 100, "max": 180 }
+      },
+      {
+        "id": "aurora_snowfall",
+        "weight": 0.55,
+        "duration": { "min": 200, "max": 360 }
+      },
+      {
+        "id": "polar_aurora",
+        "weight": 0.2,
+        "duration": { "min": 220, "max": 400 }
+      },
+      {
+        "id": "misty_rain",
+        "weight": 0.8,
+        "duration": { "min": 140, "max": 260 }
       }
     ]
   }

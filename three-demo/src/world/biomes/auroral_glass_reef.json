@@ -44,12 +44,22 @@
     "candidates": [
       {
         "id": "clear_skies",
-        "weight": 5,
+        "weight": 4,
         "duration": { "min": 260, "max": 520 }
+      },
+      {
+        "id": "polar_aurora",
+        "weight": 4,
+        "duration": { "min": 240, "max": 480 }
       },
       {
         "id": "misty_rain",
         "weight": 2,
+        "duration": { "min": 150, "max": 280 }
+      },
+      {
+        "id": "soft_snowfall",
+        "weight": 1,
         "duration": { "min": 150, "max": 280 }
       }
     ]

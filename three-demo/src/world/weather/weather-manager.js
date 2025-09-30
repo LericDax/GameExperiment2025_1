@@ -62,6 +62,91 @@ const DEFAULT_WEATHER_PRESETS = {
       },
     },
   },
+  soft_snowfall: {
+    id: 'soft_snowfall',
+    label: 'Soft Snowfall',
+    description: 'Gentle crystalline flakes drift through calm polar air.',
+    intensity: 0.55,
+    category: 'snow',
+    moisture: 0.7,
+    temperature: 0.18,
+    effects: {
+      precipitation: {
+        type: 'snow',
+        intensity: 0.7,
+        radius: 12,
+        anchorHeight: 15,
+        updateInterval: 0.32,
+        raindropOverlay: {
+          intensity: 0.82,
+          windSpeed: 0.12,
+          streakDensity: 0.54,
+          sparkleGain: 0.72,
+          rippleScale: 0.78,
+          dropSpeed: 0.34,
+          viscosity: 0.88,
+        },
+      },
+    },
+  },
+  polar_aurora: {
+    id: 'polar_aurora',
+    label: 'Polar Aurora',
+    description: 'Iridescent aurora curtains sweep overhead while the air stays still.',
+    intensity: 0.75,
+    category: 'aurora',
+    moisture: 0.35,
+    temperature: 0.1,
+    effects: {
+      aurora: {
+        intensity: 1.15,
+        span: 12,
+        count: 3,
+        anchorHeight: 28,
+        forwardOffset: 44,
+        lateralOffset: 12,
+        orientationJitter: Math.PI / 14,
+        alignWithHeading: true,
+      },
+    },
+  },
+  aurora_snowfall: {
+    id: 'aurora_snowfall',
+    label: 'Aurora Snowfall',
+    description: 'Soft snow puffs fall as aurora ribbons shimmer in the distance.',
+    intensity: 0.65,
+    category: 'snow',
+    moisture: 0.74,
+    temperature: 0.16,
+    effects: {
+      precipitation: {
+        type: 'snow',
+        intensity: 0.65,
+        radius: 13,
+        anchorHeight: 16,
+        updateInterval: 0.3,
+        raindropOverlay: {
+          intensity: 0.92,
+          windSpeed: 0.18,
+          streakDensity: 0.58,
+          sparkleGain: 0.78,
+          rippleScale: 0.82,
+          dropSpeed: 0.38,
+          viscosity: 0.82,
+        },
+      },
+      aurora: {
+        intensity: 0.95,
+        span: 11,
+        count: 2,
+        anchorHeight: 26,
+        forwardOffset: 42,
+        lateralOffset: 9,
+        orientationJitter: Math.PI / 12,
+        alignWithHeading: true,
+      },
+    },
+  },
 };
 
 const CATEGORY_DEFAULT_EFFECTS = {
@@ -302,6 +387,9 @@ function normalisePrecipitationEffect(weather, effect) {
   let raindropOverlay = null;
   if (overlayEffect) {
     const overlayConfig = {};
+    if (Number.isFinite(overlayEffect.intensity)) {
+      overlayConfig.intensity = clampRaindropOverlayIntensity(overlayEffect.intensity);
+    }
     if (Number.isFinite(overlayEffect.windSpeed)) {
       overlayConfig.windSpeed = clampRaindropOverlayWindSpeed(overlayEffect.windSpeed);
     }
@@ -455,6 +543,73 @@ function resolveRainOverlayResponse(precipitation) {
     overlayConfig.viscosity !== undefined && Number.isFinite(overlayConfig.viscosity)
       ? overlayConfig.viscosity
       : null;
+  return {
+    active: intensity > 0,
+    intensity,
+    windSpeed: clampRaindropOverlayWindSpeed(windSource),
+    streakDensity: clampRaindropOverlayStreakDensity(streakSource),
+    sparkleGain: clampRaindropOverlaySparkleGain(sparkleSource),
+    rippleScale: rippleScaleSource,
+    dropSpeed: dropSpeedSource,
+    viscosity: viscositySource,
+  };
+}
+
+function resolveSnowOverlayResponse(precipitation) {
+  const defaults = {
+    active: false,
+    intensity: 0,
+    windSpeed: 0,
+    streakDensity: clampRaindropOverlayStreakDensity(0.5),
+    sparkleGain: clampRaindropOverlaySparkleGain(0.65),
+    rippleScale: null,
+    dropSpeed: null,
+    viscosity: null,
+  };
+  if (!precipitation) {
+    return defaults;
+  }
+  const overlayConfig = precipitation.raindropOverlay ?? {};
+  const baseIntensitySource = (() => {
+    const raw = Number.isFinite(precipitation.intensity)
+      ? Math.max(0, precipitation.intensity)
+      : 0;
+    const curved = Math.pow(Math.min(raw, 1.6), 0.78);
+    const scaled = RAIN_OVERLAY_INTENSITY_MIN + curved * 0.68;
+    return clamp(
+      scaled,
+      RAIN_OVERLAY_INTENSITY_MIN,
+      RAIN_OVERLAY_INTENSITY_MIN + (RAIN_OVERLAY_INTENSITY_MAX - RAIN_OVERLAY_INTENSITY_MIN) * 0.55,
+    );
+  })();
+  const intensitySource = Number.isFinite(overlayConfig.intensity)
+    ? overlayConfig.intensity
+    : baseIntensitySource;
+  const intensity = clampRaindropOverlayIntensity(intensitySource);
+  const windSource =
+    overlayConfig.windSpeed !== undefined
+      ? overlayConfig.windSpeed
+      : clampRaindropOverlayWindSpeed((precipitation.intensity ?? 0.4) * 0.12);
+  const streakSource =
+    overlayConfig.streakDensity !== undefined
+      ? overlayConfig.streakDensity
+      : clampRaindropOverlayStreakDensity(0.52 + Math.min(precipitation.intensity ?? 0.6, 1) * 0.08);
+  const sparkleSource =
+    overlayConfig.sparkleGain !== undefined
+      ? overlayConfig.sparkleGain
+      : clampRaindropOverlaySparkleGain(0.7 + Math.min(precipitation.intensity ?? 0.6, 1.2) * 0.1);
+  const rippleScaleSource =
+    overlayConfig.rippleScale !== undefined && Number.isFinite(overlayConfig.rippleScale)
+      ? overlayConfig.rippleScale
+      : 0.8;
+  const dropSpeedSource =
+    overlayConfig.dropSpeed !== undefined && Number.isFinite(overlayConfig.dropSpeed)
+      ? overlayConfig.dropSpeed
+      : 0.36;
+  const viscositySource =
+    overlayConfig.viscosity !== undefined && Number.isFinite(overlayConfig.viscosity)
+      ? overlayConfig.viscosity
+      : 0.85;
   return {
     active: intensity > 0,
     intensity,
@@ -2062,6 +2217,18 @@ export function createWeatherManager({
       spawnPrecipitationEffect(precipitation, context);
       if (precipitation.type === 'rain') {
         const overlayResponse = resolveRainOverlayResponse(precipitation);
+        overlayBaseState = {
+          active: overlayResponse.active,
+          intensity: overlayResponse.intensity,
+          windSpeed: overlayResponse.windSpeed,
+          streakDensity: overlayResponse.streakDensity,
+          sparkleGain: overlayResponse.sparkleGain,
+          rippleScale: overlayResponse.rippleScale ?? null,
+          dropSpeed: overlayResponse.dropSpeed ?? null,
+          viscosity: overlayResponse.viscosity ?? null,
+        };
+      } else if (precipitation.type === 'snow') {
+        const overlayResponse = resolveSnowOverlayResponse(precipitation);
         overlayBaseState = {
           active: overlayResponse.active,
           intensity: overlayResponse.intensity,
