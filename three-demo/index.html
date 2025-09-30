@@ -122,22 +122,32 @@
 
       /*
         Weather overlay variables updated by the weather overlay controller:
-          --rain-intensity: overall strength of the effect (0 hides the overlay).
+          --rain-intensity: overall strength of the effect (0 hides the overlay, typical range 0-4).
+          --rain-intensity-alpha: normalized helper mapping --rain-intensity into [0, 1] for blend effects.
           --rain-wind: horizontal drift multiplier applied to the streak animation.
           --rain-velocity: fall-speed multiplier applied to each raindrop animation.
-          --rain-density: opacity multiplier for individual streaks.
+          --rain-density: opacity multiplier for individual streaks (typical range 0-3).
+          --rain-density-alpha: normalized helper mapping --rain-density into [0, 1] for opacity calculations.
       */
       #weather-overlay {
         --rain-intensity: 0;
         --rain-wind: 0;
         --rain-velocity: 1;
         --rain-density: 0;
+        --rain-intensity-alpha: max(
+          0,
+          min(1, calc(var(--rain-intensity, 0) / 3.5))
+        );
+        --rain-density-alpha: max(
+          0,
+          min(1, calc(var(--rain-density, 0) / 3))
+        );
         position: fixed;
         inset: 0;
         z-index: 80;
         pointer-events: none;
         overflow: hidden;
-        opacity: clamp(0, var(--rain-intensity, 0), 1);
+        opacity: var(--rain-intensity-alpha);
         transition: opacity 0.35s ease, filter 0.6s ease;
         filter: saturate(120%);
         mix-blend-mode: screen;
@@ -160,7 +170,7 @@
             transparent 60%
           ),
           linear-gradient(180deg, rgba(20, 52, 92, 0.35), transparent 60%);
-        opacity: calc(clamp(0, var(--rain-intensity, 0), 1) * 0.55);
+        opacity: calc(var(--rain-intensity-alpha) * 0.55);
         pointer-events: none;
       }
 
@@ -175,7 +185,7 @@
           transparent 100%
         );
         mix-blend-mode: overlay;
-        opacity: calc(clamp(0, var(--rain-intensity, 0), 1) * 0.32);
+        opacity: calc(var(--rain-intensity-alpha) * 0.32);
         pointer-events: none;
       }
 
@@ -192,7 +202,7 @@
           rgba(120, 165, 220, 0.35) 80%,
           rgba(120, 165, 220, 0) 100%
         );
-        opacity: calc(clamp(0, var(--rain-density, 0), 1) * 0.9);
+        opacity: calc(var(--rain-density-alpha) * 0.9);
         transform: translate3d(0, 0, 0);
         animation-name: rainStreakFall;
         animation-duration: calc(
@@ -217,7 +227,7 @@
           rgba(220, 235, 255, 0.4) 0%,
           rgba(220, 235, 255, 0) 65%
         );
-        opacity: calc(clamp(0, var(--rain-density, 0), 1) * 0.35);
+        opacity: calc(var(--rain-density-alpha) * 0.35);
         filter: blur(10px);
       }
 
@@ -232,11 +242,11 @@
         }
 
         12% {
-          opacity: calc(0.4 + clamp(0, var(--rain-intensity, 0), 1) * 0.5);
+          opacity: calc(0.4 + var(--rain-intensity-alpha) * 0.5);
         }
 
         55% {
-          opacity: calc(0.8 + clamp(0, var(--rain-intensity, 0), 1) * 0.2);
+          opacity: calc(0.8 + var(--rain-intensity-alpha) * 0.2);
         }
 
         100% {
