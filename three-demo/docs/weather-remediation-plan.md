@@ -87,7 +87,12 @@ Please continue appending follow-up findings or configuration changes here whene
 - **QA checklist:**
   - Trigger `/weather misty_rain` (or cycle via the harness) and stand near ground; confirm bright streaks are accompanied by fast upward splash sparks within the precipitation radius, concentrated around the player’s feet.【F:src/rendering/particles/weather-rain-splashes.js†L15-L47】
   - Watch the weather debug overlay for both the bright-streak and splash debug labels, ensuring the splash handle appears/disappears as presets switch and that retries clean up the previous layer.【F:src/world/weather/weather-manager.js†L1334-L1418】【F:src/world/__tests__/weather-manager.test.js†L94-L158】
-- **Reminder:** Keep this splash section current whenever you retune intensity, spawn budgets, or cleanup logic so QA and diagnostics stay aligned.
+  - **Reminder:** Keep this splash section current whenever you retune intensity, spawn budgets, or cleanup logic so QA and diagnostics stay aligned.
+
+## 2025-12 Fallback Rain Billboard
+- Added `createWeatherRainBillboardEmitter` as the default rain streak path, keeping the bright-streak shader opt-in while exposing the new `WeatherRainEmitter/BillboardFallback` label for diagnostics and overlays.【F:src/rendering/particles/weather-rain.js†L1-L118】【F:src/world/weather/weather-manager.js†L1395-L1565】
+- Weather manager now records both the fallback and splash layers on `scene.userData.weather.precipitationLayers`, and regression tests confirm the metadata clears and repopulates as emitters stop, retry, and recover.【F:src/world/weather/weather-manager.js†L520-L611】【F:src/world/__tests__/weather-manager.test.js†L83-L210】
+- The end-to-end particle harness now looks for the fallback label with a 30-particle floor, restoring QA confidence when the bright shader is disabled.【F:src/world/__tests__/weather-manager.test.js†L720-L816】
 
 ## Work Orders
 1. **Gameplay-driven rotation**
