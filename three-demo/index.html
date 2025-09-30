@@ -128,8 +128,10 @@
           --rain-velocity: fall-speed multiplier applied to each raindrop animation.
           --rain-density: opacity multiplier for individual streaks (typical range 0-3).
           --rain-density-alpha: normalized helper mapping --rain-density into [0, 1] for opacity calculations.
-        Snow presets reuse these variables with gentle wind, rounded densities, and lower velocities to render soft puff flakes
-        across the same DOM host.
+          --snowflake-density / --snowpuff-density: DOM-only density metrics exposed when the overlay switches to snow mode,
+            allowing the controller to drive separate flake/puff pools.
+        Snow presets reuse the shared intensity/wind variables while the dedicated density metrics and DOM classes provide the
+        softer puff/flake styling.
       */
       #weather-overlay {
         --rain-intensity: 0;
@@ -144,6 +146,8 @@
           0,
           min(1, calc(var(--rain-density, 0) / 3))
         );
+        --snowflake-density: 0;
+        --snowpuff-density: 0;
         position: fixed;
         inset: 0;
         z-index: 80;
@@ -210,7 +214,9 @@
         will-change: transform, opacity;
       }
 
-      #weather-overlay:not([hidden]) .raindrop {
+      #weather-overlay:not([hidden]) .raindrop,
+      #weather-overlay:not([hidden]) .snowflake,
+      #weather-overlay:not([hidden]) .snowpuff {
         animation-play-state: running;
       }
 
@@ -300,6 +306,123 @@
           rgba(255, 255, 255, 0) 75%
         );
         opacity: calc(var(--rain-intensity-alpha) * 0.4);
+      }
+
+      #weather-overlay[data-weather-mode='snow'] {
+        mix-blend-mode: screen;
+        filter: saturate(115%) brightness(1.05);
+      }
+
+      #weather-overlay[data-weather-mode='snow']::before {
+        background: radial-gradient(
+            circle at 40% 25%,
+            rgba(220, 235, 255, 0.35),
+            transparent 50%
+          ),
+          radial-gradient(
+            circle at 70% 45%,
+            rgba(200, 225, 255, 0.25),
+            transparent 65%
+          ),
+          linear-gradient(180deg, rgba(180, 210, 255, 0.3), transparent 60%);
+        opacity: calc(var(--rain-intensity-alpha) * 0.4);
+      }
+
+      #weather-overlay[data-weather-mode='snow']::after {
+        opacity: calc(var(--rain-intensity-alpha) * 0.22);
+      }
+
+      #weather-overlay .snowflake,
+      #weather-overlay .snowpuff {
+        position: absolute;
+        top: 0;
+        transform-origin: center;
+        pointer-events: none;
+        animation-play-state: paused;
+        will-change: transform, opacity;
+      }
+
+      #weather-overlay .snowflake {
+        left: var(--snowflake-left, 50%);
+        width: calc(12px * var(--snowflake-scale, 1));
+        height: calc(12px * var(--snowflake-scale, 1));
+        animation-name: snowflakeDrift;
+        animation-duration: var(--snowflake-fall-duration, 12s);
+        animation-delay: var(--snowflake-delay, 0s);
+        animation-timing-function: ease-in-out;
+        animation-iteration-count: infinite;
+        animation-fill-mode: both;
+        opacity: calc(
+          var(--snowflake-opacity, 0.6) *
+            (0.35 + min(var(--snowflake-density, 0), 4) * 0.12)
+        );
+        mix-blend-mode: screen;
+        filter: blur(0.6px);
+      }
+
+      #weather-overlay .snowflake::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 255, 255, 0.92) 0%,
+          rgba(210, 235, 255, 0.62) 55%,
+          rgba(210, 235, 255, 0) 100%
+        );
+        box-shadow: 0 0 18px rgba(200, 235, 255, 0.4);
+        animation: snowflakeSpin var(--snowflake-spin-duration, 18s) linear infinite;
+        animation-delay: calc(var(--snowflake-delay, 0s) * 0.8);
+        transform-origin: center;
+      }
+
+      #weather-overlay .snowpuff {
+        left: var(--snowpuff-left, 50%);
+        width: calc(26px * var(--snowpuff-scale, 1));
+        height: calc(26px * var(--snowpuff-scale, 1));
+        animation-name: snowpuffFloat;
+        animation-duration: var(--snowpuff-fall-duration, 16s);
+        animation-delay: var(--snowpuff-delay, 0s);
+        animation-timing-function: ease-in-out;
+        animation-iteration-count: infinite;
+        animation-fill-mode: both;
+        opacity: calc(
+          var(--snowpuff-opacity, 0.45) *
+            (0.4 + min(var(--snowpuff-density, 0), 4) * 0.16)
+        );
+        mix-blend-mode: screen;
+        filter: blur(1.1px);
+      }
+
+      #weather-overlay .snowpuff::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(240, 250, 255, 0.65) 0%,
+          rgba(210, 235, 255, 0.35) 45%,
+          rgba(210, 235, 255, 0) 100%
+        );
+        animation: snowpuffSpin var(--snowpuff-spin-duration, 20s) linear infinite;
+        animation-delay: calc(var(--snowpuff-delay, 0s) * 0.75);
+        transform-origin: center;
+      }
+
+      #weather-overlay .snowpuff::after {
+        content: "";
+        position: absolute;
+        inset: 18% 20% 30% 20%;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 255, 255, 0.8) 0%,
+          rgba(255, 255, 255, 0) 90%
+        );
+        opacity: 0.7;
+        filter: blur(2.6px);
       }
 
       @keyframes rainStreakFall {
@@ -444,6 +567,116 @@
             )
             scale(var(--raindrop-scale, 1));
           opacity: 0;
+        }
+      }
+
+      @keyframes snowflakeDrift {
+        0% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * -6px + var(--snowflake-drift, 0px) * -0.4
+              ),
+              var(--snowflake-start, -40vh),
+              0
+            )
+            scale(var(--snowflake-scale, 1));
+          opacity: 0;
+        }
+
+        20% {
+          opacity: calc(0.35 + min(var(--snowflake-density, 0), 4) * 0.12);
+        }
+
+        50% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * 4px + var(--snowflake-sway, 0px) * 0.5
+              ),
+              calc(
+                (var(--snowflake-start, -40vh) + var(--snowflake-end, 80vh)) * 0.5 +
+                  var(--snowflake-bob, 6vh) * 0.25
+              ),
+              0
+            )
+            scale(var(--snowflake-scale, 1));
+          opacity: calc(0.55 + min(var(--snowflake-density, 0), 4) * 0.1);
+        }
+
+        100% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * 12px + var(--snowflake-sway, 0px)
+              ),
+              calc(var(--snowflake-end, 80vh) - var(--snowflake-bob, 6vh) * 0.2),
+              0
+            )
+            scale(var(--snowflake-scale, 1));
+          opacity: 0;
+        }
+      }
+
+      @keyframes snowflakeSpin {
+        0% {
+          transform: rotate(0deg);
+        }
+
+        100% {
+          transform: rotate(calc(360deg * var(--snowflake-rotation-dir, 1)));
+        }
+      }
+
+      @keyframes snowpuffFloat {
+        0% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * -4px + var(--snowpuff-drift, 0px) * -0.35
+              ),
+              var(--snowpuff-start, -44vh),
+              0
+            )
+            scale(var(--snowpuff-scale, 1));
+          opacity: 0;
+        }
+
+        18% {
+          opacity: calc(0.32 + min(var(--snowpuff-density, 0), 4) * 0.12);
+        }
+
+        55% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * 6px + var(--snowpuff-sway, 0px) * 0.45
+              ),
+              calc(
+                (var(--snowpuff-start, -44vh) + var(--snowpuff-end, 90vh)) * 0.5 +
+                  var(--snowpuff-bob, 8vh) * 0.3
+              ),
+              0
+            )
+            scale(var(--snowpuff-scale, 1));
+          opacity: calc(0.55 + min(var(--snowpuff-density, 0), 4) * 0.12);
+        }
+
+        100% {
+          transform: translate3d(
+              calc(
+                var(--rain-wind, 0) * 14px + var(--snowpuff-sway, 0px)
+              ),
+              calc(var(--snowpuff-end, 90vh) - var(--snowpuff-bob, 8vh) * 0.3),
+              0
+            )
+            scale(var(--snowpuff-scale, 1));
+          opacity: 0;
+        }
+      }
+
+      @keyframes snowpuffSpin {
+        0% {
+          transform: rotate(0deg);
+        }
+
+        100% {
+          transform: rotate(calc(360deg * var(--snowpuff-rotation-dir, 1)));
         }
       }
 

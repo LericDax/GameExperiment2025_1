@@ -934,7 +934,7 @@ test('snow presets spawn snow emitter and puff overlay', () => {
     const overlayMetadata = weatherState.raindropOverlay ?? {};
     assert.ok(overlayMetadata.visible, 'expected snow overlay metadata to flag visibility');
     assert.ok(
-      approxEqual(overlayMetadata.intensity ?? 0, 0.82, 1e-4),
+      approxEqual(overlayMetadata.intensity ?? 0, 1.05, 1e-4),
       'expected snow overlay intensity to follow preset puff tuning',
     );
     assert.ok(
@@ -957,13 +957,67 @@ test('snow presets spawn snow emitter and puff overlay', () => {
       approxEqual(overlayMetadata.baseViscosity ?? 0, 0.88, 1e-4),
       'expected snow overlay viscosity to match preset config',
     );
+    assert.equal(overlayMetadata.mode, 'snow', 'expected overlay metadata to record snow mode');
+    assert.equal(
+      overlayMetadata.baseMode,
+      'snow',
+      'expected overlay metadata to preserve snow base mode',
+    );
+    assert.ok(
+      approxEqual(overlayMetadata.flakeDensity ?? 0, 2.7, 1e-4),
+      'expected snow overlay metadata to track flake density',
+    );
+    assert.ok(
+      approxEqual(overlayMetadata.puffDensity ?? 0, 1.85, 1e-4),
+      'expected snow overlay metadata to track puff density',
+    );
+    assert.ok(
+      approxEqual(overlayMetadata.baseFlakeDensity ?? 0, 2.7, 1e-4),
+      'expected snow overlay metadata to retain base flake density',
+    );
+    assert.ok(
+      approxEqual(overlayMetadata.basePuffDensity ?? 0, 1.85, 1e-4),
+      'expected snow overlay metadata to retain base puff density',
+    );
 
     const cssIntensity = Number.parseFloat(
       overlayElement.style.getPropertyValue('--rain-intensity') || '0',
     );
     assert.ok(
-      approxEqual(cssIntensity, 0.82, 1e-4),
+      approxEqual(cssIntensity, 1.05, 1e-4),
       'expected DOM overlay intensity CSS variable to follow snow puff tuning',
+    );
+    assert.equal(
+      overlayElement.getAttribute('data-weather-mode'),
+      'snow',
+      'expected DOM overlay to advertise snow mode',
+    );
+    const snowflakeDensity = Number.parseFloat(
+      overlayElement.style.getPropertyValue('--snowflake-density') || '0',
+    );
+    const snowpuffDensity = Number.parseFloat(
+      overlayElement.style.getPropertyValue('--snowpuff-density') || '0',
+    );
+    assert.ok(
+      approxEqual(snowflakeDensity, 2.7, 1e-4),
+      'expected DOM overlay to forward snowflake density',
+    );
+    assert.ok(
+      approxEqual(snowpuffDensity, 1.85, 1e-4),
+      'expected DOM overlay to forward snowpuff density',
+    );
+    assert.equal(
+      overlayElement.querySelectorAll('.raindrop').length,
+      0,
+      'expected snow overlay to clear rain DOM elements',
+    );
+    assert.ok(
+      overlayElement.querySelectorAll('.snowflake').length > 0,
+      'expected snow overlay to spawn snowflake DOM elements',
+    );
+    assert.ok(
+      overlayElement.querySelectorAll('.snowpuff').length > 0,
+      'expected snow overlay to spawn snowpuff DOM elements',
     );
   } finally {
     restore();
@@ -1035,12 +1089,28 @@ test('aurora snowfall combines snow emitters and aurora ribbons', () => {
     const overlayMetadata = weatherState.raindropOverlay ?? {};
     assert.ok(overlayMetadata.visible, 'expected combined preset to keep puff overlay active');
     assert.ok(
-      approxEqual(overlayMetadata.intensity ?? 0, 0.92, 1e-4),
+      approxEqual(overlayMetadata.intensity ?? 0, 1.12, 1e-4),
       'expected combined preset to use brighter puff overlay intensity',
     );
     assert.ok(
       approxEqual(overlayMetadata.windSpeed ?? 0, 0.18, 1e-4),
       'expected combined preset to apply documented wind drift',
+    );
+    assert.equal(overlayMetadata.mode, 'snow', 'expected combined preset to maintain snow mode');
+    assert.ok(
+      approxEqual(overlayMetadata.flakeDensity ?? 0, 2.5, 1e-4),
+      'expected combined preset to retain tuned flake density',
+    );
+    assert.ok(
+      approxEqual(overlayMetadata.puffDensity ?? 0, 1.7, 1e-4),
+      'expected combined preset to retain tuned puff density',
+    );
+    const overlayElement = document.getElementById('weather-overlay');
+    assert.ok(overlayElement, 'expected DOM overlay to exist during aurora snowfall');
+    assert.equal(
+      overlayElement.getAttribute('data-weather-mode'),
+      'snow',
+      'expected DOM overlay to remain in snow mode for aurora snowfall',
     );
   } finally {
     restore();

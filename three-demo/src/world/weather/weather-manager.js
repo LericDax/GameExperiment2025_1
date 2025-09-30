@@ -78,13 +78,15 @@ const DEFAULT_WEATHER_PRESETS = {
         anchorHeight: 15,
         updateInterval: 0.32,
         raindropOverlay: {
-          intensity: 0.82,
+          intensity: 1.05,
           windSpeed: 0.12,
           streakDensity: 0.54,
           sparkleGain: 0.72,
           rippleScale: 0.78,
           dropSpeed: 0.34,
           viscosity: 0.88,
+          flakeDensity: 2.7,
+          puffDensity: 1.85,
         },
       },
     },
@@ -126,13 +128,15 @@ const DEFAULT_WEATHER_PRESETS = {
         anchorHeight: 16,
         updateInterval: 0.3,
         raindropOverlay: {
-          intensity: 0.92,
+          intensity: 1.12,
           windSpeed: 0.18,
           streakDensity: 0.58,
           sparkleGain: 0.78,
           rippleScale: 0.82,
           dropSpeed: 0.38,
           viscosity: 0.82,
+          flakeDensity: 2.5,
+          puffDensity: 1.7,
         },
       },
       aurora: {
@@ -410,6 +414,12 @@ function normalisePrecipitationEffect(weather, effect) {
     if (Number.isFinite(overlayEffect.viscosity)) {
       overlayConfig.viscosity = overlayEffect.viscosity;
     }
+    if (Number.isFinite(overlayEffect.flakeDensity)) {
+      overlayConfig.flakeDensity = Math.max(0, overlayEffect.flakeDensity);
+    }
+    if (Number.isFinite(overlayEffect.puffDensity)) {
+      overlayConfig.puffDensity = Math.max(0, overlayEffect.puffDensity);
+    }
     if (Object.keys(overlayConfig).length > 0) {
       raindropOverlay = overlayConfig;
     }
@@ -558,6 +568,7 @@ function resolveRainOverlayResponse(precipitation) {
 function resolveSnowOverlayResponse(precipitation) {
   const defaults = {
     active: false,
+    mode: 'snow',
     intensity: 0,
     windSpeed: 0,
     streakDensity: clampRaindropOverlayStreakDensity(0.5),
@@ -565,6 +576,8 @@ function resolveSnowOverlayResponse(precipitation) {
     rippleScale: null,
     dropSpeed: null,
     viscosity: null,
+    flakeDensity: 0,
+    puffDensity: 0,
   };
   if (!precipitation) {
     return defaults;
@@ -610,8 +623,17 @@ function resolveSnowOverlayResponse(precipitation) {
     overlayConfig.viscosity !== undefined && Number.isFinite(overlayConfig.viscosity)
       ? overlayConfig.viscosity
       : 0.85;
+  const flakeSource =
+    overlayConfig.flakeDensity !== undefined && Number.isFinite(overlayConfig.flakeDensity)
+      ? overlayConfig.flakeDensity
+      : Math.max(0, 1.6 + (precipitation.intensity ?? 0.5) * 1.5);
+  const puffSource =
+    overlayConfig.puffDensity !== undefined && Number.isFinite(overlayConfig.puffDensity)
+      ? overlayConfig.puffDensity
+      : Math.max(0, 0.9 + (precipitation.intensity ?? 0.5) * 1.2);
   return {
     active: intensity > 0,
+    mode: 'snow',
     intensity,
     windSpeed: clampRaindropOverlayWindSpeed(windSource),
     streakDensity: clampRaindropOverlayStreakDensity(streakSource),
@@ -619,6 +641,8 @@ function resolveSnowOverlayResponse(precipitation) {
     rippleScale: rippleScaleSource,
     dropSpeed: dropSpeedSource,
     viscosity: viscositySource,
+    flakeDensity: flakeSource,
+    puffDensity: puffSource,
   };
 }
 
@@ -666,12 +690,15 @@ export function createWeatherManager({
   const raindropOverlayState = {
     baseActive: false,
     baseIntensity: 0,
+    baseMode: 'rain',
     baseWindSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
     baseStreakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
     baseSparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
     baseRippleScale: null,
     baseDropSpeed: null,
     baseViscosity: null,
+    baseFlakeDensity: 0,
+    basePuffDensity: 0,
     manualEnabled: null,
     manualIntensity: null,
     manualWindSpeed: null,
@@ -722,7 +749,18 @@ export function createWeatherManager({
 
     const intensitySource =
       raindropOverlayState.manualIntensity ?? raindropOverlayState.baseIntensity;
+    const mode =
+      typeof raindropOverlayState.baseMode === 'string'
+        ? raindropOverlayState.baseMode
+        : 'rain';
+    const flakeDensity = Number.isFinite(raindropOverlayState.baseFlakeDensity)
+      ? Math.max(0, raindropOverlayState.baseFlakeDensity)
+      : 0;
+    const puffDensity = Number.isFinite(raindropOverlayState.basePuffDensity)
+      ? Math.max(0, raindropOverlayState.basePuffDensity)
+      : 0;
     return {
+      mode,
       intensity: clampRaindropOverlayIntensity(intensitySource),
       windSpeed: pickValue(
         raindropOverlayState.manualWindSpeed,
@@ -748,6 +786,8 @@ export function createWeatherManager({
         raindropOverlayState.manualDropSpeed ?? raindropOverlayState.baseDropSpeed ?? null,
       viscosity:
         raindropOverlayState.manualViscosity ?? raindropOverlayState.baseViscosity ?? null,
+      flakeDensity,
+      puffDensity,
     };
   };
 
@@ -803,12 +843,15 @@ export function createWeatherManager({
       state.raindropOverlay = {
         baseActive: false,
         baseIntensity: 0,
+        baseMode: 'rain',
         baseWindSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
         baseStreakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
         baseSparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
         baseRippleScale: null,
         baseDropSpeed: null,
         baseViscosity: null,
+        baseFlakeDensity: 0,
+        basePuffDensity: 0,
         manualEnabled: null,
         manualIntensity: null,
         manualWindSpeed: null,
@@ -819,6 +862,7 @@ export function createWeatherManager({
         manualViscosity: null,
         enabled: false,
         intensity: 0,
+        mode: 'rain',
         windSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
         streakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
         sparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
@@ -826,6 +870,8 @@ export function createWeatherManager({
         dropSpeed: null,
         viscosity: null,
         visible: false,
+        flakeDensity: 0,
+        puffDensity: 0,
       };
     }
     if (!Array.isArray(state.pendingPrecipitationRetries)) {
@@ -903,12 +949,15 @@ export function createWeatherManager({
     const baseActive = raindropOverlayState.baseActive;
     overlay.baseActive = baseActive;
     overlay.baseIntensity = raindropOverlayState.baseIntensity;
+    overlay.baseMode = raindropOverlayState.baseMode;
     overlay.baseWindSpeed = raindropOverlayState.baseWindSpeed;
     overlay.baseStreakDensity = raindropOverlayState.baseStreakDensity;
     overlay.baseSparkleGain = raindropOverlayState.baseSparkleGain;
     overlay.baseRippleScale = raindropOverlayState.baseRippleScale;
     overlay.baseDropSpeed = raindropOverlayState.baseDropSpeed;
     overlay.baseViscosity = raindropOverlayState.baseViscosity;
+    overlay.baseFlakeDensity = raindropOverlayState.baseFlakeDensity;
+    overlay.basePuffDensity = raindropOverlayState.basePuffDensity;
     overlay.manualEnabled = manualEnabled;
     overlay.manualIntensity = raindropOverlayState.manualIntensity;
     overlay.manualWindSpeed = raindropOverlayState.manualWindSpeed;
@@ -919,6 +968,7 @@ export function createWeatherManager({
     overlay.manualViscosity = raindropOverlayState.manualViscosity;
     const targets = resolveOverlayTargets();
     overlay.enabled = Boolean((manualEnabled ?? baseActive) && targets.intensity > 0);
+    overlay.mode = targets.mode;
     overlay.intensity = raindropOverlay?.getIntensity?.() ?? targets.intensity;
     overlay.windSpeed = raindropOverlay?.getWindSpeed?.() ?? targets.windSpeed;
     overlay.streakDensity =
@@ -928,6 +978,8 @@ export function createWeatherManager({
     overlay.rippleScale = targets.rippleScale;
     overlay.dropSpeed = targets.dropSpeed;
     overlay.viscosity = targets.viscosity;
+    overlay.flakeDensity = targets.flakeDensity;
+    overlay.puffDensity = targets.puffDensity;
     overlay.visible = Boolean(raindropOverlayVisible);
   };
 
@@ -1014,6 +1066,8 @@ export function createWeatherManager({
     try {
       raindropOverlayController.setIntensity?.(0);
       raindropOverlayController.setDropletDensity?.(0);
+      raindropOverlayController.setSnowflakeDensity?.(0);
+      raindropOverlayController.setSnowpuffDensity?.(0);
       raindropOverlayController.setVelocity?.(null);
     } catch (error) {
       console.warn('Failed to reset weather overlay controller state:', error);
@@ -1068,9 +1122,18 @@ export function createWeatherManager({
     }
     const controller = ensureRaindropOverlayController();
     if (controller) {
+      controller.setMode?.(targets.mode ?? 'rain');
       controller.setIntensity?.(targets.intensity);
       controller.setWindSway?.(targets.windSpeed);
-      controller.setDropletDensity?.(targets.streakDensity);
+      if ((targets.mode ?? 'rain') === 'snow') {
+        controller.setDropletDensity?.(0);
+        controller.setSnowflakeDensity?.(targets.flakeDensity ?? 0);
+        controller.setSnowpuffDensity?.(targets.puffDensity ?? 0);
+      } else {
+        controller.setDropletDensity?.(targets.streakDensity);
+        controller.setSnowflakeDensity?.(0);
+        controller.setSnowpuffDensity?.(0);
+      }
       controller.setVelocity?.(targets.dropSpeed ?? null);
       if (controller.element) {
         controller.element.setAttribute('aria-hidden', 'false');
@@ -1098,17 +1161,21 @@ export function createWeatherManager({
   const setRaindropOverlayBaseState = ({
     active,
     intensity,
+    mode,
     windSpeed,
     streakDensity,
     sparkleGain,
     rippleScale,
     dropSpeed,
     viscosity,
+    flakeDensity,
+    puffDensity,
   }) => {
     const nextActive = Boolean(active);
     const nextIntensity = Number.isFinite(intensity)
       ? clampRaindropOverlayIntensity(intensity)
       : 0;
+    const nextMode = typeof mode === 'string' && mode ? mode : 'rain';
     const nextWindSpeed = Number.isFinite(windSpeed)
       ? clampRaindropOverlayWindSpeed(windSpeed)
       : DEFAULT_RAIN_OVERLAY_WIND_SPEED;
@@ -1130,27 +1197,41 @@ export function createWeatherManager({
     const nextRippleScale = resolveOptionalNumber(rippleScale, raindropOverlayState.baseRippleScale);
     const nextDropSpeed = resolveOptionalNumber(dropSpeed, raindropOverlayState.baseDropSpeed);
     const nextViscosity = resolveOptionalNumber(viscosity, raindropOverlayState.baseViscosity);
+    const resolveDensity = (value) => {
+      if (!Number.isFinite(value)) {
+        return 0;
+      }
+      return Math.max(0, Number(value));
+    };
+    const nextFlakeDensity = resolveDensity(flakeDensity);
+    const nextPuffDensity = resolveDensity(puffDensity);
     if (
       raindropOverlayState.baseActive === nextActive &&
       raindropOverlayState.baseIntensity === nextIntensity &&
+      raindropOverlayState.baseMode === nextMode &&
       raindropOverlayState.baseWindSpeed === nextWindSpeed &&
       raindropOverlayState.baseStreakDensity === nextStreakDensity &&
       raindropOverlayState.baseSparkleGain === nextSparkleGain &&
       raindropOverlayState.baseRippleScale === nextRippleScale &&
       raindropOverlayState.baseDropSpeed === nextDropSpeed &&
       raindropOverlayState.baseViscosity === nextViscosity &&
+      raindropOverlayState.baseFlakeDensity === nextFlakeDensity &&
+      raindropOverlayState.basePuffDensity === nextPuffDensity &&
       raindropOverlayVisible === nextActive
     ) {
       return;
     }
     raindropOverlayState.baseActive = nextActive;
     raindropOverlayState.baseIntensity = nextIntensity;
+    raindropOverlayState.baseMode = nextMode;
     raindropOverlayState.baseWindSpeed = nextWindSpeed;
     raindropOverlayState.baseStreakDensity = nextStreakDensity;
     raindropOverlayState.baseSparkleGain = nextSparkleGain;
     raindropOverlayState.baseRippleScale = nextRippleScale;
     raindropOverlayState.baseDropSpeed = nextDropSpeed;
     raindropOverlayState.baseViscosity = nextViscosity;
+    raindropOverlayState.baseFlakeDensity = nextFlakeDensity;
+    raindropOverlayState.basePuffDensity = nextPuffDensity;
     syncRaindropOverlay();
   };
 
@@ -2206,12 +2287,15 @@ export function createWeatherManager({
     let overlayBaseState = {
       active: false,
       intensity: 0,
+      mode: 'rain',
       windSpeed: DEFAULT_RAIN_OVERLAY_WIND_SPEED,
       streakDensity: DEFAULT_RAIN_OVERLAY_STREAK_DENSITY,
       sparkleGain: DEFAULT_RAIN_OVERLAY_SPARKLE_GAIN,
       rippleScale: null,
       dropSpeed: null,
       viscosity: null,
+      flakeDensity: 0,
+      puffDensity: 0,
     };
     if (precipitation) {
       spawnPrecipitationEffect(precipitation, context);
@@ -2220,24 +2304,30 @@ export function createWeatherManager({
         overlayBaseState = {
           active: overlayResponse.active,
           intensity: overlayResponse.intensity,
+          mode: overlayResponse.mode ?? 'rain',
           windSpeed: overlayResponse.windSpeed,
           streakDensity: overlayResponse.streakDensity,
           sparkleGain: overlayResponse.sparkleGain,
           rippleScale: overlayResponse.rippleScale ?? null,
           dropSpeed: overlayResponse.dropSpeed ?? null,
           viscosity: overlayResponse.viscosity ?? null,
+          flakeDensity: overlayResponse.flakeDensity ?? 0,
+          puffDensity: overlayResponse.puffDensity ?? 0,
         };
       } else if (precipitation.type === 'snow') {
         const overlayResponse = resolveSnowOverlayResponse(precipitation);
         overlayBaseState = {
           active: overlayResponse.active,
           intensity: overlayResponse.intensity,
+          mode: overlayResponse.mode ?? 'snow',
           windSpeed: overlayResponse.windSpeed,
           streakDensity: overlayResponse.streakDensity,
           sparkleGain: overlayResponse.sparkleGain,
           rippleScale: overlayResponse.rippleScale ?? null,
           dropSpeed: overlayResponse.dropSpeed ?? null,
           viscosity: overlayResponse.viscosity ?? null,
+          flakeDensity: overlayResponse.flakeDensity ?? 0,
+          puffDensity: overlayResponse.puffDensity ?? 0,
         };
       }
     }
