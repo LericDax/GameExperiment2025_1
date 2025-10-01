@@ -36,7 +36,12 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.behaviorDuration = this.chooseIdleDuration();
     this.heading = new this.THREE.Vector3(0, 0, 1);
     this.headingAngle = 0;
-    this.previousHeadingAngle = 0;
+    this.targetHeadingAngle = 0;
+    this.headingTurnSpeed = Number.isFinite(behavior.headingTurnSpeed)
+      ? behavior.headingTurnSpeed
+      : 6;
+
+    this.visualYawOffset = 0;
 
     this.idleBaseYaw = 0;
     this.idleYawPhase = this.random() * Math.PI * 2;
@@ -56,9 +61,12 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.behaviorDuration = Number.isFinite(duration)
       ? Math.max(0.1, duration)
       : this.chooseIdleDuration();
-    this.idleBaseYaw = this.normalizeAngle(this.root.rotation.y || this.headingAngle || 0);
+    this.targetHeadingAngle = this.headingAngle;
+    this.idleBaseYaw = this.normalizeAngle(this.headingAngle || this.targetHeadingAngle || 0);
     this.idleYawPhase = this.random() * Math.PI * 2;
     this.playAnimationVariant('idle', { loopMode: this.THREE.LoopRepeat });
+    this.visualYawOffset = 0;
+    this.applyVisualYaw();
     this._pendingRunnerAnimation = false;
   }
 
@@ -73,6 +81,8 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     const candidateHeading =
       typeof headingAngle === 'number' ? headingAngle : this.chooseNextHeadingAngle();
     this.setHeadingAngle(candidateHeading);
+    this.visualYawOffset = 0;
+    this.applyVisualYaw();
     const runnerAction = this.playAnimationVariant('runner', {
       loopMode: this.THREE.LoopRepeat,
       fallbackToDefault: false,
@@ -109,15 +119,15 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   chooseNextHeadingAngle() {
     const jitterRange = Math.max(0, this.walkHeadingJitter || 0);
     let attempts = 4;
-    let candidate = this.root.rotation.y || this.headingAngle || 0;
+    let candidate = this.targetHeadingAngle || this.headingAngle || 0;
     if (jitterRange === 0) {
       return candidate;
     }
     do {
       const offset = (this.random() * 2 - 1) * jitterRange;
-      candidate = (this.root.rotation.y || this.headingAngle || 0) + offset;
+      candidate = (this.targetHeadingAngle || this.headingAngle || 0) + offset;
       attempts -= 1;
-    } while (attempts > 0 && Math.abs(this.angleDifference(candidate, this.headingAngle)) < 0.3);
+    } while (attempts > 0 && Math.abs(this.angleDifference(candidate, this.targetHeadingAngle)) < 0.3);
     return candidate;
   }
 
@@ -137,11 +147,45 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
 
   setHeadingAngle(angle) {
     const normalized = this.normalizeAngle(angle);
-    this.previousHeadingAngle = this.headingAngle;
+    this.targetHeadingAngle = normalized;
+  }
+
+  blendHeadingAngle(delta) {
+    const current = Number.isFinite(this.headingAngle) ? this.headingAngle : 0;
+    const target = Number.isFinite(this.targetHeadingAngle)
+      ? this.targetHeadingAngle
+      : current;
+    const hasSmoothing =
+      Number.isFinite(delta) &&
+      delta > 0 &&
+      Number.isFinite(this.headingTurnSpeed) &&
+      this.headingTurnSpeed > 0;
+    let next = current;
+    if (hasSmoothing) {
+      const tRaw = 1 - Math.exp(-delta * this.headingTurnSpeed);
+      const t = this.THREE.MathUtils.clamp(Number.isFinite(tRaw) ? tRaw : 1, 0, 1);
+      next = this.THREE.MathUtils.lerpAngles(current, target, t);
+    } else if (Number.isFinite(delta) && delta > 0) {
+      next = target;
+    }
+
+    const normalized = this.normalizeAngle(next);
+    const changed = normalized !== this.headingAngle;
     this.headingAngle = normalized;
     this.heading.set(Math.sin(normalized), 0, Math.cos(normalized)).normalize();
     this.root.rotation.y = normalized;
-    this.markBoundsDirty();
+    if (changed) {
+      this.markBoundsDirty();
+    }
+    return this.headingAngle;
+  }
+
+  applyVisualYaw() {
+    if (!this.visualRoot) {
+      return;
+    }
+    const offset = Number.isFinite(this.visualYawOffset) ? this.visualYawOffset : 0;
+    this.visualRoot.rotation.y = this.normalizeAngle(this.headingAngle + offset);
   }
 
   normalizeAngle(angle) {
@@ -199,13 +243,16 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   }
 
   updateWalkState(delta) {
+    this.blendHeadingAngle(delta);
+    this.visualYawOffset = 0;
+    this.applyVisualYaw();
+
     const step = Math.max(0, delta) * this.walkSpeed;
     if (step <= 0) {
       return;
     }
     this._scratchPreviousPosition.copy(this.root.position);
     this.root.position.addScaledVector(this.heading, step);
-    this.root.rotation.y = this.headingAngle;
     this.markBoundsDirty();
 
     const samples = this.gatherCollisionSamples();
@@ -220,10 +267,12 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   }
 
   updateIdleState(delta, elapsedTime) {
+    const headingAngle = this.blendHeadingAngle(delta);
+    const baseYaw = Number.isFinite(this.idleBaseYaw) ? this.idleBaseYaw : headingAngle;
     const yawOffset = Math.sin(elapsedTime * this.idleYawSpeed + this.idleYawPhase) * this.idleYawAmount;
-    const targetYaw = this.normalizeAngle(this.idleBaseYaw + yawOffset);
-    this.root.rotation.y = targetYaw;
-    this.headingAngle = targetYaw;
+    const targetVisualYaw = this.normalizeAngle(baseYaw + yawOffset);
+    this.visualYawOffset = this.angleDifference(targetVisualYaw, headingAngle);
+    this.applyVisualYaw();
   }
 
   updateAnimationVariantsFromAsset() {
