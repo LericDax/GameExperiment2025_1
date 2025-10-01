@@ -2,6 +2,7 @@ import { CrownedGhostEntity } from './crowned-ghost.js';
 
 const WALK_STATE = 'walk';
 const IDLE_STATE = 'idle';
+const TURN_STATE = 'turn';
 
 export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   constructor(params = {}) {
@@ -20,6 +21,12 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
         : [2, 4];
 
     this.walkSpeed = Number.isFinite(behavior.walkSpeed) ? behavior.walkSpeed : 0.9;
+    this.walkAcceleration = Number.isFinite(behavior.walkAcceleration)
+      ? Math.max(0.1, behavior.walkAcceleration)
+      : 2.4;
+    this.walkDeceleration = Number.isFinite(behavior.walkDeceleration)
+      ? Math.max(0.1, behavior.walkDeceleration)
+      : 3.2;
     this.idleYawAmount = Number.isFinite(behavior.idleYawAmount)
       ? behavior.idleYawAmount
       : 0.35;
@@ -30,6 +37,33 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.collisionIdleDuration = Number.isFinite(behavior.collisionIdleDuration)
       ? Math.max(0.15, behavior.collisionIdleDuration)
       : Math.max(0.6, this.idleDurationRange[0] ?? 0.6);
+    this.turnInPlaceDuration = Number.isFinite(behavior.turnInPlaceDuration)
+      ? Math.max(0.1, behavior.turnInPlaceDuration)
+      : 1.25;
+    this.turnAlignmentThreshold = Number.isFinite(behavior.turnAlignmentThreshold)
+      ? Math.max(0.01, behavior.turnAlignmentThreshold)
+      : 0.12;
+    this.turnResumeClearance = Number.isFinite(behavior.turnResumeClearance)
+      ? this.THREE.MathUtils.clamp(behavior.turnResumeClearance, 0.1, 1)
+      : 0.65;
+    this.blockedHeadingMemoryDuration = Number.isFinite(behavior.blockedHeadingMemoryDuration)
+      ? Math.max(0.1, behavior.blockedHeadingMemoryDuration)
+      : 4;
+    this.blockedHeadingAvoidanceAngle = Number.isFinite(behavior.blockedHeadingAvoidanceAngle)
+      ? Math.max(0.01, behavior.blockedHeadingAvoidanceAngle)
+      : Math.PI / 2.5;
+    this.headingClearanceThreshold = Number.isFinite(behavior.headingClearanceThreshold)
+      ? this.THREE.MathUtils.clamp(behavior.headingClearanceThreshold, 0, 1)
+      : 0.55;
+    this.runnerAnimationSpeedScale = Number.isFinite(behavior.runnerAnimationSpeedScale)
+      ? Math.max(0.01, behavior.runnerAnimationSpeedScale)
+      : 1;
+    this.runnerAnimationSpeedFloor = Number.isFinite(behavior.runnerAnimationSpeedFloor)
+      ? Math.max(0.01, behavior.runnerAnimationSpeedFloor)
+      : 0.35;
+    this.runnerAnimationSpeedCeil = Number.isFinite(behavior.runnerAnimationSpeedCeil)
+      ? Math.max(this.runnerAnimationSpeedFloor, behavior.runnerAnimationSpeedCeil)
+      : 1.2;
 
     this.behaviorState = IDLE_STATE;
     this.behaviorTime = 0;
@@ -37,6 +71,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.heading = new this.THREE.Vector3(0, 0, 1);
     this.headingAngle = 0;
     this.targetHeadingAngle = 0;
+    this.previousHeadingAngle = 0;
     this.headingTurnSpeed = Number.isFinite(behavior.headingTurnSpeed)
       ? behavior.headingTurnSpeed
       : 6;
@@ -48,6 +83,19 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
 
     this._scratchPreviousPosition = new this.THREE.Vector3();
     this._pendingRunnerAnimation = false;
+    this.currentMoveSpeed = 0;
+    this.recentBlockedHeadings = [];
+    this.headingProbeDistances = [
+      Math.max(0.2, this.collisionRadius * 0.75),
+      Math.max(0.35, this.collisionRadius * 1.45),
+      Math.max(0.5, this.collisionRadius * 2.15),
+    ];
+    this.headingProbeHeights = [
+      -Math.max(0.1, this.collisionHalfHeight),
+      -Math.max(0.1, this.collisionHalfHeight * 0.35),
+    ];
+    this._scratchHeadingDirection = new this.THREE.Vector3();
+    this._scratchHeadingSample = new this.THREE.Vector3();
   }
 
   onSpawn(spawnContext, options = {}) {
@@ -68,6 +116,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.visualYawOffset = 0;
     this.applyVisualYaw();
     this._pendingRunnerAnimation = false;
+    this.updateRunnerAnimationSpeed();
   }
 
   enterWalkState({ duration, headingAngle } = {}) {
@@ -78,8 +127,14 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       : this.chooseWalkDuration();
     this.behaviorDuration = nextDuration;
 
-    const candidateHeading =
+    let candidateHeading =
       typeof headingAngle === 'number' ? headingAngle : this.chooseNextHeadingAngle();
+    let attempts = 3;
+    while (attempts > 0 && !this.isHeadingMostlyClear(candidateHeading)) {
+      this.rememberBlockedHeading(candidateHeading);
+      candidateHeading = this.chooseNextHeadingAngle();
+      attempts -= 1;
+    }
     this.setHeadingAngle(candidateHeading);
     this.visualYawOffset = 0;
     this.applyVisualYaw();
@@ -89,6 +144,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     });
     if (runnerAction) {
       this._pendingRunnerAnimation = false;
+      this.updateRunnerAnimationSpeed();
       return;
     }
 
@@ -106,6 +162,23 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     }
 
     this._pendingRunnerAnimation = true;
+    this.updateRunnerAnimationSpeed();
+  }
+
+  enterTurnState({ headingAngle, duration } = {}) {
+    this.behaviorState = TURN_STATE;
+    this.behaviorTime = 0;
+    this.behaviorDuration = Number.isFinite(duration)
+      ? Math.max(0.1, duration)
+      : this.turnInPlaceDuration;
+    if (typeof headingAngle === 'number') {
+      this.setHeadingAngle(headingAngle);
+    }
+    this.playAnimationVariant('idle', { loopMode: this.THREE.LoopRepeat });
+    this.visualYawOffset = 0;
+    this.applyVisualYaw();
+    this._pendingRunnerAnimation = false;
+    this.updateRunnerAnimationSpeed();
   }
 
   chooseWalkDuration() {
@@ -118,17 +191,23 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
 
   chooseNextHeadingAngle() {
     const jitterRange = Math.max(0, this.walkHeadingJitter || 0);
-    let attempts = 4;
-    let candidate = this.targetHeadingAngle || this.headingAngle || 0;
-    if (jitterRange === 0) {
-      return candidate;
+    const base = this.targetHeadingAngle || this.headingAngle || 0;
+    const sampleCount = jitterRange > 0 ? 6 : 1;
+    let bestCandidate = base;
+    let bestScore = -Infinity;
+    for (let index = 0; index < sampleCount; index += 1) {
+      let candidate = base;
+      if (index > 0 && jitterRange > 0) {
+        const offset = (this.random() * 2 - 1) * jitterRange;
+        candidate = base + offset;
+      }
+      const score = this.evaluateHeadingCandidate(candidate);
+      if (score > bestScore) {
+        bestScore = score;
+        bestCandidate = candidate;
+      }
     }
-    do {
-      const offset = (this.random() * 2 - 1) * jitterRange;
-      candidate = (this.targetHeadingAngle || this.headingAngle || 0) + offset;
-      attempts -= 1;
-    } while (attempts > 0 && Math.abs(this.angleDifference(candidate, this.targetHeadingAngle)) < 0.3);
-    return candidate;
+    return bestCandidate;
   }
 
   sampleRange(range, fallback) {
@@ -146,6 +225,9 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   }
 
   setHeadingAngle(angle) {
+    if (Number.isFinite(this.headingAngle)) {
+      this.previousHeadingAngle = this.headingAngle;
+    }
     const normalized = this.normalizeAngle(angle);
     this.targetHeadingAngle = normalized;
   }
@@ -164,7 +246,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     if (hasSmoothing) {
       const tRaw = 1 - Math.exp(-delta * this.headingTurnSpeed);
       const t = this.THREE.MathUtils.clamp(Number.isFinite(tRaw) ? tRaw : 1, 0, 1);
-      next = this.THREE.MathUtils.lerpAngles(current, target, t);
+      next = this.lerpAngles(current, target, t);
     } else if (Number.isFinite(delta) && delta > 0) {
       next = target;
     }
@@ -206,6 +288,18 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     return this.normalizeAngle(diff);
   }
 
+  lerpAngles(a, b, t) {
+    const math = this.THREE?.MathUtils ?? null;
+    if (math && typeof math.lerpAngles === 'function') {
+      return math.lerpAngles(a, b, t);
+    }
+    const clampedT = math ? math.clamp(Number.isFinite(t) ? t : 0, 0, 1) : 0;
+    const start = this.normalizeAngle(a);
+    const end = this.normalizeAngle(b);
+    const diff = this.normalizeAngle(end - start);
+    return this.normalizeAngle(start + diff * clampedT);
+  }
+
   update({ delta = 0, elapsedTime = 0 } = {}) {
     if (!this.visualRoot) {
       return;
@@ -221,9 +315,12 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       return;
     }
 
+    this.decayBlockedHeadings(delta);
     this.behaviorTime += delta;
     if (this.behaviorState === WALK_STATE) {
       this.updateWalkState(delta);
+    } else if (this.behaviorState === TURN_STATE) {
+      this.updateTurnState(delta);
     } else {
       this.updateIdleState(delta, elapsedTime);
     }
@@ -231,8 +328,10 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     if (this.behaviorTime >= this.behaviorDuration) {
       if (this.behaviorState === WALK_STATE) {
         this.enterIdleState({});
-      } else {
+      } else if (this.behaviorState === IDLE_STATE) {
         this.enterWalkState({});
+      } else {
+        this.enterIdleState({ duration: this.collisionIdleDuration });
       }
       return;
     }
@@ -247,7 +346,14 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.visualYawOffset = 0;
     this.applyVisualYaw();
 
-    const step = Math.max(0, delta) * this.walkSpeed;
+    this.currentMoveSpeed = this.approachSpeed(
+      this.currentMoveSpeed,
+      Math.max(0, this.walkSpeed),
+      this.walkAcceleration,
+      delta,
+    );
+    const step = Math.max(0, delta) * Math.max(0, this.currentMoveSpeed);
+    this.updateRunnerAnimationSpeed();
     if (step <= 0) {
       return;
     }
@@ -262,17 +368,52 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     if (blocked) {
       this.root.position.copy(this._scratchPreviousPosition);
       this.markBoundsDirty();
-      this.enterIdleState({ duration: this.collisionIdleDuration });
+      this.rememberBlockedHeading(this.headingAngle);
+      const nextHeading = this.chooseNextHeadingAngle();
+      this.currentMoveSpeed = 0;
+      this.enterTurnState({ headingAngle: nextHeading });
     }
   }
 
   updateIdleState(delta, elapsedTime) {
+    this.currentMoveSpeed = this.approachSpeed(
+      this.currentMoveSpeed,
+      0,
+      this.walkDeceleration,
+      delta,
+    );
+    this.updateRunnerAnimationSpeed();
     const headingAngle = this.blendHeadingAngle(delta);
     const baseYaw = Number.isFinite(this.idleBaseYaw) ? this.idleBaseYaw : headingAngle;
     const yawOffset = Math.sin(elapsedTime * this.idleYawSpeed + this.idleYawPhase) * this.idleYawAmount;
     const targetVisualYaw = this.normalizeAngle(baseYaw + yawOffset);
     this.visualYawOffset = this.angleDifference(targetVisualYaw, headingAngle);
     this.applyVisualYaw();
+  }
+
+  updateTurnState(delta) {
+    this.currentMoveSpeed = this.approachSpeed(
+      this.currentMoveSpeed,
+      0,
+      this.walkDeceleration,
+      delta,
+    );
+    this.updateRunnerAnimationSpeed();
+    const headingAngle = this.blendHeadingAngle(delta);
+    this.visualYawOffset = 0;
+    this.applyVisualYaw();
+
+    const aligned =
+      Math.abs(this.angleDifference(headingAngle, this.targetHeadingAngle ?? headingAngle)) <=
+      this.turnAlignmentThreshold;
+    if (!aligned) {
+      return;
+    }
+
+    const clearance = this.estimateHeadingClearance(this.targetHeadingAngle ?? headingAngle);
+    if (clearance >= this.turnResumeClearance) {
+      this.enterWalkState({ headingAngle: this.targetHeadingAngle ?? headingAngle });
+    }
   }
 
   updateAnimationVariantsFromAsset() {
@@ -310,6 +451,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     });
     if (action) {
       this._pendingRunnerAnimation = false;
+      this.updateRunnerAnimationSpeed();
     }
   }
 
@@ -317,6 +459,180 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.behaviorState = IDLE_STATE;
     this._pendingRunnerAnimation = false;
     super.dispose();
+  }
+
+  approachSpeed(current, target, rate, delta) {
+    if (!Number.isFinite(delta) || delta <= 0) {
+      return Math.max(0, current || 0);
+    }
+    if (!Number.isFinite(current)) {
+      current = 0;
+    }
+    if (!Number.isFinite(target)) {
+      target = 0;
+    }
+    if (!Number.isFinite(rate) || rate <= 0) {
+      return Math.max(0, target);
+    }
+    const difference = target - current;
+    if (Math.abs(difference) < 1e-4) {
+      return Math.max(0, target);
+    }
+    const step = rate * delta;
+    if (difference > 0) {
+      return Math.min(target, current + step);
+    }
+    return Math.max(target, current - step);
+  }
+
+  decayBlockedHeadings(delta) {
+    if (!Array.isArray(this.recentBlockedHeadings) || this.recentBlockedHeadings.length === 0) {
+      return;
+    }
+    if (!Number.isFinite(delta) || delta <= 0) {
+      return;
+    }
+    const next = [];
+    for (const entry of this.recentBlockedHeadings) {
+      if (!entry) {
+        continue;
+      }
+      const ttl = Number.isFinite(entry.ttl) ? entry.ttl - delta : 0;
+      if (ttl > 0) {
+        next.push({ angle: entry.angle, ttl });
+      }
+    }
+    this.recentBlockedHeadings = next;
+  }
+
+  rememberBlockedHeading(angle) {
+    if (!Number.isFinite(angle)) {
+      return;
+    }
+    const normalized = this.normalizeAngle(angle);
+    const ttl = this.blockedHeadingMemoryDuration;
+    if (!Number.isFinite(ttl) || ttl <= 0) {
+      return;
+    }
+    const existing = Array.isArray(this.recentBlockedHeadings)
+      ? this.recentBlockedHeadings.filter((entry) => entry)
+      : [];
+    existing.push({ angle: normalized, ttl });
+    while (existing.length > 8) {
+      existing.shift();
+    }
+    this.recentBlockedHeadings = existing;
+  }
+
+  evaluateHeadingCandidate(angle) {
+    const normalized = this.normalizeAngle(angle);
+    let score = 0;
+    const target = Number.isFinite(this.targetHeadingAngle) ? this.targetHeadingAngle : normalized;
+    const toTarget = Math.abs(this.angleDifference(normalized, target));
+    const toCurrent = Math.abs(this.angleDifference(normalized, this.headingAngle ?? target));
+    const toPrevious = Math.abs(
+      this.angleDifference(normalized, this.previousHeadingAngle ?? this.headingAngle ?? target),
+    );
+    score -= toTarget * 0.15;
+    score -= toCurrent * 0.05;
+    score -= toPrevious * 0.3;
+    if (toPrevious < 0.05) {
+      score -= 0.25;
+    }
+
+    if (Array.isArray(this.recentBlockedHeadings)) {
+      for (const entry of this.recentBlockedHeadings) {
+        if (!entry) {
+          continue;
+        }
+        const diff = Math.abs(this.angleDifference(normalized, entry.angle));
+        if (diff > this.blockedHeadingAvoidanceAngle) {
+          continue;
+        }
+        const weight = this.THREE.MathUtils.clamp(
+          Number.isFinite(entry.ttl) && this.blockedHeadingMemoryDuration > 0
+            ? entry.ttl / this.blockedHeadingMemoryDuration
+            : 0,
+          0,
+          1,
+        );
+        const penalty = (1 - diff / this.blockedHeadingAvoidanceAngle) * weight;
+        score -= penalty * 2.5;
+      }
+    }
+
+    const clearance = this.estimateHeadingClearance(normalized);
+    score += clearance * 2.4;
+
+    score += (this.random() - 0.5) * 0.1;
+
+    return score;
+  }
+
+  estimateHeadingClearance(angle) {
+    if (!this.chunkManager?.solidBlocks) {
+      return 1;
+    }
+    const direction = this._scratchHeadingDirection
+      .set(Math.sin(angle), 0, Math.cos(angle))
+      .normalize();
+    const base = this.root.position;
+    const distances = Array.isArray(this.headingProbeDistances)
+      ? this.headingProbeDistances
+      : [];
+    const heights = Array.isArray(this.headingProbeHeights) ? this.headingProbeHeights : [];
+    if (distances.length === 0 || heights.length === 0) {
+      return 1;
+    }
+
+    let clear = 0;
+    let total = 0;
+    for (const dist of distances) {
+      if (!Number.isFinite(dist) || dist <= 0) {
+        continue;
+      }
+      for (const heightOffset of heights) {
+        if (!Number.isFinite(heightOffset)) {
+          continue;
+        }
+        this._scratchHeadingSample.copy(base);
+        this._scratchHeadingSample.addScaledVector(direction, dist);
+        this._scratchHeadingSample.y += heightOffset;
+        total += 1;
+        if (!this.isSolidAtWorld(this._scratchHeadingSample)) {
+          clear += 1;
+        }
+      }
+    }
+    if (total === 0) {
+      return 1;
+    }
+    return clear / total;
+  }
+
+  isHeadingMostlyClear(angle) {
+    const clearance = this.estimateHeadingClearance(angle);
+    return clearance >= this.headingClearanceThreshold;
+  }
+
+  updateRunnerAnimationSpeed() {
+    if (!this.animationController) {
+      return;
+    }
+    if (this.animationController.activeVariantId === 'runner') {
+      const normalized = this.walkSpeed > 0 ? this.currentMoveSpeed / this.walkSpeed : 0;
+      const scaled = Number.isFinite(normalized) ? normalized * this.runnerAnimationSpeedScale : 0;
+      const clamped = this.THREE.MathUtils.clamp(
+        scaled,
+        this.runnerAnimationSpeedFloor,
+        this.runnerAnimationSpeedCeil,
+      );
+      this.animationController.setSpeed(Math.max(this.runnerAnimationSpeedFloor, clamped));
+      return;
+    }
+    if (Math.abs((this.animationController.speed ?? 1) - 1) > 1e-3) {
+      this.animationController.setSpeed(1);
+    }
   }
 }
 
