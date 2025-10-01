@@ -9,6 +9,132 @@ function ensureArray(value) {
   return Array.isArray(value) ? value : [value];
 }
 
+function sanitizeBoneName(name) {
+  if (!name) {
+    return '';
+  }
+  return String(name).replace(/\.\d+$/g, '').replace(/(?:_Clone)+$/g, '');
+}
+
+function extractTrackBoneName(trackName) {
+  const value = typeof trackName === 'string' ? trackName : '';
+  if (!value) {
+    return null;
+  }
+  const match = value.match(/\.?bones\[([^\]]+)\]/);
+  if (match) {
+    return match[1];
+  }
+  const trimmed = value.startsWith('.') ? value.slice(1) : value;
+  const [firstSegment] = trimmed.split('.');
+  return firstSegment || null;
+}
+
+function rewriteTrackName(trackName, targetBoneName) {
+  const value = typeof trackName === 'string' ? trackName : '';
+  if (!value) {
+    return value;
+  }
+  if (value.includes('bones[')) {
+    return value.replace(/bones\[[^\]]+\]/, `bones[${targetBoneName}]`);
+  }
+  const leadingDot = value.startsWith('.');
+  const trimmed = leadingDot ? value.slice(1) : value;
+  const dotIndex = trimmed.indexOf('.');
+  if (dotIndex === -1) {
+    return `${leadingDot ? '.' : ''}${targetBoneName}`;
+  }
+  return `${leadingDot ? '.' : ''}${targetBoneName}${trimmed.slice(dotIndex)}`;
+}
+
+function createBoneRetargetMapping(targetSkeleton, sourceSkeleton) {
+  const targetBones = targetSkeleton?.bones ?? [];
+  const sourceBones = sourceSkeleton?.bones ?? [];
+  const targetBoneNames = new Set();
+  const targetToSource = new Map();
+  const sourceToTarget = new Map();
+  const sourceSanitizedToTarget = new Map();
+  const sourceExactNames = new Map();
+  const sourceSanitizedNames = new Map();
+
+  sourceBones.forEach((bone) => {
+    const name = bone?.name;
+    if (!name) {
+      return;
+    }
+    if (!sourceExactNames.has(name)) {
+      sourceExactNames.set(name, name);
+    }
+    const sanitized = sanitizeBoneName(name);
+    if (sanitized && !sourceSanitizedNames.has(sanitized)) {
+      sourceSanitizedNames.set(sanitized, name);
+    }
+  });
+
+  targetBones.forEach((bone) => {
+    const name = bone?.name;
+    if (!name) {
+      return;
+    }
+    targetBoneNames.add(name);
+
+    let matchedSource = sourceExactNames.get(name) ?? null;
+    if (!matchedSource) {
+      const sanitizedTarget = sanitizeBoneName(name);
+      if (sanitizedTarget) {
+        matchedSource =
+          sourceExactNames.get(sanitizedTarget) ?? sourceSanitizedNames.get(sanitizedTarget) ?? null;
+      }
+    }
+
+    if (matchedSource) {
+      targetToSource.set(name, matchedSource);
+      if (!sourceToTarget.has(matchedSource)) {
+        sourceToTarget.set(matchedSource, name);
+      }
+      const sanitizedMatch = sanitizeBoneName(matchedSource);
+      if (sanitizedMatch && !sourceSanitizedToTarget.has(sanitizedMatch)) {
+        sourceSanitizedToTarget.set(sanitizedMatch, name);
+      }
+    }
+  });
+
+  const getSourceBoneName = (bone) => {
+    const boneName = bone?.name ?? (typeof bone === 'string' ? bone : null);
+    if (!boneName) {
+      return boneName;
+    }
+    return targetToSource.get(boneName) ?? boneName;
+  };
+
+  const resolveTargetBoneName = (sourceBoneName) => {
+    if (!sourceBoneName) {
+      return null;
+    }
+    if (targetBoneNames.has(sourceBoneName)) {
+      return sourceBoneName;
+    }
+    if (sourceToTarget.has(sourceBoneName)) {
+      return sourceToTarget.get(sourceBoneName);
+    }
+    const sanitized = sanitizeBoneName(sourceBoneName);
+    if (sanitized) {
+      if (targetBoneNames.has(sanitized)) {
+        return sanitized;
+      }
+      if (sourceToTarget.has(sanitized)) {
+        return sourceToTarget.get(sanitized);
+      }
+      if (sourceSanitizedToTarget.has(sanitized)) {
+        return sourceSanitizedToTarget.get(sanitized);
+      }
+    }
+    return null;
+  };
+
+  return { targetBoneNames, getSourceBoneName, resolveTargetBoneName };
+}
+
 function cloneMeshResources(object) {
   const clonedMaterials = new WeakMap();
   const clonedGeometries = new WeakMap();
@@ -305,9 +431,10 @@ export class EntityAssetLoader {
         const sourceSkeleton = source?.skeleton ?? null;
         const targetRetargetRoot = target ?? null;
         const sourceRetargetRoot = source ?? null;
-        const targetBoneNames = targetSkeleton
-          ? new Set(targetSkeleton.bones.map((bone) => bone?.name).filter(Boolean))
-          : new Set();
+        const { targetBoneNames, getSourceBoneName, resolveTargetBoneName } = createBoneRetargetMapping(
+          targetSkeleton,
+          sourceSkeleton,
+        );
 
         const applyRename = (clip, originalName) => {
           const directRename = renameMap.get(originalName ?? clip.name) ?? renameMap.get(clip.name);
@@ -328,7 +455,12 @@ export class EntityAssetLoader {
             const clonedClip = clip.clone();
             let remappedClip = null;
             try {
-              remappedClip = retargetClip(targetRetargetRoot, sourceRetargetRoot, clonedClip);
+              remappedClip = retargetClip(targetRetargetRoot, sourceRetargetRoot, clonedClip, {
+                getBoneName: (bone) => {
+                  const resolvedName = getSourceBoneName(bone);
+                  return resolvedName ?? bone?.name;
+                },
+              });
             } catch (error) {
               const clipLabel = originalName ?? clonedClip?.name ?? '(unnamed)';
               const errorMessage =
@@ -346,10 +478,10 @@ export class EntityAssetLoader {
             if (!remappedClip) {
               return;
             }
-            if (remappedClip.tracks?.length) {
+            if (remappedClip.tracks?.length && targetBoneNames.size > 0) {
               remappedClip.tracks = remappedClip.tracks.filter((track) => {
-                const [boneName] = String(track?.name ?? '').split('.');
-                return boneName && targetBoneNames.has(boneName);
+                const boneName = extractTrackBoneName(track?.name);
+                return boneName ? targetBoneNames.has(boneName) : false;
               });
             }
             if (!remappedClip.tracks?.length) {
@@ -376,6 +508,26 @@ export class EntityAssetLoader {
                 return null;
               }
               const clonedClip = clip.clone();
+              if (clonedClip.tracks?.length && targetBoneNames.size > 0) {
+                const remappedTracks = clonedClip.tracks
+                  .map((track) => {
+                    const boneName = extractTrackBoneName(track?.name);
+                    if (!boneName) {
+                      return track;
+                    }
+                    const targetBoneName = resolveTargetBoneName(boneName);
+                    if (!targetBoneName || !targetBoneNames.has(targetBoneName)) {
+                      return null;
+                    }
+                    track.name = rewriteTrackName(track.name, targetBoneName);
+                    return track;
+                  })
+                  .filter(Boolean);
+                clonedClip.tracks = remappedTracks;
+              }
+              if (!clonedClip.tracks?.length) {
+                return null;
+              }
               return applyRename(clonedClip, typeof clip.name === 'string' ? clip.name : null);
             })
             .filter(Boolean);
