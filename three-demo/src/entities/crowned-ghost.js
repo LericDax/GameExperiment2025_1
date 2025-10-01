@@ -20,6 +20,39 @@ const MODEL_CONFIG = {
 };
 
 const DEFAULT_ANIMATION_VARIANT = 'idle';
+const FALLBACK_VARIANT_PREFERENCE = ['walker', 'runner'];
+
+function chooseFallbackVariant(availableVariants = [], desiredVariant = DEFAULT_ANIMATION_VARIANT) {
+  if (!Array.isArray(availableVariants) || availableVariants.length === 0) {
+    return null;
+  }
+
+  const normalizedDesired = typeof desiredVariant === 'string' ? desiredVariant : null;
+  const preferredOrder = [];
+  if (normalizedDesired && normalizedDesired !== DEFAULT_ANIMATION_VARIANT) {
+    preferredOrder.push(DEFAULT_ANIMATION_VARIANT);
+  }
+  preferredOrder.push(...FALLBACK_VARIANT_PREFERENCE);
+
+  for (const preferred of preferredOrder) {
+    if (
+      preferred &&
+      preferred !== normalizedDesired &&
+      availableVariants.includes(preferred)
+    ) {
+      return preferred;
+    }
+  }
+
+  for (const candidate of availableVariants) {
+    if (candidate && candidate !== normalizedDesired) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 const DESIRED_HEIGHT = 1.6;
 
 export class CrownedGhostEntity extends BaseEntity {
@@ -33,6 +66,7 @@ export class CrownedGhostEntity extends BaseEntity {
 
     this.animationController = null;
     this.variantClipMap = new Map();
+    this.variantAliasMap = new Map();
     this.assetInstance = null;
     this.assetLoadPromise = null;
     this.isSpawned = false;
@@ -162,6 +196,7 @@ export class CrownedGhostEntity extends BaseEntity {
   }
 
   buildVariantClipMapFromInstance(instance) {
+    this.variantAliasMap = new Map();
     const variantMap = new Map();
     if (!instance) {
       return variantMap;
@@ -197,6 +232,21 @@ export class CrownedGhostEntity extends BaseEntity {
       }
     });
 
+    if (!variantMap.has(DEFAULT_ANIMATION_VARIANT)) {
+      const availableVariants = Array.from(variantMap.keys());
+      const fallbackVariant = chooseFallbackVariant(
+        availableVariants,
+        DEFAULT_ANIMATION_VARIANT,
+      );
+      if (fallbackVariant) {
+        variantMap.set(DEFAULT_ANIMATION_VARIANT, variantMap.get(fallbackVariant));
+        this.variantAliasMap.set(DEFAULT_ANIMATION_VARIANT, fallbackVariant);
+        console.warn(
+          `CrownedGhostEntity: Missing default animation variant "${DEFAULT_ANIMATION_VARIANT}"; aliasing to "${fallbackVariant}".`,
+        );
+      }
+    }
+
     return variantMap;
   }
 
@@ -223,38 +273,54 @@ export class CrownedGhostEntity extends BaseEntity {
     if (!this.animationController || this.variantClipMap.size === 0) {
       return;
     }
-    const desired = this.desiredAnimationVariant ?? DEFAULT_ANIMATION_VARIANT;
-    const action = this.animationController.playVariant(desired);
-    if (!action && desired !== DEFAULT_ANIMATION_VARIANT) {
-      const availableVariants = Array.from(this.variantClipMap.keys());
-      console.warn(
-        `CrownedGhostEntity: Failed to play animation variant "${desired}". Available variants: ${availableVariants.join(
-          ', ',
-        ) || 'none'}.`,
-      );
-      if (this.variantClipMap.has(DEFAULT_ANIMATION_VARIANT)) {
-        this.animationController.playVariant(DEFAULT_ANIMATION_VARIANT);
-        this.desiredAnimationVariant = DEFAULT_ANIMATION_VARIANT;
+    const initialDesired = this.desiredAnimationVariant ?? DEFAULT_ANIMATION_VARIANT;
+    const resolvedDesired = this.variantAliasMap.get(initialDesired) ?? initialDesired;
+    let action = this.animationController.playVariant(resolvedDesired);
+    if (action) {
+      if (this.desiredAnimationVariant !== resolvedDesired) {
+        this.desiredAnimationVariant = resolvedDesired;
       }
+      return;
+    }
+
+    const availableVariants = Array.from(this.variantClipMap.keys());
+    const fallbackVariant = chooseFallbackVariant(availableVariants, resolvedDesired);
+    if (!fallbackVariant) {
+      console.warn(
+        `CrownedGhostEntity: Failed to play animation variant "${resolvedDesired}". Available variants: ${availableVariants.join(', ') || 'none'}.`,
+      );
+      return;
+    }
+
+    console.warn(
+      `CrownedGhostEntity: Failed to play animation variant "${resolvedDesired}". Falling back to "${fallbackVariant}". Available variants: ${availableVariants.join(', ') || 'none'}.`,
+    );
+    action = this.animationController.playVariant(fallbackVariant);
+    if (action) {
+      this.desiredAnimationVariant = fallbackVariant;
     }
   }
 
   playAnimationVariant(variantId, options = {}) {
     const normalized = this.normalizeAnimationVariantId(variantId);
-    this.desiredAnimationVariant = normalized;
+    const resolvedVariant = this.variantAliasMap.get(normalized) ?? normalized;
+    this.desiredAnimationVariant = resolvedVariant;
     this.ensureAnimationController();
     if (!this.animationController) {
       return null;
     }
-    const action = this.animationController.playVariant(normalized, options);
-    if (!action && normalized !== DEFAULT_ANIMATION_VARIANT && options?.fallbackToDefault !== false) {
-      if (this.variantClipMap.has(DEFAULT_ANIMATION_VARIANT)) {
-        const fallback = this.animationController.playVariant(
-          DEFAULT_ANIMATION_VARIANT,
-          options,
-        );
+    const action = this.animationController.playVariant(resolvedVariant, options);
+    if (
+      !action &&
+      resolvedVariant !== DEFAULT_ANIMATION_VARIANT &&
+      options?.fallbackToDefault !== false
+    ) {
+      const resolvedDefault =
+        this.variantAliasMap.get(DEFAULT_ANIMATION_VARIANT) ?? DEFAULT_ANIMATION_VARIANT;
+      if (this.variantClipMap.has(resolvedDefault)) {
+        const fallback = this.animationController.playVariant(resolvedDefault, options);
         if (fallback) {
-          this.desiredAnimationVariant = DEFAULT_ANIMATION_VARIANT;
+          this.desiredAnimationVariant = resolvedDefault;
           return fallback;
         }
       }
@@ -279,6 +345,7 @@ export class CrownedGhostEntity extends BaseEntity {
       return;
     }
     this.variantClipMap.clear();
+    this.variantAliasMap.clear();
   }
 
   update({ delta = 0, elapsedTime = 0 } = {}) {
