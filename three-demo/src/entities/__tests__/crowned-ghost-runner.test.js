@@ -42,15 +42,18 @@ class StubAnimationController {
 }
 
 test('CrownedGhostRunnerEntity alternates between idle and walk states with animation swaps', async () => {
+  let receivedConfig;
+  const idleClip = new THREE.AnimationClip('Ghost_Guy_Runner_Idle', -1, []);
+  const runnerClip = new THREE.AnimationClip('Ghost_Guy_Runner', -1, []);
   const fakeLoader = {
-    createVariantInstance: async () => ({
-      scene: new THREE.Group(),
-      animations: [new THREE.AnimationClip('Idle', -1, [])],
-      variants: {
-        runner: [new THREE.AnimationClip('Runner', -1, [])],
-      },
-      dispose() {},
-    }),
+    createVariantInstance: async (config) => {
+      receivedConfig = config;
+      return {
+        scene: new THREE.Group(),
+        animations: [idleClip, runnerClip],
+        dispose() {},
+      };
+    },
   };
 
   const randomValues = [0.25, 0.35, 0.8, 0.6, 0.4];
@@ -83,6 +86,32 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
 
   entity.onSpawn();
   await entity.assetLoadPromise;
+
+  assert.ok(receivedConfig, 'runner entity should request an asset config');
+  assert.match(
+    receivedConfig.baseUrl ?? '',
+    /entity_ghost_guy_1_runner\.glb$/i,
+    'runner config should point to the dedicated runner GLB',
+  );
+  const variantUrlCount =
+    receivedConfig && typeof receivedConfig.variantUrls === 'object'
+      ? Object.keys(receivedConfig.variantUrls).length
+      : 0;
+  assert.equal(
+    variantUrlCount,
+    0,
+    'runner config should not include external variant URLs',
+  );
+  assert.equal(
+    entity.variantClipMap.get('idle')?.[0],
+    idleClip,
+    'idle variant should originate from the runner asset animations',
+  );
+  assert.equal(
+    entity.variantClipMap.get('runner')?.[0],
+    runnerClip,
+    'runner variant should originate from the runner asset animations',
+  );
 
   assert.equal(StubAnimationController.instances.length, 1, 'should create one animation controller');
   const controller = StubAnimationController.instances[0];
@@ -157,8 +186,12 @@ test('CrownedGhostRunnerEntity retries runner animation once clips become availa
     resolveInstance = resolve;
   });
 
+  let receivedConfig;
   const fakeLoader = {
-    createVariantInstance: async () => deferredInstance,
+    createVariantInstance: async (config) => {
+      receivedConfig = config;
+      return deferredInstance;
+    },
   };
 
   const { CrownedGhostRunnerEntity } = await import('../crowned-ghost-runner.js');
@@ -198,14 +231,21 @@ test('CrownedGhostRunnerEntity retries runner animation once clips become availa
 
   resolveInstance({
     scene: new THREE.Group(),
-    animations: [new THREE.AnimationClip('Idle', -1, [])],
-    variants: {
-      runner: [new THREE.AnimationClip('Runner', -1, [])],
-    },
+    animations: [
+      new THREE.AnimationClip('Runner_Idle', -1, []),
+      new THREE.AnimationClip('Runner', -1, []),
+    ],
     dispose() {},
   });
 
   await entity.assetLoadPromise;
+
+  assert.ok(receivedConfig, 'runner entity should capture a config for deferred loads');
+  assert.match(
+    receivedConfig.baseUrl ?? '',
+    /entity_ghost_guy_1_runner\.glb$/i,
+    'deferred load config should reference the runner GLB',
+  );
 
   entity.update({ delta: 0.016, elapsedTime: 0.016 });
 
