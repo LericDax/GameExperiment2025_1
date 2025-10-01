@@ -5,6 +5,12 @@ const RUNNER_MODEL_CONFIG = {
     '../models/entity_ghost_guy_1/entity_ghost_guy_1_runner.glb',
     import.meta.url,
   ).href,
+  animationMap: {
+    runner: {
+      NlaTrack: 'runner',
+      '*': 'runner',
+    },
+  },
 };
 
 const WALK_STATE = 'walk';
@@ -468,7 +474,10 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       return name.includes('runner') || name.includes('run') || name.includes('move');
     });
 
+    const renamedRunnerClip = baseAnimations.find((clip) => nameOf(clip) === 'runner');
+
     const runnerClip =
+      renamedRunnerClip ??
       this.selectClipByName(runnerCandidates, [
         'runner',
         'run',

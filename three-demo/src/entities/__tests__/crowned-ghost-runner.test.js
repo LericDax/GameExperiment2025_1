@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import * as THREE from 'three';
+import { EntityAssetLoader } from '../entity-asset-loader.js';
+
+if (typeof globalThis.self === 'undefined') {
+  globalThis.self = globalThis;
+}
 
 class StubAnimationController {
   static instances = [];
@@ -38,6 +46,54 @@ class StubAnimationController {
 
   dispose() {
     this.disposeCalled = true;
+  }
+}
+
+class FileSystemEntityAssetLoader extends EntityAssetLoader {
+  constructor(options = {}) {
+    super(options);
+  }
+
+  async loadGLTF(url) {
+    const source = String(url ?? '');
+    if (!source) {
+      throw new Error('EntityAssetLoader.loadGLTF requires a URL.');
+    }
+
+    if (!source.startsWith('file:')) {
+      return super.loadGLTF(url);
+    }
+
+    if (this.cache.has(source)) {
+      const entry = this.cache.get(source);
+      if (entry.asset) {
+        return entry.asset;
+      }
+      return entry.promise;
+    }
+
+    const entry = {};
+    const promise = (async () => {
+      const fileUrl = new URL(source);
+      const filePath = fileURLToPath(fileUrl);
+      const fileData = await readFile(filePath);
+      const arrayBuffer = fileData.buffer.slice(
+        fileData.byteOffset,
+        fileData.byteOffset + fileData.byteLength,
+      );
+      const directory = `${path.dirname(filePath)}/`;
+      const gltf = await this.loader.parseAsync(arrayBuffer, directory);
+      entry.asset = gltf;
+      return gltf;
+    })();
+
+    entry.promise = promise.catch((error) => {
+      this.cache.delete(source);
+      throw error;
+    });
+
+    this.cache.set(source, entry);
+    return entry.promise;
   }
 }
 
@@ -258,4 +314,36 @@ test('CrownedGhostRunnerEntity retries runner animation once clips become availa
     'runner',
     'runner variant should be active after clips resolve',
   );
+});
+
+test('CrownedGhostRunnerEntity can play the runner clip from the real GLB asset', async () => {
+  const { CrownedGhostRunnerEntity } = await import('../crowned-ghost-runner.js');
+
+  StubAnimationController.instances.length = 0;
+
+  const loader = new FileSystemEntityAssetLoader({ THREE });
+  const entity = new CrownedGhostRunnerEntity({
+    THREE,
+    assetLoader: loader,
+    animationControllerClass: StubAnimationController,
+  });
+
+  entity.onSpawn();
+  const instance = await entity.assetLoadPromise;
+
+  assert.ok(instance, 'runner entity should resolve the real GLB asset instance');
+  assert.equal(
+    StubAnimationController.instances.length,
+    1,
+    'real loader should still initialize the animation controller once',
+  );
+
+  const controller = StubAnimationController.instances[0];
+  assert.ok(controller.variantClips.has('runner'), 'runner clip should be registered with controller');
+
+  const action = entity.playAnimationVariant('runner', { loopMode: THREE.LoopRepeat });
+  assert.ok(action, 'playAnimationVariant("runner") should return an action when runner clip is ready');
+  assert.equal(controller.activeVariantId, 'runner', 'animation controller should play the runner variant');
+
+  entity.dispose();
 });
