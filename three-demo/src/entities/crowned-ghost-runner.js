@@ -91,6 +91,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
 
     this._scratchPreviousPosition = new this.THREE.Vector3();
     this.pendingRunnerAnimation = false;
+    this.currentRunnerAction = null;
     this.currentMoveSpeed = 0;
     this.recentBlockedHeadings = [];
     this.headingProbeDistances = [
@@ -124,6 +125,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.visualYawOffset = 0;
     this.applyVisualYaw();
     this.pendingRunnerAnimation = false;
+    this.currentRunnerAction = null;
     this.updateRunnerAnimationSpeed();
   }
 
@@ -150,8 +152,10 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       loopMode: this.THREE.LoopRepeat,
       fallbackToDefault: false,
     });
-    if (runnerAction) {
-      this.pendingRunnerAnimation = false;
+    const runnerActionStarted = Boolean(runnerAction);
+    this.pendingRunnerAnimation = !runnerActionStarted;
+    this.currentRunnerAction = runnerActionStarted ? runnerAction : null;
+    if (runnerActionStarted) {
       this.updateRunnerAnimationSpeed();
       return;
     }
@@ -165,11 +169,13 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
         'CrownedGhostRunnerEntity: Missing "runner" animation variant after assets finished loading.',
       );
       this.pendingRunnerAnimation = false;
+      this.currentRunnerAction = null;
       this.playAnimationVariant('idle', { loopMode: this.THREE.LoopRepeat });
       return;
     }
 
     this.pendingRunnerAnimation = true;
+    this.currentRunnerAction = null;
     this.updateRunnerAnimationSpeed();
   }
 
@@ -186,6 +192,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.visualYawOffset = 0;
     this.applyVisualYaw();
     this.pendingRunnerAnimation = false;
+    this.currentRunnerAction = null;
     this.updateRunnerAnimationSpeed();
   }
 
@@ -520,7 +527,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       return;
     }
 
-    if (this.animationController?.activeVariantId === 'runner') {
+    if (this.animationController?.activeVariantId === 'runner' && this.currentRunnerAction) {
       this.pendingRunnerAnimation = false;
       return;
     }
@@ -536,6 +543,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
         'CrownedGhostRunnerEntity: Runner animation clips are missing from the loaded variant set.',
       );
       this.pendingRunnerAnimation = false;
+      this.currentRunnerAction = null;
       this.playAnimationVariant('idle', { loopMode: this.THREE.LoopRepeat });
       return;
     }
@@ -546,6 +554,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     });
     if (action) {
       this.pendingRunnerAnimation = false;
+      this.currentRunnerAction = action;
       this.updateRunnerAnimationSpeed();
     }
   }
@@ -553,6 +562,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   dispose() {
     this.behaviorState = IDLE_STATE;
     this.pendingRunnerAnimation = false;
+    this.currentRunnerAction = null;
     super.dispose();
   }
 
