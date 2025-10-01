@@ -82,7 +82,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.idleYawPhase = this.random() * Math.PI * 2;
 
     this._scratchPreviousPosition = new this.THREE.Vector3();
-    this._pendingRunnerAnimation = false;
+    this.pendingRunnerAnimation = false;
     this.currentMoveSpeed = 0;
     this.recentBlockedHeadings = [];
     this.headingProbeDistances = [
@@ -115,7 +115,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.playAnimationVariant('idle', { loopMode: this.THREE.LoopRepeat });
     this.visualYawOffset = 0;
     this.applyVisualYaw();
-    this._pendingRunnerAnimation = false;
+    this.pendingRunnerAnimation = false;
     this.updateRunnerAnimationSpeed();
   }
 
@@ -143,25 +143,25 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       fallbackToDefault: false,
     });
     if (runnerAction) {
-      this._pendingRunnerAnimation = false;
+      this.pendingRunnerAnimation = false;
       this.updateRunnerAnimationSpeed();
       return;
     }
 
     const variantsLoaded = this.areAnimationVariantsLoaded();
-    const hasRunnerVariant = this.hasAnimationVariant('runner');
+    const runnerClipAvailable = this.variantClipMap instanceof Map && this.variantClipMap.has('runner');
 
-    if (variantsLoaded && !hasRunnerVariant) {
+    if (variantsLoaded && !runnerClipAvailable) {
       console.assert(
         false,
         'CrownedGhostRunnerEntity: Missing "runner" animation variant after assets finished loading.',
       );
-      this._pendingRunnerAnimation = false;
+      this.pendingRunnerAnimation = false;
       this.playAnimationVariant('idle', { loopMode: this.THREE.LoopRepeat });
       return;
     }
 
-    this._pendingRunnerAnimation = true;
+    this.pendingRunnerAnimation = true;
     this.updateRunnerAnimationSpeed();
   }
 
@@ -177,7 +177,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.playAnimationVariant('idle', { loopMode: this.THREE.LoopRepeat });
     this.visualYawOffset = 0;
     this.applyVisualYaw();
-    this._pendingRunnerAnimation = false;
+    this.pendingRunnerAnimation = false;
     this.updateRunnerAnimationSpeed();
   }
 
@@ -422,12 +422,12 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   }
 
   retryRunnerAnimation() {
-    if (!this._pendingRunnerAnimation || this.behaviorState !== WALK_STATE) {
+    if (!this.pendingRunnerAnimation || this.behaviorState !== WALK_STATE) {
       return;
     }
 
     if (this.animationController?.activeVariantId === 'runner') {
-      this._pendingRunnerAnimation = false;
+      this.pendingRunnerAnimation = false;
       return;
     }
 
@@ -435,12 +435,13 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       return;
     }
 
-    if (!this.hasAnimationVariant('runner')) {
+    const hasRunnerClip = this.variantClipMap instanceof Map && this.variantClipMap.has('runner');
+    if (!hasRunnerClip) {
       console.assert(
         false,
         'CrownedGhostRunnerEntity: Runner animation clips are missing from the loaded variant set.',
       );
-      this._pendingRunnerAnimation = false;
+      this.pendingRunnerAnimation = false;
       this.playAnimationVariant('idle', { loopMode: this.THREE.LoopRepeat });
       return;
     }
@@ -450,14 +451,14 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       fallbackToDefault: false,
     });
     if (action) {
-      this._pendingRunnerAnimation = false;
+      this.pendingRunnerAnimation = false;
       this.updateRunnerAnimationSpeed();
     }
   }
 
   dispose() {
     this.behaviorState = IDLE_STATE;
-    this._pendingRunnerAnimation = false;
+    this.pendingRunnerAnimation = false;
     super.dispose();
   }
 
