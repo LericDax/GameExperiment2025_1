@@ -303,6 +303,8 @@ export class EntityAssetLoader {
         const source = findFirstSkinnedMesh(sourceRig);
         const targetSkeleton = target?.skeleton ?? null;
         const sourceSkeleton = source?.skeleton ?? null;
+        const targetRetargetRoot = target ?? null;
+        const sourceRetargetRoot = source ?? null;
         const targetBoneNames = targetSkeleton
           ? new Set(targetSkeleton.bones.map((bone) => bone?.name).filter(Boolean))
           : new Set();
@@ -318,12 +320,29 @@ export class EntityAssetLoader {
           return clip;
         };
 
-        if (targetSkeleton && sourceSkeleton) {
+        let retargetWarningIssued = false;
+        if (targetSkeleton && sourceSkeleton && targetRetargetRoot && sourceRetargetRoot) {
           let producedTracks = false;
           sourceClips.forEach((clip) => {
             const originalName = typeof clip?.name === 'string' ? clip.name : null;
             const clonedClip = clip.clone();
-            const remappedClip = retargetClip(targetSkeleton, sourceSkeleton, clonedClip);
+            let remappedClip = null;
+            try {
+              remappedClip = retargetClip(targetRetargetRoot, sourceRetargetRoot, clonedClip);
+            } catch (error) {
+              const clipLabel = originalName ?? clonedClip?.name ?? '(unnamed)';
+              const errorMessage =
+                error instanceof Error ? error.message : String(error ?? 'Unknown error');
+              retargetFailureReason = `Retargeting clip "${clipLabel}" failed: ${errorMessage}.`;
+              if (!retargetWarningIssued) {
+                console.warn(
+                  `EntityAssetLoader: Failed to retarget clip "${clipLabel}" for variant "${name}" from ${url}.`,
+                  error,
+                );
+                retargetWarningIssued = true;
+              }
+              return;
+            }
             if (!remappedClip) {
               return;
             }
@@ -362,10 +381,11 @@ export class EntityAssetLoader {
             .filter(Boolean);
 
           if (fallbackClips.length > 0) {
-            if (retargetFailureReason) {
+            if (retargetFailureReason && !retargetWarningIssued) {
               console.warn(
                 `EntityAssetLoader: ${retargetFailureReason} Falling back to source clips for variant "${name}" from ${url}.`,
               );
+              retargetWarningIssued = true;
             }
             retargetedClips.push(...fallbackClips);
           } else {
