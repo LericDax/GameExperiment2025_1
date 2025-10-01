@@ -514,10 +514,23 @@ export class EntityAssetLoader {
               return;
             }
             if (remappedClip.tracks?.length && targetBoneNames.size > 0) {
-              remappedClip.tracks = remappedClip.tracks.filter((track) => {
-                const boneName = extractTrackBoneName(track?.name);
-                return boneName ? targetBoneNames.has(boneName) : false;
-              });
+              const remappedTracks = remappedClip.tracks
+                .map((track) => {
+                  const boneName = extractTrackBoneName(track?.name);
+                  if (!boneName) {
+                    return null;
+                  }
+                  const targetBoneName = resolveTargetBoneName(boneName);
+                  if (!targetBoneName || !targetBoneNames.has(targetBoneName)) {
+                    return null;
+                  }
+                  if (targetBoneName !== boneName) {
+                    track.name = rewriteTrackName(track.name, targetBoneName);
+                  }
+                  return track;
+                })
+                .filter(Boolean);
+              remappedClip.tracks = remappedTracks;
             }
             if (!remappedClip.tracks?.length) {
               return;
