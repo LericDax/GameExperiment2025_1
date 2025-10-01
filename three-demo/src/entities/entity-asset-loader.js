@@ -13,7 +13,24 @@ function sanitizeBoneName(name) {
   if (!name) {
     return '';
   }
-  return String(name).replace(/\.\d+$/g, '').replace(/(?:_Clone)+$/g, '');
+  let sanitized = String(name);
+  sanitized = sanitized.replace(/\.\d+$/g, '').replace(/(?:_Clone)+$/g, '');
+
+  if (/[\:|/]/.test(sanitized)) {
+    const segments = sanitized.split(/[:|/]+/).filter(Boolean);
+    if (segments.length) {
+      sanitized = segments[segments.length - 1];
+    }
+  }
+
+  if (sanitized.includes('__')) {
+    const segments = sanitized.split(/__+/).filter(Boolean);
+    if (segments.length) {
+      sanitized = segments[segments.length - 1];
+    }
+  }
+
+  return sanitized;
 }
 
 function extractTrackBoneName(trackName) {
