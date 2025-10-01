@@ -42,6 +42,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.idleYawPhase = this.random() * Math.PI * 2;
 
     this._scratchPreviousPosition = new this.THREE.Vector3();
+    this._pendingRunnerAnimation = false;
   }
 
   onSpawn(spawnContext, options = {}) {
@@ -58,6 +59,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.idleBaseYaw = this.normalizeAngle(this.root.rotation.y || this.headingAngle || 0);
     this.idleYawPhase = this.random() * Math.PI * 2;
     this.playAnimationVariant('idle', { loopMode: this.THREE.LoopRepeat });
+    this._pendingRunnerAnimation = false;
   }
 
   enterWalkState({ duration, headingAngle } = {}) {
@@ -71,7 +73,29 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     const candidateHeading =
       typeof headingAngle === 'number' ? headingAngle : this.chooseNextHeadingAngle();
     this.setHeadingAngle(candidateHeading);
-    this.playAnimationVariant('runner', { loopMode: this.THREE.LoopRepeat });
+    const runnerAction = this.playAnimationVariant('runner', {
+      loopMode: this.THREE.LoopRepeat,
+      fallbackToDefault: false,
+    });
+    if (runnerAction) {
+      this._pendingRunnerAnimation = false;
+      return;
+    }
+
+    const variantsLoaded = this.areAnimationVariantsLoaded();
+    const hasRunnerVariant = this.hasAnimationVariant('runner');
+
+    if (variantsLoaded && !hasRunnerVariant) {
+      console.assert(
+        false,
+        'CrownedGhostRunnerEntity: Missing "runner" animation variant after assets finished loading.',
+      );
+      this._pendingRunnerAnimation = false;
+      this.playAnimationVariant('idle', { loopMode: this.THREE.LoopRepeat });
+      return;
+    }
+
+    this._pendingRunnerAnimation = true;
   }
 
   chooseWalkDuration() {
@@ -166,6 +190,11 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       } else {
         this.enterWalkState({});
       }
+      return;
+    }
+
+    if (this.behaviorState === WALK_STATE) {
+      this.retryRunnerAnimation();
     }
   }
 
@@ -197,8 +226,47 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.headingAngle = targetYaw;
   }
 
+  updateAnimationVariantsFromAsset() {
+    super.updateAnimationVariantsFromAsset();
+    this.retryRunnerAnimation();
+  }
+
+  retryRunnerAnimation() {
+    if (!this._pendingRunnerAnimation || this.behaviorState !== WALK_STATE) {
+      return;
+    }
+
+    if (this.animationController?.activeVariantId === 'runner') {
+      this._pendingRunnerAnimation = false;
+      return;
+    }
+
+    if (!this.areAnimationVariantsLoaded()) {
+      return;
+    }
+
+    if (!this.hasAnimationVariant('runner')) {
+      console.assert(
+        false,
+        'CrownedGhostRunnerEntity: Runner animation clips are missing from the loaded variant set.',
+      );
+      this._pendingRunnerAnimation = false;
+      this.playAnimationVariant('idle', { loopMode: this.THREE.LoopRepeat });
+      return;
+    }
+
+    const action = this.playAnimationVariant('runner', {
+      loopMode: this.THREE.LoopRepeat,
+      fallbackToDefault: false,
+    });
+    if (action) {
+      this._pendingRunnerAnimation = false;
+    }
+  }
+
   dispose() {
     this.behaviorState = IDLE_STATE;
+    this._pendingRunnerAnimation = false;
     super.dispose();
   }
 }
