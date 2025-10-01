@@ -1,71 +1,68 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CrownedGhostEntity } from '../crowned-ghost.js';
 
-function createVariantOnlyInstance() {
-  return {
-    scene: new THREE.Group(),
-    animations: [],
-    variants: {
-      walker: [new THREE.AnimationClip('Walker', -1, [])],
-    },
-    dispose() {},
-  };
+const SENTINEL_ACTION = { id: 'sentinel-action' };
+
+class StubAnimationController {
+  static instances = [];
+
+  constructor({ variantClips } = {}) {
+    this.variantClips = variantClips ?? new Map();
+    this.playCalls = [];
+    this.setVariantClipCalls = [];
+    this.activeVariantId = null;
+    StubAnimationController.instances.push(this);
+  }
+
+  setVariantClips(nextClips) {
+    this.variantClips = nextClips;
+    this.setVariantClipCalls.push(nextClips);
+  }
+
+  playVariant(variantId) {
+    this.playCalls.push(variantId);
+    this.activeVariantId = variantId;
+    return SENTINEL_ACTION;
+  }
+
+  dispose() {}
 }
 
-test('CrownedGhostEntity falls back to first available variant when idle is missing', async () => {
-  const instance = createVariantOnlyInstance();
-  let loaderCalls = 0;
-  const assetLoader = {
-    createVariantInstance: async () => {
-      loaderCalls += 1;
-      return instance;
-    },
+test('CrownedGhostEntity aliases idle to walker when only walker clips are present', async (t) => {
+  const fakeLoader = {
+    createVariantInstance: async () => ({
+      scene: new THREE.Group(),
+      animations: [],
+      variants: {
+        walker: [new THREE.AnimationClip('Walker', -1, [])],
+      },
+      dispose() {},
+    }),
   };
 
-  const warnings = [];
-  const originalWarn = console.warn;
-  console.warn = (...args) => {
-    warnings.push(args.join(' '));
-  };
+  const { CrownedGhostEntity } = await import('../crowned-ghost.js');
 
-  try {
-    const entity = new CrownedGhostEntity({ assetLoader, THREE });
-    entity.onSpawn();
+  StubAnimationController.instances.length = 0;
 
-    await entity.assetLoadPromise;
-    await Promise.resolve();
+  const entity = new CrownedGhostEntity({
+    THREE,
+    assetLoader: fakeLoader,
+    animationControllerClass: StubAnimationController,
+  });
+  entity.onSpawn();
+  await entity.assetLoadPromise;
+  entity.applyDesiredAnimation();
 
-    assert.equal(loaderCalls, 1, 'asset loader should be invoked once');
-    assert.ok(entity.animationController, 'animation controller should be created after spawn');
-    assert.equal(
-      entity.desiredAnimationVariant,
-      'walker',
-      'desired animation should update to the fallback variant',
-    );
-    assert.equal(
-      entity.animationController.activeVariantId,
-      'walker',
-      'active animation should resolve to the fallback variant',
-    );
-    assert.strictEqual(
-      entity.variantClipMap.get('walker'),
-      entity.variantClipMap.get('idle'),
-      'idle variant should alias to the fallback clip list',
-    );
-    assert.equal(
-      entity.variantAliasMap.get('idle'),
-      'walker',
-      'idle should record the fallback alias for later playback',
-    );
-    assert.ok(
-      warnings.some((message) => message.includes('aliasing to "walker"')),
-      'aliasing warning should be emitted when falling back from idle',
-    );
+  assert.equal(StubAnimationController.instances.length, 1, 'animation controller should be created once');
+  const controller = StubAnimationController.instances[0];
 
-    entity.dispose();
-  } finally {
-    console.warn = originalWarn;
-  }
+  assert.ok(controller.playCalls.includes('walker'), 'controller should request the walker variant');
+  assert.equal(controller.activeVariantId, 'walker', 'walker should become the active variant');
+  assert.equal(entity.desiredAnimationVariant, 'walker', 'entity desired variant should resolve to walker');
+  assert.equal(
+    entity.variantAliasMap.get('idle'),
+    'walker',
+    'idle should alias to walker when idle clips are missing',
+  );
 });

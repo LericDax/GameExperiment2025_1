@@ -59,6 +59,8 @@ export class CrownedGhostEntity extends BaseEntity {
   constructor(params = {}) {
     super(params);
 
+    this.AnimationControllerClass =
+      params.animationControllerClass ?? EntityAnimationController;
     this.assetLoader = params.assetLoader ?? getSharedEntityAssetLoader({ THREE: this.THREE });
     this.visualRoot = new this.THREE.Group();
     this.visualRoot.name = 'CrownedGhost.VisualRoot';
@@ -172,7 +174,7 @@ export class CrownedGhostEntity extends BaseEntity {
     if (this.animationController || !this.visualRoot || !this.isSpawned) {
       return;
     }
-    this.animationController = new EntityAnimationController({
+    this.animationController = new this.AnimationControllerClass({
       THREE: this.THREE,
       manager: this.manager ?? null,
       entityId: this.id ?? null,
