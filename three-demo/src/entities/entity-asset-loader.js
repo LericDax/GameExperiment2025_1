@@ -514,10 +514,28 @@ export class EntityAssetLoader {
               return;
             }
             if (remappedClip.tracks?.length && targetBoneNames.size > 0) {
-              remappedClip.tracks = remappedClip.tracks.filter((track) => {
-                const boneName = extractTrackBoneName(track?.name);
-                return boneName ? targetBoneNames.has(boneName) : false;
-              });
+              const remappedTracks = remappedClip.tracks
+                .map((track) => {
+                  const boneName = extractTrackBoneName(track?.name);
+                  if (!boneName) {
+                    return null;
+                  }
+                  const targetBoneName = resolveTargetBoneName(boneName);
+                  if (!targetBoneName || !targetBoneNames.has(targetBoneName)) {
+                    return null;
+                  }
+                  if (targetBoneName === boneName) {
+                    return track;
+                  }
+                  const nextTrack =
+                    track && typeof track.clone === 'function' ? track.clone() : track;
+                  if (nextTrack) {
+                    nextTrack.name = rewriteTrackName(nextTrack.name, targetBoneName);
+                  }
+                  return nextTrack;
+                })
+                .filter(Boolean);
+              remappedClip.tracks = remappedTracks;
             }
             if (!remappedClip.tracks?.length) {
               return;
@@ -554,8 +572,15 @@ export class EntityAssetLoader {
                     if (!targetBoneName || !targetBoneNames.has(targetBoneName)) {
                       return null;
                     }
-                    track.name = rewriteTrackName(track.name, targetBoneName);
-                    return track;
+                    if (targetBoneName === boneName) {
+                      return track;
+                    }
+                    const nextTrack =
+                      track && typeof track.clone === 'function' ? track.clone() : track;
+                    if (nextTrack) {
+                      nextTrack.name = rewriteTrackName(nextTrack.name, targetBoneName);
+                    }
+                    return nextTrack;
                   })
                   .filter(Boolean);
                 clonedClip.tracks = remappedTracks;
