@@ -60,9 +60,11 @@ function createFakeThree() {
     constructor(root) {
       this.root = root;
       this.actionsByClip = new Map();
+      this.clipActionCalls = [];
     }
 
     clipAction(clip) {
+      this.clipActionCalls.push(clip);
       if (!this.actionsByClip.has(clip)) {
         const action = new FakeAction({ clip });
         this.actionsByClip.set(clip, action);
@@ -111,6 +113,11 @@ test('playVariant caches actions per variant and crossfades when switching', () 
     'playing the same variant should reuse the cached action',
   );
   assert.equal(controller.actions.size, 1, 'no additional actions should be cached');
+  assert.equal(
+    controller.mixer.clipActionCalls.length,
+    1,
+    'the mixer should only create a single action for the repeated variant',
+  );
 
   const runAction = controller.playVariant('run', { fadeDuration: 0.5 });
   assert.ok(runAction, 'expected run action to be created');
@@ -122,6 +129,41 @@ test('playVariant caches actions per variant and crossfades when switching', () 
     warp: false,
   });
   assert.equal(runAction.playCalls.length, 1, 'run action should be played during cross fade');
+  assert.strictEqual(controller.activeAction, runAction);
+  assert.equal(controller.activeVariantId, 'run');
+});
+
+test('playVariant stops the previous action immediately when fade duration is zero', () => {
+  const THREE = createFakeThree();
+  const controller = new EntityAnimationController({
+    THREE,
+    root: createRoot(),
+    variantClips: {
+      idle: [createClip('Idle')],
+      run: [createClip('Run')],
+    },
+  });
+
+  const idleAction = controller.playVariant('idle', { fadeDuration: 0 });
+  assert.equal(
+    idleAction.stopCalls.length,
+    0,
+    'first play should not stop anything yet',
+  );
+
+  const runAction = controller.playVariant('run', { fadeDuration: 0 });
+  assert.ok(runAction, 'expected run action to be created for zero fade switch');
+  assert.equal(
+    idleAction.crossFadeCalls.length,
+    0,
+    'crossFade should not be invoked when fade duration is zero',
+  );
+  assert.equal(
+    idleAction.stopCalls.length,
+    1,
+    'previous action should be stopped immediately when fading is disabled',
+  );
+  assert.equal(runAction.playCalls.length, 1, 'new action should still play');
   assert.strictEqual(controller.activeAction, runAction);
   assert.equal(controller.activeVariantId, 'run');
 });
