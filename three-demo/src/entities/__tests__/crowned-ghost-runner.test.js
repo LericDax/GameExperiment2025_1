@@ -11,6 +11,7 @@ class StubAnimationController {
     this.setVariantClipCalls = [];
     this.activeVariantId = null;
     this.disposeCalled = false;
+    this.speed = 1;
     StubAnimationController.instances.push(this);
   }
 
@@ -29,6 +30,10 @@ class StubAnimationController {
     }
     this.activeVariantId = variantId;
     return { id: `ghost-runner-action-${variantId}` };
+  }
+
+  setSpeed(nextSpeed) {
+    this.speed = nextSpeed;
   }
 
   dispose() {
@@ -94,11 +99,11 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
     entity.update({ delta: dt, elapsedTime: elapsed });
   };
 
-  const initialYaw = entity.root.rotation.y;
+  const initialYaw = entity.visualRoot.rotation.y;
   step(0.1);
   assert.ok(
-    Math.abs(entity.root.rotation.y - initialYaw) > 1e-5,
-    'idle update should adjust yaw over time',
+    Math.abs(entity.visualRoot.rotation.y - initialYaw) > 1e-5,
+    'idle update should adjust the visual yaw over time',
   );
 
   step(0.12);
@@ -108,8 +113,8 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
     'runner animation should play during walk',
   );
   assert.ok(
-    Math.abs(entity.angleDifference(entity.headingAngle, entity.previousHeadingAngle)) > 0.05,
-    'walk state should select a new heading angle',
+    Math.abs(entity.angleDifference(entity.targetHeadingAngle, entity.previousHeadingAngle)) > 0.05,
+    'walk state should select a new target heading angle',
   );
 
   const collisionSchedule = [
@@ -126,18 +131,21 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
   const walkStart = entity.root.position.clone();
   step(0.1);
   assert.ok(
-    entity.root.position.distanceTo(walkStart) > 0.05,
-    'walk update should move the entity forward',
+    entity.root.position.distanceTo(walkStart) > 0.01,
+    'walk update should move the entity forward with acceleration applied',
   );
 
   const preCollisionPlayCount = controller.playCalls.length;
   step(0.1);
-  assert.equal(entity.behaviorState, 'idle', 'collision should force an early return to idle');
+  assert.equal(entity.behaviorState, 'turn', 'collision should push the runner into a turn state');
   assert.ok(
     controller.playCalls.length > preCollisionPlayCount &&
       controller.playCalls.at(-1)?.variantId === 'idle',
     'idle animation should resume after collision stop',
   );
+
+  step(0.1);
+  assert.equal(entity.behaviorState, 'walk', 'turning in place should resolve back to walking');
 
   entity.dispose();
   assert.ok(controller.disposeCalled, 'dispose should propagate to the animation controller');
