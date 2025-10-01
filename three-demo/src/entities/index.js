@@ -14,6 +14,7 @@ import {
 } from './entity-asset-loader.js';
 import { EntityAnimationController } from './entity-animation-controller.js';
 import { CrownedGhostEntity } from './crowned-ghost.js';
+import { CrownedGhostRunnerEntity } from './crowned-ghost-runner.js';
 
 export {
   createEntityManager,
@@ -28,6 +29,7 @@ export {
   getSharedEntityAssetLoader,
   EntityAnimationController,
   CrownedGhostEntity,
+  CrownedGhostRunnerEntity,
 };
 
 export function registerEntityFactory(idOrDefinition, factory, options = {}) {
@@ -108,6 +110,31 @@ export function registerBuiltinEntities() {
             idle: 'Default hover idle loop from the base rig.',
             runner: 'High-energy chase loop suitable for pursuit.',
             walker: 'Leisurely patrol loop for ambient wandering.',
+          },
+        },
+      },
+    });
+  }
+
+  const existingRunner = getEntityDefinition('crowned_ghost_2');
+  if (!existingRunner) {
+    registerEntityClass({
+      id: 'crowned_ghost_2',
+      label: 'Crowned Ghost Runner',
+      EntityClass: CrownedGhostRunnerEntity,
+      metadata: {
+        aliases: {
+          numeric: [2],
+        },
+        tags: {
+          biomes: ['haunted', 'mistwood', 'luminous_cavern'],
+          weather: ['clear', 'foggy', 'storm'],
+        },
+        animations: {
+          default: 'idle',
+          variants: {
+            idle: 'Base hover idle loop shared with the crowned ghost.',
+            runner: 'Ghost guy runner loop used for high-energy wandering.',
           },
         },
       },
