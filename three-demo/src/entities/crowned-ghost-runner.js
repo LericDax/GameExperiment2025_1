@@ -1,12 +1,20 @@
 import { CrownedGhostEntity } from './crowned-ghost.js';
 
+const RUNNER_MODEL_CONFIG = {
+  baseUrl: new URL(
+    '../models/entity_ghost_guy_1/entity_ghost_guy_1_runner.glb',
+    import.meta.url,
+  ).href,
+};
+
 const WALK_STATE = 'walk';
 const IDLE_STATE = 'idle';
 const TURN_STATE = 'turn';
 
 export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   constructor(params = {}) {
-    super(params);
+    const modelConfig = params?.modelConfig ?? RUNNER_MODEL_CONFIG;
+    super({ ...params, modelConfig });
 
     const behavior = params.behavior ?? params.options?.behavior ?? {};
     this.random = typeof params.random === 'function' ? params.random : Math.random;
@@ -414,6 +422,92 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     if (clearance >= this.turnResumeClearance) {
       this.enterWalkState({ headingAngle: this.targetHeadingAngle ?? headingAngle });
     }
+  }
+
+  buildVariantClipMapFromInstance(instance) {
+    this.variantAliasMap = new Map();
+    const variantMap = new Map();
+    if (!instance) {
+      return variantMap;
+    }
+
+    const baseAnimations = Array.isArray(instance.animations)
+      ? instance.animations.filter(Boolean)
+      : [];
+
+    if (baseAnimations.length === 0) {
+      return variantMap;
+    }
+
+    const nameOf = (clip) => (typeof clip?.name === 'string' ? clip.name.toLowerCase() : '');
+
+    const idleCandidates = baseAnimations.filter((clip) => {
+      const name = nameOf(clip);
+      return name.includes('idle') || name.includes('hover') || name.includes('float');
+    });
+
+    const idleClip =
+      this.selectClipByName(idleCandidates, [
+        'idle',
+        'hover',
+        'ghost_guy_runner_idle',
+        'ghost_guy_idle',
+        'hover_idle',
+        'idle_hover',
+        'float',
+      ]) ?? this.selectClipByName(baseAnimations, ['idle', 'hover', 'float']);
+
+    const runnerCandidates = baseAnimations.filter((clip) => {
+      const name = nameOf(clip);
+      if (!name) {
+        return false;
+      }
+      if (name.includes('idle') || name.includes('hover') || name.includes('float')) {
+        return false;
+      }
+      return name.includes('runner') || name.includes('run') || name.includes('move');
+    });
+
+    const runnerClip =
+      this.selectClipByName(runnerCandidates, [
+        'runner',
+        'run',
+        'ghost_guy_runner',
+        'ghost_guy_run',
+        'move',
+        'loop',
+      ]) ??
+      this.selectClipByName(
+        baseAnimations.filter((clip) => {
+          const name = nameOf(clip);
+          return name && !name.includes('idle') && !name.includes('hover');
+        }),
+        ['runner', 'run', 'move'],
+      );
+
+    if (idleClip) {
+      variantMap.set('idle', [idleClip]);
+    }
+
+    if (runnerClip) {
+      variantMap.set('runner', [runnerClip]);
+    }
+
+    if (!variantMap.has('idle') && runnerClip) {
+      variantMap.set('idle', [runnerClip]);
+      this.variantAliasMap.set('idle', 'runner');
+      console.warn(
+        'CrownedGhostRunnerEntity: Missing dedicated idle clip in runner asset; aliasing to runner.',
+      );
+    } else if (!variantMap.has('runner') && idleClip) {
+      variantMap.set('runner', [idleClip]);
+      this.variantAliasMap.set('runner', 'idle');
+      console.warn(
+        'CrownedGhostRunnerEntity: Missing dedicated runner clip in runner asset; aliasing to idle.',
+      );
+    }
+
+    return variantMap;
   }
 
   updateAnimationVariantsFromAsset() {

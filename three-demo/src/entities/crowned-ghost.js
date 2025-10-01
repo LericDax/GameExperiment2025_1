@@ -69,6 +69,7 @@ export class CrownedGhostEntity extends BaseEntity {
   constructor(params = {}) {
     super(params);
 
+    this.modelConfig = params?.modelConfig ?? MODEL_CONFIG;
     this.AnimationControllerClass =
       params.animationControllerClass ?? EntityAnimationController;
     this.assetLoader = params.assetLoader ?? getSharedEntityAssetLoader({ THREE: this.THREE });
@@ -102,7 +103,7 @@ export class CrownedGhostEntity extends BaseEntity {
     this.forwardDirection = new this.THREE.Vector3(0, 0, 1);
 
     this.assetLoadPromise = this.assetLoader
-      .createVariantInstance(MODEL_CONFIG)
+      .createVariantInstance(this.modelConfig)
       .then((instance) => {
         if (this.isDisposed) {
           instance.dispose?.();
@@ -235,7 +236,7 @@ export class CrownedGhostEntity extends BaseEntity {
       });
     }
 
-    const declaredVariants = Object.keys(MODEL_CONFIG.variantUrls ?? {});
+    const declaredVariants = Object.keys(this.modelConfig?.variantUrls ?? {});
     declaredVariants.forEach((variantId) => {
       if (!variantMap.has(variantId)) {
         console.warn(
