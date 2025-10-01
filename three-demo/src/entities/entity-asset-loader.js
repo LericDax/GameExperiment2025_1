@@ -524,6 +524,7 @@ export class EntityAssetLoader {
                   if (!targetBoneName || !targetBoneNames.has(targetBoneName)) {
                     return null;
                   }
+
                   if (targetBoneName === boneName) {
                     return track;
                   }
@@ -533,6 +534,7 @@ export class EntityAssetLoader {
                     nextTrack.name = rewriteTrackName(nextTrack.name, targetBoneName);
                   }
                   return nextTrack;
+
                 })
                 .filter(Boolean);
               remappedClip.tracks = remappedTracks;
