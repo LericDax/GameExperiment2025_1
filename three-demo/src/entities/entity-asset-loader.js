@@ -297,8 +297,15 @@ export class EntityAssetLoader {
       if (sourceClips.length > 0) {
         const targetRig = cloneSkeleton(baseScene);
         const sourceRig = cloneSkeleton(variantGltf.scene);
+        targetRig.updateMatrixWorld(true);
+        sourceRig.updateMatrixWorld(true);
         const target = findFirstSkinnedMesh(targetRig);
         const source = findFirstSkinnedMesh(sourceRig);
+        const targetSkeleton = target?.skeleton ?? null;
+        const sourceSkeleton = source?.skeleton ?? null;
+        const targetBoneNames = targetSkeleton
+          ? new Set(targetSkeleton.bones.map((bone) => bone?.name).filter(Boolean))
+          : new Set();
 
         const applyRename = (clip, originalName) => {
           const directRename = renameMap.get(originalName ?? clip.name) ?? renameMap.get(clip.name);
@@ -311,19 +318,32 @@ export class EntityAssetLoader {
           return clip;
         };
 
-        if (target?.skeleton && source?.skeleton) {
+        if (targetSkeleton && sourceSkeleton) {
+          let producedTracks = false;
           sourceClips.forEach((clip) => {
             const originalName = typeof clip?.name === 'string' ? clip.name : null;
             const clonedClip = clip.clone();
-            const remappedClip = retargetClip(target, source, clonedClip);
+            const remappedClip = retargetClip(targetSkeleton, sourceSkeleton, clonedClip);
             if (!remappedClip) {
               return;
             }
+            if (remappedClip.tracks?.length) {
+              remappedClip.tracks = remappedClip.tracks.filter((track) => {
+                const [boneName] = String(track?.name ?? '').split('.');
+                return boneName && targetBoneNames.has(boneName);
+              });
+            }
+            if (!remappedClip.tracks?.length) {
+              return;
+            }
+            producedTracks = true;
             retargetedClips.push(applyRename(remappedClip, originalName));
           });
           if (retargetedClips.length === 0) {
             retargetFailureReason =
-              'Retargeting produced no animation tracks despite variant clips being present.';
+              producedTracks
+                ? 'Retargeting produced animation tracks that did not target the base rig.'
+                : 'Retargeting produced no animation tracks despite variant clips being present.';
           }
         } else {
           retargetFailureReason =
