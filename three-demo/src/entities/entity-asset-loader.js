@@ -524,10 +524,17 @@ export class EntityAssetLoader {
                   if (!targetBoneName || !targetBoneNames.has(targetBoneName)) {
                     return null;
                   }
-                  if (targetBoneName !== boneName) {
-                    track.name = rewriteTrackName(track.name, targetBoneName);
+
+                  if (targetBoneName === boneName) {
+                    return track;
                   }
-                  return track;
+                  const nextTrack =
+                    track && typeof track.clone === 'function' ? track.clone() : track;
+                  if (nextTrack) {
+                    nextTrack.name = rewriteTrackName(nextTrack.name, targetBoneName);
+                  }
+                  return nextTrack;
+
                 })
                 .filter(Boolean);
               remappedClip.tracks = remappedTracks;
@@ -567,8 +574,15 @@ export class EntityAssetLoader {
                     if (!targetBoneName || !targetBoneNames.has(targetBoneName)) {
                       return null;
                     }
-                    track.name = rewriteTrackName(track.name, targetBoneName);
-                    return track;
+                    if (targetBoneName === boneName) {
+                      return track;
+                    }
+                    const nextTrack =
+                      track && typeof track.clone === 'function' ? track.clone() : track;
+                    if (nextTrack) {
+                      nextTrack.name = rewriteTrackName(nextTrack.name, targetBoneName);
+                    }
+                    return nextTrack;
                   })
                   .filter(Boolean);
                 clonedClip.tracks = remappedTracks;
