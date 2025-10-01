@@ -76,15 +76,14 @@ function createBoneRetargetMapping(targetSkeleton, sourceSkeleton) {
     if (!name) {
       return;
     }
+
     targetBoneNames.add(name);
 
+    const sanitizedTargetName = sanitizeBoneName(name);
     let matchedSource = sourceExactNames.get(name) ?? null;
-    if (!matchedSource) {
-      const sanitizedTarget = sanitizeBoneName(name);
-      if (sanitizedTarget) {
-        matchedSource =
-          sourceExactNames.get(sanitizedTarget) ?? sourceSanitizedNames.get(sanitizedTarget) ?? null;
-      }
+    if (!matchedSource && sanitizedTargetName) {
+      matchedSource =
+        sourceExactNames.get(sanitizedTargetName) ?? sourceSanitizedNames.get(sanitizedTargetName) ?? null;
     }
 
     if (matchedSource) {
@@ -93,9 +92,21 @@ function createBoneRetargetMapping(targetSkeleton, sourceSkeleton) {
         sourceToTarget.set(matchedSource, name);
       }
       const sanitizedMatch = sanitizeBoneName(matchedSource);
-      if (sanitizedMatch && !sourceSanitizedToTarget.has(sanitizedMatch)) {
-        sourceSanitizedToTarget.set(sanitizedMatch, name);
+      if (sanitizedMatch) {
+        if (!sourceToTarget.has(sanitizedMatch)) {
+          sourceToTarget.set(sanitizedMatch, name);
+        }
+        if (!sourceSanitizedToTarget.has(sanitizedMatch)) {
+          sourceSanitizedToTarget.set(sanitizedMatch, name);
+        }
       }
+    }
+  });
+
+  const targetToSourceNames = {};
+  targetToSource.forEach((sourceName, targetName) => {
+    if (typeof targetName === 'string' && typeof sourceName === 'string') {
+      targetToSourceNames[targetName] = sourceName;
     }
   });
 
@@ -104,7 +115,15 @@ function createBoneRetargetMapping(targetSkeleton, sourceSkeleton) {
     if (!boneName) {
       return boneName;
     }
-    return targetToSource.get(boneName) ?? boneName;
+    const mappedName = targetToSource.get(boneName);
+    if (mappedName) {
+      return mappedName;
+    }
+    const sanitized = sanitizeBoneName(boneName);
+    if (sanitized && targetToSource.has(sanitized)) {
+      return targetToSource.get(sanitized);
+    }
+    return boneName;
   };
 
   const resolveTargetBoneName = (sourceBoneName) => {
@@ -132,7 +151,7 @@ function createBoneRetargetMapping(targetSkeleton, sourceSkeleton) {
     return null;
   };
 
-  return { targetBoneNames, getSourceBoneName, resolveTargetBoneName };
+  return { targetBoneNames, getSourceBoneName, resolveTargetBoneName, targetToSourceNames };
 }
 
 function cloneMeshResources(object) {
@@ -431,10 +450,8 @@ export class EntityAssetLoader {
         const sourceSkeleton = source?.skeleton ?? null;
         const targetRetargetRoot = target ?? null;
         const sourceRetargetRoot = source ?? null;
-        const { targetBoneNames, getSourceBoneName, resolveTargetBoneName } = createBoneRetargetMapping(
-          targetSkeleton,
-          sourceSkeleton,
-        );
+        const { targetBoneNames, getSourceBoneName, resolveTargetBoneName, targetToSourceNames } =
+          createBoneRetargetMapping(targetSkeleton, sourceSkeleton);
 
         const applyRename = (clip, originalName) => {
           const directRename = renameMap.get(originalName ?? clip.name) ?? renameMap.get(clip.name);
@@ -456,6 +473,7 @@ export class EntityAssetLoader {
             let remappedClip = null;
             try {
               remappedClip = retargetClip(targetRetargetRoot, sourceRetargetRoot, clonedClip, {
+                names: targetToSourceNames,
                 getBoneName: (bone) => {
                   const resolvedName = getSourceBoneName(bone);
                   return resolvedName ?? bone?.name;
