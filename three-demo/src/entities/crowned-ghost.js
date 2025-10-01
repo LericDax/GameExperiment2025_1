@@ -17,6 +17,16 @@ const MODEL_CONFIG = {
       import.meta.url,
     ).href,
   },
+  animationMap: {
+    runner: {
+      NlaTrack: 'ghost_guy_runner',
+      '*': 'ghost_guy_runner',
+    },
+    walker: {
+      NlaTrack: 'ghost_guy_walker',
+      '*': 'ghost_guy_walker',
+    },
+  },
 };
 
 const DEFAULT_ANIMATION_VARIANT = 'idle';
@@ -340,6 +350,19 @@ export class CrownedGhostEntity extends BaseEntity {
     }
     const trimmed = variantId.trim();
     return trimmed.length > 0 ? trimmed : DEFAULT_ANIMATION_VARIANT;
+  }
+
+  hasAnimationVariant(variantId) {
+    if (!variantId) {
+      return false;
+    }
+    const normalized = this.normalizeAnimationVariantId(variantId);
+    const resolved = this.variantAliasMap.get(normalized) ?? normalized;
+    return this.variantClipMap instanceof Map && this.variantClipMap.has(resolved);
+  }
+
+  areAnimationVariantsLoaded() {
+    return this.variantClipMap instanceof Map && this.variantClipMap.size > 0;
   }
 
   releaseVariantClips() {

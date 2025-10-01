@@ -2,13 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
-const SENTINEL_ACTION = { id: 'ghost-runner-action' };
-
 class StubAnimationController {
   static instances = [];
 
   constructor({ variantClips } = {}) {
-    this.variantClips = variantClips ?? new Map();
+    this.variantClips = variantClips instanceof Map ? new Map(variantClips) : new Map();
     this.playCalls = [];
     this.setVariantClipCalls = [];
     this.activeVariantId = null;
@@ -17,14 +15,20 @@ class StubAnimationController {
   }
 
   setVariantClips(next) {
-    this.variantClips = next;
-    this.setVariantClipCalls.push(next);
+    this.variantClips = next instanceof Map ? new Map(next) : new Map();
+    this.setVariantClipCalls.push(this.variantClips);
   }
 
-  playVariant(variantId) {
-    this.playCalls.push(variantId);
+  playVariant(variantId, options = {}) {
+    const clips = this.variantClips.get(variantId) ?? [];
+    const hasClips = Array.isArray(clips) ? clips.length > 0 : false;
+    const call = { variantId, options, hasClips };
+    this.playCalls.push(call);
+    if (!hasClips) {
+      return null;
+    }
     this.activeVariantId = variantId;
-    return SENTINEL_ACTION;
+    return { id: `ghost-runner-action-${variantId}` };
   }
 
   dispose() {
@@ -79,7 +83,10 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
   const controller = StubAnimationController.instances[0];
 
   assert.equal(entity.behaviorState, 'idle', 'entity should begin in idle state');
-  assert.ok(controller.playCalls.includes('idle'), 'idle animation should play on spawn');
+  assert.ok(
+    controller.playCalls.some((call) => call.variantId === 'idle'),
+    'idle animation should play on spawn',
+  );
 
   let elapsed = 0;
   const step = (dt) => {
@@ -96,7 +103,10 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
 
   step(0.12);
   assert.equal(entity.behaviorState, 'walk', 'entity should transition to walk after idle timer');
-  assert.ok(controller.playCalls.includes('runner'), 'runner animation should play during walk');
+  assert.ok(
+    controller.playCalls.some((call) => call.variantId === 'runner' && call.hasClips),
+    'runner animation should play during walk',
+  );
   assert.ok(
     Math.abs(entity.angleDifference(entity.headingAngle, entity.previousHeadingAngle)) > 0.05,
     'walk state should select a new heading angle',
@@ -124,10 +134,80 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
   step(0.1);
   assert.equal(entity.behaviorState, 'idle', 'collision should force an early return to idle');
   assert.ok(
-    controller.playCalls.length > preCollisionPlayCount && controller.playCalls.at(-1) === 'idle',
+    controller.playCalls.length > preCollisionPlayCount &&
+      controller.playCalls.at(-1)?.variantId === 'idle',
     'idle animation should resume after collision stop',
   );
 
   entity.dispose();
   assert.ok(controller.disposeCalled, 'dispose should propagate to the animation controller');
+});
+
+test('CrownedGhostRunnerEntity retries runner animation once clips become available', async () => {
+  let resolveInstance;
+  const deferredInstance = new Promise((resolve) => {
+    resolveInstance = resolve;
+  });
+
+  const fakeLoader = {
+    createVariantInstance: async () => deferredInstance,
+  };
+
+  const { CrownedGhostRunnerEntity } = await import('../crowned-ghost-runner.js');
+
+  StubAnimationController.instances.length = 0;
+
+  const entity = new CrownedGhostRunnerEntity({
+    THREE,
+    assetLoader: fakeLoader,
+    animationControllerClass: StubAnimationController,
+  });
+
+  entity.onSpawn();
+
+  assert.equal(StubAnimationController.instances.length, 1, 'should create an animation controller');
+  const controller = StubAnimationController.instances[0];
+
+  entity.enterWalkState({});
+
+  const initialRunnerCall = controller.playCalls.at(-1);
+  assert.equal(initialRunnerCall?.variantId, 'runner', 'should request runner variant immediately');
+  assert.equal(
+    initialRunnerCall?.options?.fallbackToDefault,
+    false,
+    'should disable default fallback while awaiting runner clips',
+  );
+
+  const initialRunnerIndex = controller.playCalls.length - 1;
+  const idleFallbackDuringPending = controller.playCalls.some(
+    (call, index) => index > initialRunnerIndex && call.variantId === 'idle',
+  );
+  assert.equal(
+    idleFallbackDuringPending,
+    false,
+    'should not fall back to idle while runner clips are still pending',
+  );
+
+  resolveInstance({
+    scene: new THREE.Group(),
+    animations: [new THREE.AnimationClip('Idle', -1, [])],
+    variants: {
+      runner: [new THREE.AnimationClip('Runner', -1, [])],
+    },
+    dispose() {},
+  });
+
+  await entity.assetLoadPromise;
+
+  entity.update({ delta: 0.016, elapsedTime: 0.016 });
+
+  const successfulRunnerCall = controller.playCalls.find(
+    (call) => call.variantId === 'runner' && call.hasClips,
+  );
+  assert.ok(successfulRunnerCall, 'runner animation should begin once clips are available');
+  assert.equal(
+    controller.activeVariantId,
+    'runner',
+    'runner variant should be active after clips resolve',
+  );
 });
