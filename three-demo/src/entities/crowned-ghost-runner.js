@@ -437,9 +437,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       return variantMap;
     }
 
-    const baseAnimations = Array.isArray(instance.animations)
-      ? instance.animations.filter(Boolean)
-      : [];
+    const baseAnimations = this.preprocessInstanceAnimations(instance, ['runner']);
 
     if (baseAnimations.length === 0) {
       return variantMap;
@@ -494,26 +492,37 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
         ['runner', 'run', 'move'],
       );
 
-    if (idleClip) {
-      variantMap.set('idle', [idleClip]);
-    }
+    const {
+      idleClip: resolvedIdle,
+      runnerClip: resolvedRunner,
+      idleFromRunner,
+      idleFromFallback,
+      runnerFromIdle,
+      runnerFromFallback,
+    } = this.ensureIdleAndRunnerVariants(variantMap, { idleClip, runnerClip }, baseAnimations);
 
-    if (runnerClip) {
-      variantMap.set('runner', [runnerClip]);
-    }
-
-    if (!variantMap.has('idle') && runnerClip) {
-      variantMap.set('idle', [runnerClip]);
-      this.variantAliasMap.set('idle', 'runner');
+    if (idleFromRunner) {
       console.warn(
         'CrownedGhostRunnerEntity: Missing dedicated idle clip in runner asset; aliasing to runner.',
       );
-    } else if (!variantMap.has('runner') && idleClip) {
-      variantMap.set('runner', [idleClip]);
-      this.variantAliasMap.set('runner', 'idle');
+    } else if (idleFromFallback) {
+      console.warn(
+        'CrownedGhostRunnerEntity: Missing idle clip in runner asset; falling back to first available clip.',
+      );
+    }
+
+    if (runnerFromIdle) {
       console.warn(
         'CrownedGhostRunnerEntity: Missing dedicated runner clip in runner asset; aliasing to idle.',
       );
+    } else if (runnerFromFallback && !idleFromRunner && !runnerFromIdle) {
+      console.warn(
+        'CrownedGhostRunnerEntity: Missing runner clip in runner asset; falling back to first available clip.',
+      );
+    }
+
+    if (!resolvedIdle && !resolvedRunner) {
+      console.warn('CrownedGhostRunnerEntity: Runner asset does not provide usable animation clips.');
     }
 
     return variantMap;
