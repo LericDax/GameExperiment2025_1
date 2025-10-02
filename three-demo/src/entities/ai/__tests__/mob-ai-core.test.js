@@ -105,4 +105,50 @@ describe('MobAICore', () => {
       },
     );
   });
+
+  it('loads registered personas and merges runtime overrides', () => {
+    const persona = core.usePersona('spectral-runner', {
+      resources: { stamina: { max: 150 } },
+      traits: [{ name: 'nocturnal', options: { lightThreshold: 0.6 } }],
+      behaviors: [
+        {
+          name: 'spectral-chase',
+          loop: 'chase',
+          priority: 10,
+          duration: { min: 2, max: 4 },
+        },
+        {
+          name: 'custom-wander',
+          loop: 'wander',
+          priority: 2,
+          triggers: [{ type: 'flag', name: 'nocturnalActive', state: true }],
+        },
+      ],
+    });
+
+    assert.strictEqual(persona.name, 'spectral-runner');
+    assert.strictEqual(persona.resources.stamina.max, 150);
+    assert.strictEqual(persona.behaviors.find((behavior) => behavior.name === 'spectral-chase').priority, 10);
+
+    core.initialize({ environment: { lightLevel: 0.3 }, percepts: { allyCount: 0 } });
+    core.attachToEntity({ id: 'entity-4' });
+
+    core.update(1, {
+      environment: { lightLevel: 0.2 },
+      percepts: { allyCount: 3, targetVisible: true },
+    });
+
+    assert.ok(core.context.activeTraits.has('nocturnal'));
+    assert.ok(core.context.activeTraits.has('packHunter'));
+    assert.strictEqual(core.context.resources.stamina.max, 150);
+    assert.ok(core.context.flags.nocturnalActive);
+    assert.ok(core.context.flags.packReady);
+
+    const layerNames = core.scheduler.layers.map((layer) => layer.name);
+    assert.ok(layerNames.includes('spectral-chase'));
+    assert.ok(layerNames.includes('custom-wander'));
+
+    const chaseLayer = core.scheduler.layers.find((layer) => layer.name === 'spectral-chase');
+    assert.strictEqual(chaseLayer.priority, 10);
+  });
 });
