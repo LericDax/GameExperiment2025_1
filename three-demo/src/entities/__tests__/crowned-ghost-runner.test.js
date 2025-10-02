@@ -193,6 +193,11 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
 
   step(0.12);
   assert.equal(entity.behaviorState, 'walk', 'entity should transition to walk after idle timer');
+  assert.equal(
+    entity.pendingRunnerAnimation,
+    false,
+    'runner animation should start immediately when clips are already loaded',
+  );
   assert.ok(
     controller.playCalls.some((call) => call.variantId === 'runner' && call.hasClips),
     'runner animation should play during walk',
@@ -227,6 +232,11 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
     controller.playCalls.length > preCollisionPlayCount &&
       controller.playCalls.at(-1)?.variantId === 'idle',
     'idle animation should resume after collision stop',
+  );
+  assert.equal(
+    entity.pendingRunnerAnimation,
+    false,
+    'leaving the walk state should clear pending runner animation attempts',
   );
 
   step(0.1);
@@ -274,6 +284,11 @@ test('CrownedGhostRunnerEntity retries runner animation once clips become availa
     false,
     'should disable default fallback while awaiting runner clips',
   );
+  assert.equal(
+    entity.pendingRunnerAnimation,
+    true,
+    'runner animation should be marked as pending until clips resolve',
+  );
 
   const initialRunnerIndex = controller.playCalls.length - 1;
   const idleFallbackDuringPending = controller.playCalls.some(
@@ -305,10 +320,19 @@ test('CrownedGhostRunnerEntity retries runner animation once clips become availa
 
   entity.update({ delta: 0.016, elapsedTime: 0.016 });
 
-  const successfulRunnerCall = controller.playCalls.find(
+  const runnerCallsWithClips = controller.playCalls.filter(
     (call) => call.variantId === 'runner' && call.hasClips,
   );
-  assert.ok(successfulRunnerCall, 'runner animation should begin once clips are available');
+  assert.ok(runnerCallsWithClips.length > 0, 'runner animation should begin once clips are available');
+  assert.ok(
+    runnerCallsWithClips.some((call) => call.options?.fallbackToDefault === false),
+    'runner retry should continue to disable the default fallback',
+  );
+  assert.equal(
+    entity.pendingRunnerAnimation,
+    false,
+    'pending runner flag should clear after a successful retry',
+  );
   assert.equal(
     controller.activeVariantId,
     'runner',
