@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { BehaviorRegistry } from './behavior-nodes.js';
 import { PersonaRegistry } from './personas/persona-registry.js';
 import { defaultTraits } from './traits/index.js';
+import { AmbientTaskScheduler } from './environment/ambient-task-scheduler.js';
 
 const deepClone = (value) => {
   if (typeof structuredClone === 'function') {
@@ -146,6 +147,7 @@ export class MobAICore {
       behaviorRegistry = new BehaviorRegistry(),
       personaRegistry = new PersonaRegistry(),
       traitDefinitions = defaultTraits,
+      ambientScheduler = null,
       events,
     } = options;
 
@@ -156,6 +158,10 @@ export class MobAICore {
     };
 
     this.scheduler = new BehaviorScheduler();
+    this.ambientScheduler =
+      ambientScheduler instanceof AmbientTaskScheduler
+        ? ambientScheduler
+        : new AmbientTaskScheduler({ random });
     this.behaviorRegistry = behaviorRegistry;
     this.personaRegistry = personaRegistry;
     this.traits = new Map();
@@ -335,10 +341,14 @@ export class MobAICore {
       this.context.dependencies = this.dependencies;
       this.context.flags ??= {};
       this.context.memory ??= new Map();
+      this.context.ambientScheduler = this.ambientScheduler;
+      this.context.ambient ??= {};
+      this.context.ambient.scheduler = this.ambientScheduler;
       this._updateTraitContext();
       if (this.currentPersona) {
         this._syncPersonaContext(this.currentPersona);
       }
+      this.ambientScheduler.tick(0, this.context);
       return this.context;
     }
 
@@ -352,10 +362,14 @@ export class MobAICore {
       dependencies: this.dependencies,
     };
     this._updateTraitContext();
+    this.context.ambientScheduler = this.ambientScheduler;
+    this.context.ambient ??= {};
+    this.context.ambient.scheduler = this.ambientScheduler;
     if (this.currentPersona) {
       this._syncPersonaContext(this.currentPersona, { resetResources: true });
     }
     this.scheduler.initialize(this.context);
+    this.ambientScheduler.tick(0, this.context);
     this.initialized = true;
     return this.context;
   }
@@ -378,6 +392,7 @@ export class MobAICore {
     this.context.delta = delta;
     this.context.time += delta;
     this.emit('beforeUpdate', this.context);
+    this.ambientScheduler.tick(delta, this.context);
     this.scheduler.tick(delta, this.context);
     this.emit('afterUpdate', this.context);
   }
