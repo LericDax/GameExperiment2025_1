@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { BehaviorRegistry } from './behavior-nodes.js';
 
 class BehaviorScheduler {
@@ -69,6 +70,7 @@ export class MobAICore {
       chunkManager = null,
       audioManager = null,
       behaviorRegistry = new BehaviorRegistry(),
+      events,
     } = options;
 
     this.dependencies = {
@@ -84,6 +86,7 @@ export class MobAICore {
     this.context = null;
     this.currentPersona = null;
     this.initialized = false;
+    this.events = events ?? new EventEmitter();
   }
 
   registerPersona(name, definition) {
@@ -189,6 +192,26 @@ export class MobAICore {
     this.context.delta = delta;
     this.context.time += delta;
     this.scheduler.tick(delta, this.context);
+  }
+
+  on(eventName, listener) {
+    this.events.on(eventName, listener);
+    return this;
+  }
+
+  once(eventName, listener) {
+    this.events.once(eventName, listener);
+    return this;
+  }
+
+  off(eventName, listener) {
+    this.events.off(eventName, listener);
+    return this;
+  }
+
+  emit(eventName, ...args) {
+    this.events.emit(eventName, ...args);
+    return this;
   }
 }
 
