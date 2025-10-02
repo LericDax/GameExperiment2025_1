@@ -7,8 +7,9 @@ const RUNNER_MODEL_CONFIG = {
   ).href,
   animationMap: {
     runner: {
+      Ghost_Guy_Runner_Idle: 'idle',
+      Ghost_Guy_Runner: 'runner',
       NlaTrack: 'runner',
-      '*': 'runner',
     },
   },
 };
