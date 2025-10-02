@@ -732,7 +732,18 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     if (!this.animationController) {
       return;
     }
-    if (this.animationController.activeVariantId === 'runner') {
+
+    const activeVariant = this.animationController.activeVariantId;
+    const runnerAlias =
+      this.variantAliasMap instanceof Map ? this.variantAliasMap.get('runner') ?? null : null;
+
+    const shouldTreatAliasAsRunner =
+      typeof runnerAlias === 'string' &&
+      runnerAlias.length > 0 &&
+      activeVariant === runnerAlias &&
+      (this.behaviorState === WALK_STATE || this.pendingRunnerAnimation);
+
+    if (activeVariant === 'runner' || shouldTreatAliasAsRunner) {
       const normalized = this.walkSpeed > 0 ? this.currentMoveSpeed / this.walkSpeed : 0;
       const scaled = Number.isFinite(normalized) ? normalized * this.runnerAnimationSpeedScale : 0;
       const clamped = this.THREE.MathUtils.clamp(
@@ -743,6 +754,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       this.animationController.setSpeed(Math.max(this.runnerAnimationSpeedFloor, clamped));
       return;
     }
+
     if (Math.abs((this.animationController.speed ?? 1) - 1) > 1e-3) {
       this.animationController.setSpeed(1);
     }
