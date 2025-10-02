@@ -215,9 +215,7 @@ export class CrownedGhostEntity extends BaseEntity {
       return variantMap;
     }
 
-    const baseAnimations = Array.isArray(instance.animations)
-      ? instance.animations.filter(Boolean)
-      : [];
+    const baseAnimations = this.preprocessInstanceAnimations(instance);
     const idleClip = this.selectClipByName(baseAnimations, ['idle', 'base', 'default']);
     if (idleClip) {
       variantMap.set(DEFAULT_ANIMATION_VARIANT, [idleClip]);
@@ -261,6 +259,200 @@ export class CrownedGhostEntity extends BaseEntity {
     }
 
     return variantMap;
+  }
+
+  preprocessInstanceAnimations(instance, variantHints = []) {
+    if (!instance) {
+      return [];
+    }
+
+    const baseAnimations = Array.isArray(instance.animations)
+      ? instance.animations.filter(Boolean)
+      : [];
+
+    if (baseAnimations.length === 0) {
+      return baseAnimations;
+    }
+
+    const renameMaps = this.collectAnimationRenameMaps(variantHints);
+    if (renameMaps.length === 0) {
+      return baseAnimations;
+    }
+
+    baseAnimations.forEach((clip) => {
+      if (!clip) {
+        return;
+      }
+      const originalName = typeof clip.name === 'string' ? clip.name : null;
+      renameMaps.forEach((renameMap) => {
+        this.applyAnimationRenameMap(clip, renameMap, originalName);
+      });
+    });
+
+    return baseAnimations;
+  }
+
+  collectAnimationRenameMaps(variantHints = []) {
+    const hints = Array.isArray(variantHints) ? variantHints : [variantHints];
+    const renameMaps = [];
+    const seen = new Set();
+
+    hints
+      .map((hint) => (typeof hint === 'string' ? hint : null))
+      .filter(Boolean)
+      .forEach((hint) => {
+        if (seen.has(hint)) {
+          return;
+        }
+        seen.add(hint);
+        const renameMap = this.getAnimationRenameMap(hint);
+        if (renameMap && renameMap.size > 0) {
+          renameMaps.push(renameMap);
+        }
+      });
+
+    return renameMaps;
+  }
+
+  getAnimationRenameMap(variantId) {
+    if (!variantId) {
+      return null;
+    }
+    const animationMap = this.modelConfig?.animationMap;
+    if (!animationMap) {
+      return null;
+    }
+
+    let mapping = null;
+    if (animationMap instanceof Map) {
+      mapping = animationMap.get(variantId) ?? null;
+    } else if (typeof animationMap === 'object') {
+      mapping = animationMap[variantId] ?? null;
+    }
+    if (!mapping) {
+      return null;
+    }
+
+    const renameMap = new Map();
+    if (mapping instanceof Map) {
+      mapping.forEach((targetName, sourceName) => {
+        renameMap.set(String(sourceName), String(targetName));
+      });
+      return renameMap;
+    }
+
+    if (Array.isArray(mapping)) {
+      mapping.forEach((entry) => {
+        if (Array.isArray(entry) && entry.length >= 2) {
+          renameMap.set(String(entry[0]), String(entry[1]));
+        } else if (entry && typeof entry === 'object') {
+          if ('from' in entry && 'to' in entry) {
+            renameMap.set(String(entry.from), String(entry.to));
+          }
+        }
+      });
+      return renameMap;
+    }
+
+    if (typeof mapping === 'object') {
+      Object.entries(mapping).forEach(([sourceName, targetName]) => {
+        renameMap.set(String(sourceName), String(targetName));
+      });
+      return renameMap;
+    }
+
+    if (typeof mapping === 'string') {
+      renameMap.set('*', String(mapping));
+      return renameMap;
+    }
+
+    return renameMap;
+  }
+
+  applyAnimationRenameMap(clip, renameMap, originalName = null) {
+    if (!clip || !(renameMap instanceof Map) || renameMap.size === 0) {
+      return false;
+    }
+
+    const candidateNames = [];
+    if (typeof originalName === 'string') {
+      candidateNames.push(originalName);
+    }
+    if (typeof clip.name === 'string') {
+      candidateNames.push(clip.name);
+    }
+
+    for (const name of candidateNames) {
+      if (renameMap.has(name)) {
+        clip.name = renameMap.get(name);
+        return true;
+      }
+    }
+
+    if (renameMap.has('*')) {
+      clip.name = renameMap.get('*');
+      return true;
+    }
+
+    return false;
+  }
+
+  ensureIdleAndRunnerVariants(variantMap, { idleClip = null, runnerClip = null } = {}, baseAnimations = []) {
+    const fallbackClip = Array.isArray(baseAnimations)
+      ? baseAnimations.find(Boolean) ?? null
+      : null;
+
+    let resolvedIdle = idleClip;
+    let resolvedRunner = runnerClip;
+    let idleFromRunner = false;
+    let idleFromFallback = false;
+    let runnerFromIdle = false;
+    let runnerFromFallback = false;
+
+    if (!resolvedIdle) {
+      if (resolvedRunner) {
+        resolvedIdle = resolvedRunner;
+        idleFromRunner = true;
+      } else if (fallbackClip) {
+        resolvedIdle = fallbackClip;
+        idleFromFallback = true;
+      }
+    }
+
+    if (!resolvedRunner) {
+      if (resolvedIdle) {
+        resolvedRunner = resolvedIdle;
+        runnerFromIdle = true;
+      } else if (fallbackClip) {
+        resolvedRunner = fallbackClip;
+        runnerFromFallback = true;
+      }
+    }
+
+    if (resolvedIdle) {
+      variantMap.set('idle', [resolvedIdle]);
+    }
+
+    if (resolvedRunner) {
+      variantMap.set('runner', [resolvedRunner]);
+    }
+
+    if (idleFromRunner) {
+      this.variantAliasMap.set('idle', 'runner');
+    }
+
+    if (runnerFromIdle) {
+      this.variantAliasMap.set('runner', 'idle');
+    }
+
+    return {
+      idleClip: resolvedIdle,
+      runnerClip: resolvedRunner,
+      idleFromRunner,
+      idleFromFallback,
+      runnerFromIdle,
+      runnerFromFallback,
+    };
   }
 
   selectClipByName(clips, preferredNames = []) {
