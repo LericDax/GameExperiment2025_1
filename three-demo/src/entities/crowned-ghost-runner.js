@@ -1,6 +1,7 @@
 import { CrownedGhostEntity } from './crowned-ghost.js';
 import { MobAICore } from './ai/mob-ai-core.js';
 import { AIPresentationAdapter } from './ai/presentation/presentation-adapter.js';
+import { buildEnvironmentSnapshot } from './ai/environment/environment-index.js';
 
 const RUNNER_MODEL_CONFIG = {
   baseUrl: new URL(
@@ -22,6 +23,8 @@ const WALK_STATE = 'walk';
 const IDLE_STATE = 'idle';
 const TURN_STATE = 'turn';
 const PRESENTATION_BEHAVIOR_ID = 'crowned-ghost-runner';
+const FLOWER_SAMPLE_RADIUS = 36;
+const FLOWER_SAMPLE_LIMIT = 24;
 
 const BASE_PRESENTATION_CONFIG = {
   states: {
@@ -201,10 +204,12 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   onSpawn(spawnContext, options = {}) {
     super.onSpawn(spawnContext, options);
     this.aiCore.dependencies.chunkManager = this.chunkManager ?? null;
+    const world = this.getWorldContext();
+    const sensors = this.getSensorContext(world.environment);
     const initialContext = {
       entity: this,
-      world: this.getWorldContext(),
-      sensors: this.getSensorContext(),
+      world,
+      sensors,
       elapsedTime: Number.isFinite(options?.elapsedTime) ? options.elapsedTime : 0,
     };
     this.aiCore.initialize(initialContext);
@@ -212,19 +217,34 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.ensurePresentationAdapter();
   }
 
+  buildEnvironmentContext() {
+    if (!this.chunkManager || !this.root?.position) {
+      return { pointsOfInterest: [], resourceNodes: [] };
+    }
+    return buildEnvironmentSnapshot({
+      chunkManager: this.chunkManager,
+      origin: this.root.position,
+      radius: FLOWER_SAMPLE_RADIUS,
+      maxResults: FLOWER_SAMPLE_LIMIT,
+    });
+  }
+
   getWorldContext() {
+    const environment = this.buildEnvironmentContext();
     return {
       chunkManager: this.chunkManager ?? null,
       terrainHeight: this.terrainHeight ?? null,
       scene: this.scene ?? null,
+      environment,
     };
   }
 
-  getSensorContext() {
+  getSensorContext(environment = null) {
     return {
       chunkManager: this.chunkManager ?? null,
       terrainHeight: this.terrainHeight ?? null,
       forward: this.forward ?? null,
+      environment,
     };
   }
 
@@ -656,10 +676,13 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
 
     this.decayBlockedHeadings(delta);
 
+    const world = this.getWorldContext();
+    const sensors = this.getSensorContext(world.environment);
+
     this.aiCore.update(delta, {
       entity: this,
-      world: this.getWorldContext(),
-      sensors: this.getSensorContext(),
+      world,
+      sensors,
       elapsedTime,
     });
 
