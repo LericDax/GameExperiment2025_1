@@ -247,6 +247,72 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
   assert.ok(controller.disposeCalled, 'dispose should propagate to the animation controller');
 });
 
+test('CrownedGhostRunnerEntity picks wander headings outside the minimum delta window', async () => {
+  const { CrownedGhostRunnerEntity } = await import('../crowned-ghost-runner.js');
+
+  const fakeLoader = {
+    createVariantInstance: async () => ({
+      scene: new THREE.Group(),
+      animations: [],
+      dispose() {},
+    }),
+  };
+
+  StubAnimationController.instances.length = 0;
+
+  const entity = new CrownedGhostRunnerEntity({
+    THREE,
+    assetLoader: fakeLoader,
+    animationControllerClass: StubAnimationController,
+    random: () => 0.5,
+    behavior: {
+      walkHeadingJitter: Math.PI,
+      minHeadingDelta: THREE.MathUtils.degToRad(10),
+      headingChangeBias: THREE.MathUtils.degToRad(170),
+    },
+  });
+
+  const scriptedValues = [0.508, 0.98, 0.4];
+  let randomIndex = 0;
+  const deterministicRandom = () => {
+    const value = scriptedValues[randomIndex] ?? scriptedValues.at(-1) ?? 0.5;
+    randomIndex += 1;
+    return value;
+  };
+  entity.random = deterministicRandom;
+  if (entity.aiCore?.dependencies) {
+    entity.aiCore.dependencies.random = deterministicRandom;
+  }
+
+  entity.headingAngle = 0;
+  entity.targetHeadingAngle = 0;
+  entity.previousHeadingAngle = 0;
+
+  const nextHeading = entity.chooseNextHeadingAngle();
+  const minDelta = entity.minHeadingDelta;
+  const deltaFromPrevious = Math.abs(entity.angleDifference(nextHeading, 0));
+
+  assert.ok(
+    deltaFromPrevious >= minDelta - 1e-6,
+    'wander candidate should respect the configured minimum heading delta',
+  );
+
+  const bias = entity.headingChangeBias;
+  const tolerance = THREE.MathUtils.degToRad(5);
+  assert.ok(
+    Math.abs(deltaFromPrevious - bias) <= tolerance,
+    'wander candidate should align with the configured heading change bias',
+  );
+
+  entity.setHeadingAngle(nextHeading);
+  assert.ok(
+    Math.abs(entity.angleDifference(entity.targetHeadingAngle, 0)) >= minDelta - 1e-6,
+    'heading assignment should preserve the biased wander heading',
+  );
+
+  entity.dispose();
+});
+
 test('CrownedGhostRunnerEntity retries runner animation once clips become available', async () => {
   let resolveInstance;
   const deferredInstance = new Promise((resolve) => {

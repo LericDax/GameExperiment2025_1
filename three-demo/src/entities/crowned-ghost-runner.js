@@ -78,6 +78,27 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.walkHeadingJitter = Number.isFinite(movement.walkHeadingJitter)
       ? movement.walkHeadingJitter
       : Math.PI / 2;
+    const mathUtils = this.THREE?.MathUtils ?? null;
+    const resolvedMinHeadingDelta = Number.isFinite(movement.minHeadingDelta)
+      ? Math.abs(movement.minHeadingDelta)
+      : Number.isFinite(movementDefaults.minHeadingDelta)
+        ? Math.abs(movementDefaults.minHeadingDelta)
+        : mathUtils && typeof mathUtils.degToRad === 'function'
+          ? mathUtils.degToRad(10)
+          : (10 * Math.PI) / 180;
+    this.minHeadingDelta = mathUtils
+      ? mathUtils.clamp(resolvedMinHeadingDelta, 0, Math.PI)
+      : Math.min(Math.PI, Math.max(0, resolvedMinHeadingDelta));
+    const resolvedHeadingChangeBias = Number.isFinite(movement.headingChangeBias)
+      ? Math.abs(movement.headingChangeBias)
+      : Number.isFinite(movementDefaults.headingChangeBias)
+        ? Math.abs(movementDefaults.headingChangeBias)
+        : mathUtils && typeof mathUtils.degToRad === 'function'
+          ? mathUtils.degToRad(170)
+          : (170 * Math.PI) / 180;
+    this.headingChangeBias = mathUtils
+      ? mathUtils.clamp(Math.max(this.minHeadingDelta, resolvedHeadingChangeBias), this.minHeadingDelta, Math.PI)
+      : Math.min(Math.PI, Math.max(this.minHeadingDelta, resolvedHeadingChangeBias));
     this.collisionIdleDuration = Number.isFinite(movement.collisionIdleDuration)
       ? Math.max(0.15, movement.collisionIdleDuration)
       : Math.max(0.6, this.idleDurationRange[0] ?? 0.6);
@@ -439,19 +460,61 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     const jitterRange = Math.max(0, this.walkHeadingJitter || 0);
     const base = this.targetHeadingAngle || this.headingAngle || 0;
     const sampleCount = jitterRange > 0 ? 6 : 1;
+    const maxAttempts = jitterRange > 0 ? sampleCount * 3 : sampleCount;
+    const previousReference = Number.isFinite(this.previousHeadingAngle)
+      ? this.previousHeadingAngle
+      : Number.isFinite(this.headingAngle)
+        ? this.headingAngle
+        : base;
+    const minDelta = Number.isFinite(this.minHeadingDelta) ? Math.max(0, this.minHeadingDelta) : 0;
+    const mathUtils = this.THREE?.MathUtils ?? null;
+    const biasTarget = Number.isFinite(this.headingChangeBias)
+      ? mathUtils
+        ? mathUtils.clamp(Math.abs(this.headingChangeBias), minDelta, Math.PI)
+        : Math.min(Math.PI, Math.max(minDelta, Math.abs(this.headingChangeBias)))
+      : null;
+    const biasTolerance = mathUtils && typeof mathUtils.degToRad === 'function'
+      ? mathUtils.degToRad(3)
+      : (3 * Math.PI) / 180;
+
     let bestCandidate = base;
     let bestScore = -Infinity;
-    for (let index = 0; index < sampleCount; index += 1) {
+    let acceptedSamples = 0;
+
+    for (let attempt = 0; attempt < maxAttempts && acceptedSamples < sampleCount; attempt += 1) {
       let candidate = base;
-      if (index > 0 && jitterRange > 0) {
+      if ((attempt > 0 || acceptedSamples > 0) && jitterRange > 0) {
         const offset = (this.random() * 2 - 1) * jitterRange;
         candidate = base + offset;
       }
-      const score = this.evaluateHeadingCandidate(candidate);
+      const deltaToPrevious = Math.abs(this.angleDifference(candidate, previousReference));
+      const shouldSkipForMin =
+        deltaToPrevious < minDelta && attempt < maxAttempts - 1 && jitterRange > 0;
+      if (shouldSkipForMin) {
+        continue;
+      }
+
+      const score = this.evaluateHeadingCandidate(candidate, { deltaToPrevious });
+      if (!Number.isFinite(score)) {
+        continue;
+      }
+
+      acceptedSamples += 1;
       if (score > bestScore) {
         bestScore = score;
         bestCandidate = candidate;
+        if (
+          biasTarget &&
+          deltaToPrevious >= minDelta &&
+          Math.abs(deltaToPrevious - biasTarget) <= biasTolerance
+        ) {
+          break;
+        }
       }
+    }
+
+    if (bestScore === -Infinity) {
+      return base;
     }
     return bestCandidate;
   }
@@ -897,20 +960,37 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.recentBlockedHeadings = existing;
   }
 
-  evaluateHeadingCandidate(angle) {
+  evaluateHeadingCandidate(angle, options = {}) {
     const normalized = this.normalizeAngle(angle);
     let score = 0;
     const target = Number.isFinite(this.targetHeadingAngle) ? this.targetHeadingAngle : normalized;
     const toTarget = Math.abs(this.angleDifference(normalized, target));
     const toCurrent = Math.abs(this.angleDifference(normalized, this.headingAngle ?? target));
-    const toPrevious = Math.abs(
-      this.angleDifference(normalized, this.previousHeadingAngle ?? this.headingAngle ?? target),
-    );
+    const minDelta = Number.isFinite(this.minHeadingDelta) ? Math.max(0, this.minHeadingDelta) : 0;
+    const mathUtils = this.THREE?.MathUtils ?? null;
+    const biasTarget = Number.isFinite(this.headingChangeBias)
+      ? mathUtils
+        ? mathUtils.clamp(Math.abs(this.headingChangeBias), minDelta, Math.PI)
+        : Math.min(Math.PI, Math.max(minDelta, Math.abs(this.headingChangeBias)))
+      : null;
+    const toPrevious = Number.isFinite(options?.deltaToPrevious)
+      ? Math.abs(options.deltaToPrevious)
+      : Math.abs(
+          this.angleDifference(normalized, this.previousHeadingAngle ?? this.headingAngle ?? target),
+        );
     score -= toTarget * 0.15;
     score -= toCurrent * 0.05;
-    score -= toPrevious * 0.3;
-    if (toPrevious < 0.05) {
-      score -= 0.25;
+    if (toPrevious < minDelta) {
+      const deficit = minDelta > 0 ? (minDelta - toPrevious) / minDelta : 1;
+      score -= 2.5 + deficit * 3;
+    } else {
+      score += Math.min(toPrevious, Math.PI) * 0.2;
+      if (biasTarget) {
+        const biasSpan = Math.max(1e-3, Math.PI - minDelta);
+        const diffFromBias = Math.abs(toPrevious - biasTarget);
+        const normalizedBias = Math.max(0, 1 - diffFromBias / biasSpan);
+        score += normalizedBias * 1.4;
+      }
     }
 
     if (Array.isArray(this.recentBlockedHeadings)) {

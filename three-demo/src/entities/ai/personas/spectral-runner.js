@@ -59,6 +59,8 @@ export const spectralRunnerPersona = {
       idleYawAmount: 0.35,
       idleYawSpeed: 0.7,
       walkHeadingJitter: Math.PI / 2,
+      minHeadingDelta: (10 * Math.PI) / 180,
+      headingChangeBias: Math.PI - (10 * Math.PI) / 180,
       collisionIdleDuration: 2,
       turnInPlaceDuration: 1.25,
       turnAlignmentThreshold: 0.12,
