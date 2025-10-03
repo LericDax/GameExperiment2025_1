@@ -1,7 +1,14 @@
 import { EventEmitter } from 'node:events';
 import { MobSensor } from './mob-sensor.js';
 
+/**
+ * Maintains a collection of sensors for a single entity and proxies emitted
+ * stimuli to both local listeners and the owning AI core.
+ */
 export class SensorSuite extends EventEmitter {
+  /**
+   * @param {{ sensors?: MobSensor[], entity?: any, world?: any, aiCore?: any, time?: number }} [options]
+   */
   constructor(options = {}) {
     super();
     const { sensors = [], time = 0 } = options;
@@ -15,6 +22,11 @@ export class SensorSuite extends EventEmitter {
     sensors.forEach((sensor) => this.addSensor(sensor));
   }
 
+  /**
+   * Registers a sensor instance and configures it if the suite is already bound.
+   * @param {MobSensor} sensor
+   * @returns {MobSensor}
+   */
   addSensor(sensor) {
     if (!(sensor instanceof MobSensor)) {
       throw new Error('SensorSuite expects sensors to extend MobSensor.');
@@ -29,6 +41,11 @@ export class SensorSuite extends EventEmitter {
     return sensor;
   }
 
+  /**
+   * Removes a sensor by id.
+   * @param {string} id
+   * @returns {MobSensor|null}
+   */
   removeSensor(id) {
     const sensor = this.sensors.get(id);
     if (sensor) {
@@ -37,6 +54,11 @@ export class SensorSuite extends EventEmitter {
     return sensor;
   }
 
+  /**
+   * Updates the shared entity/world references used by every sensor in the suite.
+   * @param {{ entity?: any, world?: any, aiCore?: any }} [configuration]
+   * @returns {SensorSuite}
+   */
   configure(configuration = {}) {
     const { entity, world, aiCore } = configuration;
     if (entity !== undefined) {
@@ -56,6 +78,12 @@ export class SensorSuite extends EventEmitter {
     return this;
   }
 
+  /**
+   * Advances all registered sensors and emits aggregated stimuli.
+   * @param {number} [delta=0]
+   * @param {{ entity?: any, world?: any, aiCore?: any }} [overrides]
+   * @returns {Array<Object>} Stimuli gathered during the update.
+   */
   update(delta = 0, overrides = {}) {
     if (overrides.entity !== undefined) {
       this.entity = overrides.entity;

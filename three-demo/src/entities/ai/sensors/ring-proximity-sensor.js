@@ -14,7 +14,24 @@ const cloneVector3 = (value) => {
   return new Vector3(value.x ?? 0, value.y ?? 0, value.z ?? 0);
 };
 
+/**
+ * Emits stimuli when targets fall within an annular detection region around the entity.
+ */
 export class RingProximitySensor extends MobSensor {
+  /**
+   * @param {{
+   *   id?: string,
+   *   interval?: number,
+   *   innerRadius?: number,
+   *   outerRadius?: number,
+   *   label?: string,
+   *   queryTargets?: Function,
+   *   getOrigin?: Function,
+   *   getTargetPosition?: Function,
+   *   filterTarget?: Function|null,
+   *   decay?: Function
+   * }} [options]
+   */
   constructor(options = {}) {
     const {
       id = 'ring-proximity',
@@ -53,6 +70,10 @@ export class RingProximitySensor extends MobSensor {
       });
   }
 
+  /**
+   * @param {{ world: any, entity: any, time: number, delta: number }} context
+   * @returns {Array<Object>} Stimuli representing nearby targets.
+   */
   sampleWorld(context) {
     const { world, entity, time, delta } = context;
     if (!entity) {

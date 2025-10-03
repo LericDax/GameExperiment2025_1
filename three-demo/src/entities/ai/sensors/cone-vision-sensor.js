@@ -15,7 +15,27 @@ const cloneVector3 = (value) => {
   return new Vector3(value.x ?? 0, value.y ?? 0, value.z ?? 0);
 };
 
+/**
+ * Samples targets inside a configurable field-of-view cone and emits detections
+ * enriched with distance, direction, and angular offsets relative to the entity.
+ */
 export class ConeVisionSensor extends MobSensor {
+  /**
+   * @param {{
+   *   id?: string,
+   *   interval?: number,
+   *   range?: number,
+   *   angle?: number,
+   *   label?: string,
+   *   queryTargets?: Function,
+   *   getOrigin?: Function,
+   *   getForward?: Function,
+   *   getTargetPosition?: Function,
+   *   filterTarget?: Function|null,
+   *   isOccluded?: Function|null,
+   *   decay?: Function
+   * }} [options]
+   */
   constructor(options = {}) {
     const {
       id = 'cone-vision',
@@ -41,6 +61,10 @@ export class ConeVisionSensor extends MobSensor {
       (({ distance, range }) => Math.max(0, 1 - distance / Math.max(range, 1)));
   }
 
+  /**
+   * @param {{ world: any, entity: any, time: number, delta: number }} context
+   * @returns {Array<Object>} Stimuli representing visible targets.
+   */
   sampleWorld(context) {
     const { world, entity, time, delta } = context;
     if (!entity || !this.range || this.range <= 0) {

@@ -1,6 +1,20 @@
 import { EventEmitter } from 'node:events';
 
+/**
+ * Base class for AI perception sensors. Subclasses emit structured stimuli by
+ * implementing `sampleWorld`, while the base class handles cadence, wiring, and
+ * metadata enrichment.
+ */
 export class MobSensor {
+  /**
+   * @param {{
+   *   id?: string,
+   *   type?: string,
+   *   label?: string,
+   *   interval?: number,
+   *   enabled?: boolean
+   * }} [options]
+   */
   constructor(options = {}) {
     const {
       id = null,
@@ -39,6 +53,11 @@ export class MobSensor {
     this._emitter.emit(eventName, ...args);
   }
 
+  /**
+   * Configures runtime references the sensor requires to function.
+   * @param {{ entity?: any, world?: any, onEmit?: Function }} [configuration]
+   * @returns {MobSensor}
+   */
   configure(configuration = {}) {
     const { entity, world, onEmit } = configuration;
     let reconfigured = false;
@@ -60,11 +79,21 @@ export class MobSensor {
     return this;
   }
 
+  /**
+   * Toggles whether the sensor should emit stimuli during updates.
+   * @param {boolean} enabled
+   * @returns {MobSensor}
+   */
   setEnabled(enabled) {
     this.enabled = Boolean(enabled);
     return this;
   }
 
+  /**
+   * Determines if the sensor should sample based on its interval and enabled state.
+   * @param {number} time - Current simulation timestamp.
+   * @returns {boolean}
+   */
   shouldSample(time) {
     if (!this.enabled) {
       return false;
@@ -75,6 +104,11 @@ export class MobSensor {
     return time - this._lastSampleTime >= this.interval;
   }
 
+  /**
+   * Runs the sampling pipeline and emits any detected stimuli.
+   * @param {{ time?: number, delta?: number, world?: any, entity?: any }} [context]
+   * @returns {Array<Object>} Stimuli emitted during the update.
+   */
   update(context = {}) {
     const { time = 0, delta = 0, world = this.world } = context;
     if (!this.shouldSample(time)) {
@@ -90,12 +124,22 @@ export class MobSensor {
     return this.emitStimuli(stimuli, { time, delta, world });
   }
 
+  /**
+   * Subclasses must implement this to return a stimulus or array of stimuli.
+   * @abstract
+   */
   sampleWorld() {
     throw new Error(
       `${this.constructor.name} must implement sampleWorld(context)`,
     );
   }
 
+  /**
+   * Normalizes raw stimuli and forwards them to listeners.
+   * @param {Object|Array<Object>} stimuli
+   * @param {{ time?: number, delta?: number, world?: any }} [meta]
+   * @returns {Array<Object>} Enriched stimuli payloads.
+   */
   emitStimuli(stimuli, meta = {}) {
     if (!stimuli) {
       return [];

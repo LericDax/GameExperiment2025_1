@@ -1,6 +1,21 @@
 import { MobSensor } from './mob-sensor.js';
 
+/**
+ * Emits a stimulus when a sampled scalar crosses a configured threshold.
+ */
 export class ThresholdSensor extends MobSensor {
+  /**
+   * @param {{
+   *   id?: string,
+   *   interval?: number,
+   *   threshold?: number,
+   *   onlyOnCrossing?: boolean,
+   *   label?: string,
+   *   getValue?: Function,
+   *   comparator?: Function,
+   *   intensityMapper?: Function
+   * }} [options]
+   */
   constructor(options = {}) {
     const {
       id = 'threshold',
@@ -24,6 +39,10 @@ export class ThresholdSensor extends MobSensor {
     this._above = false;
   }
 
+  /**
+   * @param {{ world: any, entity: any, time: number, delta: number }} context
+   * @returns {Array<Object>} Stimuli produced when the threshold condition is met.
+   */
   sampleWorld(context) {
     const { world, entity, time, delta } = context;
     const previousValue = this._lastValue;

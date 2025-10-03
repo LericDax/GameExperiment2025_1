@@ -138,7 +138,24 @@ class BehaviorScheduler {
   }
 }
 
+/**
+ * Coordinates persona traits, resource pools, sensor presets, and prioritized behavior loops
+ * for an AI-driven entity. The core exposes an event bus so presentation adapters, tests,
+ * and gameplay systems can observe lifecycle hooks without reaching into private state.
+ */
 export class MobAICore {
+  /**
+   * @param {Object} [options]
+   * @param {() => number} [options.random=Math.random] - RNG used for stochastic behaviors.
+   * @param {import('../../world/chunk-manager.js').ChunkManager|null} [options.chunkManager]
+   *   Optional chunk manager reference forwarded to personas and behavior loops.
+   * @param {Object|null} [options.audioManager] - Optional audio facade for traits that emit SFX.
+   * @param {BehaviorRegistry} [options.behaviorRegistry] - Registry that instantiates named behavior loops.
+   * @param {PersonaRegistry} [options.personaRegistry] - Registry of persona descriptors.
+   * @param {Array<Object>} [options.traitDefinitions=defaultTraits] - Traits installed during construction.
+   * @param {AmbientTaskScheduler|null} [options.ambientScheduler] - Scheduler for background AI jobs.
+   * @param {EventEmitter} [options.events] - Shared event emitter so callers can subscribe externally.
+   */
   constructor(options = {}) {
     const {
       random = Math.random,
@@ -179,6 +196,12 @@ export class MobAICore {
     });
   }
 
+  /**
+   * Registers a persona descriptor with the internal registry.
+   * @param {string|Object} name - Persona identifier or full descriptor object.
+   * @param {Object} [definition] - Descriptor body if `name` is provided separately.
+   * @returns {Object} The normalized persona definition registered with the registry.
+   */
   registerPersona(name, definition) {
     if (typeof name === 'object') {
       return this.personaRegistry.register(name);
@@ -189,6 +212,12 @@ export class MobAICore {
     return this.personaRegistry.register({ ...definition, name });
   }
 
+  /**
+   * Applies the requested persona and merges optional overrides before syncing the AI context.
+   * @param {string|Object} reference - Persona name or partial descriptor accepted by the registry.
+   * @param {Object} [overrides] - Optional overrides merged with the resolved persona definition.
+   * @returns {Object} The persona instance currently applied to the core.
+   */
   usePersona(reference, overrides = {}) {
     const persona = this.personaRegistry.create(reference, overrides);
     const previousPersona = this.currentPersona;
@@ -318,6 +347,11 @@ export class MobAICore {
     this.context.activeTraits = new Set(this.activeTraitHandles.keys());
   }
 
+  /**
+   * Adds a behavior node to the prioritized scheduler and initializes it when the core is ready.
+   * @param {{ name: string, node: Object, priority?: number }} options
+   * @returns {Object} The behavior node that was registered.
+   */
   addBehaviorLayer({ name, node, priority = 0 }) {
     this.scheduler.addLayer({ name, node, priority });
     if (this.initialized && this.context) {
@@ -329,12 +363,24 @@ export class MobAICore {
     return node;
   }
 
+  /**
+   * Instantiates a loop from the behavior registry and schedules it automatically.
+   * @param {string} loopName - Registered loop identifier.
+   * @param {Object} [options] - Options forwarded to the loop factory.
+   * @returns {Object} The behavior loop instance produced by the registry.
+   */
   useBehaviorLoop(loopName, options = {}) {
     const loop = this.behaviorRegistry.createLoop(loopName, options, this.dependencies);
     this.addBehaviorLayer({ name: loop.name, node: loop, priority: options.priority ?? 0 });
     return loop;
   }
 
+  /**
+   * Initializes the AI context, rehydrating persona resources and wiring schedulers.
+   * Subsequent calls merge new context data without resetting active traits.
+   * @param {Object} [initialContext]
+   * @returns {Object} The live AI context.
+   */
   initialize(initialContext = {}) {
     if (this.initialized) {
       Object.assign(this.context, initialContext);
@@ -374,6 +420,11 @@ export class MobAICore {
     return this.context;
   }
 
+  /**
+   * Associates an entity with the AI context and forwards the attachment to all behavior layers.
+   * @param {Object} entity - Entity facade exposing position, navigation, etc.
+   * @returns {Object} The entity provided for chaining.
+   */
   attachToEntity(entity) {
     if (!this.initialized) {
       this.initialize();
@@ -383,6 +434,11 @@ export class MobAICore {
     return entity;
   }
 
+  /**
+   * Advances the AI state machine by `delta` seconds, ticking ambient tasks and behavior layers.
+   * @param {number} delta - Time step in seconds.
+   * @param {Object} [contextUpdates] - Partial context overrides applied before evaluation.
+   */
   update(delta, contextUpdates = {}) {
     if (!this.initialized) {
       throw new Error('MobAICore must be initialized before update.');
@@ -397,21 +453,45 @@ export class MobAICore {
     this.emit('afterUpdate', this.context);
   }
 
+  /**
+   * Registers an event listener on the shared AI event bus.
+   * @param {string|symbol} eventName - Event identifier.
+   * @param {(...args: any[]) => void} listener - Callback invoked when the event fires.
+   * @returns {MobAICore} Fluent reference to the core.
+   */
   on(eventName, listener) {
     this.events.on(eventName, listener);
     return this;
   }
 
+  /**
+   * Registers a listener that is removed after its first invocation.
+   * @param {string|symbol} eventName - Event identifier.
+   * @param {(...args: any[]) => void} listener - Callback invoked once.
+   * @returns {MobAICore}
+   */
   once(eventName, listener) {
     this.events.once(eventName, listener);
     return this;
   }
 
+  /**
+   * Removes a previously registered listener from the event bus.
+   * @param {string|symbol} eventName - Event identifier.
+   * @param {(...args: any[]) => void} listener - Callback to remove.
+   * @returns {MobAICore}
+   */
   off(eventName, listener) {
     this.events.off(eventName, listener);
     return this;
   }
 
+  /**
+   * Emits an event to local listeners and any shared emitter the core was initialized with.
+   * @param {string|symbol} eventName - Event identifier.
+   * @param {...any} args - Payload forwarded to listeners.
+   * @returns {MobAICore}
+   */
   emit(eventName, ...args) {
     this.events.emit(eventName, ...args);
     return this;

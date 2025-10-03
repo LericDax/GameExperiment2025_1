@@ -2,6 +2,22 @@
 
 This reference aggregates every tunable world-generation option exposed by the voxel sandbox. Labels, descriptions, defaults, and ranges originate from `three-demo/src/world/world-option-descriptors.js`, which the runtime also uses to clamp override values. Use these details when experimenting with terrain, biome, and environmental parameters.
 
+## Mob AI Core integration
+
+- The crowned ghost runner uses the shared AI systems documented in the [Mob AI Core Guide](three-demo/docs/mob-ai-core.md). Review that document for architecture diagrams, persona schemas, and extension workflows.
+- To see the AI in action within a configured world, register builtin entities and spawn the runner via the entity manager:
+  ```js
+  import { registerBuiltinEntities, createEntityManager } from './entities/index.js';
+
+  registerBuiltinEntities();
+  const manager = await createEntityManager({ /* world handles */ });
+  manager.spawnEntity('crowned_ghost_2', {
+    position: { x: 12, y: 18, z: -6 },
+    behavior: { walkSpeed: 1.05 },
+  });
+  ```
+- Behavior modifiers such as walk speed or idle durations can be overridden through the `behavior` object passed at spawn time—this approach keeps world option descriptors focused on terrain while still letting you tune the ghost runner per world preset.
+
 ## Option Reference
 
 ### Seed

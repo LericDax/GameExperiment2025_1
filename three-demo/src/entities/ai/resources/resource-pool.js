@@ -56,7 +56,15 @@ const normalizeResourceConfig = (name, config = {}) => {
   };
 };
 
+/**
+ * Tracks consumable and regenerating resources for AI personas while broadcasting
+ * change events so behaviors and traits can respond to depletion or restoration.
+ */
 export class ResourcePool {
+  /**
+   * @param {Record<string, number|Object>} [definitions] - Initial resource descriptors keyed by name.
+   * @param {{ events?: EventEmitter }} [options] - Optional shared event emitter.
+   */
   constructor(definitions = {}, { events } = {}) {
     this.resources = new Map();
     this.events = events ?? new EventEmitter();
@@ -66,6 +74,12 @@ export class ResourcePool {
     }
   }
 
+  /**
+   * Normalizes and stores a resource entry, emitting create/update events as needed.
+   * @param {string} name - Resource identifier.
+   * @param {number|Object} [config] - Max/current/regen metadata or shorthand numeric max.
+   * @returns {{ name: string, max?: number, current: number, regen: number, metadata: any }}
+   */
   defineResource(name, config = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Resource names must be non-empty strings.');
@@ -91,18 +105,38 @@ export class ResourcePool {
     return entry;
   }
 
+  /**
+   * Checks whether the pool contains a resource with the provided name.
+   * @param {string} name
+   * @returns {boolean}
+   */
   has(name) {
     return this.resources.has(name);
   }
 
+  /**
+   * Retrieves the raw resource entry, or `null` when the entry is missing.
+   * @param {string} name
+   * @returns {{ name: string, max?: number, current: number, regen: number, metadata: any }|null}
+   */
   get(name) {
     return this.resources.get(name) ?? null;
   }
 
+  /**
+   * Convenience wrapper that returns only the current value.
+   * @param {string} name
+   * @returns {number|null}
+   */
   getCurrent(name) {
     return this.get(name)?.current ?? null;
   }
 
+  /**
+   * Advances regeneration for every resource that defines a non-zero `regen` rate.
+   * @param {number} deltaSeconds - Simulation delta in seconds.
+   * @param {{ reason?: string, context?: any }} [options] - Metadata broadcast with change events.
+   */
   tick(deltaSeconds, { reason = 'regen', context } = {}) {
     if (!isFiniteNumber(deltaSeconds) || deltaSeconds <= 0) {
       return;
@@ -131,6 +165,13 @@ export class ResourcePool {
     }
   }
 
+  /**
+   * Attempts to spend a resource amount, optionally allowing partial spends.
+   * @param {string} name - Resource identifier.
+   * @param {number} amount - Amount to consume.
+   * @param {{ allowPartial?: boolean, reason?: string, context?: any }} [options]
+   * @returns {number} Quantity successfully consumed.
+   */
   consume(name, amount, { allowPartial = false, reason = 'consume', context } = {}) {
     const entry = this.get(name);
     if (!entry) {
@@ -167,6 +208,13 @@ export class ResourcePool {
     return spent;
   }
 
+  /**
+   * Restores a resource by the provided amount, clamped by its max (if defined).
+   * @param {string} name - Resource identifier.
+   * @param {number} amount - Amount to restore.
+   * @param {{ reason?: string, context?: any }} [options]
+   * @returns {number} Net change applied to the resource.
+   */
   restore(name, amount, { reason = 'restore', context } = {}) {
     const entry = this.get(name);
     if (!entry) {
@@ -196,6 +244,13 @@ export class ResourcePool {
     return entry.current - previous;
   }
 
+  /**
+   * Assigns an explicit value to the resource, respecting its configured max/min bounds.
+   * @param {string} name - Resource identifier.
+   * @param {number} value - Target current value.
+   * @param {{ reason?: string, context?: any }} [options]
+   * @returns {number} The previous resource value.
+   */
   setCurrent(name, value, { reason = 'set', context } = {}) {
     const entry = this.get(name);
     if (!entry) {
