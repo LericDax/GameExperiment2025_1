@@ -44,6 +44,11 @@ The Vite demo is the recommended way to iterate on the experience:
    ```
 3. Open the provided local URL in a modern browser. The Vite entry point serves the modules from `three-demo/src/`, so changes are reflected instantly.
 
+## Testing AI Behaviors
+
+- Run `npm test` from the `three-demo/` workspace to execute the Node.js test runner (`node --test`). The suite exercises the AI modules under `three-demo/src/entities/ai/__tests__/`, including the new `mob-ai-core.transition-flow.test.js` and `spectral-runner.integration.test.js` coverage for behavior transitions, sensor fusion, and tactical point coordination.
+- The integration tests emit animation intents by sharing the `MobAICore` event bus with the `AIPresentationAdapter`. When adding additional cases that touch `THREE` APIs (e.g., the animation controller), provide lightweight mocks instead of the real library—for example, stub the required mixer methods or constants such as `LoopOnce`.
+
 ## World Configuration
 
 - Consult [WORLD_CONFIGURATION.md](WORLD_CONFIGURATION.md) for a complete breakdown of every configurable world option, including default ranges and the supported override workflow.
