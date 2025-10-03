@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { EventEmitter } from '../../utils/event-emitter.js';
 import { BehaviorRegistry } from './behavior-nodes.js';
 import { PersonaRegistry } from './personas/persona-registry.js';
 import { defaultTraits } from './traits/index.js';

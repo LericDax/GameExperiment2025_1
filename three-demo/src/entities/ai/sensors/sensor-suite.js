@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { EventEmitter } from '../../../utils/event-emitter.js';
 import { MobSensor } from './mob-sensor.js';
 
 /**

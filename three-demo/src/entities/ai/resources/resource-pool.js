@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { EventEmitter } from '../../../utils/event-emitter.js';
 
 const clamp = (value, min, max = Number.POSITIVE_INFINITY) => {
   if (Number.isFinite(max)) {
