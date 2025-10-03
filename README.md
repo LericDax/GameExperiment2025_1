@@ -48,6 +48,14 @@ The Vite demo is the recommended way to iterate on the experience:
 
 - Run `npm test` from the `three-demo/` workspace to execute the Node.js test runner (`node --test`). The suite exercises the AI modules under `three-demo/src/entities/ai/__tests__/`, including the new `mob-ai-core.transition-flow.test.js` and `spectral-runner.integration.test.js` coverage for behavior transitions, sensor fusion, and tactical point coordination.
 - The integration tests emit animation intents by sharing the `MobAICore` event bus with the `AIPresentationAdapter`. When adding additional cases that touch `THREE` APIs (e.g., the animation controller), provide lightweight mocks instead of the real library—for example, stub the required mixer methods or constants such as `LoopOnce`.
+- Read the [Mob AI Core Guide](three-demo/docs/mob-ai-core.md) for a deeper look at the ghost runner architecture, configuration schema, sensor presets, and extension workflows.
+
+### Ghost Runner AI Core quick start
+
+1. Ensure entity definitions are registered via `registerBuiltinEntities()` (the Vite bootstrap already calls this for you).
+2. Spawn the runner with the entity manager: `manager.spawnEntity('crowned_ghost_2', { position: { x: 12, y: 18, z: -6 } })`.
+3. Pass optional `behavior` overrides when spawning to tweak movement (for example, `{ walkSpeed: 1.1, walkDurationRange: [2, 5] }`).
+4. The entity wires its `MobAICore` automatically; consult the [guide](three-demo/docs/mob-ai-core.md#ghost-runner-quick-start) for diagrams, persona overrides, and presentation notes.
 
 ## World Configuration
 
