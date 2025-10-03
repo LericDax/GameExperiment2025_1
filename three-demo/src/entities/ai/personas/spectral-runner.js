@@ -49,6 +49,39 @@ export const spectralRunnerPersona = {
       },
     },
   ],
+  metadata: {
+    movement: {
+      walkDurationRange: [3.5, 6],
+      idleDurationRange: [2, 4],
+      walkSpeed: 0.9,
+      walkAcceleration: 2.4,
+      walkDeceleration: 3.2,
+      idleYawAmount: 0.35,
+      idleYawSpeed: 0.7,
+      walkHeadingJitter: Math.PI / 2,
+      collisionIdleDuration: 2,
+      turnInPlaceDuration: 1.25,
+      turnAlignmentThreshold: 0.12,
+      turnResumeClearance: 0.65,
+      blockedHeadingMemoryDuration: 4,
+      blockedHeadingAvoidanceAngle: Math.PI / 2.5,
+      headingClearanceThreshold: 0.55,
+      runnerAnimationSpeedScale: 1,
+      runnerAnimationSpeedFloor: 0.35,
+      runnerAnimationSpeedCeil: 1.2,
+      headingTurnSpeed: 6,
+    },
+    presentation: {
+      states: {
+        idle: { animation: { variant: 'idle', fadeDuration: 0.35 } },
+        walk: { animation: { variant: 'runner', fadeDuration: 0.2 } },
+        turn: { animation: { variant: 'idle', fadeDuration: 0.2 } },
+        'mob-idle:idle': { animation: { variant: 'idle', fadeDuration: 0.35 } },
+        'mob-idle:wander': { animation: { variant: 'runner', fadeDuration: 0.2 } },
+        'mob-idle:chase': { animation: { variant: 'runner', fadeDuration: 0.15 } },
+      },
+    },
+  },
 };
 
 export default spectralRunnerPersona;
