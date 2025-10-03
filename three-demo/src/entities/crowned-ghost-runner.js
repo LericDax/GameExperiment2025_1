@@ -7,6 +7,8 @@ const RUNNER_MODEL_CONFIG = {
     '../models/entity_ghost_guy_1/entity_ghost_guy_1_runner.glb',
     import.meta.url,
   ).href,
+  // Aligns the GLB forward axis with the gameplay +Z basis unless overridden by a persona.
+  forwardYaw: Math.PI,
   animationMap: {
     runner: {
       Ghost_Guy_Runner_Idle: 'idle',
@@ -138,6 +140,9 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       ? movement.headingTurnSpeed
       : 6;
 
+    this.forward = new this.THREE.Vector3(0, 0, 1);
+    this.getVisualForwardBasis(this.forward);
+
     this.visualYawOffset = 0;
 
     this.idleBaseYaw = 0;
@@ -158,6 +163,8 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     ];
     this._scratchHeadingDirection = new this.THREE.Vector3();
     this._scratchHeadingSample = new this.THREE.Vector3();
+    this._scratchHeadingQuaternion = new this.THREE.Quaternion();
+    this._worldUp = new this.THREE.Vector3(0, 1, 0);
 
     this.behaviorTimer = {
       state: IDLE_STATE,
@@ -217,6 +224,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     return {
       chunkManager: this.chunkManager ?? null,
       terrainHeight: this.terrainHeight ?? null,
+      forward: this.forward ?? null,
     };
   }
 
@@ -300,24 +308,36 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       return payload;
     }
 
+    const forwardYaw = this.getModelForwardYaw();
+
     if (state === WALK_STATE || state === TURN_STATE) {
       const targetAngle = Number.isFinite(this.targetHeadingAngle)
         ? this.targetHeadingAngle
         : this.headingAngle;
       const vector = this.buildHeadingVector(targetAngle);
+      const forwardVector = this.forward?.isVector3
+        ? this.forward.clone()
+        : vector.clone();
       payload.movement = {
         ...(payload.movement ?? {}),
         vector,
+        forward: forwardVector,
       };
       if (state === TURN_STATE) {
         if (!('visualYawOffset' in payload.movement)) {
-          payload.movement.visualYawOffset = this.visualYawOffset;
+          const offset = Number.isFinite(this.visualYawOffset) ? this.visualYawOffset : 0;
+          payload.movement.visualYawOffset = this.normalizeAngle(offset + forwardYaw);
         }
       }
     } else if (state === IDLE_STATE) {
       if (!('visualYawOffset' in payload)) {
-        payload.visualYawOffset = this.visualYawOffset;
+        const offset = Number.isFinite(this.visualYawOffset) ? this.visualYawOffset : 0;
+        payload.visualYawOffset = this.normalizeAngle(offset + forwardYaw);
       }
+    }
+
+    if (!('forward' in payload) && this.forward?.isVector3) {
+      payload.forward = this.forward.clone();
     }
 
     return payload;
@@ -325,7 +345,13 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
 
   buildHeadingVector(angle) {
     const resolved = Number.isFinite(angle) ? angle : 0;
-    const vector = new this.THREE.Vector3(Math.sin(resolved), 0, Math.cos(resolved));
+    const vector = new this.THREE.Vector3(0, 0, 1);
+    vector.applyQuaternion(this.getModelForwardQuaternion());
+    const headingQuaternion = this._scratchHeadingQuaternion.setFromAxisAngle(
+      this._worldUp,
+      resolved,
+    );
+    vector.applyQuaternion(headingQuaternion);
     return vector.normalize();
   }
 
@@ -565,6 +591,10 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.headingAngle = normalized;
     this.heading.set(Math.sin(normalized), 0, Math.cos(normalized)).normalize();
     this.root.rotation.y = normalized;
+    if (!this.forward) {
+      this.forward = new this.THREE.Vector3(0, 0, 1);
+    }
+    this.getVisualForwardBasis(this.forward);
     if (changed) {
       this.markBoundsDirty();
     }
