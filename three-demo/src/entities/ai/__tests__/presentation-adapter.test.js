@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
+import { EventEmitter } from '../../../utils/event-emitter.js';
 import {
   AIPresentationAdapter,
   DEFAULT_PRESENTATION_MAPPING,

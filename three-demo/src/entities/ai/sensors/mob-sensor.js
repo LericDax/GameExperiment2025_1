@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { EventEmitter } from '../../../utils/event-emitter.js';
 
 /**
  * Base class for AI perception sensors. Subclasses emit structured stimuli by

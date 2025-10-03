@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { EventEmitter } from '../../../utils/event-emitter.js';
 
 const isFiniteNumber = (value) => Number.isFinite(value);
 

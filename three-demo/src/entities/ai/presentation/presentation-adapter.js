@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { EventEmitter } from '../../../utils/event-emitter.js';
 
 const EMPTY_CONFIG = Object.freeze({ states: {}, abilities: {} });
 
