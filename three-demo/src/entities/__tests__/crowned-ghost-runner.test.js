@@ -224,6 +224,12 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
     entity.root.position.distanceTo(walkStart) > 0.01,
     'walk update should move the entity forward with acceleration applied',
   );
+  const rootHeading = entity.root.rotation.y;
+  const combinedVisualYaw = rootHeading + entity.visualRoot.rotation.y;
+  assert.ok(
+    Math.abs(combinedVisualYaw - rootHeading) < 1e-3,
+    'walk update should keep the visual yaw aligned with the root heading',
+  );
 
   const preCollisionPlayCount = controller.playCalls.length;
   step(0.1);

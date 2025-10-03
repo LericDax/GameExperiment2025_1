@@ -243,7 +243,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       });
     }
     if (nextState) {
-      const payload = Object.keys(intent).length > 0 ? intent : this.getCurrentMovementIntent();
+      const payload = this.buildMovementIntent(nextState, intent);
       this.aiCore.emit('behavior:stateEnter', {
         behavior: PRESENTATION_BEHAVIOR_ID,
         state: nextState,
@@ -254,13 +254,58 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   }
 
   getCurrentMovementIntent() {
-    if (this.currentMovementState === WALK_STATE) {
-      return { movement: { vector: this.heading.clone() } };
+    if (!this.currentMovementState) {
+      return {};
     }
-    if (this.currentMovementState === TURN_STATE) {
-      return { movement: { vector: this.heading.clone(), visualYawOffset: this.visualYawOffset } };
+    return this.buildMovementIntent(this.currentMovementState, {});
+  }
+
+  buildMovementIntent(state, intent = {}) {
+    const payload = {};
+    if (intent && typeof intent === 'object') {
+      for (const [key, value] of Object.entries(intent)) {
+        if (key === 'movement' && value && typeof value === 'object') {
+          payload.movement = { ...value };
+          if (payload.movement.vector?.isVector3) {
+            payload.movement.vector = payload.movement.vector.clone();
+          }
+        } else {
+          payload[key] = value;
+        }
+      }
     }
-    return { visualYawOffset: this.visualYawOffset };
+
+    if (!state) {
+      return payload;
+    }
+
+    if (state === WALK_STATE || state === TURN_STATE) {
+      const targetAngle = Number.isFinite(this.targetHeadingAngle)
+        ? this.targetHeadingAngle
+        : this.headingAngle;
+      const vector = this.buildHeadingVector(targetAngle);
+      payload.movement = {
+        ...(payload.movement ?? {}),
+        vector,
+      };
+      if (state === TURN_STATE) {
+        if (!('visualYawOffset' in payload.movement)) {
+          payload.movement.visualYawOffset = this.visualYawOffset;
+        }
+      }
+    } else if (state === IDLE_STATE) {
+      if (!('visualYawOffset' in payload)) {
+        payload.visualYawOffset = this.visualYawOffset;
+      }
+    }
+
+    return payload;
+  }
+
+  buildHeadingVector(angle) {
+    const resolved = Number.isFinite(angle) ? angle : 0;
+    const vector = new this.THREE.Vector3(Math.sin(resolved), 0, Math.cos(resolved));
+    return vector.normalize();
   }
 
   onBehaviorLoopStateChange(state, previousState, context) {
@@ -336,9 +381,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.setHeadingAngle(candidateHeading);
     this.visualYawOffset = 0;
     this.applyVisualYaw();
-    this.emitMovementState(WALK_STATE, {
-      movement: { vector: this.heading.clone() },
-    });
+    this.emitMovementState(WALK_STATE);
     const runnerAction = this._playPresentationVariant('runner', {
       loopMode: this.THREE.LoopRepeat,
       fallbackToDefault: false,
@@ -379,9 +422,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.visualYawOffset = 0;
     this.applyVisualYaw();
     this.pendingRunnerAnimation = false;
-    this.emitMovementState(TURN_STATE, {
-      movement: { vector: this.heading.clone(), visualYawOffset: this.visualYawOffset },
-    });
+    this.emitMovementState(TURN_STATE);
     this._playPresentationVariant('idle', { loopMode: this.THREE.LoopRepeat });
     this.updateRunnerAnimationSpeed();
   }
@@ -472,7 +513,7 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       return;
     }
     const offset = Number.isFinite(this.visualYawOffset) ? this.visualYawOffset : 0;
-    this.visualRoot.rotation.y = this.normalizeAngle(this.headingAngle + offset);
+    this.visualRoot.rotation.y = this.normalizeAngle(offset);
   }
 
   normalizeAngle(angle) {
