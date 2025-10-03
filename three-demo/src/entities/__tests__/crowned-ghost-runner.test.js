@@ -174,6 +174,19 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
     'runner variant should originate from the runner asset animations',
   );
 
+  const initialForward = entity.forward.clone();
+  const initialBasis = entity.getVisualForwardBasis(new THREE.Vector3());
+  assert.ok(
+    initialForward.angleTo(initialBasis) < 1e-6,
+    'entity.forward should match the mesh basis before updates',
+  );
+  const sensorContext = entity.getSensorContext();
+  assert.equal(
+    sensorContext.forward,
+    entity.forward,
+    'sensor context should surface the shared forward vector reference',
+  );
+
   assert.equal(StubAnimationController.instances.length, 1, 'should create one animation controller');
   const controller = StubAnimationController.instances[0];
 
@@ -223,6 +236,44 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
   assert.ok(
     entity.root.position.distanceTo(walkStart) > 0.01,
     'walk update should move the entity forward with acceleration applied',
+  );
+  const worldForward = entity.getVisualForwardBasis(new THREE.Vector3());
+  assert.ok(
+    worldForward.angleTo(entity.forward) < 1e-6,
+    'entity.forward should stay aligned with the mesh orientation in world space',
+  );
+  const walkIntent = entity.buildMovementIntent('walk', {});
+  assert.ok(walkIntent.movement.vector.isVector3, 'walk intent should include a movement vector');
+  assert.ok(
+    walkIntent.movement.vector.angleTo(worldForward) < 1e-6,
+    'movement vector should align with the mesh-oriented forward basis',
+  );
+  assert.ok(
+    walkIntent.movement.forward?.isVector3,
+    'movement intent should expose a forward basis vector',
+  );
+  assert.ok(
+    walkIntent.movement.forward.angleTo(worldForward) < 1e-6,
+    'movement intent forward basis should match the mesh orientation',
+  );
+  assert.ok(
+    walkIntent.forward?.isVector3,
+    'top-level intent should share the entity forward vector',
+  );
+  assert.ok(
+    walkIntent.forward.angleTo(worldForward) < 1e-6,
+    'intent forward vector should align with the entity forward basis',
+  );
+  const expectedYaw = entity.normalizeAngle(entity.visualYawOffset + entity.getModelForwardYaw());
+  const idleIntent = entity.buildMovementIntent('idle', {});
+  assert.ok(
+    Math.abs(idleIntent.visualYawOffset - expectedYaw) < 1e-6,
+    'idle intent yaw offset should include the model forward yaw',
+  );
+  const turnIntent = entity.buildMovementIntent('turn', {});
+  assert.ok(
+    Math.abs(turnIntent.movement.visualYawOffset - expectedYaw) < 1e-6,
+    'turn intent yaw offset should include the model forward yaw',
   );
   const rootHeading = entity.root.rotation.y;
   const combinedVisualYaw = rootHeading + entity.visualRoot.rotation.y;

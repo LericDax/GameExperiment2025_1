@@ -7,6 +7,12 @@ const MODEL_CONFIG = {
     '../models/entity_ghost_guy_1/entity_ghost_guy_1_base.glb',
     import.meta.url,
   ).href,
+  /**
+   * Optional yaw offset (in radians) used to align the GLB's forward axis with
+   * the engine's +Z basis. Config authors can override this when a persona's
+   * mesh faces a different direction.
+   */
+  forwardYaw: Math.PI,
   variantUrls: {
     runner: new URL(
       '../models/entity_ghost_guy_1/entity_ghost_guy_1_runner.glb',
@@ -76,6 +82,13 @@ export class CrownedGhostEntity extends BaseEntity {
     this.visualRoot = new this.THREE.Group();
     this.visualRoot.name = 'CrownedGhost.VisualRoot';
     this.root.add(this.visualRoot);
+
+    this._forwardYawAxis = new this.THREE.Vector3(0, 1, 0);
+    this._modelForwardQuaternion = new this.THREE.Quaternion();
+    const initialForwardYaw = Number.isFinite(this.modelConfig?.forwardYaw)
+      ? this.modelConfig.forwardYaw
+      : Math.PI;
+    this.setModelForwardYaw(initialForwardYaw);
 
     this.animationController = null;
     this.variantClipMap = new Map();
@@ -168,7 +181,38 @@ export class CrownedGhostEntity extends BaseEntity {
     scaledBox.getCenter(center);
     scene.position.sub(center);
     scene.position.y -= scaledBox.min.y;
-    scene.rotation.y = Math.PI;
+    const forwardYaw = Number.isFinite(this.modelConfig?.forwardYaw)
+      ? this.modelConfig.forwardYaw
+      : this.modelForwardYaw ?? Math.PI;
+    scene.rotation.y = forwardYaw;
+    this.setModelForwardYaw(forwardYaw);
+  }
+
+  setModelForwardYaw(yaw) {
+    const next = Number.isFinite(yaw) ? yaw : Math.PI;
+    if (this.modelForwardYaw === next) {
+      return this.modelForwardYaw;
+    }
+    this.modelForwardYaw = next;
+    this._modelForwardQuaternion.setFromAxisAngle(this._forwardYawAxis, this.modelForwardYaw);
+    return this.modelForwardYaw;
+  }
+
+  getModelForwardYaw() {
+    return Number.isFinite(this.modelForwardYaw) ? this.modelForwardYaw : Math.PI;
+  }
+
+  getModelForwardQuaternion() {
+    return this._modelForwardQuaternion;
+  }
+
+  getVisualForwardBasis(target) {
+    const result = target instanceof this.THREE.Vector3 ? target : new this.THREE.Vector3();
+    result.set(0, 0, 1).applyQuaternion(this._modelForwardQuaternion);
+    if (this.root?.quaternion) {
+      result.applyQuaternion(this.root.quaternion);
+    }
+    return result.normalize();
   }
 
   enableShadows(scene) {
