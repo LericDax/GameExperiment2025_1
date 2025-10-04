@@ -83,6 +83,16 @@ export const spectralRunnerPersona = {
         'mob-idle:chase': { animation: { variant: 'runner', fadeDuration: 0.15 } },
       },
     },
+    ambient: {
+      enabled: true,
+      priority: -5,
+      taskRequest: { include: ['explore', 'wander', 'socialize'] },
+      behaviors: {
+        seekSunlight: { lightThreshold: 0.5 },
+        gatherResources: { radius: 48 },
+        idleChatter: { radius: 18 },
+      },
+    },
   },
 };
 

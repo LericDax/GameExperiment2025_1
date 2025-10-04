@@ -207,6 +207,25 @@ const mergeBehaviors = (base = [], overrides = []) => {
   return Array.from(merged.values());
 };
 
+const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const mergeMetadata = (base = {}, overrides = {}) => {
+  const result = isPlainObject(base) ? { ...base } : {};
+  if (!isPlainObject(overrides)) {
+    return result;
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (isPlainObject(value) && isPlainObject(result[key])) {
+      result[key] = mergeMetadata(result[key], value);
+    } else if (Array.isArray(value)) {
+      result[key] = value.slice();
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+};
+
 const normalizePersona = (persona) => {
   if (!persona || typeof persona !== 'object') {
     throw new Error('Persona definition must be an object.');
@@ -271,11 +290,16 @@ const mergePersona = (base, overrides = {}) => {
   const resources = mergeResources(base.resources, normalizedOverrides.resources ?? {});
   const behaviors = mergeBehaviors(base.behaviors, normalizedOverrides.behaviors ?? []);
 
+  const metadata =
+    normalizedOverrides.metadata !== undefined
+      ? mergeMetadata(base.metadata ?? {}, normalizedOverrides.metadata ?? {})
+      : { ...base.metadata };
+
   return {
     name: normalizedOverrides.name ?? base.name,
     label: normalizedOverrides.label ?? base.label,
     description: normalizedOverrides.description ?? base.description,
-    metadata: normalizedOverrides.metadata ?? { ...base.metadata },
+    metadata,
     traits,
     sensors,
     resources,
