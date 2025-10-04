@@ -22,6 +22,8 @@ const RUNNER_MODEL_CONFIG = {
 const WALK_STATE = 'walk';
 const IDLE_STATE = 'idle';
 const TURN_STATE = 'turn';
+const OBSERVE_STATE = 'observe';
+const INTERACT_STATE = 'interact';
 const PRESENTATION_BEHAVIOR_ID = 'crowned-ghost-runner';
 const FLOWER_SAMPLE_RADIUS = 36;
 const FLOWER_SAMPLE_LIMIT = 24;
@@ -31,6 +33,8 @@ const BASE_PRESENTATION_CONFIG = {
     idle: { animation: { variant: 'idle', fadeDuration: 0.35 } },
     walk: { animation: { variant: 'runner', fadeDuration: 0.2 } },
     turn: { animation: { variant: 'idle', fadeDuration: 0.2 } },
+    observe: { animation: { variant: 'idle', fadeDuration: 0.2 } },
+    interact: { animation: { variant: 'idle', fadeDuration: 0.25 } },
   },
 };
 
@@ -134,6 +138,35 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.runnerAnimationSpeedCeil = Number.isFinite(movement.runnerAnimationSpeedCeil)
       ? Math.max(this.runnerAnimationSpeedFloor, movement.runnerAnimationSpeedCeil)
       : 1.2;
+    this.observeDurationRange =
+      Array.isArray(movement.observeDurationRange) && movement.observeDurationRange.length >= 1
+        ? movement.observeDurationRange
+        : movementDefaults.observeDurationRange ?? [2.5, 5];
+    this.lingerDurationRange =
+      Array.isArray(movement.lingerDurationRange) && movement.lingerDurationRange.length >= 1
+        ? movement.lingerDurationRange
+        : movementDefaults.lingerDurationRange ?? [3, 6];
+    const postObserveChanceRaw = Number.isFinite(movement.postObserveWalkChance)
+      ? movement.postObserveWalkChance
+      : Number.isFinite(movementDefaults.postObserveWalkChance)
+        ? movementDefaults.postObserveWalkChance
+        : 0.5;
+    this.postObserveWalkChance = mathUtils
+      ? mathUtils.clamp(postObserveChanceRaw, 0, 1)
+      : Math.min(1, Math.max(0, postObserveChanceRaw));
+    this.postObserveWalkDurationRange =
+      Array.isArray(movement.postObserveWalkDurationRange) &&
+      movement.postObserveWalkDurationRange.length >= 1
+        ? movement.postObserveWalkDurationRange
+        : movementDefaults.postObserveWalkDurationRange ?? [6, 10];
+    const lingerResumeChanceRaw = Number.isFinite(movement.lingerResumeWalkChance)
+      ? movement.lingerResumeWalkChance
+      : Number.isFinite(movementDefaults.lingerResumeWalkChance)
+        ? movementDefaults.lingerResumeWalkChance
+        : 0.65;
+    this.lingerResumeWalkChance = mathUtils
+      ? mathUtils.clamp(lingerResumeChanceRaw, 0, 1)
+      : Math.min(1, Math.max(0, lingerResumeChanceRaw));
 
     this.heading = new this.THREE.Vector3(0, 0, 1);
     this.headingAngle = 0;
@@ -176,11 +209,16 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     };
     this.currentMovementState = IDLE_STATE;
     this.pendingIdleAfterTurn = false;
+    this.activeAmbientState = null;
+    this.pendingPostAmbientWalkDuration = null;
     this.presentationAdapter = null;
     this.presentationController = {
       playVariant: (variant, options) => this._playPresentationVariant(variant, options),
       stop: (options) => this.animationController?.stop?.(options),
     };
+
+    this._boundAmbientIntentHandler = (intent, meta) => this.onAmbientIntent(intent, meta);
+    this.aiCore.on('ambient:intent', this._boundAmbientIntentHandler);
 
     this.behaviorLoop = this.aiCore.useBehaviorLoop('idle', {
       random: this.random,
@@ -354,6 +392,19 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
         const offset = Number.isFinite(this.visualYawOffset) ? this.visualYawOffset : 0;
         payload.visualYawOffset = this.normalizeAngle(offset + forwardYaw);
       }
+    } else if (state === OBSERVE_STATE || state === INTERACT_STATE) {
+      if (!('visualYawOffset' in payload)) {
+        const offset = Number.isFinite(this.visualYawOffset) ? this.visualYawOffset : 0;
+        payload.visualYawOffset = this.normalizeAngle(offset + forwardYaw);
+      }
+      if (!('target' in payload) && this.activeAmbientState?.targetPosition) {
+        const target = this.activeAmbientState.targetPosition;
+        if (target?.isVector3) {
+          payload.target = target.clone();
+        } else if (target && typeof target === 'object') {
+          payload.target = { ...target };
+        }
+      }
     }
 
     if (!('forward' in payload) && this.forward?.isVector3) {
@@ -387,6 +438,14 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
 
   onBehaviorLoopUpdateIdle(delta, context) {
     const elapsed = Number.isFinite(context?.elapsedTime) ? context.elapsedTime : context?.time ?? 0;
+    if (this.currentMovementState === OBSERVE_STATE) {
+      this.updateObserveState(delta, context);
+      return;
+    }
+    if (this.currentMovementState === INTERACT_STATE) {
+      this.updateInteractState(delta, context);
+      return;
+    }
     this.updateIdleState(delta, elapsed, context);
   }
 
@@ -395,6 +454,14 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   }
 
   onBehaviorLoopUpdateWander(delta, context) {
+    if (this.currentMovementState === OBSERVE_STATE) {
+      this.updateObserveState(delta, context);
+      return;
+    }
+    if (this.currentMovementState === INTERACT_STATE) {
+      this.updateInteractState(delta, context);
+      return;
+    }
     if (this.currentMovementState === TURN_STATE) {
       this.updateTurnState(delta, context);
       return;
@@ -426,9 +493,16 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
   }
 
   enterWalkState({ duration, headingAngle, context } = {}) {
-    const resolvedDuration = Number.isFinite(duration)
-      ? Math.max(0.1, duration)
-      : this.chooseWalkDuration();
+    let resolvedDuration;
+    if (Number.isFinite(duration)) {
+      resolvedDuration = Math.max(0.1, duration);
+      this.pendingPostAmbientWalkDuration = null;
+    } else if (Number.isFinite(this.pendingPostAmbientWalkDuration)) {
+      resolvedDuration = Math.max(0.1, this.pendingPostAmbientWalkDuration);
+      this.pendingPostAmbientWalkDuration = null;
+    } else {
+      resolvedDuration = this.chooseWalkDuration();
+    }
     const startTime = Number.isFinite(context?.time) ? context.time : this.behaviorTimer.start ?? 0;
     this.behaviorTimer = {
       state: WALK_STATE,
@@ -494,12 +568,161 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     this.updateRunnerAnimationSpeed();
   }
 
+  enterObserveState({ intent = null, context = null, targetPosition = null, duration } = {}) {
+    const resolvedContext = context ?? this.aiCore?.context ?? null;
+    if (this.activeAmbientState) {
+      this.exitAmbientState({ context: resolvedContext, reason: 'replaced', skipResume: true });
+    }
+    const startTime = this.resolveContextTime(resolvedContext);
+    const explicitDuration = Number.isFinite(duration)
+      ? duration
+      : Number.isFinite(intent?.duration)
+        ? intent.duration
+        : null;
+    const resolvedDuration = Number.isFinite(explicitDuration)
+      ? Math.max(0.1, explicitDuration)
+      : this.chooseObserveDuration();
+    const normalizedTarget = this.normalizeTargetPosition(targetPosition) ??
+      this.resolveIntentTargetPosition(intent);
+
+    const shouldExtendWalk = this.postObserveWalkChance > 0 && this.random() < this.postObserveWalkChance;
+    const extendedWalkDuration = shouldExtendWalk
+      ? this.sampleRange(
+          this.postObserveWalkDurationRange,
+          (this.walkDurationRange?.[1] ?? this.walkDurationRange?.[0] ?? 6) * 1.25,
+        )
+      : null;
+
+    this.behaviorTimer = {
+      state: OBSERVE_STATE,
+      start: startTime,
+      duration: resolvedDuration,
+    };
+    this.activeAmbientState = {
+      type: OBSERVE_STATE,
+      previousState: this.currentMovementState,
+      intent: this.cloneAmbientPayload(intent),
+      targetPosition: normalizedTarget ? normalizedTarget.clone() : null,
+      resume: {
+        state: WALK_STATE,
+        duration: Number.isFinite(extendedWalkDuration) ? extendedWalkDuration : null,
+      },
+    };
+    this.pendingPostAmbientWalkDuration = null;
+
+    if (normalizedTarget) {
+      const heading = this.computeHeadingForTarget(normalizedTarget);
+      if (Number.isFinite(heading)) {
+        this.setHeadingAngle(heading);
+      }
+    }
+
+    this.currentMoveSpeed = 0;
+    this.pendingRunnerAnimation = false;
+    this.visualYawOffset = 0;
+    this.applyVisualYaw();
+
+    const payload = {
+      ambient: {
+        type: intent?.type ?? 'inspect-poi',
+        intent: this.cloneAmbientPayload(intent),
+        target: normalizedTarget ? normalizedTarget.clone() : null,
+        duration: resolvedDuration,
+      },
+    };
+    this.emitMovementState(OBSERVE_STATE, payload);
+    this._playPresentationVariant('idle', { loopMode: this.THREE.LoopRepeat, fadeDuration: 0.2 });
+    this.updateRunnerAnimationSpeed();
+  }
+
+  enterInteractState({ intent = null, context = null, targetPosition = null, duration } = {}) {
+    const resolvedContext = context ?? this.aiCore?.context ?? null;
+    if (this.activeAmbientState) {
+      this.exitAmbientState({ context: resolvedContext, reason: 'replaced', skipResume: true });
+    }
+    const startTime = this.resolveContextTime(resolvedContext);
+    const explicitDuration = Number.isFinite(duration)
+      ? duration
+      : Number.isFinite(intent?.duration)
+        ? intent.duration
+        : null;
+    const resolvedDuration = Number.isFinite(explicitDuration)
+      ? Math.max(0.1, explicitDuration)
+      : this.chooseInteractDuration();
+    const normalizedTarget = this.normalizeTargetPosition(targetPosition) ??
+      this.resolveIntentTargetPosition(intent);
+
+    const previousState = this.currentMovementState;
+    const shouldResumeWalk =
+      previousState === WALK_STATE
+        ? true
+        : this.lingerResumeWalkChance >= 1
+          ? true
+          : this.lingerResumeWalkChance <= 0
+            ? false
+            : this.random() < this.lingerResumeWalkChance;
+    const resumeState = shouldResumeWalk ? WALK_STATE : IDLE_STATE;
+    const resumeDuration = shouldResumeWalk
+      ? null
+      : this.sampleRange(this.idleDurationRange, this.idleDurationRange?.[0] ?? 2.6);
+
+    this.behaviorTimer = {
+      state: INTERACT_STATE,
+      start: startTime,
+      duration: resolvedDuration,
+    };
+    this.activeAmbientState = {
+      type: INTERACT_STATE,
+      previousState,
+      intent: this.cloneAmbientPayload(intent),
+      targetPosition: normalizedTarget ? normalizedTarget.clone() : null,
+      resume: {
+        state: resumeState,
+        duration: Number.isFinite(resumeDuration) ? resumeDuration : null,
+      },
+    };
+
+    if (normalizedTarget) {
+      const heading = this.computeHeadingForTarget(normalizedTarget);
+      if (Number.isFinite(heading)) {
+        this.setHeadingAngle(heading);
+      }
+    }
+
+    this.currentMoveSpeed = 0;
+    this.pendingRunnerAnimation = false;
+    this.visualYawOffset = 0;
+    this.idleBaseYaw = this.normalizeAngle(this.headingAngle || 0);
+    this.idleYawPhase = this.random() * Math.PI * 2;
+    this.applyVisualYaw();
+
+    const payload = {
+      ambient: {
+        type: intent?.type ?? 'linger',
+        intent: this.cloneAmbientPayload(intent),
+        target: normalizedTarget ? normalizedTarget.clone() : null,
+        duration: resolvedDuration,
+      },
+    };
+    this.emitMovementState(INTERACT_STATE, payload);
+    this._playPresentationVariant('idle', { loopMode: this.THREE.LoopRepeat, fadeDuration: 0.25 });
+    this.updateRunnerAnimationSpeed();
+  }
+
   chooseWalkDuration() {
     return this.sampleRange(this.walkDurationRange, 4.5);
   }
 
   chooseIdleDuration() {
     return this.sampleRange(this.idleDurationRange, 2.6);
+  }
+
+  chooseObserveDuration() {
+    return this.sampleRange(this.observeDurationRange, 3.8);
+  }
+
+  chooseInteractDuration() {
+    return this.sampleRange(this.lingerDurationRange, 3.2);
   }
 
   chooseNextHeadingAngle() {
@@ -725,6 +948,77 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     }
   }
 
+  updateObserveState(delta, context) {
+    this.currentMoveSpeed = this.approachSpeed(
+      this.currentMoveSpeed,
+      0,
+      this.walkDeceleration,
+      delta,
+    );
+    this.updateRunnerAnimationSpeed();
+    this.blendHeadingAngle(delta);
+    this.visualYawOffset = 0;
+    this.applyVisualYaw();
+
+    const time = this.resolveContextTime(context);
+    const startTime = this.behaviorTimer.start ?? time;
+    const duration = this.behaviorTimer.duration ?? 0;
+    if (time - startTime >= duration) {
+      this.exitAmbientState({ context, reason: 'duration' });
+    }
+  }
+
+  updateInteractState(delta, context) {
+    this.currentMoveSpeed = this.approachSpeed(
+      this.currentMoveSpeed,
+      0,
+      this.walkDeceleration,
+      delta,
+    );
+    this.updateRunnerAnimationSpeed();
+    const elapsed = Number.isFinite(context?.elapsedTime) ? context.elapsedTime : context?.time ?? 0;
+    this.updateIdleState(delta, elapsed, context);
+
+    const time = this.resolveContextTime(context);
+    const startTime = this.behaviorTimer.start ?? time;
+    const duration = this.behaviorTimer.duration ?? 0;
+    if (time - startTime >= duration) {
+      this.exitAmbientState({ context, reason: 'duration' });
+    }
+  }
+
+  exitAmbientState({ context = null, reason = 'completed', skipResume = false } = {}) {
+    void reason;
+    if (!this.activeAmbientState) {
+      return;
+    }
+
+    const directive = this.activeAmbientState;
+    this.activeAmbientState = null;
+
+    if (skipResume) {
+      this.pendingPostAmbientWalkDuration = null;
+      return;
+    }
+
+    if (directive.resume?.state === WALK_STATE) {
+      if (Number.isFinite(directive.resume.duration)) {
+        this.pendingPostAmbientWalkDuration = directive.resume.duration;
+      }
+      this.enterIdleState({ duration: 0.1, context });
+      return;
+    }
+
+    if (directive.resume?.state === IDLE_STATE) {
+      this.pendingPostAmbientWalkDuration = null;
+      this.enterIdleState({ duration: directive.resume.duration, context });
+      return;
+    }
+
+    this.pendingPostAmbientWalkDuration = null;
+    this.enterIdleState({ context });
+  }
+
   updateIdleState(delta, elapsedTime) {
     this.currentMoveSpeed = this.approachSpeed(
       this.currentMoveSpeed,
@@ -794,6 +1088,9 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
     if (!context) {
       return false;
     }
+    if (this.isAmbientStateActive()) {
+      return true;
+    }
     const time = Number.isFinite(context.time) ? context.time : 0;
     if (this.currentMovementState === WALK_STATE) {
       const startTime = this.behaviorTimer.start ?? time;
@@ -804,6 +1101,160 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
       return this.pendingIdleAfterTurn;
     }
     return false;
+  }
+
+  onAmbientIntent(intent, meta = {}) {
+    if (!intent || typeof intent !== 'object') {
+      return;
+    }
+    const type = typeof intent.type === 'string' ? intent.type : null;
+    if (!type) {
+      return;
+    }
+    const context = meta?.context ?? this.aiCore?.context ?? null;
+    if (context?.entity && context.entity !== this) {
+      return;
+    }
+
+    if (type === 'inspect-poi') {
+      this.handleInspectIntent(intent, context, meta);
+      return;
+    }
+    if (type === 'linger') {
+      this.handleLingerIntent(intent, context, meta);
+    }
+  }
+
+  handleInspectIntent(intent, context, meta = {}) {
+    void meta;
+    this.enterObserveState({ intent, context });
+  }
+
+  handleLingerIntent(intent, context, meta = {}) {
+    void meta;
+    this.enterInteractState({ intent, context });
+  }
+
+  resolveContextTime(context) {
+    if (Number.isFinite(context?.time)) {
+      return context.time;
+    }
+    if (Number.isFinite(context?.elapsedTime)) {
+      return context.elapsedTime;
+    }
+    if (Number.isFinite(this.aiCore?.context?.time)) {
+      return this.aiCore.context.time;
+    }
+    return 0;
+  }
+
+  normalizeTargetPosition(target) {
+    if (!target) {
+      return null;
+    }
+    if (target.isVector3) {
+      return target.clone();
+    }
+    return this.resolveIntentTargetPosition(target);
+  }
+
+  resolveIntentTargetPosition(source) {
+    if (!source) {
+      return null;
+    }
+    let candidate = source;
+    if (candidate && typeof candidate === 'object') {
+      const unwrapQueue = [candidate];
+      while (unwrapQueue.length > 0) {
+        const next = unwrapQueue.shift();
+        if (!next || typeof next !== 'object') {
+          continue;
+        }
+        if (next.target && typeof next.target === 'object') {
+          unwrapQueue.push(next.target);
+          continue;
+        }
+        if (next.position && typeof next.position === 'object') {
+          unwrapQueue.push(next.position);
+          continue;
+        }
+        candidate = next;
+        break;
+      }
+    }
+    if (!candidate) {
+      return null;
+    }
+    if (candidate.isVector3) {
+      return candidate.clone();
+    }
+
+    let x = Number.isFinite(candidate.x) ? candidate.x : null;
+    let y = Number.isFinite(candidate.y) ? candidate.y : null;
+    let z = Number.isFinite(candidate.z) ? candidate.z : null;
+    if (Array.isArray(candidate)) {
+      x = Number.isFinite(candidate[0]) ? candidate[0] : x;
+      y = Number.isFinite(candidate[1]) ? candidate[1] : y;
+      z = Number.isFinite(candidate[2]) ? candidate[2] : z;
+    }
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+    if (!Number.isFinite(y)) {
+      const base = this.root?.position;
+      y = Number.isFinite(base?.y) ? base.y : 0;
+    }
+    return new this.THREE.Vector3(x, y, z);
+  }
+
+  computeHeadingForTarget(target) {
+    if (!target) {
+      return null;
+    }
+    const vector = target.isVector3 ? target : this.normalizeTargetPosition(target);
+    if (!vector) {
+      return null;
+    }
+    const origin = this.root?.position;
+    if (!origin) {
+      return null;
+    }
+    const dx = vector.x - origin.x;
+    const dz = vector.z - origin.z;
+    if (!Number.isFinite(dx) || !Number.isFinite(dz)) {
+      return null;
+    }
+    if (Math.abs(dx) < 1e-4 && Math.abs(dz) < 1e-4) {
+      return null;
+    }
+    return Math.atan2(dx, dz);
+  }
+
+  cloneAmbientPayload(value) {
+    if (!value || typeof value !== 'object') {
+      return value ?? null;
+    }
+    if (typeof structuredClone === 'function') {
+      try {
+        return structuredClone(value);
+      } catch (error) {
+        void error;
+      }
+    }
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch (error) {
+      void error;
+    }
+    const clone = Array.isArray(value) ? [] : {};
+    for (const [key, entry] of Object.entries(value)) {
+      clone[key] = this.cloneAmbientPayload(entry);
+    }
+    return clone;
+  }
+
+  isAmbientStateActive() {
+    return this.currentMovementState === OBSERVE_STATE || this.currentMovementState === INTERACT_STATE;
   }
 
   buildVariantClipMapFromInstance(instance) {
@@ -946,6 +1397,12 @@ export class CrownedGhostRunnerEntity extends CrownedGhostEntity {
 
   dispose() {
     this.pendingRunnerAnimation = false;
+    if (this._boundAmbientIntentHandler) {
+      this.aiCore.off('ambient:intent', this._boundAmbientIntentHandler);
+      this._boundAmbientIntentHandler = null;
+    }
+    this.activeAmbientState = null;
+    this.pendingPostAmbientWalkDuration = null;
     this.presentationAdapter?.dispose?.();
     super.dispose();
   }
