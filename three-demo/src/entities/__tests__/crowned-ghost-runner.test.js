@@ -298,6 +298,131 @@ test('CrownedGhostRunnerEntity alternates between idle and walk states with anim
   assert.ok(controller.disposeCalled, 'dispose should propagate to the animation controller');
 });
 
+test('CrownedGhostRunnerEntity responds to ambient inspect and linger intents', async () => {
+  const idleClip = new THREE.AnimationClip('Ghost_Guy_Runner_Idle', -1, []);
+  const runnerClip = new THREE.AnimationClip('Ghost_Guy_Runner', -1, []);
+  const fakeLoader = {
+    createVariantInstance: async () => ({
+      scene: new THREE.Group(),
+      animations: [idleClip, runnerClip],
+      dispose() {},
+    }),
+  };
+
+  const random = () => 0.5;
+
+  const { CrownedGhostRunnerEntity } = await import('../crowned-ghost-runner.js');
+
+  StubAnimationController.instances.length = 0;
+
+  const entity = new CrownedGhostRunnerEntity({
+    THREE,
+    assetLoader: fakeLoader,
+    animationControllerClass: StubAnimationController,
+    random,
+    behavior: {
+      walkDurationRange: [0.5, 0.5],
+      idleDurationRange: [0.2, 0.2],
+      walkSpeed: 2,
+      observeDurationRange: [0.4, 0.4],
+      postObserveWalkChance: 1,
+      postObserveWalkDurationRange: [1.2, 1.2],
+      lingerDurationRange: [0.3, 0.3],
+      lingerResumeWalkChance: 1,
+    },
+  });
+
+  entity.onSpawn();
+  await entity.assetLoadPromise;
+
+  const controller = StubAnimationController.instances[0];
+  let elapsed = 0;
+  const step = (dt) => {
+    elapsed += dt;
+    entity.update({ delta: dt, elapsedTime: elapsed });
+  };
+
+  const inspectIntent = {
+    type: 'inspect-poi',
+    target: { position: { x: 4, y: 0, z: 8 } },
+    duration: 0.4,
+  };
+  entity.aiCore.emit('ambient:intent', inspectIntent, { context: entity.aiCore.context });
+
+  assert.equal(entity.currentMovementState, 'observe', 'inspect intent should switch to observe state');
+  assert.equal(entity.behaviorTimer.state, 'observe', 'behavior timer should track the observe state');
+  assert.equal(
+    controller.playCalls.at(-1)?.variantId,
+    'idle',
+    'observe state should request the idle animation variant',
+  );
+
+  const stationaryPosition = entity.root.position.clone();
+  step(0.1);
+  const expectedHeading = entity.computeHeadingForTarget(
+    new THREE.Vector3(4, entity.root.position.y, 8),
+  );
+  let observeIterations = 0;
+  while (
+    Math.abs(entity.headingAngle) <= 1e-3 &&
+    entity.currentMovementState === 'observe' &&
+    observeIterations < 6
+  ) {
+    step(0.05);
+    observeIterations += 1;
+  }
+  assert.equal(entity.currentMovementState, 'observe', 'observe state should persist during orientation');
+  const rotationMagnitude = Math.abs(entity.headingAngle);
+  assert.ok(rotationMagnitude > 1e-3, 'observe state should begin rotating toward the POI');
+  assert.equal(
+    Math.sign(entity.headingAngle) || 0,
+    Math.sign(expectedHeading) || 0,
+    'observe rotation should turn toward the POI heading',
+  );
+  assert.ok(
+    entity.root.position.distanceTo(stationaryPosition) < 1e-5,
+    'entity should remain stationary while observing',
+  );
+
+  for (let i = 0; i < 10 && entity.currentMovementState !== 'walk'; i += 1) {
+    step(0.1);
+  }
+  assert.equal(entity.currentMovementState, 'walk', 'entity should resume walking after observation ends');
+  assert.ok(
+    Math.abs((entity.behaviorTimer.duration ?? 0) - 1.2) < 1e-6,
+    'post-observation walk should use the queued extended duration',
+  );
+
+  const lingerIntent = { type: 'linger', duration: 0.3 };
+  entity.aiCore.emit('ambient:intent', lingerIntent, { context: entity.aiCore.context });
+
+  assert.equal(entity.currentMovementState, 'interact', 'linger intent should trigger the interact state');
+  assert.equal(
+    controller.playCalls.at(-1)?.variantId,
+    'idle',
+    'interact state should play the idle animation variant',
+  );
+
+  const interactPosition = entity.root.position.clone();
+  step(0.05);
+  assert.ok(
+    entity.root.position.distanceTo(interactPosition) < 1e-5,
+    'entity should stay in place during the linger interaction',
+  );
+
+  for (let i = 0; i < 10 && entity.currentMovementState !== 'walk'; i += 1) {
+    step(0.1);
+  }
+  assert.equal(entity.currentMovementState, 'walk', 'entity should resume walking after lingering');
+  assert.ok(
+    Math.abs((entity.behaviorTimer.duration ?? 0) - 0.5) < 1e-6,
+    'post-linger walk should revert to the baseline walk duration',
+  );
+
+  entity.dispose();
+  assert.ok(controller.disposeCalled, 'dispose should still clean up after ambient state usage');
+});
+
 test('CrownedGhostRunnerEntity picks wander headings outside the minimum delta window', async () => {
   const { CrownedGhostRunnerEntity } = await import('../crowned-ghost-runner.js');
 
