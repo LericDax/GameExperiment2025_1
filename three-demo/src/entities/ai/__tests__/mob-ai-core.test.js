@@ -3,6 +3,28 @@ import assert from 'node:assert/strict';
 import { MobAICore } from '../mob-ai-core.js';
 import { ActionNode } from '../behavior-nodes.js';
 
+const createAmbientContext = () => ({
+  time: 0,
+  flags: { allowWander: false },
+  entity: {
+    id: 'ghost-alpha',
+    faction: 'covenant',
+    position: { x: 0, y: 10, z: 0 },
+  },
+  environment: {
+    lightLevel: 0.35,
+    pointsOfInterest: [{ x: 12, y: 9, z: -6 }],
+    resourceNodes: [],
+    nearbyEntities: [],
+  },
+  percepts: {
+    threatLevel: 'low',
+    nearbyEntities: [],
+  },
+  terrainHeight: () => 10,
+  memory: new Map(),
+});
+
 const createLoggingNode = (name, logs) =>
   new ActionNode(name, {
     onInitialize: () => logs.push(`${name}:initialize`),
@@ -150,5 +172,71 @@ describe('MobAICore', () => {
 
     const chaseLayer = core.scheduler.layers.find((layer) => layer.name === 'spectral-chase');
     assert.strictEqual(chaseLayer.priority, 10);
+  });
+
+  it('installs ambient behavior layer and emits intents from scheduler tasks', () => {
+    core.usePersona('spectral-runner');
+    const initialContext = createAmbientContext();
+    const intentEvents = [];
+    core.on('ambient:intent', (intent, meta) =>
+      intentEvents.push({ intent, time: meta?.context?.time ?? core.context.time }),
+    );
+
+    core.initialize(initialContext);
+    core.attachToEntity({ id: 'entity-ambient' });
+
+    const scheduler = core.ambientScheduler;
+    const originalRequestTask = scheduler.requestTask.bind(scheduler);
+    let requestCount = 0;
+    scheduler.requestTask = (...args) => {
+      requestCount += 1;
+      return originalRequestTask(...args);
+    };
+
+    const ambientLayerEntry = core.scheduler.layers.find((layer) => layer.name === 'ambient-behaviors');
+    assert.ok(ambientLayerEntry, 'expected ambient behavior layer to be registered');
+
+    const environment = { ...initialContext.environment };
+    const percepts = { ...initialContext.percepts };
+    const flags = { ...initialContext.flags };
+
+    const steps = [1, 1, 1, 12, 1];
+    for (const step of steps) {
+      core.update(step, { environment, percepts, flags });
+    }
+
+    assert.ok(requestCount >= steps.length, 'expected ambient layer to request scheduler tasks');
+
+    const inspectEvents = intentEvents.filter((event) => event.intent.type === 'inspect-poi');
+    const recordedTypes = intentEvents.map((event) => event.intent.type);
+    assert.ok(
+      inspectEvents.length >= 1,
+      `expected at least one inspect intent to fire when POIs exist (saw: ${recordedTypes.join(', ')})`,
+    );
+    assert.ok(inspectEvents[0].intent.target, 'inspect intent should include a target payload');
+
+    assert.ok(
+      inspectEvents.length >= 2,
+      'expected a follow-up inspect intent once scheduler cooldown elapsed',
+    );
+    const inspectTimes = inspectEvents.map((event) => event.time);
+    const cooldownDelta = inspectTimes.at(-1) - inspectTimes[0];
+    assert.ok(
+      cooldownDelta >= 12,
+      `expected inspect intents to respect scheduler cooldown, got delta=${cooldownDelta} (times: ${inspectTimes.join(', ')})`,
+    );
+
+    scheduler.requestTask = originalRequestTask;
+  });
+
+  it('honors persona ambient overrides for behavior selection', () => {
+    core.usePersona('spectral-runner', { ambient: { behaviors: { gatherResources: false } } });
+    core.initialize({ environment: { pointsOfInterest: [] } });
+
+    const ambientLayerEntry = core.scheduler.layers.find((layer) => layer.name === 'ambient-behaviors');
+    assert.ok(ambientLayerEntry, 'ambient layer should be installed');
+    const enabled = ambientLayerEntry.node.enabledBehaviors;
+    assert.ok(enabled.includes('seekSunlight'));
+    assert.ok(!enabled.includes('gatherResources'), 'gatherResources should be disabled via override');
   });
 });

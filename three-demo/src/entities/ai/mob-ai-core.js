@@ -3,6 +3,7 @@ import { BehaviorRegistry } from './behavior-nodes.js';
 import { PersonaRegistry } from './personas/persona-registry.js';
 import { defaultTraits } from './traits/index.js';
 import { AmbientTaskScheduler } from './environment/ambient-task-scheduler.js';
+import { AmbientBehaviorLayer } from './environment/ambient-behavior-layer.js';
 
 const deepClone = (value) => {
   if (typeof structuredClone === 'function') {
@@ -187,6 +188,16 @@ export class MobAICore {
     this.currentPersona = null;
     this.initialized = false;
     this.events = events ?? new EventEmitter();
+    this._boundEmit = this.emit.bind(this);
+    this.ambientBehaviorSettings = {
+      enabled: false,
+      priority: -5,
+      behaviors: {},
+      taskRequest: null,
+      order: null,
+      name: 'ambient-behaviors',
+    };
+    this._ambientLayer = null;
 
     traitDefinitions.forEach((trait) => {
       const definition = normalizeTraitDefinition(trait.name ?? trait, trait);
@@ -222,7 +233,8 @@ export class MobAICore {
     const persona = this.personaRegistry.create(reference, overrides);
     const previousPersona = this.currentPersona;
     this.currentPersona = persona;
-    this._applyPersona(persona, { resetResources: true });
+    const ambientOverrides = overrides?.ambient ?? overrides?.ambientBehaviors ?? null;
+    this._applyPersona(persona, { resetResources: true, ambientOverrides });
     this.emit('persona:applied', persona, { previous: previousPersona });
     return persona;
   }
@@ -270,7 +282,7 @@ export class MobAICore {
     this.activeTraitHandles.set(name, handle);
   }
 
-  _applyPersona(persona, { resetResources = false } = {}) {
+  _applyPersona(persona, { resetResources = false, ambientOverrides = null } = {}) {
     if (!persona) {
       return;
     }
@@ -279,6 +291,9 @@ export class MobAICore {
     this._updateTraitContext();
     this._syncPersonaContext(persona, { resetResources });
     this._installPersonaBehaviors(persona);
+    const baseAmbient = persona.metadata?.ambient ?? null;
+    const mergedAmbient = this._mergeAmbientConfig(baseAmbient, ambientOverrides);
+    this._configureAmbientLayer(mergedAmbient);
   }
 
   _syncPersonaContext(persona, { resetResources = false } = {}) {
@@ -390,10 +405,16 @@ export class MobAICore {
       this.context.ambientScheduler = this.ambientScheduler;
       this.context.ambient ??= {};
       this.context.ambient.scheduler = this.ambientScheduler;
+      this.context.events = this.events;
+      this.context.emit = this._boundEmit;
+      this.context.ai ??= {};
+      this.context.ai.core = this;
+      this.context.ai.events = this.events;
       this._updateTraitContext();
       if (this.currentPersona) {
         this._syncPersonaContext(this.currentPersona);
       }
+      this._ensureAmbientLayer(this.context);
       this.ambientScheduler.tick(0, this.context);
       return this.context;
     }
@@ -411,9 +432,15 @@ export class MobAICore {
     this.context.ambientScheduler = this.ambientScheduler;
     this.context.ambient ??= {};
     this.context.ambient.scheduler = this.ambientScheduler;
+    this.context.events = this.events;
+    this.context.emit = this._boundEmit;
+    this.context.ai ??= {};
+    this.context.ai.core = this;
+    this.context.ai.events = this.events;
     if (this.currentPersona) {
       this._syncPersonaContext(this.currentPersona, { resetResources: true });
     }
+    this._ensureAmbientLayer(this.context);
     this.scheduler.initialize(this.context);
     this.ambientScheduler.tick(0, this.context);
     this.initialized = true;
@@ -451,6 +478,109 @@ export class MobAICore {
     this.ambientScheduler.tick(delta, this.context);
     this.scheduler.tick(delta, this.context);
     this.emit('afterUpdate', this.context);
+  }
+
+  _mergeAmbientConfig(base, overrides) {
+    if (!overrides) {
+      return base ? { ...base } : base;
+    }
+    const merged = base ? { ...base } : {};
+    if (overrides && typeof overrides === 'object') {
+      if (Object.prototype.hasOwnProperty.call(overrides, 'enabled')) {
+        merged.enabled = overrides.enabled;
+      }
+      if (Object.prototype.hasOwnProperty.call(overrides, 'priority')) {
+        merged.priority = overrides.priority;
+      }
+      if (Object.prototype.hasOwnProperty.call(overrides, 'name')) {
+        merged.name = overrides.name;
+      }
+      if (Object.prototype.hasOwnProperty.call(overrides, 'order')) {
+        merged.order = Array.isArray(overrides.order) ? [...overrides.order] : overrides.order;
+      }
+      if (Object.prototype.hasOwnProperty.call(overrides, 'taskRequest')) {
+        merged.taskRequest = overrides.taskRequest;
+      }
+      if (Object.prototype.hasOwnProperty.call(overrides, 'behaviors')) {
+        const baseBehaviors = merged.behaviors && typeof merged.behaviors === 'object' ? merged.behaviors : {};
+        merged.behaviors = { ...baseBehaviors, ...(overrides.behaviors ?? {}) };
+      }
+    }
+    return merged;
+  }
+
+  _configureAmbientLayer(config) {
+    const normalized = {
+      enabled: false,
+      priority: -5,
+      behaviors: {},
+      taskRequest: null,
+      order: null,
+      name: 'ambient-behaviors',
+    };
+    if (config && typeof config === 'object') {
+      if (Object.prototype.hasOwnProperty.call(config, 'enabled')) {
+        normalized.enabled = Boolean(config.enabled);
+      }
+      if (Object.prototype.hasOwnProperty.call(config, 'priority')) {
+        const priority = Number(config.priority);
+        if (Number.isFinite(priority)) {
+          normalized.priority = priority;
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(config, 'behaviors')) {
+        normalized.behaviors =
+          config.behaviors && typeof config.behaviors === 'object' ? { ...config.behaviors } : {};
+      }
+      if (Object.prototype.hasOwnProperty.call(config, 'taskRequest')) {
+        normalized.taskRequest =
+          config.taskRequest && typeof config.taskRequest === 'object' ? { ...config.taskRequest } : null;
+      }
+      if (Object.prototype.hasOwnProperty.call(config, 'order')) {
+        normalized.order = Array.isArray(config.order) ? [...config.order] : null;
+      }
+      if (Object.prototype.hasOwnProperty.call(config, 'name')) {
+        normalized.name = typeof config.name === 'string' ? config.name : normalized.name;
+      }
+    }
+
+    this.ambientBehaviorSettings = normalized;
+
+    if (this._ambientLayer) {
+      this.scheduler.removeLayer(this._ambientLayer.name);
+      this._ambientLayer.dispose?.();
+      this._ambientLayer = null;
+    }
+
+    if (this.initialized && this.context) {
+      this._ensureAmbientLayer(this.context);
+    }
+  }
+
+  _ensureAmbientLayer(context) {
+    if (!this.ambientBehaviorSettings?.enabled) {
+      return;
+    }
+    if (this._ambientLayer) {
+      return;
+    }
+
+    const layer = new AmbientBehaviorLayer({
+      name: this.ambientBehaviorSettings.name,
+      scheduler: this.ambientScheduler,
+      behaviors: this.ambientBehaviorSettings.behaviors,
+      taskRequest: this.ambientBehaviorSettings.taskRequest,
+      order: this.ambientBehaviorSettings.order,
+    });
+    this._ambientLayer = layer;
+    this.addBehaviorLayer({
+      name: layer.name,
+      node: layer,
+      priority: this.ambientBehaviorSettings.priority ?? -5,
+    });
+    if (this.initialized && context?.entity) {
+      layer.attachToEntity?.(context.entity, context);
+    }
   }
 
   /**
