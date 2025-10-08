@@ -1462,6 +1462,17 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     { dx: 0, dy: 0, dz: -1 },
   ];
 
+  const isOccludingSolid = (entry) => {
+    if (!entry || entry.collisionMode !== 'solid') {
+      return false;
+    }
+    const material = blockMaterials?.[entry.type];
+    if (material && material.transparent) {
+      return false;
+    }
+    return true;
+  };
+
   const isFluidColumnExposed = (column) => {
     if (!column) {
       return false;
@@ -1542,7 +1553,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
           }
           return true;
         }
-        if (neighborEntry.collisionMode !== 'solid') {
+        if (!isOccludingSolid(neighborEntry)) {
           return true;
         }
       }
@@ -1590,7 +1601,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         if (neighborEntry === entry) {
           continue;
         }
-        if (neighborEntry.collisionMode !== 'solid') {
+        if (!isOccludingSolid(neighborEntry)) {
           exposed = true;
           break;
         }
