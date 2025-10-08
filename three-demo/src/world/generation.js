@@ -23,6 +23,171 @@ import { worldOptions, applyWorldOptions } from './world-settings.js';
 import { configureSectorObjectPlanner } from './sector-object-planner.js';
 export { worldOptions, getWorldOptions } from './world-settings.js';
 
+const MESHING_MODE_STORAGE_KEY = 'voxelMeshingMode';
+
+const normalizeMeshingMode = (value) => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (['legacy', 'old', 'classic', 'cubes'].includes(normalized)) {
+    return 'legacy';
+  }
+  if (['compare', 'both', 'debug'].includes(normalized)) {
+    return 'compare';
+  }
+  if (['greedy', 'new', 'modern', 'default'].includes(normalized)) {
+    return 'greedy';
+  }
+  return null;
+};
+
+let meshingDebugMode = 'greedy';
+
+const persistMeshingMode = (mode) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage?.setItem(MESHING_MODE_STORAGE_KEY, mode);
+  } catch (error) {
+    console.warn('[browser] [meshing debug] failed to persist meshing mode', error);
+  }
+};
+
+const resolveMeshingModeFromQuery = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('meshing')) {
+      return null;
+    }
+    return normalizeMeshingMode(params.get('meshing'));
+  } catch (error) {
+    console.warn('[browser] [meshing debug] failed to resolve query mode', error);
+    return null;
+  }
+};
+
+const resolveMeshingModeFromStorage = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const stored = window.localStorage?.getItem(MESHING_MODE_STORAGE_KEY);
+    return normalizeMeshingMode(stored);
+  } catch (error) {
+    console.warn('[browser] [meshing debug] failed to resolve stored mode', error);
+    return null;
+  }
+};
+
+export const getMeshingDebugMode = () => meshingDebugMode;
+
+export const isLegacyMeshingEnabled = () => meshingDebugMode === 'legacy';
+
+export const setMeshingDebugMode = (mode, { persist = true } = {}) => {
+  const normalized = normalizeMeshingMode(mode) ?? 'greedy';
+  meshingDebugMode = normalized;
+  if (persist) {
+    persistMeshingMode(normalized);
+  }
+  return meshingDebugMode;
+};
+
+export const initializeMeshingDebug = ({
+  defaultMode = 'greedy',
+  persistDefault = false,
+  forceDefault = false,
+} = {}) => {
+  const fromQuery = resolveMeshingModeFromQuery();
+  if (fromQuery) {
+    return setMeshingDebugMode(fromQuery, { persist: false });
+  }
+
+  if (!forceDefault) {
+    const fromStorage = resolveMeshingModeFromStorage();
+    if (fromStorage) {
+      return setMeshingDebugMode(fromStorage, { persist: false });
+    }
+  }
+
+  return setMeshingDebugMode(defaultMode, { persist: persistDefault });
+};
+
+export const makeBlockKey = (x, y, z) =>
+  `${Math.round(x)}|${Math.round(y)}|${Math.round(z)}`;
+
+let sharedBlockGeometry = null;
+
+export const ensureBlockGeometry = (THREE) => {
+  if (!sharedBlockGeometry) {
+    sharedBlockGeometry = new THREE.BoxGeometry(1, 1, 1);
+  }
+  return sharedBlockGeometry;
+};
+
+export const buildInstancedBlockMesh = ({
+  THREE,
+  blockMaterials,
+  type,
+  entries = [],
+  capacity,
+}) => {
+  const instanceCapacity = Math.max(
+    1,
+    Number.isInteger(capacity) && capacity > 0
+      ? capacity
+      : Array.isArray(entries)
+      ? entries.length
+      : 0,
+  );
+  const geometry = ensureBlockGeometry(THREE).clone();
+  const mesh = new THREE.InstancedMesh(
+    geometry,
+    blockMaterials[type],
+    instanceCapacity,
+  );
+  mesh.userData.defaultTint = new THREE.Color(1, 1, 1);
+
+  const entryCount = Array.isArray(entries) ? entries.length : 0;
+  const tintArray = new Float32Array(instanceCapacity * 3);
+  const tintAttribute = new THREE.InstancedBufferAttribute(tintArray, 3);
+  tintAttribute.setUsage(THREE.DynamicDrawUsage);
+  mesh.geometry.setAttribute('biomeTint', tintAttribute);
+
+  for (let index = 0; index < entryCount; index += 1) {
+    const entry = entries[index];
+    if (!entry) {
+      continue;
+    }
+    mesh.setMatrixAt(index, entry.matrix);
+    entry.index = index;
+    const tint = entry.tintColor ?? mesh.userData.defaultTint;
+    const offset = index * 3;
+    tintAttribute.array[offset] = tint.r;
+    tintAttribute.array[offset + 1] = tint.g;
+    tintAttribute.array[offset + 2] = tint.b;
+    entry.mesh = mesh;
+    entry.tintAttribute = tintAttribute;
+  }
+
+  mesh.count = entryCount;
+  mesh.instanceMatrix.needsUpdate = entryCount > 0;
+  tintAttribute.needsUpdate = entryCount > 0;
+  mesh.castShadow = ['cloud', 'water'].includes(type) ? false : true;
+  mesh.receiveShadow = type !== 'cloud';
+  mesh.frustumCulled = false;
+  mesh.userData.type = type;
+  mesh.userData.biomePalette = true;
+  mesh.userData.biomeTintAttribute = tintAttribute;
+  mesh.userData.capacity = instanceCapacity;
+
+  return { mesh, tintAttribute };
+};
+
 initializeFluidDebug({ defaultEnabled: false, persistDefault: true, forceDefault: true });
 
 function clamp(value, min, max) {
@@ -30,7 +195,6 @@ function clamp(value, min, max) {
 }
 
 let THREERef = null;
-let blockGeometry = null;
 let terrainEngine = null;
 let worldSeedHash = worldOptions.seedHash >>> 0;
 
@@ -73,7 +237,7 @@ export function initializeWorldGeneration({ THREE, worldOptions: overrides } = {
     disposeTerrainEngineInstance(terrainEngine);
   }
 
-  blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+  initializeMeshingDebug({ defaultMode: 'greedy', persistDefault: true, forceDefault: false });
   terrainEngine = createTerrainEngine({
     THREE,
     seed: worldSeedHash,
@@ -199,10 +363,6 @@ export function sampleBiomeCoverage({
 
 const solidTypes = new Set(['grass', 'dirt', 'stone', 'sand', 'leaf', 'log', 'snow']);
 
-function blockKey(x, y, z) {
-  return `${x}|${y}|${z}`;
-}
-
 function addCloud(addBlock, x, y, z) {
   const blocks = [
     [0, 0, 0],
@@ -228,9 +388,6 @@ function chunkWorldBounds(chunkX, chunkZ) {
 export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const THREE = ensureThree();
   const engine = ensureTerrainEngine();
-  if (!blockGeometry) {
-    blockGeometry = new THREE.BoxGeometry(1, 1, 1);
-  }
   const instancedData = new Map();
   const decorationInstancedData = new Map();
   const decorationData = new Map();
@@ -242,6 +399,9 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const waterColumnMetadata = new Map();
   const fluidColumnsByType = new Map();
   const fluidSurfaces = [];
+  const pendingEntries = new Map();
+  const typeCapacities = new Map();
+  const fluidBlockKeys = new Set();
   let minBoundX = Number.POSITIVE_INFINITY;
   let minBoundY = Number.POSITIVE_INFINITY;
   let minBoundZ = Number.POSITIVE_INFINITY;
@@ -524,13 +684,9 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   const addBlock = (type, x, y, z, biome, options = {}) => {
     const entry = createInstancedEntry(type, x, y, z, biome, options);
 
-    if (!instancedData.has(type)) {
-      instancedData.set(type, []);
-    }
-
     const coordinateKey = entry.coordinateKey;
     const key = entry.key;
-    const existingEntry = coordinateKey ? blockLookup.get(coordinateKey) : null;
+    const existingEntry = coordinateKey ? pendingEntries.get(coordinateKey) : null;
     const replaceExisting = options.replaceExisting === true;
 
     const isWater = type === 'water';
@@ -556,6 +712,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         : !isFluid && type !== 'cloud';
 
     if (isFluid) {
+      fluidBlockKeys.add(coordinateKey);
       if (!fluidColumnsByType.has(type)) {
         fluidColumnsByType.set(type, new Map());
       }
@@ -606,8 +763,10 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
           });
         }
       }
-      return;
+      return entry;
     }
+
+    fluidBlockKeys.delete(coordinateKey);
 
     entry.isSolid = isSolid;
     entry.isWater = isWater;
@@ -625,28 +784,26 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       shouldReplaceExisting &&
       (replaceExisting || existingIsSolid || isSolid)
     ) {
-      const existingEntries = instancedData.get(existingEntry.type);
-      if (existingEntries) {
-        const existingIndex = existingEntries.indexOf(existingEntry);
-        if (existingIndex !== -1) {
-          existingEntries.splice(existingIndex, 1);
-        }
-      }
-
       if (existingEntry.key) {
         blockLookup.delete(existingEntry.key);
       }
       if (existingEntry.coordinateKey) {
         blockLookup.delete(existingEntry.coordinateKey);
-      }
-
-      if (existingEntry.coordinateKey) {
         solidBlockKeys.delete(existingEntry.coordinateKey);
         softBlockKeys.delete(existingEntry.coordinateKey);
       }
+      pendingEntries.delete(existingEntry.coordinateKey);
+      if (existingEntry.type) {
+        const previous = typeCapacities.get(existingEntry.type) ?? 1;
+        typeCapacities.set(existingEntry.type, Math.max(0, previous - 1));
+      }
+    } else if (existingEntry) {
+      return existingEntry;
     }
 
-    instancedData.get(type).push(entry);
+    pendingEntries.set(coordinateKey, entry);
+    typeCapacities.set(type, (typeCapacities.get(type) ?? 0) + 1);
+
     blockLookup.set(key, entry);
     if (key !== coordinateKey) {
       blockLookup.set(coordinateKey, entry);
@@ -657,6 +814,9 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     if (isSoft) {
       softBlockKeys.add(coordinateKey);
     }
+    entry.index = -1;
+    entry.mesh = null;
+    entry.tintAttribute = null;
     return entry;
   };
 
@@ -973,53 +1133,51 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     return instanceKey;
   };
 
-  const buildInstancedMesh = (entries, type) => {
-    const geometry = blockGeometry.clone();
-    const mesh = new THREE.InstancedMesh(
-      geometry,
-      blockMaterials[type],
-      entries.length,
+  const buildInstancedMesh = (entries, type, { capacity } = {}) => {
+    const effectiveCapacity = Math.max(
+      Array.isArray(entries) ? entries.length : 0,
+      Number.isInteger(capacity) && capacity > 0 ? capacity : 0,
     );
-    mesh.userData.defaultTint = new THREE.Color(1, 1, 1);
-
-    const tintArray = new Float32Array(entries.length * 3);
-    const tintAttribute = new THREE.InstancedBufferAttribute(tintArray, 3);
-    tintAttribute.setUsage(THREE.DynamicDrawUsage);
-    mesh.geometry.setAttribute('biomeTint', tintAttribute);
-
-    entries.forEach((entry, index) => {
-      mesh.setMatrixAt(index, entry.matrix);
-      entry.index = index;
-      const tint = entry.tintColor ?? mesh.userData.defaultTint;
-      const offset = index * 3;
-      tintAttribute.array[offset] = tint.r;
-      tintAttribute.array[offset + 1] = tint.g;
-      tintAttribute.array[offset + 2] = tint.b;
+    const { mesh, tintAttribute } = buildInstancedBlockMesh({
+      THREE,
+      blockMaterials,
+      type,
+      entries,
+      capacity: effectiveCapacity,
     });
-
-    mesh.count = entries.length;
-    mesh.instanceMatrix.needsUpdate = true;
-    tintAttribute.needsUpdate = true;
-    mesh.castShadow = ['cloud', 'water'].includes(type) ? false : true;
-    mesh.receiveShadow = type !== 'cloud';
-    mesh.frustumCulled = false;
-    mesh.userData.type = type;
-    mesh.userData.biomePalette = true;
-    mesh.userData.biomeTintAttribute = tintAttribute;
-
     return { mesh, tintAttribute };
   };
 
-  const addMeshesFromMap = (targetGroup, map) => {
-    map.forEach((entries, type) => {
+  instancedData.forEach((entries, type) => {
+    if (!typeCapacities.has(type)) {
+      typeCapacities.set(type, entries.length);
+    }
+  });
+
+  const addMeshesFromMap = (targetGroup) => {
+    typeCapacities.forEach((capacity, type) => {
       if (isFluidType(type)) {
         return;
       }
-      if (!entries || entries.length === 0) {
+      const entries = instancedData.get(type) ?? [];
+      const effectiveCapacity = Math.max(capacity ?? 0, entries.length);
+      if (effectiveCapacity <= 0 && entries.length === 0) {
         return;
       }
-      const { mesh, tintAttribute } = buildInstancedMesh(entries, type);
-      typeData.set(type, { entries, mesh, tintAttribute });
+      const { mesh, tintAttribute } = buildInstancedMesh(entries, type, {
+        capacity: Math.max(1, effectiveCapacity),
+      });
+      mesh.count = entries.length;
+      mesh.instanceMatrix.needsUpdate = entries.length > 0;
+      if (tintAttribute) {
+        tintAttribute.needsUpdate = entries.length > 0;
+      }
+      typeData.set(type, {
+        entries,
+        mesh,
+        tintAttribute,
+        capacity: Math.max(1, effectiveCapacity),
+      });
       targetGroup.add(mesh);
     });
   };
@@ -1178,6 +1336,190 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       });
     }
   }
+
+  const parseBlockKey = (key) => {
+    if (!key || typeof key !== 'string') {
+      return null;
+    }
+    const parts = key.split('|');
+    if (parts.length !== 3) {
+      return null;
+    }
+    const x = Number.parseInt(parts[0], 10);
+    const y = Number.parseInt(parts[1], 10);
+    const z = Number.parseInt(parts[2], 10);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      return null;
+    }
+    return { x, y, z };
+  };
+
+  const pendingValues = Array.from(pendingEntries.values());
+  let occupancyMinY = Number.POSITIVE_INFINITY;
+  let occupancyMaxY = Number.NEGATIVE_INFINITY;
+
+  const registerHeightBounds = (value) => {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    occupancyMinY = Math.min(occupancyMinY, value);
+    occupancyMaxY = Math.max(occupancyMaxY, value);
+  };
+
+  pendingValues.forEach((entry) => {
+    if (!entry?.position) {
+      return;
+    }
+    registerHeightBounds(Math.round(entry.position.y));
+  });
+
+  fluidBlockKeys.forEach((key) => {
+    const coords = parseBlockKey(key);
+    if (!coords) {
+      return;
+    }
+    registerHeightBounds(coords.y);
+  });
+
+  if (occupancyMinY === Number.POSITIVE_INFINITY) {
+    occupancyMinY = Math.floor(waterLevel ?? 0);
+    occupancyMaxY = occupancyMinY;
+  }
+
+  const occupancyWidth = chunkSize;
+  const occupancyDepth = chunkSize;
+  const occupancyHeight = Math.max(1, occupancyMaxY - occupancyMinY + 1);
+  const occupancyArea = occupancyWidth * occupancyDepth;
+  const occupancyData = new Array(occupancyArea * occupancyHeight).fill(null);
+  const fluidOccupancy = new Uint8Array(occupancyArea * occupancyHeight);
+
+  const toIndex = (lx, ly, lz) => ly * occupancyArea + lz * occupancyWidth + lx;
+
+  const assignLocalGridPosition = (entry) => {
+    if (!entry?.position) {
+      entry.gridPosition = null;
+      return null;
+    }
+    const lx = Math.round(entry.position.x - minX);
+    const lz = Math.round(entry.position.z - minZ);
+    const ly = Math.round(entry.position.y) - occupancyMinY;
+    if (
+      lx < 0 ||
+      lx >= occupancyWidth ||
+      lz < 0 ||
+      lz >= occupancyDepth ||
+      ly < 0 ||
+      ly >= occupancyHeight
+    ) {
+      entry.gridPosition = null;
+      return null;
+    }
+    const local = { x: lx, y: ly, z: lz };
+    entry.gridPosition = local;
+    return local;
+  };
+
+  pendingValues.forEach((entry) => {
+    const local = assignLocalGridPosition(entry);
+    if (!local) {
+      return;
+    }
+    const index = toIndex(local.x, local.y, local.z);
+    occupancyData[index] = entry;
+  });
+
+  fluidBlockKeys.forEach((key) => {
+    const coords = parseBlockKey(key);
+    if (!coords) {
+      return;
+    }
+    const lx = Math.round(coords.x - minX);
+    const lz = Math.round(coords.z - minZ);
+    const ly = Math.round(coords.y) - occupancyMinY;
+    if (
+      lx < 0 ||
+      lx >= occupancyWidth ||
+      lz < 0 ||
+      lz >= occupancyDepth ||
+      ly < 0 ||
+      ly >= occupancyHeight
+    ) {
+      return;
+    }
+    const index = toIndex(lx, ly, lz);
+    fluidOccupancy[index] = 1;
+  });
+
+  const meshingMode = getMeshingDebugMode();
+  const legacyMeshing = meshingMode === 'legacy';
+
+  const neighborOffsets3D = [
+    { dx: 1, dy: 0, dz: 0 },
+    { dx: -1, dy: 0, dz: 0 },
+    { dx: 0, dy: 1, dz: 0 },
+    { dx: 0, dy: -1, dz: 0 },
+    { dx: 0, dy: 0, dz: 1 },
+    { dx: 0, dy: 0, dz: -1 },
+  ];
+
+  pendingEntries.forEach((entry) => {
+    if (!entry) {
+      return;
+    }
+    const local = entry.gridPosition;
+    let exposed = legacyMeshing;
+    if (!local) {
+      exposed = true;
+    }
+    if (!exposed && local) {
+      for (let i = 0; i < neighborOffsets3D.length; i += 1) {
+        const offset = neighborOffsets3D[i];
+        const nx = local.x + offset.dx;
+        const ny = local.y + offset.dy;
+        const nz = local.z + offset.dz;
+        if (
+          nx < 0 ||
+          nx >= occupancyWidth ||
+          nz < 0 ||
+          nz >= occupancyDepth ||
+          ny < 0 ||
+          ny >= occupancyHeight
+        ) {
+          exposed = true;
+          break;
+        }
+        const neighborIndex = toIndex(nx, ny, nz);
+        const neighborEntry = occupancyData[neighborIndex];
+        if (!neighborEntry) {
+          if (fluidOccupancy[neighborIndex] === 1) {
+            exposed = true;
+            break;
+          }
+          exposed = true;
+          break;
+        }
+        if (neighborEntry === entry) {
+          continue;
+        }
+        if (neighborEntry.collisionMode !== 'solid') {
+          exposed = true;
+          break;
+        }
+      }
+    }
+
+    if (exposed) {
+      if (!instancedData.has(entry.type)) {
+        instancedData.set(entry.type, []);
+      }
+      instancedData.get(entry.type).push(entry);
+    } else {
+      entry.index = -1;
+      entry.mesh = null;
+      entry.tintAttribute = null;
+    }
+    entry.isVisible = exposed;
+  });
 
   const neighborOffsets = [
     { key: 'px', dx: 1, dz: 0 },
@@ -1462,7 +1804,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   }
 
   const group = new THREE.Group();
-  addMeshesFromMap(group, instancedData);
+  addMeshesFromMap(group);
   decorationInstancedData.forEach((entries, type) => {
     addDecorationMesh(group, type, entries);
   });
@@ -1496,10 +1838,12 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     group,
     solidBlockKeys,
     softBlockKeys,
+    typeCapacities,
     waterColumns: waterColumnMetadata,
     fluidColumnsByType,
     fluidSurfaces,
     blockLookup,
+    fluidBlockKeys,
     typeData,
     decorationData,
     decorationGroups,
