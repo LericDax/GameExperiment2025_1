@@ -5,6 +5,7 @@ import {
   getWorldOptions,
   buildInstancedBlockMesh,
   makeBlockKey,
+  isBlockOccluding,
 } from './generation.js';
 import {
   createFluidSurface,
@@ -195,17 +196,6 @@ export function createChunkManager({
   const chunkCullMatrix = new THREE.Matrix4();
   const chunkCullPadding = 1.5;
   let lastCamera = null;
-
-  function isOccludingSolid(entry) {
-    if (!entry || entry.collisionMode !== 'solid') {
-      return false;
-    }
-    const material = blockMaterials?.[entry.type];
-    if (material && material.transparent) {
-      return false;
-    }
-    return true;
-  }
 
   function parseColumnCoordinates(columnKey) {
     if (typeof columnKey !== 'string') {
@@ -824,14 +814,14 @@ export function createChunkManager({
       );
       const neighborEntry = chunk.blockLookup?.get(neighborKey);
       if (neighborEntry && neighborEntry !== entry) {
-        if (isOccludingSolid(neighborEntry)) {
+        if (isBlockOccluding(neighborEntry, blockMaterials)) {
           continue;
         }
       }
       if (chunk.fluidBlockKeys?.has(neighborKey)) {
         return true;
       }
-      if (!neighborEntry || !isOccludingSolid(neighborEntry)) {
+      if (!neighborEntry || !isBlockOccluding(neighborEntry, blockMaterials)) {
         return true;
       }
     }
