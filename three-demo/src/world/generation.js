@@ -598,7 +598,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
     updateBoundsFromVisual(visualPosition, visualScaleVector);
 
-    const coordinateKey = blockKey(x, y, z);
+    const coordinateKey = makeBlockKey(x, y, z);
     const key = options.key ?? coordinateKey;
 
     const paletteColor = engine.getBlockColor(biome, type);
