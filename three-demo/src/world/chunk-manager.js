@@ -484,8 +484,161 @@ export function createChunkManager({
     return record;
   }
 
+  function ensureDecorationStore(chunk) {
+    if (!chunk) {
+      return null;
+    }
+    if (chunk.decorationData instanceof Map) {
+      return chunk.decorationData;
+    }
+    if (chunk.decorationData && typeof chunk.decorationData === 'object') {
+      const map = new Map();
+      Object.entries(chunk.decorationData).forEach(([key, value]) => {
+        map.set(key, value);
+      });
+      chunk.decorationData = map;
+      return map;
+    }
+    return null;
+  }
+
+  function getDecorationRecord(chunk, type) {
+    if (!chunk || !type) {
+      return null;
+    }
+    const store = ensureDecorationStore(chunk);
+    if (!store) {
+      return null;
+    }
+    const record = store.get(type);
+    if (!record || !Array.isArray(record.entries) || !record.mesh?.isInstancedMesh) {
+      return null;
+    }
+    return record;
+  }
+
+  function resolveDecorationGroup(chunk, entry) {
+    if (!chunk || !entry) {
+      return null;
+    }
+    if (!(chunk.decorationGroups instanceof Map)) {
+      return entry.decorationGroup ?? null;
+    }
+    const candidates = [];
+    if (entry.decorationGroup?.key) {
+      candidates.push(entry.decorationGroup.key);
+    }
+    if (typeof entry.decorationGroupKey === 'string') {
+      candidates.push(entry.decorationGroupKey);
+    }
+    if (entry.key) {
+      candidates.push(entry.key);
+    }
+    for (let i = 0; i < candidates.length; i += 1) {
+      const key = candidates[i];
+      if (!key || !chunk.decorationGroups.has(key)) {
+        continue;
+      }
+      const group = chunk.decorationGroups.get(key);
+      if (group) {
+        entry.decorationGroup = group;
+        entry.decorationGroupKey = group.key ?? key;
+        if (!Array.isArray(group.instanceIndices)) {
+          group.instanceIndices = Array.isArray(group.instanceIndices)
+            ? group.instanceIndices.filter((value) => Number.isInteger(value))
+            : [];
+        }
+        if (!Array.isArray(group.hiddenEntries)) {
+          group.hiddenEntries = [];
+        }
+        return group;
+      }
+    }
+    if (entry.decorationGroup) {
+      if (!Array.isArray(entry.decorationGroup.instanceIndices)) {
+        entry.decorationGroup.instanceIndices = [];
+      }
+      if (!Array.isArray(entry.decorationGroup.hiddenEntries)) {
+        entry.decorationGroup.hiddenEntries = [];
+      }
+    }
+    return entry.decorationGroup ?? null;
+  }
+
+  function getDecorationGroupsForType(chunk, type) {
+    if (!chunk || !type) {
+      return [];
+    }
+    if (chunk.decorationTypeIndex instanceof Map && chunk.decorationTypeIndex.has(type)) {
+      return Array.from(chunk.decorationTypeIndex.get(type)).filter(Boolean);
+    }
+    if (chunk.decorationGroups instanceof Map) {
+      return Array.from(chunk.decorationGroups.values()).filter(
+        (group) => group && group.type === type,
+      );
+    }
+    return [];
+  }
+
+  function ensureGroupHasHiddenList(group) {
+    if (!group) {
+      return null;
+    }
+    if (!Array.isArray(group.hiddenEntries)) {
+      group.hiddenEntries = [];
+    }
+    return group.hiddenEntries;
+  }
+
   function addEntryToChunkMesh(chunk, entry) {
-    if (!chunk || !entry || entry.isDecoration) {
+    if (!chunk || !entry) {
+      return;
+    }
+    if (entry.isDecoration) {
+      const record = getDecorationRecord(chunk, entry.type);
+      if (!record) {
+        return;
+      }
+      const { entries, mesh, tintAttribute } = record;
+      if (Number.isInteger(entry.index) && entry.index >= 0) {
+        entry.isHidden = false;
+        return;
+      }
+      const capacity = Number.isInteger(mesh.instanceMatrix?.count)
+        ? mesh.instanceMatrix.count
+        : mesh.count ?? entries.length;
+      if (entries.length >= capacity) {
+        return;
+      }
+      const index = entries.length;
+      entries.push(entry);
+      entry.index = index;
+      mesh.setMatrixAt(index, entry.matrix);
+      mesh.count = entries.length;
+      mesh.instanceMatrix.needsUpdate = true;
+      const tint = entry.tintColor ?? mesh.userData?.defaultTint;
+      if (tintAttribute && tint) {
+        const offset = index * 3;
+        tintAttribute.array[offset] = tint.r;
+        tintAttribute.array[offset + 1] = tint.g;
+        tintAttribute.array[offset + 2] = tint.b;
+        tintAttribute.needsUpdate = true;
+      }
+      entry.mesh = mesh;
+      entry.tintAttribute = tintAttribute;
+      entry.isHidden = false;
+      const group = resolveDecorationGroup(chunk, entry);
+      if (group && Array.isArray(group.instanceIndices)) {
+        if (!group.instanceIndices.includes(index)) {
+          group.instanceIndices.push(index);
+          group.instanceIndices.sort((a, b) => a - b);
+        }
+        const hiddenList = ensureGroupHasHiddenList(group);
+        const hiddenIndex = hiddenList.indexOf(entry);
+        if (hiddenIndex >= 0) {
+          hiddenList.splice(hiddenIndex, 1);
+        }
+      }
       return;
     }
     const record = ensureTypeRecord(chunk, entry.type);
@@ -518,11 +671,100 @@ export function createChunkManager({
     entry.tintAttribute = tintAttribute;
   }
 
-  function removeEntryFromChunkMesh(chunk, entry) {
+  function removeEntryFromChunkMesh(chunk, entry, { preserveMetadata = false } = {}) {
     if (!chunk || !entry || !chunk.typeData) {
       entry.index = -1;
       entry.mesh = null;
       entry.tintAttribute = null;
+      return;
+    }
+    if (entry.isDecoration) {
+      const record = getDecorationRecord(chunk, entry.type);
+      if (!record) {
+        entry.index = -1;
+        entry.mesh = null;
+        entry.tintAttribute = null;
+        if (!preserveMetadata) {
+          entry.isHidden = false;
+        }
+        return;
+      }
+      const { entries, mesh, tintAttribute } = record;
+      const index = entry.index;
+      const entryGroup = resolveDecorationGroup(chunk, entry);
+      if (!Number.isInteger(index) || index < 0 || index >= entries.length) {
+        entry.index = -1;
+        entry.mesh = null;
+        entry.tintAttribute = null;
+        if (!preserveMetadata) {
+          entry.isHidden = false;
+          if (entryGroup) {
+            const hiddenList = ensureGroupHasHiddenList(entryGroup);
+            const hiddenIndex = hiddenList.indexOf(entry);
+            if (hiddenIndex >= 0) {
+              hiddenList.splice(hiddenIndex, 1);
+            }
+          }
+        }
+        return;
+      }
+      const lastIndex = entries.length - 1;
+      const swapped = entries[lastIndex];
+      if (index !== lastIndex) {
+        entries[index] = swapped;
+        mesh.setMatrixAt(index, swapped.matrix);
+        const tint = swapped.tintColor ?? mesh.userData?.defaultTint;
+        if (tintAttribute && tint) {
+          const offset = index * 3;
+          tintAttribute.array[offset] = tint.r;
+          tintAttribute.array[offset + 1] = tint.g;
+          tintAttribute.array[offset + 2] = tint.b;
+        }
+        swapped.index = index;
+      }
+      entries.pop();
+      mesh.count = entries.length;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (tintAttribute) {
+        tintAttribute.needsUpdate = true;
+      }
+      const typeGroups = getDecorationGroupsForType(chunk, entry.type);
+      typeGroups.forEach((group) => {
+        if (!group || !Array.isArray(group.instanceIndices)) {
+          return;
+        }
+        for (let i = group.instanceIndices.length - 1; i >= 0; i -= 1) {
+          const value = group.instanceIndices[i];
+          if (value === index) {
+            group.instanceIndices.splice(i, 1);
+          } else if (value === lastIndex && index !== lastIndex) {
+            group.instanceIndices[i] = index;
+          }
+        }
+        if (!preserveMetadata && Array.isArray(group.hiddenEntries)) {
+          const hiddenIndex = group.hiddenEntries.indexOf(entry);
+          if (hiddenIndex >= 0) {
+            group.hiddenEntries.splice(hiddenIndex, 1);
+          }
+        }
+      });
+      if (entryGroup) {
+        const hiddenList = ensureGroupHasHiddenList(entryGroup);
+        if (preserveMetadata) {
+          if (!hiddenList.includes(entry)) {
+            hiddenList.push(entry);
+          }
+        } else {
+          const hiddenIndex = hiddenList.indexOf(entry);
+          if (hiddenIndex >= 0) {
+            hiddenList.splice(hiddenIndex, 1);
+          }
+        }
+      }
+      entry.index = -1;
+      entry.mesh = null;
+      entry.tintAttribute = null;
+      entry.isHidden = preserveMetadata;
       return;
     }
     const record = chunk.typeData.get(entry.type);
@@ -563,6 +805,7 @@ export function createChunkManager({
     entry.index = -1;
     entry.mesh = null;
     entry.tintAttribute = null;
+    entry.isHidden = false;
   }
 
   function computeBlockVisibility(chunk, entry) {
@@ -622,7 +865,7 @@ export function createChunkManager({
     });
     targets.forEach((pos, key) => {
       const entry = chunk.blockLookup.get(key);
-      if (!entry || entry.isDecoration) {
+      if (!entry) {
         return;
       }
       const shouldBeVisible = computeBlockVisibility(chunk, entry);
@@ -630,7 +873,7 @@ export function createChunkManager({
       if (shouldBeVisible && !currentlyVisible) {
         addEntryToChunkMesh(chunk, entry);
       } else if (!shouldBeVisible && currentlyVisible) {
-        removeEntryFromChunkMesh(chunk, entry);
+        removeEntryFromChunkMesh(chunk, entry, { preserveMetadata: entry.isDecoration });
       }
     });
   }
@@ -1497,7 +1740,6 @@ export function createChunkManager({
 
     let mesh = decorationRecord?.mesh ?? null;
     const entries = decorationRecord?.entries ?? null;
-    let tintAttribute = decorationRecord?.tintAttribute ?? null;
 
     if (!mesh && Array.isArray(groups)) {
       for (let i = 0; i < groups.length; i += 1) {
@@ -1507,7 +1749,6 @@ export function createChunkManager({
         }
         if (metadata.mesh?.isInstancedMesh) {
           mesh = metadata.mesh;
-          tintAttribute = metadata.tintAttribute ?? mesh.userData?.biomeTintAttribute ?? null;
           break;
         }
       }
@@ -1551,13 +1792,17 @@ export function createChunkManager({
 
     const validGroups = [];
     const removalIndicesSet = new Set();
+    const hiddenRemovalEntries = new Set();
     const summaries = [];
 
     uniqueGroups.forEach((group) => {
       const sanitized = Array.from(new Set(group.instanceIndices || []))
         .filter((index) => Number.isInteger(index) && index >= 0 && index < entries.length)
         .sort((a, b) => a - b);
-      if (sanitized.length === 0) {
+      const hiddenEntries = Array.isArray(group.hiddenEntries)
+        ? group.hiddenEntries.filter(Boolean)
+        : [];
+      if (sanitized.length === 0 && hiddenEntries.length === 0) {
         unregisterDecorationGroup(group);
         summaries.push({
           chunk,
@@ -1569,8 +1814,13 @@ export function createChunkManager({
         });
         return;
       }
-      validGroups.push({ group, indices: sanitized });
+      validGroups.push({ group, indices: sanitized, hiddenEntries });
       sanitized.forEach((index) => removalIndicesSet.add(index));
+      hiddenEntries.forEach((entry) => {
+        if (entry) {
+          hiddenRemovalEntries.add(entry);
+        }
+      });
     });
 
     if (validGroups.length === 0) {
@@ -1578,12 +1828,11 @@ export function createChunkManager({
     }
 
     const indicesToRemove = Array.from(removalIndicesSet).sort((a, b) => a - b);
-    if (indicesToRemove.length === 0) {
+    if (indicesToRemove.length === 0 && hiddenRemovalEntries.size === 0) {
       validGroups.forEach(({ group }) => unregisterDecorationGroup(group));
       return summaries;
     }
 
-    const removalSet = new Set(indicesToRemove);
     const removalGroupsSet = new Set(validGroups.map(({ group }) => group));
     const peers = chunk.decorationTypeIndex?.get(type)
       ? Array.from(chunk.decorationTypeIndex.get(type)).filter(
@@ -1593,17 +1842,62 @@ export function createChunkManager({
           (metadata) => !removalGroupsSet.has(metadata) && metadata.type === type,
         );
 
-    const removedEntries = [];
-    for (let i = indicesToRemove.length - 1; i >= 0; i -= 1) {
-      const index = indicesToRemove[i];
-      if (index < 0 || index >= entries.length) {
-        continue;
-      }
-      const [removedEntry] = entries.splice(index, 1);
-      if (removedEntry) {
-        removedEntries.push({ entry: removedEntry, index });
-      }
+    const targetEntries = indicesToRemove
+      .map((index) => ({ index, entry: entries[index] }))
+      .filter(({ entry }) => Boolean(entry));
+
+    if (targetEntries.length === 0 && hiddenRemovalEntries.size === 0) {
+      validGroups.forEach(({ group }) => unregisterDecorationGroup(group));
+      return summaries;
     }
+
+    const removedEntries = [];
+    const removedEntryObjects = new Set();
+    const visibilityPositions = [];
+
+    targetEntries
+      .sort((a, b) => b.index - a.index)
+      .forEach(({ entry, index }) => {
+        if (!entry) {
+          return;
+        }
+        removeEntryFromChunkMesh(chunk, entry);
+        removedEntries.push({ entry, index });
+        removedEntryObjects.add(entry);
+        if (entry.position) {
+          visibilityPositions.push({
+            x: Math.round(entry.position.x),
+            y: Math.round(entry.position.y),
+            z: Math.round(entry.position.z),
+          });
+        } else if (entry.coordinateKey) {
+          const coords = parseBlockCoordinateKey(entry.coordinateKey);
+          if (coords) {
+            visibilityPositions.push(coords);
+          }
+        }
+      });
+
+    hiddenRemovalEntries.forEach((entry) => {
+      if (!entry || removedEntryObjects.has(entry)) {
+        return;
+      }
+      removeEntryFromChunkMesh(chunk, entry);
+      removedEntries.push({ entry, index: Number.isInteger(entry.index) ? entry.index : -1 });
+      removedEntryObjects.add(entry);
+      if (entry.position) {
+        visibilityPositions.push({
+          x: Math.round(entry.position.x),
+          y: Math.round(entry.position.y),
+          z: Math.round(entry.position.z),
+        });
+      } else if (entry.coordinateKey) {
+        const coords = parseBlockCoordinateKey(entry.coordinateKey);
+        if (coords) {
+          visibilityPositions.push(coords);
+        }
+      }
+    });
 
     if (removedEntries.length === 0) {
       validGroups.forEach(({ group }) => unregisterDecorationGroup(group));
@@ -1619,54 +1913,7 @@ export function createChunkManager({
         chunk.blockLookup.delete(entry.coordinateKey);
       }
     });
-
-    const adjustIndex = (index) => {
-      let offset = 0;
-      for (let i = 0; i < indicesToRemove.length; i += 1) {
-        if (indicesToRemove[i] < index) {
-          offset += 1;
-        } else {
-          break;
-        }
-      }
-      return index - offset;
-    };
-
-    peers.forEach((metadata) => {
-      if (!Array.isArray(metadata.instanceIndices)) {
-        return;
-      }
-      const updated = [];
-      metadata.instanceIndices.forEach((instanceIndex) => {
-        if (removalSet.has(instanceIndex)) {
-          return;
-        }
-        updated.push(adjustIndex(instanceIndex));
-      });
-      metadata.instanceIndices = updated;
-    });
-
     const firstAffectedIndex = indicesToRemove[0] ?? 0;
-    for (let index = firstAffectedIndex; index < entries.length; index += 1) {
-      const entry = entries[index];
-      mesh.setMatrixAt(index, entry.matrix);
-      entry.index = index;
-      if (tintAttribute) {
-        const tint = entry.tintColor ?? mesh.userData?.defaultTint;
-        if (tint) {
-          const offset = index * 3;
-          tintAttribute.array[offset] = tint.r;
-          tintAttribute.array[offset + 1] = tint.g;
-          tintAttribute.array[offset + 2] = tint.b;
-        }
-      }
-    }
-    mesh.count = entries.length;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (tintAttribute) {
-      tintAttribute.needsUpdate = true;
-    }
-
     const peersProcessed = peers.length;
     const remainingCount = entries.length;
 
@@ -1676,8 +1923,12 @@ export function createChunkManager({
     });
 
     const removalLookup = new Set(removedEntries.map(({ index }) => index));
-    validGroups.forEach(({ group, indices }) => {
-      const removedCount = indices.filter((index) => removalLookup.has(index)).length;
+    validGroups.forEach(({ group, indices, hiddenEntries }) => {
+      const hiddenRemovedCount = Array.isArray(hiddenEntries)
+        ? hiddenEntries.filter(Boolean).length
+        : 0;
+      const removedCount =
+        indices.filter((index) => removalLookup.has(index)).length + hiddenRemovedCount;
       summaries.push({
         chunk,
         groupKey: group.key ?? null,
@@ -1687,6 +1938,38 @@ export function createChunkManager({
         remainingCount,
       });
     });
+
+    if (visibilityPositions.length > 0) {
+      const chunkVisibilityBuckets = new Map();
+      visibilityPositions.forEach((pos) => {
+        if (!pos) {
+          return;
+        }
+        const chunkX = worldToChunk(pos.x);
+        const chunkZ = worldToChunk(pos.z);
+        if (!Number.isFinite(chunkX) || !Number.isFinite(chunkZ)) {
+          return;
+        }
+        const key = chunkKey(chunkX, chunkZ);
+        let bucket = chunkVisibilityBuckets.get(key);
+        if (!bucket) {
+          const targetChunk =
+            chunk && chunk.chunkX === chunkX && chunk.chunkZ === chunkZ
+              ? chunk
+              : loadedChunks.get(key);
+          if (!targetChunk) {
+            return;
+          }
+          bucket = { chunk: targetChunk, positions: [] };
+          chunkVisibilityBuckets.set(key, bucket);
+        }
+        bucket.positions.push(pos);
+      });
+
+      chunkVisibilityBuckets.forEach(({ chunk: targetChunk, positions }) => {
+        refreshBlockVisibility(targetChunk, positions);
+      });
+    }
 
     if (
       isDevBuild &&
