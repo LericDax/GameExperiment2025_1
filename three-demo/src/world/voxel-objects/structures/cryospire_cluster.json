@@ -4,7 +4,7 @@
   "category": "structures",
   "author": "system",
   "description": "Conjoined cryoshard spires crusted with frostbloom moss.",
-  "collision": "solid",
+  "collision": "soft",
   "voxelScale": 0.42,
   "attachment": {
     "groundOffset": 0.18
@@ -31,6 +31,7 @@
       "position": [0, 0, 0],
       "size": [0.9, 3.6, 0.9],
       "tint": "#c9f5ff",
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": {
@@ -52,6 +53,7 @@
       "position": [-0.9, 0.2, 0.6],
       "size": [0.7, 2.8, 0.7],
       "tint": "#bdefff",
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": {
@@ -73,6 +75,7 @@
       "position": [0.8, -0.1, -0.8],
       "size": [0.8, 2.3, 0.8],
       "tint": "#b7ebff",
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": {

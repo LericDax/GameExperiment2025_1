@@ -27,6 +27,7 @@
       "position": [0, 0, 0],
       "size": [0.8, 0.8, 0.8],
       "tint": "#ffccff",
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": {

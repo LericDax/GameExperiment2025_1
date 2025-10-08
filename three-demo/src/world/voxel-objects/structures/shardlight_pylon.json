@@ -4,7 +4,7 @@
   "category": "structures",
   "author": "system",
   "description": "Suspended cryoshard pylon channeling auroral current lines.",
-  "collision": "solid",
+  "collision": "soft",
   "voxelScale": 0.38,
   "attachment": {
     "groundOffset": 0.18
@@ -25,14 +25,15 @@
       "type": "stone",
       "position": [0, -0.22, 0],
       "size": [1.8, 0.6, 1.8],
-      "tint": "#c6d7e5"
+      "tint": "#c6d7e5",
+      "collision": "solid"
     },
     {
       "type": "cryoshard_glass",
       "position": [0, 0.46, 0],
       "size": [1.1, 0.6, 1.1],
       "tint": "#ffe2ff",
-      "isSolid": false,
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": [
@@ -56,6 +57,7 @@
       "position": [0, 0.9, 0],
       "size": [0.9, 3.1, 0.9],
       "tint": "#ffc7ff",
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": [
@@ -90,7 +92,7 @@
       "position": [0, 3.4, 0],
       "size": [1.4, 0.5, 1.4],
       "tint": "#ffeaff",
-      "isSolid": false,
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": [

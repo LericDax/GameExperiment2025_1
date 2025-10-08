@@ -55,6 +55,7 @@
       "position": [0, 0.5, 0],
       "size": [0.5, 1.1, 0.5],
       "tint": "#c3f4ff",
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": {
