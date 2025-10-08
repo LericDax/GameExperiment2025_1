@@ -21,7 +21,9 @@ import {
 import { resolveBiomeTintMultiplier } from './color-utils.js';
 import { worldOptions, applyWorldOptions } from './world-settings.js';
 import { configureSectorObjectPlanner } from './sector-object-planner.js';
+import { isBlockOccluding } from './block-occlusion.js';
 export { worldOptions, getWorldOptions } from './world-settings.js';
+export { isBlockOccluding } from './block-occlusion.js';
 
 const MESHING_MODE_STORAGE_KEY = 'voxelMeshingMode';
 
@@ -1462,17 +1464,6 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     { dx: 0, dy: 0, dz: -1 },
   ];
 
-  const isOccludingSolid = (entry) => {
-    if (!entry || entry.collisionMode !== 'solid') {
-      return false;
-    }
-    const material = blockMaterials?.[entry.type];
-    if (material && material.transparent) {
-      return false;
-    }
-    return true;
-  };
-
   const isFluidColumnExposed = (column) => {
     if (!column) {
       return false;
@@ -1553,7 +1544,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
           }
           return true;
         }
-        if (!isOccludingSolid(neighborEntry)) {
+        if (!isBlockOccluding(neighborEntry, blockMaterials)) {
           return true;
         }
       }
@@ -1601,7 +1592,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         if (neighborEntry === entry) {
           continue;
         }
-        if (!isOccludingSolid(neighborEntry)) {
+        if (!isBlockOccluding(neighborEntry, blockMaterials)) {
           exposed = true;
           break;
         }
