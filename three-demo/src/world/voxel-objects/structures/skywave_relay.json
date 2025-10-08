@@ -4,7 +4,7 @@
   "category": "structures",
   "author": "system",
   "description": "Cantilevered relay lattice suspending cryoshards for aurora relays.",
-  "collision": "solid",
+  "collision": "soft",
   "voxelScale": 0.36,
   "attachment": {
     "groundOffset": 0.2
@@ -25,13 +25,15 @@
       "type": "stone",
       "position": [0, -0.16, 0],
       "size": [2.2, 0.6, 2.2],
-      "tint": "#cad8e4"
+      "tint": "#cad8e4",
+      "collision": "solid"
     },
     {
       "type": "cryoshard_glass",
       "position": [0, 0.5, 0],
       "size": [0.9, 2.6, 0.9],
       "tint": "#ffd7ff",
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": [
@@ -55,7 +57,7 @@
       "position": [1.2, 2.1, 0],
       "size": [1.4, 0.5, 3.2],
       "tint": "#ffe4ff",
-      "isSolid": false,
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": [
@@ -79,7 +81,7 @@
       "position": [-1.2, 2.1, 0],
       "size": [1.4, 0.5, 3.2],
       "tint": "#ffdfff",
-      "isSolid": false,
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": [
@@ -103,7 +105,7 @@
       "position": [0, 2.4, 1.4],
       "size": [2.8, 0.4, 1.2],
       "tint": "#ffcfff",
-      "isSolid": false,
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": {

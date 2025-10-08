@@ -1,3 +1,5 @@
+import { clearVoxelObjectPrototypeCache } from './voxel-object-prototypes.js';
+
 const voxelObjectModules = import.meta.glob('./voxel-objects/**/*.json', {
   eager: true,
 });
@@ -287,6 +289,8 @@ function normalizeDefinition(path, raw) {
 
 const voxelObjectLibrary = new Map();
 const voxelObjectsByCategory = new Map();
+
+clearVoxelObjectPrototypeCache();
 
 Object.entries(voxelObjectModules).forEach(([path, module]) => {
   const definition = normalizeDefinition(path, module);

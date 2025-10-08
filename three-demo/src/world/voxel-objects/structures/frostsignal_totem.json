@@ -4,7 +4,7 @@
   "category": "structures",
   "author": "system",
   "description": "Signal totem carved from permafrost and ringing with cryoshard chimes.",
-  "collision": "solid",
+  "collision": "soft",
   "voxelScale": 0.36,
   "attachment": {
     "groundOffset": 0.16
@@ -31,13 +31,15 @@
       "type": "stone",
       "position": [0, 0, 0],
       "size": [0.9, 1.2, 0.9],
-      "tint": "#aac2cf"
+      "tint": "#aac2cf",
+      "collision": "solid"
     },
     {
       "type": "cryoshard_glass",
       "position": [0, 1.2, 0],
       "size": [0.7, 2.4, 0.7],
       "tint": "#c7f2ff",
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": [
@@ -72,7 +74,7 @@
       "position": [0, 2.9, 0],
       "size": [1.2, 0.4, 1.2],
       "tint": "#dcf7ff",
-      "isSolid": false,
+      "collision": "soft",
       "metadata": {
         "visual": {
           "nanovoxels": {
