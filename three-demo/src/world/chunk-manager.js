@@ -196,6 +196,17 @@ export function createChunkManager({
   const chunkCullPadding = 1.5;
   let lastCamera = null;
 
+  function isOccludingSolid(entry) {
+    if (!entry || entry.collisionMode !== 'solid') {
+      return false;
+    }
+    const material = blockMaterials?.[entry.type];
+    if (material && material.transparent) {
+      return false;
+    }
+    return true;
+  }
+
   function parseColumnCoordinates(columnKey) {
     if (typeof columnKey !== 'string') {
       return null;
@@ -570,14 +581,14 @@ export function createChunkManager({
       );
       const neighborEntry = chunk.blockLookup?.get(neighborKey);
       if (neighborEntry && neighborEntry !== entry) {
-        if (neighborEntry.collisionMode === 'solid') {
+        if (isOccludingSolid(neighborEntry)) {
           continue;
         }
       }
       if (chunk.fluidBlockKeys?.has(neighborKey)) {
         return true;
       }
-      if (!neighborEntry || neighborEntry.collisionMode !== 'solid') {
+      if (!neighborEntry || !isOccludingSolid(neighborEntry)) {
         return true;
       }
     }
