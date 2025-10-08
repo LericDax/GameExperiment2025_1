@@ -1462,6 +1462,95 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     { dx: 0, dy: 0, dz: -1 },
   ];
 
+  const isFluidColumnExposed = (column) => {
+    if (!column) {
+      return false;
+    }
+
+    const localX = Math.round(column.x - minX);
+    const localZ = Math.round(column.z - minZ);
+    if (
+      localX < 0 ||
+      localX >= occupancyWidth ||
+      localZ < 0 ||
+      localZ >= occupancyDepth
+    ) {
+      return true;
+    }
+
+    const resolvedMin = Number.isFinite(column.minY)
+      ? column.minY
+      : Number.isFinite(column.bottomY)
+      ? column.bottomY
+      : null;
+    const resolvedMax = Number.isFinite(column.maxY)
+      ? column.maxY
+      : Number.isFinite(column.surfaceY)
+      ? column.surfaceY
+      : null;
+
+    if (!Number.isFinite(resolvedMin) || !Number.isFinite(resolvedMax)) {
+      return true;
+    }
+
+    const minBoundary = Math.min(resolvedMin, resolvedMax);
+    const maxBoundary = Math.max(resolvedMin, resolvedMax);
+    const minBlockY = Math.floor(minBoundary + 0.5);
+    const maxBlockY = Math.ceil(maxBoundary - 0.5);
+    const startBlockY = Math.min(minBlockY, maxBlockY);
+    const endBlockY = Math.max(minBlockY, maxBlockY);
+
+    const startLocalY = startBlockY - occupancyMinY;
+    const endLocalY = endBlockY - occupancyMinY;
+
+    for (let localY = startLocalY; localY <= endLocalY; localY += 1) {
+      if (localY < 0 || localY >= occupancyHeight) {
+        return true;
+      }
+
+      for (let i = 0; i < neighborOffsets3D.length; i += 1) {
+        const offset = neighborOffsets3D[i];
+        const neighborX = localX + offset.dx;
+        const neighborY = localY + offset.dy;
+        const neighborZ = localZ + offset.dz;
+
+        if (
+          neighborX < 0 ||
+          neighborX >= occupancyWidth ||
+          neighborZ < 0 ||
+          neighborZ >= occupancyDepth ||
+          neighborY < 0 ||
+          neighborY >= occupancyHeight
+        ) {
+          return true;
+        }
+
+        if (
+          neighborX === localX &&
+          neighborZ === localZ &&
+          neighborY >= startLocalY &&
+          neighborY <= endLocalY
+        ) {
+          continue;
+        }
+
+        const neighborIndex = toIndex(neighborX, neighborY, neighborZ);
+        const neighborEntry = occupancyData[neighborIndex];
+        if (!neighborEntry) {
+          if (fluidOccupancy[neighborIndex] === 1) {
+            return true;
+          }
+          return true;
+        }
+        if (neighborEntry.collisionMode !== 'solid') {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
   pendingEntries.forEach((entry) => {
     if (!entry) {
       return;
@@ -1553,6 +1642,10 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       }
       const baseDepth = Math.max(0.05, column.surfaceY - column.bottomY);
       column.depth = baseDepth;
+      column.isExposed = isFluidColumnExposed(column);
+      if (!column.isExposed) {
+        return;
+      }
       if (type === 'lumen_bloom') {
         const averageAuroraIntensity =
           column.auroraIntensitySamples > 0
@@ -1614,6 +1707,9 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
 
     if (type === 'water') {
       columns.forEach((column) => {
+        if (!column.isExposed) {
+          return;
+        }
         const metadata = waterColumnMetadata.get(column.key);
         const bottomY = Number.isFinite(column.bottomY)
           ? column.bottomY
@@ -1640,6 +1736,9 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     }
 
     columns.forEach((column) => {
+      if (!column.isExposed) {
+        return;
+      }
       const neighbors = {};
       let foamExposure = 0;
       const centerSurface = column.surfaceY;
@@ -1723,7 +1822,15 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       column.shoreline = shoreline;
     });
 
-    const columnValues = Array.from(columns.values());
+    const columnValues = Array.from(columns.values()).filter(
+      (column) => column?.isExposed,
+    );
+    if (columnValues.length === 0) {
+      if (type === 'water') {
+        logFluidDebug('water columns fully enclosed, skipping surface');
+      }
+      return;
+    }
     const aggregatedCues = new Set();
     let auroraIntensityTotal = 0;
     let auroraIntensitySamples = 0;
