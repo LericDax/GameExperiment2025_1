@@ -1,7 +1,7 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { MobAICore } from '../mob-ai-core.js';
-import { ActionNode } from '../behavior-nodes.js';
+import { ActionNode, BehaviorRegistry } from '../behavior-nodes.js';
 
 const createAmbientContext = () => ({
   time: 0,
@@ -238,5 +238,68 @@ describe('MobAICore', () => {
     const enabled = ambientLayerEntry.node.enabledBehaviors;
     assert.ok(enabled.includes('seekSunlight'));
     assert.ok(!enabled.includes('gatherResources'), 'gatherResources should be disabled via override');
+  });
+
+  it('removes persona-managed layers that disappear when switching personas', () => {
+    const disposeLog = [];
+    const createDisposable = (label) => ({
+      name: label,
+      initialize: () => {},
+      attachToEntity: () => {},
+      update: () => {},
+      dispose: () => disposeLog.push(label),
+    });
+
+    const behaviorRegistry = new BehaviorRegistry();
+    behaviorRegistry.registerLoop('alpha-loop', (options = {}) =>
+      createDisposable(options.trackName ?? 'alpha-loop'),
+    );
+    behaviorRegistry.registerLoop('beta-loop', (options = {}) =>
+      createDisposable(options.trackName ?? 'beta-loop'),
+    );
+
+    core = new MobAICore({
+      random: () => 0,
+      behaviorRegistry,
+    });
+
+    core.addBehaviorLayer({ name: 'manual-layer', node: createDisposable('manual-layer'), priority: 5 });
+
+    core.registerPersona({
+      name: 'persona-alpha',
+      traits: [],
+      sensors: {},
+      resources: {},
+      behaviors: [
+        { name: 'alpha-layer', loop: 'alpha-loop', priority: 3, options: { trackName: 'alpha-layer' } },
+        { name: 'shared-layer', loop: 'beta-loop', priority: 1, options: { trackName: 'shared-layer' } },
+      ],
+    });
+
+    core.registerPersona({
+      name: 'persona-beta',
+      traits: [],
+      sensors: {},
+      resources: {},
+      behaviors: [
+        { name: 'shared-layer', loop: 'beta-loop', priority: 2, options: { trackName: 'shared-layer' } },
+      ],
+    });
+
+    core.usePersona('persona-alpha');
+    assert.deepStrictEqual(core.scheduler.layers.map((layer) => layer.name), [
+      'manual-layer',
+      'alpha-layer',
+      'shared-layer',
+    ]);
+
+    core.usePersona('persona-beta');
+    assert.deepStrictEqual(core.scheduler.layers.map((layer) => layer.name), [
+      'manual-layer',
+      'shared-layer',
+    ]);
+
+    assert.ok(disposeLog.includes('alpha-layer'), 'expected removed persona layer to dispose');
+    assert.ok(!disposeLog.includes('manual-layer'), 'manual layers should remain untouched');
   });
 });

@@ -198,6 +198,7 @@ export class MobAICore {
       name: 'ambient-behaviors',
     };
     this._ambientLayer = null;
+    this._personaBehaviorLayers = new Set();
 
     traitDefinitions.forEach((trait) => {
       const definition = normalizeTraitDefinition(trait.name ?? trait, trait);
@@ -326,10 +327,30 @@ export class MobAICore {
   }
 
   _installPersonaBehaviors(persona) {
-    if (!persona.behaviors || persona.behaviors.length === 0) {
+    const descriptors = Array.isArray(persona.behaviors) ? persona.behaviors : [];
+    const nextLayerNames = new Set();
+
+    for (const descriptor of descriptors) {
+      const layerName = descriptor?.name ?? descriptor?.loop;
+      if (!layerName) {
+        continue;
+      }
+      nextLayerNames.add(layerName);
+    }
+
+    for (const layerName of [...this._personaBehaviorLayers]) {
+      if (!nextLayerNames.has(layerName)) {
+        const removed = this.scheduler.removeLayer(layerName);
+        removed?.node?.dispose?.();
+      }
+    }
+
+    if (descriptors.length === 0) {
+      this._personaBehaviorLayers = nextLayerNames;
       return;
     }
-    for (const descriptor of persona.behaviors) {
+
+    for (const descriptor of descriptors) {
       const layerName = descriptor.name ?? descriptor.loop;
       if (!layerName) {
         continue;
@@ -352,6 +373,8 @@ export class MobAICore {
       const loop = this.behaviorRegistry.createLoop(descriptor.loop, options, this.dependencies);
       this.addBehaviorLayer({ name: layerName, node: loop, priority: descriptor.priority ?? 0 });
     }
+
+    this._personaBehaviorLayers = nextLayerNames;
   }
 
   _updateTraitContext() {
