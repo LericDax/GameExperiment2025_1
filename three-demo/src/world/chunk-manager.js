@@ -1388,7 +1388,35 @@ export function createChunkManager({
       }
     });
 
-    refreshBlockVisibility(chunk, visibilityPositions);
+    const chunkVisibilityBuckets = new Map();
+    visibilityPositions.forEach((pos) => {
+      if (!pos) {
+        return;
+      }
+      const chunkX = worldToChunk(pos.x);
+      const chunkZ = worldToChunk(pos.z);
+      if (!Number.isFinite(chunkX) || !Number.isFinite(chunkZ)) {
+        return;
+      }
+      const key = chunkKey(chunkX, chunkZ);
+      let bucket = chunkVisibilityBuckets.get(key);
+      if (!bucket) {
+        const targetChunk =
+          chunk && chunk.chunkX === chunkX && chunk.chunkZ === chunkZ
+            ? chunk
+            : loadedChunks.get(key);
+        if (!targetChunk) {
+          return;
+        }
+        bucket = { chunk: targetChunk, positions: [] };
+        chunkVisibilityBuckets.set(key, bucket);
+      }
+      bucket.positions.push(pos);
+    });
+
+    chunkVisibilityBuckets.forEach(({ chunk: targetChunk, positions }) => {
+      refreshBlockVisibility(targetChunk, positions);
+    });
 
     return removedEntries;
   }
