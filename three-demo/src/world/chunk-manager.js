@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 
-import { generateChunk, getWorldOptions } from './generation.js';
+import {
+  generateChunk,
+  getWorldOptions,
+  buildInstancedBlockMesh,
+  makeBlockKey,
+} from './generation.js';
 import {
   createFluidSurface,
   disposeFluidSurface,
@@ -133,6 +138,32 @@ const fluidNeighborOffsets = [
   { key: 'pz', dx: 0, dz: 1, opposite: 'nz' },
   { key: 'nz', dx: 0, dz: -1, opposite: 'pz' },
 ];
+
+const blockNeighborOffsets = [
+  { dx: 1, dy: 0, dz: 0 },
+  { dx: -1, dy: 0, dz: 0 },
+  { dx: 0, dy: 1, dz: 0 },
+  { dx: 0, dy: -1, dz: 0 },
+  { dx: 0, dy: 0, dz: 1 },
+  { dx: 0, dy: 0, dz: -1 },
+];
+
+function parseBlockCoordinateKey(key) {
+  if (typeof key !== 'string') {
+    return null;
+  }
+  const parts = key.split('|');
+  if (parts.length !== 3) {
+    return null;
+  }
+  const x = Number.parseInt(parts[0], 10);
+  const y = Number.parseInt(parts[1], 10);
+  const z = Number.parseInt(parts[2], 10);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+    return null;
+  }
+  return { x, y, z };
+}
 
 
 export function createChunkManager({
@@ -402,6 +433,197 @@ export function createChunkManager({
     });
   }
 
+  function ensureTypeRecord(chunk, type) {
+    if (!chunk || !type) {
+      return null;
+    }
+    if (!(chunk.typeData instanceof Map)) {
+      chunk.typeData = new Map();
+    }
+    let record = chunk.typeData.get(type);
+    if (record) {
+      return record;
+    }
+    const capacitySource = chunk.typeCapacities instanceof Map
+      ? chunk.typeCapacities.get(type)
+      : null;
+    const capacity = Math.max(1, Number.isInteger(capacitySource) ? capacitySource : 1);
+    const { mesh, tintAttribute } = buildInstancedBlockMesh({
+      THREE,
+      blockMaterials,
+      type,
+      entries: [],
+      capacity,
+    });
+    mesh.count = 0;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (tintAttribute) {
+      tintAttribute.needsUpdate = true;
+    }
+    mesh.userData = mesh.userData || {};
+    mesh.userData.chunkKey = chunkKey(chunk.chunkX, chunk.chunkZ);
+    chunk.group?.add(mesh);
+    record = {
+      entries: [],
+      mesh,
+      tintAttribute,
+      capacity,
+    };
+    chunk.typeData.set(type, record);
+    return record;
+  }
+
+  function addEntryToChunkMesh(chunk, entry) {
+    if (!chunk || !entry || entry.isDecoration) {
+      return;
+    }
+    const record = ensureTypeRecord(chunk, entry.type);
+    if (!record) {
+      return;
+    }
+    const { entries, mesh, tintAttribute } = record;
+    if (Number.isInteger(entry.index) && entry.index >= 0) {
+      return;
+    }
+    const capacity = mesh.instanceMatrix.count;
+    if (entries.length >= capacity) {
+      return;
+    }
+    const index = entries.length;
+    entries.push(entry);
+    entry.index = index;
+    mesh.setMatrixAt(index, entry.matrix);
+    mesh.count = entries.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    const tint = entry.tintColor ?? mesh.userData?.defaultTint;
+    if (tintAttribute && tint) {
+      const offset = index * 3;
+      tintAttribute.array[offset] = tint.r;
+      tintAttribute.array[offset + 1] = tint.g;
+      tintAttribute.array[offset + 2] = tint.b;
+      tintAttribute.needsUpdate = true;
+    }
+    entry.mesh = mesh;
+    entry.tintAttribute = tintAttribute;
+  }
+
+  function removeEntryFromChunkMesh(chunk, entry) {
+    if (!chunk || !entry || !chunk.typeData) {
+      entry.index = -1;
+      entry.mesh = null;
+      entry.tintAttribute = null;
+      return;
+    }
+    const record = chunk.typeData.get(entry.type);
+    if (!record) {
+      entry.index = -1;
+      entry.mesh = null;
+      entry.tintAttribute = null;
+      return;
+    }
+    const { entries, mesh, tintAttribute } = record;
+    const index = entry.index;
+    if (!Number.isInteger(index) || index < 0 || index >= entries.length) {
+      entry.index = -1;
+      entry.mesh = null;
+      entry.tintAttribute = null;
+      return;
+    }
+    const lastIndex = entries.length - 1;
+    if (index !== lastIndex) {
+      const swapped = entries[lastIndex];
+      entries[index] = swapped;
+      mesh.setMatrixAt(index, swapped.matrix);
+      const tint = swapped.tintColor ?? mesh.userData?.defaultTint;
+      if (tintAttribute && tint) {
+        const offset = index * 3;
+        tintAttribute.array[offset] = tint.r;
+        tintAttribute.array[offset + 1] = tint.g;
+        tintAttribute.array[offset + 2] = tint.b;
+      }
+      swapped.index = index;
+    }
+    entries.pop();
+    mesh.count = entries.length;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (tintAttribute) {
+      tintAttribute.needsUpdate = true;
+    }
+    entry.index = -1;
+    entry.mesh = null;
+    entry.tintAttribute = null;
+  }
+
+  function computeBlockVisibility(chunk, entry) {
+    if (!chunk || !entry || !entry.position) {
+      return false;
+    }
+    const baseX = Math.round(entry.position.x);
+    const baseY = Math.round(entry.position.y);
+    const baseZ = Math.round(entry.position.z);
+    for (let i = 0; i < blockNeighborOffsets.length; i += 1) {
+      const offset = blockNeighborOffsets[i];
+      const neighborKey = makeBlockKey(
+        baseX + offset.dx,
+        baseY + offset.dy,
+        baseZ + offset.dz,
+      );
+      const neighborEntry = chunk.blockLookup?.get(neighborKey);
+      if (neighborEntry && neighborEntry !== entry) {
+        if (neighborEntry.collisionMode === 'solid') {
+          continue;
+        }
+      }
+      if (chunk.fluidBlockKeys?.has(neighborKey)) {
+        return true;
+      }
+      if (!neighborEntry || neighborEntry.collisionMode !== 'solid') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function refreshBlockVisibility(chunk, positions) {
+    if (!chunk || !(chunk.blockLookup instanceof Map)) {
+      return;
+    }
+    const targets = new Map();
+    const appendPosition = (pos) => {
+      if (!pos) {
+        return;
+      }
+      const key = makeBlockKey(pos.x, pos.y, pos.z);
+      targets.set(key, pos);
+    };
+    (Array.isArray(positions) ? positions : []).forEach((pos) => {
+      if (!pos) {
+        return;
+      }
+      appendPosition(pos);
+      blockNeighborOffsets.forEach((offset) => {
+        appendPosition({
+          x: pos.x + offset.dx,
+          y: pos.y + offset.dy,
+          z: pos.z + offset.dz,
+        });
+      });
+    });
+    targets.forEach((pos, key) => {
+      const entry = chunk.blockLookup.get(key);
+      if (!entry || entry.isDecoration) {
+        return;
+      }
+      const shouldBeVisible = computeBlockVisibility(chunk, entry);
+      const currentlyVisible = Number.isInteger(entry.index) && entry.index >= 0;
+      if (shouldBeVisible && !currentlyVisible) {
+        addEntryToChunkMesh(chunk, entry);
+      } else if (!shouldBeVisible && currentlyVisible) {
+        removeEntryFromChunkMesh(chunk, entry);
+      }
+    });
+  }
+
   function registerDecorationGroup(chunkKey, group, chunkOverride = null) {
     if (!group || !group.key) {
       return;
@@ -524,6 +746,16 @@ export function createChunkManager({
     });
     chunk.waterColumns = normalizedWaterColumns;
     chunk.waterColumnKeys = new Set(normalizedWaterColumns.keys());
+
+    if (chunk.fluidBlockKeys instanceof Set) {
+      chunk.fluidBlockKeys = new Set(chunk.fluidBlockKeys);
+    } else if (Array.isArray(chunk.fluidBlockKeys)) {
+      chunk.fluidBlockKeys = new Set(chunk.fluidBlockKeys);
+    } else if (chunk.fluidBlockKeys && typeof chunk.fluidBlockKeys === 'object') {
+      chunk.fluidBlockKeys = new Set(Object.keys(chunk.fluidBlockKeys));
+    } else {
+      chunk.fluidBlockKeys = new Set();
+    }
 
     if (chunk.fluidColumnsByType instanceof Map) {
       chunk.fluidColumnsByType = new Map(
@@ -1028,158 +1260,112 @@ export function createChunkManager({
   }
 
   function removeBlockInstancesBulk({ chunk, type, entries: removalEntries }) {
-    if (!chunk || !chunk.typeData) {
+    if (!chunk) {
       return [];
     }
-    const typeData = chunk.typeData.get(type);
-    if (!typeData) {
-      return [];
-    }
-    const { entries, mesh, tintAttribute } = typeData;
-    if (!mesh?.isInstancedMesh || !Array.isArray(entries) || entries.length === 0) {
+    const candidates = Array.isArray(removalEntries) ? removalEntries : [];
+    if (candidates.length === 0) {
       return [];
     }
 
-    const candidates = Array.isArray(removalEntries) ? removalEntries : [];
-    const indices = [];
-    const seen = new Set();
-    const settleColumnKeys = new Set();
+    const uniqueEntries = [];
+    const seenKeys = new Set();
 
     candidates.forEach((candidate) => {
-      if (!candidate) {
+      const rawEntry = candidate?.entry ?? candidate;
+      if (!rawEntry) {
         return;
       }
-      const entry = candidate.entry ?? candidate;
+      const key = rawEntry.coordinateKey ?? rawEntry.key;
+      if (!key || seenKeys.has(key)) {
+        return;
+      }
+      seenKeys.add(key);
+      let entry = rawEntry;
+      if (chunk.blockLookup?.has(key)) {
+        const lookup = chunk.blockLookup.get(key);
+        if (lookup) {
+          entry = lookup;
+        }
+      }
       if (!entry) {
         return;
       }
-      let index = Number.isInteger(candidate.instanceId)
-        ? candidate.instanceId
-        : Number.isInteger(entry.index)
-        ? entry.index
-        : null;
-      if (entry.key && chunk.blockLookup?.has(entry.key)) {
-        const lookup = chunk.blockLookup.get(entry.key);
-        if (Number.isInteger(lookup?.index)) {
-          index = lookup.index;
-        }
-      }
-      if (!Number.isInteger(index)) {
-        return;
-      }
-      if (index < 0 || index >= entries.length) {
-        return;
-      }
-      if (seen.has(index)) {
-        return;
-      }
-      const current = entries[index];
-      if (!current || (entry.key && current.key !== entry.key)) {
-        return;
-      }
-      seen.add(index);
-      indices.push(index);
+      uniqueEntries.push(entry);
     });
 
-    if (indices.length === 0) {
+    if (uniqueEntries.length === 0) {
       return [];
     }
 
-    indices.sort((a, b) => a - b);
-    const removalSet = new Set(indices);
     const removedEntries = [];
     const prototypeRefs = [];
+    const settleColumnKeys = new Set();
+    const visibilityPositions = [];
 
-    const writeTint = (index, tintColor) => {
-      if (!tintAttribute) {
-        return;
-      }
-      const tint = tintColor ?? mesh.userData?.defaultTint;
-      if (!tint) {
-        return;
-      }
-      const offset = index * 3;
-      tintAttribute.array[offset] = tint.r;
-      tintAttribute.array[offset + 1] = tint.g;
-      tintAttribute.array[offset + 2] = tint.b;
-    };
-
-    let writeIndex = 0;
-    const totalEntries = entries.length;
-    for (let readIndex = 0; readIndex < totalEntries; readIndex += 1) {
-      const entry = entries[readIndex];
+    uniqueEntries.forEach((entry) => {
       if (!entry) {
-        continue;
+        return;
       }
-      if (removalSet.has(readIndex)) {
-        removedEntries.push(entry);
-        if (entry.prototypeKey) {
-          prototypeRefs.push({ prototypeKey: entry.prototypeKey, entryKey: entry.key });
-        }
-        if (chunk.blockLookup) {
-          chunk.blockLookup.delete(entry.key);
-          if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
-            chunk.blockLookup.delete(entry.coordinateKey);
-          }
-        }
-        if (entry.isSolid) {
-          const coordinateKey = entry.coordinateKey ?? entry.key;
-          chunk.solidBlockKeys.delete(coordinateKey);
-          solidBlocks.delete(coordinateKey);
-          if (entry.position) {
-            const settleKey = `${Math.round(entry.position.x)}|${Math.round(entry.position.z)}`;
-            settleColumnKeys.add(settleKey);
-          }
-        }
-        if (entry.collisionMode === 'soft') {
-          const coordinateKey = entry.coordinateKey ?? entry.key;
-          chunk.softBlockKeys.delete(coordinateKey);
-          softBlocks.delete(coordinateKey);
-        }
-        if (entry.isWater) {
-          const columnKey = `${entry.position.x}|${entry.position.z}`;
-          chunk.waterColumns?.delete?.(columnKey);
-          if (chunk.waterColumnKeys instanceof Set) {
-            chunk.waterColumnKeys.delete(columnKey);
-          }
-          waterColumns.delete(columnKey);
-        }
-        entry.index = -1;
-        continue;
+      removedEntries.push(entry);
+      if (entry.prototypeKey) {
+        prototypeRefs.push({ prototypeKey: entry.prototypeKey, entryKey: entry.key });
       }
-
-      if (writeIndex !== readIndex) {
-        entries[writeIndex] = entry;
-        mesh.setMatrixAt(writeIndex, entry.matrix);
-        writeTint(writeIndex, entry.tintColor);
+      if (Number.isInteger(entry.index) && entry.index >= 0) {
+        removeEntryFromChunkMesh(chunk, entry);
       }
-      entry.index = writeIndex;
       if (chunk.blockLookup) {
         if (entry.key) {
-          const lookup = chunk.blockLookup.get(entry.key);
-          if (lookup) {
-            lookup.index = writeIndex;
-          }
+          chunk.blockLookup.delete(entry.key);
         }
         if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
-          const coordinateEntry = chunk.blockLookup.get(entry.coordinateKey);
-          if (coordinateEntry) {
-            coordinateEntry.index = writeIndex;
-          }
+          chunk.blockLookup.delete(entry.coordinateKey);
         }
       }
-      writeIndex += 1;
-    }
-
-    while (entries.length > writeIndex) {
-      entries.pop();
-    }
-
-    mesh.count = entries.length;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (tintAttribute) {
-      tintAttribute.needsUpdate = true;
-    }
+      const coordinateKey = entry.coordinateKey ?? entry.key;
+      if (entry.isSolid && coordinateKey) {
+        chunk.solidBlockKeys?.delete(coordinateKey);
+        solidBlocks.delete(coordinateKey);
+        if (entry.position) {
+          const settleKey = `${Math.round(entry.position.x)}|${Math.round(entry.position.z)}`;
+          settleColumnKeys.add(settleKey);
+        }
+      }
+      if (entry.collisionMode === 'soft' && coordinateKey) {
+        chunk.softBlockKeys?.delete(coordinateKey);
+        softBlocks.delete(coordinateKey);
+      }
+      if (entry.isWater && entry.position) {
+        const columnKey = `${entry.position.x}|${entry.position.z}`;
+        chunk.waterColumns?.delete?.(columnKey);
+        if (chunk.waterColumnKeys instanceof Set) {
+          chunk.waterColumnKeys.delete(columnKey);
+        }
+        waterColumns.delete(columnKey);
+      }
+      if (coordinateKey && chunk.fluidBlockKeys instanceof Set) {
+        chunk.fluidBlockKeys.delete(coordinateKey);
+      }
+      if (chunk.typeCapacities instanceof Map && entry.type) {
+        const previous = chunk.typeCapacities.get(entry.type) ?? 0;
+        chunk.typeCapacities.set(entry.type, Math.max(0, previous - 1));
+      }
+      if (entry.position) {
+        visibilityPositions.push({
+          x: Math.round(entry.position.x),
+          y: Math.round(entry.position.y),
+          z: Math.round(entry.position.z),
+        });
+      } else if (coordinateKey) {
+        const coords = parseBlockCoordinateKey(coordinateKey);
+        if (coords) {
+          visibilityPositions.push(coords);
+        }
+      }
+      entry.index = -1;
+      entry.mesh = null;
+      entry.tintAttribute = null;
+    });
 
     prototypeRefs.forEach(({ prototypeKey, entryKey }) => {
       removePrototypePlacement(chunk, prototypeKey, entryKey);
@@ -1190,6 +1376,8 @@ export function createChunkManager({
         settleFluidColumn(chunk, columnKey);
       }
     });
+
+    refreshBlockVisibility(chunk, visibilityPositions);
 
     return removedEntries;
   }
@@ -1240,99 +1428,19 @@ export function createChunkManager({
 
 
   function removeBlockInstance({ chunk, type, instanceId }) {
-    if (!chunk || typeof instanceId !== 'number' || !chunk.typeData) {
+    if (!chunk || typeof instanceId !== 'number' || !(chunk.typeData instanceof Map)) {
       return null;
     }
     const typeData = chunk.typeData.get(type);
-    if (!typeData) {
+    if (!typeData || !Array.isArray(typeData.entries)) {
       return null;
     }
-    const { entries, mesh, tintAttribute } = typeData;
-    if (!mesh || !mesh.isInstancedMesh) {
+    if (instanceId < 0 || instanceId >= typeData.entries.length) {
       return null;
     }
-    if (instanceId < 0 || instanceId >= entries.length) {
-      return null;
-    }
-
-    const lastIndex = entries.length - 1;
-    const removed = entries[instanceId];
-
-    if (!removed) {
-      return null;
-    }
-
-    const writeTint = (index, tintColor) => {
-      if (!tintAttribute) {
-        return;
-      }
-      const tint = tintColor ?? mesh.userData?.defaultTint;
-      if (!tint) {
-        return;
-      }
-      const offset = index * 3;
-      tintAttribute.array[offset] = tint.r;
-      tintAttribute.array[offset + 1] = tint.g;
-      tintAttribute.array[offset + 2] = tint.b;
-    };
-
-    if (instanceId !== lastIndex) {
-      const swapped = entries[lastIndex];
-      entries[instanceId] = swapped;
-      mesh.setMatrixAt(instanceId, swapped.matrix);
-      writeTint(instanceId, swapped.tintColor);
-      mesh.instanceMatrix.needsUpdate = true;
-      if (chunk.blockLookup) {
-        const swappedInfo = chunk.blockLookup.get(swapped.key);
-        if (swappedInfo) {
-          swappedInfo.index = instanceId;
-        }
-      }
-      swapped.index = instanceId;
-    }
-
-    entries.pop();
-    mesh.count = entries.length;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (tintAttribute) {
-      tintAttribute.needsUpdate = true;
-    }
-
-    if (chunk.blockLookup) {
-      chunk.blockLookup.delete(removed.key);
-      if (removed.coordinateKey && removed.coordinateKey !== removed.key) {
-        chunk.blockLookup.delete(removed.coordinateKey);
-      }
-    }
-    if (removed.isSolid) {
-      const coordinateKey = removed.coordinateKey ?? removed.key;
-      chunk.solidBlockKeys.delete(coordinateKey);
-      solidBlocks.delete(coordinateKey);
-    }
-    if (removed.collisionMode === 'soft') {
-      const coordinateKey = removed.coordinateKey ?? removed.key;
-      chunk.softBlockKeys.delete(coordinateKey);
-      softBlocks.delete(coordinateKey);
-    }
-    if (removed.isWater) {
-      const columnKey = `${removed.position.x}|${removed.position.z}`;
-      chunk.waterColumns?.delete?.(columnKey);
-      if (chunk.waterColumnKeys instanceof Set) {
-        chunk.waterColumnKeys.delete(columnKey);
-      }
-      waterColumns.delete(columnKey);
-    }
-
-    if (removed.prototypeKey) {
-      removePrototypePlacement(chunk, removed.prototypeKey, removed.key);
-    }
-
-    if (removed.isSolid && removed.position) {
-      const columnKey = `${Math.round(removed.position.x)}|${Math.round(removed.position.z)}`;
-      settleFluidColumn(chunk, columnKey);
-    }
-
-    return removed;
+    const target = typeData.entries[instanceId];
+    const removed = removeBlockInstancesBulk({ chunk, type, entries: [target] });
+    return removed.length > 0 ? removed[0] : null;
   }
 
   function removeDecorationGroupsBulk({ chunk, type, groups }) {
