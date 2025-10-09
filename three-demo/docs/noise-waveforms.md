@@ -23,6 +23,12 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 ## Fractal / spectral variants
 - **PinkNoise** (available via `pinkNoise`, alias `FractalPinkNoise`) — 1/f spectral slope balancing smooth coherence with gentle high-frequency accents. Defaults: 6 octaves, lacunarity 2.
 - **BrownNoise** (available via `brownNoise`, alias `FractalBrownNoise`) — 1/f² accumulation that accentuates low-frequency drift and large-scale gradients. Defaults mirror PinkNoise with a steeper slope.
+- **RedNoise** (available via `redNoise`) — alternate 1/f² realization tuned for deep, slow undulations with a distinct random phase seed. Defaults mirror PinkNoise.
+- **GreenNoise** (available via `greenNoise`) — 1/f^0.5 spectrum that leans toward mid-band detail while preserving broad structure. Defaults mirror PinkNoise.
+- **BlackNoise** (available via `blackNoise`) — 1/f³ falloff emphasizing tectonic-scale motion and muting rapid changes. Defaults mirror PinkNoise.
+- **GreyNoise** (available via `greyNoise`) — gently tilted (≈1/f^0.2) spectrum approximating equal-loudness energy with subtle low-end weight. Defaults mirror PinkNoise.
+- **VioletNoise** (available via `violetNoise`) — f² (+12 dB/octave) emphasis on the highest frequencies for sparkling surface breakup. Defaults mirror PinkNoise.
+- **VelvetNoise** (available via `velvetNoise`) — sparse f^0.5 (+3 dB/octave) coloration suitable for feathery micro-structure. Defaults mirror PinkNoise.
 - **BlueNoise** (available via `blueNoise`, alias `FractalBlueNoise`) — high-frequency biased spectrum ideal for crisp micro-detail without banding. Defaults mirror PinkNoise with a positive slope.
 - **WhiteNoise** (available via `whiteNoise`) — zero-correlation random scalar field normalized to [-1, 1].
 
@@ -93,6 +99,12 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 | `pulse` / `anisotropicPulse` | Configurable pulse gate waveform (available) |
 | `pinkNoise` / `PinkNoise` | 1/f spectral falloff sampler (available) |
 | `brownNoise` / `BrownNoise` | 1/f² drift-emphasized sampler (available) |
+| `redNoise` / `RedNoise` | Alternate 1/f² spectral sampler (available) |
+| `greenNoise` / `GreenNoise` | 1/f^0.5 mid-band leaning sampler (available) |
+| `blackNoise` / `BlackNoise` | 1/f³ deep-drift sampler (available) |
+| `greyNoise` / `GreyNoise` | 1/f^0.2 equal-loudness-inspired sampler (available) |
+| `violetNoise` / `VioletNoise` | +12 dB/octave high-brightness sampler (available) |
+| `velvetNoise` / `VelvetNoise` | +3 dB/octave airy micro-detail sampler (available) |
 | `blueNoise` / `BlueNoise` | High-frequency accent sampler (available) |
 | `whiteNoise` / `WhiteNoise` | Uniform random scalar field (available) |
 | `warp` / `domainWarp` | Domain-warp vector field (available) |

@@ -63,21 +63,66 @@ test('Billow sampler is repeatable and bounded', () => {
   });
 });
 
-test('Pink noise sampler is repeatable and bounded', () => {
-  assertDeterministicScalar('pinkNoise', { octaves: 5, lacunarity: 2.05 });
-});
+const SPECTRAL_NOISE_CASES = [
+  {
+    label: 'Pink noise',
+    aliases: ['pinkNoise', 'PinkNoise', 'FractalPinkNoise'],
+    config: { octaves: 5, lacunarity: 2.05 },
+  },
+  {
+    label: 'Brown noise',
+    aliases: ['brownNoise', 'BrownNoise', 'FractalBrownNoise'],
+    config: { octaves: 5, lacunarity: 2.05 },
+  },
+  {
+    label: 'Red noise',
+    aliases: ['redNoise', 'RedNoise'],
+    config: { octaves: 5, lacunarity: 2.05 },
+  },
+  {
+    label: 'Green noise',
+    aliases: ['greenNoise', 'GreenNoise'],
+    config: { octaves: 5, lacunarity: 2.05 },
+  },
+  {
+    label: 'Black noise',
+    aliases: ['blackNoise', 'BlackNoise'],
+    config: { octaves: 5, lacunarity: 2.05 },
+  },
+  {
+    label: 'Grey noise',
+    aliases: ['greyNoise', 'GreyNoise'],
+    config: { octaves: 5, lacunarity: 2.05 },
+  },
+  {
+    label: 'Violet noise',
+    aliases: ['violetNoise', 'VioletNoise'],
+    config: { octaves: 5, lacunarity: 2.05 },
+  },
+  {
+    label: 'Velvet noise',
+    aliases: ['velvetNoise', 'VelvetNoise'],
+    config: { octaves: 5, lacunarity: 2.05 },
+  },
+  {
+    label: 'Blue noise',
+    aliases: ['blueNoise', 'BlueNoise', 'FractalBlueNoise'],
+    config: { octaves: 5, lacunarity: 2.05 },
+  },
+  {
+    label: 'White noise',
+    aliases: ['whiteNoise', 'WhiteNoise'],
+    config: {},
+  },
+];
 
-test('Brown noise sampler is repeatable and bounded', () => {
-  assertDeterministicScalar('brownNoise', { octaves: 5, lacunarity: 2.05 });
-});
-
-test('Blue noise sampler is repeatable and bounded', () => {
-  assertDeterministicScalar('blueNoise', { octaves: 5, lacunarity: 2.05 });
-});
-
-test('White noise sampler is repeatable and bounded', () => {
-  assertDeterministicScalar('whiteNoise');
-});
+for (const { label, aliases, config } of SPECTRAL_NOISE_CASES) {
+  for (const alias of aliases) {
+    test(`${label} sampler (${alias}) is repeatable and bounded`, () => {
+      assertDeterministicScalar(alias, config);
+    });
+  }
+}
 
 test('Worley sampler is repeatable and bounded', () => {
   assertDeterministicScalar('worley', { jitter: 0.65, falloff: 1.25 });
