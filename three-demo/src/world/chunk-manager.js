@@ -805,6 +805,16 @@ export function createChunkManager({
     const baseX = Math.round(entry.position.x);
     const baseY = Math.round(entry.position.y);
     const baseZ = Math.round(entry.position.z);
+    const resolveOccluding = (candidate) => {
+      if (!candidate) {
+        return false;
+      }
+      if (typeof candidate.isOccluding === 'boolean') {
+        return candidate.isOccluding;
+      }
+      return isBlockOccluding(candidate, blockMaterials);
+    };
+
     for (let i = 0; i < blockNeighborOffsets.length; i += 1) {
       const offset = blockNeighborOffsets[i];
       const neighborKey = makeBlockKey(
@@ -814,14 +824,14 @@ export function createChunkManager({
       );
       const neighborEntry = chunk.blockLookup?.get(neighborKey);
       if (neighborEntry && neighborEntry !== entry) {
-        if (isBlockOccluding(neighborEntry, blockMaterials)) {
+        if (resolveOccluding(neighborEntry)) {
           continue;
         }
       }
       if (chunk.fluidBlockKeys?.has(neighborKey)) {
         return true;
       }
-      if (!neighborEntry || !isBlockOccluding(neighborEntry, blockMaterials)) {
+      if (!neighborEntry || !resolveOccluding(neighborEntry)) {
         return true;
       }
     }
