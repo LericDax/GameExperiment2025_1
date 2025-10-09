@@ -154,13 +154,31 @@ function normalizeTfmsConfiguration({ seed, terrainConfig, defaults }) {
     custom.tectonic && typeof custom.tectonic === 'object'
       ? { ...fallback.tectonic, ...custom.tectonic }
       : fallback.tectonic;
-  const kameaOptions = { ...fallback.kamea };
+  const baseAttenuation = Number.isFinite(custom.baseAttenuation)
+    ? custom.baseAttenuation
+    : fallback.baseAttenuation;
+  const clamp = {
+    min: Number.isFinite(custom?.clamp?.min)
+      ? custom.clamp.min
+      : fallback.clamp?.min,
+    max: Number.isFinite(custom?.clamp?.max)
+      ? custom.clamp.max
+      : fallback.clamp?.max,
+  };
+  const biomeBlendStrength = Number.isFinite(custom.biomeBlendStrength)
+    ? custom.biomeBlendStrength
+    : fallback.biomeBlendStrength;
+  let temperamentValue =
+    typeof fallback.temperament === 'string'
+      ? fallback.temperament
+      : fallback.kamea?.temperament;
   if (typeof custom.temperament === 'string') {
-    kameaOptions.temperament = custom.temperament;
+    temperamentValue = custom.temperament;
   }
   if (typeof custom.kameaTemperament === 'string') {
-    kameaOptions.temperament = custom.kameaTemperament;
+    temperamentValue = custom.kameaTemperament;
   }
+  const kameaOptions = { ...fallback.kamea, temperament: temperamentValue };
   if (custom.kamea && typeof custom.kamea === 'object' && custom.kamea.ranges) {
     kameaOptions.ranges = {
       ...(kameaOptions.ranges ?? {}),
@@ -174,6 +192,10 @@ function normalizeTfmsConfiguration({ seed, terrainConfig, defaults }) {
     tectonic,
     transferFunctions,
     kamea: kameaOptions,
+    baseAttenuation,
+    clamp,
+    biomeBlendStrength,
+    temperament: temperamentValue,
   };
 }
 
@@ -182,6 +204,38 @@ function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
     terrainConfig && typeof terrainConfig.tfms === 'object'
       ? terrainConfig.tfms
       : defaultWorldOptions.terrain.tfms;
+
+  const presetDefaults = defaultWorldOptions.terrain.tfms ?? {};
+  const baseAttenuation = Number.isFinite(templateSource?.baseAttenuation)
+    ? templateSource.baseAttenuation
+    : Number.isFinite(presetDefaults.baseAttenuation)
+      ? presetDefaults.baseAttenuation
+      : 1;
+  const clamp = {
+    min: Number.isFinite(templateSource?.clamp?.min)
+      ? templateSource.clamp.min
+      : Number.isFinite(presetDefaults?.clamp?.min)
+        ? presetDefaults.clamp.min
+        : -24,
+    max: Number.isFinite(templateSource?.clamp?.max)
+      ? templateSource.clamp.max
+      : Number.isFinite(presetDefaults?.clamp?.max)
+        ? presetDefaults.clamp.max
+        : 24,
+  };
+  const biomeBlendStrength = Number.isFinite(templateSource?.biomeBlendStrength)
+    ? templateSource.biomeBlendStrength
+    : Number.isFinite(presetDefaults.biomeBlendStrength)
+      ? presetDefaults.biomeBlendStrength
+      : 0.45;
+  const temperament =
+    typeof templateSource?.temperament === 'string'
+      ? templateSource.temperament
+      : typeof templateSource?.kamea?.temperament === 'string'
+        ? templateSource.kamea.temperament
+        : typeof presetDefaults.temperament === 'string'
+          ? presetDefaults.temperament
+          : 'Saturn 3x3';
 
   const waveforms = Array.isArray(templateSource?.waveforms)
     ? templateSource.waveforms.map((waveform, index) => ({
@@ -411,6 +465,15 @@ function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
       ? templateSource.kamea
       : {};
 
+  const kameaSpectralProfileDefault =
+    typeof presetDefaults?.kamea?.spectralProfile === 'string'
+      ? presetDefaults.kamea.spectralProfile
+      : 'band';
+  const kameaErosionPresetDefault =
+    typeof presetDefaults?.kamea?.erosionPreset === 'string'
+      ? presetDefaults.kamea.erosionPreset
+      : 'standard';
+
   const modulationStrengthDefault = clampWithinRange(
     defaults.primaryAmplitude / 16,
     0.3,
@@ -452,19 +515,19 @@ function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
     temperament:
       typeof kameaTemplate.temperament === 'string'
         ? kameaTemplate.temperament
-        : 'Saturn 3x3',
+        : temperament,
     modulationStrength: modulationStrength.value,
     warpStrength: warpStrength.value,
     phaseStrength: phaseStrength.value,
     spectralProfile:
       typeof kameaTemplate.spectralProfile === 'string'
         ? kameaTemplate.spectralProfile
-        : 'band',
+        : kameaSpectralProfileDefault,
     spectralStrength: spectralStrength.value,
     erosionPreset:
       typeof kameaTemplate.erosionPreset === 'string'
         ? kameaTemplate.erosionPreset
-        : 'standard',
+        : kameaErosionPresetDefault,
   };
   if (modulationStrength.range) {
     kamea.modulationStrengthRange = modulationStrength.range;
@@ -494,6 +557,10 @@ function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
     tectonic,
     transferFunctions,
     kamea,
+    baseAttenuation,
+    clamp,
+    biomeBlendStrength,
+    temperament,
   };
 }
 
