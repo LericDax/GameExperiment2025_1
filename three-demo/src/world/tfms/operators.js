@@ -1,4 +1,8 @@
-import { ValueNoise2D } from '../noise.js';
+import {
+  combineDomainWarp,
+  createNoiseSampler,
+  projectSampleCoordinates,
+} from '../noise.js';
 
 const DEFAULT_TRANSFER_FUNCTIONS = Object.freeze({
   identity: (value) => value,
@@ -36,194 +40,63 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function pseudoRandom(seed, x, y) {
-  const n = Math.sin(x * 127.1 + y * 311.7 + seed * 0.1337) * 43758.5453;
-  return n - Math.floor(n);
-}
-
-function createFbmOperator({
-  seed,
-  octaves = 5,
-  lacunarity = 2,
-  gain = 0.5,
-  ridge = false,
-}) {
-  const baseNoise = new ValueNoise2D(seed);
-
-  return {
-    evaluate({ x, z, amplitude, frequency, phase, domainWarp }) {
-      let total = 0;
-      let amplitudeAccumulator = 0;
-      let currentAmplitude = 1;
-      let currentFrequency = 1;
-
-      const nx = (x + domainWarp.x) * frequency + phase.x;
-      const nz = (z + domainWarp.z) * frequency + phase.z;
-
-      for (let octave = 0; octave < octaves; octave += 1) {
-        const sample = baseNoise.noise(nx * currentFrequency, nz * currentFrequency);
-        const centered = (sample - 0.5) * 2;
-        const adjusted = ridge ? 1 - Math.abs(centered) : centered;
-        total += adjusted * currentAmplitude;
-        amplitudeAccumulator += currentAmplitude;
-        currentAmplitude *= gain;
-        currentFrequency *= lacunarity;
-      }
-
-      const normalized = amplitudeAccumulator > 0 ? total / amplitudeAccumulator : 0;
-      const value = normalized * amplitude;
-      return {
-        value,
-        raw: normalized,
-        domain: { x: normalized, z: normalized },
-      };
-    },
+function createScalarWaveformOperator(type) {
+  return ({ seed, ...config }) => {
+    const sampler = createNoiseSampler(type, { seed, ...config });
+    return {
+      evaluate({ x, z, amplitude, frequency, phase, domainWarp }) {
+        const coords = projectSampleCoordinates(x, z, {
+          frequency,
+          phase,
+          domainWarp,
+        });
+        const sample = sampler(coords.x, coords.z);
+        const normalized = clamp(sample, -1, 1);
+        const value = normalized * amplitude;
+        return {
+          value,
+          raw: normalized,
+          domain: { x: normalized, z: normalized },
+        };
+      },
+    };
   };
 }
 
-function createRidgedOperator(config) {
-  return createFbmOperator({ ...config, ridge: true });
-}
-
-function createAnisotropicSineOperator({
-  orientation = Math.PI / 4,
-  harmonics = 2,
-  phaseOffset = 0,
-  bias = 0,
-}) {
-  const cosAngle = Math.cos(orientation);
-  const sinAngle = Math.sin(orientation);
-
+function createDomainWarpOperator(config) {
+  const samplerFactory = createNoiseSampler('warp', config);
   return {
     evaluate({ x, z, amplitude, frequency, phase, domainWarp }) {
-      const dx = (x + domainWarp.x) * frequency;
-      const dz = (z + domainWarp.z) * frequency;
-      const u = dx * cosAngle + dz * sinAngle + phase.x + phaseOffset;
-      const v = -dx * sinAngle + dz * cosAngle + phase.z + phaseOffset;
-      let value = 0;
-      let weight = 0;
-      for (let i = 1; i <= harmonics; i += 1) {
-        const harmonicWeight = 1 / i;
-        value += Math.sin(u * i) * Math.cos(v * i) * harmonicWeight;
-        weight += harmonicWeight;
-      }
-      const normalized = weight > 0 ? value / weight : 0;
-      const finalValue = (normalized + bias) * amplitude;
-      return {
-        value: finalValue,
-        raw: normalized,
-        domain: { x: normalized, z: normalized },
+      const coords = projectSampleCoordinates(x, z, {
+        frequency,
+        phase,
+        domainWarp,
+      });
+      const warpSample = samplerFactory(coords.x, coords.z);
+      const warpedDomain = {
+        x: warpSample.x * amplitude,
+        z: warpSample.z * amplitude,
       };
-    },
-  };
-}
-
-function createWorleyOperator({
-  seed,
-  jitter = 0.75,
-  falloff = 1,
-  distanceMetric = 'euclidean',
-}) {
-  return {
-    evaluate({ x, z, amplitude, frequency, phase, domainWarp }) {
-      const nx = (x + domainWarp.x) * frequency + phase.x;
-      const nz = (z + domainWarp.z) * frequency + phase.z;
-      const cellX = Math.floor(nx);
-      const cellZ = Math.floor(nz);
-      let minDistance = Infinity;
-
-      for (let dz = -1; dz <= 1; dz += 1) {
-        for (let dx = -1; dx <= 1; dx += 1) {
-          const cx = cellX + dx;
-          const cz = cellZ + dz;
-          const rx = pseudoRandom(seed, cx, cz) * jitter;
-          const rz = pseudoRandom(seed * 1.97, cx, cz) * jitter;
-          const pointX = cx + rx;
-          const pointZ = cz + rz;
-          const distance =
-            distanceMetric === 'manhattan'
-              ? Math.abs(nx - pointX) + Math.abs(nz - pointZ)
-              : Math.hypot(nx - pointX, nz - pointZ);
-          if (distance < minDistance) {
-            minDistance = distance;
-          }
-        }
-      }
-
-      const normalized = Math.exp(-minDistance * falloff);
-      const value = normalized * amplitude;
+      const magnitude = Math.min(1, Math.hypot(warpSample.x, warpSample.z));
       return {
-        value,
-        raw: normalized,
-        domain: { x: normalized, z: normalized },
-      };
-    },
-  };
-}
-
-function createDomainWarpOperator({ seed, power = 1, gain = 0.75 }) {
-  const noiseX = new ValueNoise2D(seed * 1.11 + 17);
-  const noiseZ = new ValueNoise2D(seed * 1.37 + 43);
-
-  return {
-    evaluate({ x, z, amplitude, frequency, phase, domainWarp }) {
-      const nx = (x + domainWarp.x) * frequency + phase.x;
-      const nz = (z + domainWarp.z) * frequency + phase.z;
-      const sx = (noiseX.noise(nx, nz) - 0.5) * 2;
-      const sz = (noiseZ.noise(nx, nz) - 0.5) * 2;
-      const magnitude = Math.pow(Math.abs(sx) + Math.abs(sz), power) * amplitude;
-      const warped = {
-        x: sx * gain * amplitude,
-        z: sz * gain * amplitude,
-      };
-      const normalized = magnitude;
-      return {
-        value: magnitude,
-        raw: normalized,
-        domain: warped,
-      };
-    },
-  };
-}
-
-function createDiffusionOperator({ seed, smoothing = 0.5 }) {
-  const baseNoise = new ValueNoise2D(seed * 1.61 + 97);
-
-  return {
-    evaluate({ x, z, amplitude, frequency, phase, domainWarp }) {
-      const nx = (x + domainWarp.x) * frequency + phase.x;
-      const nz = (z + domainWarp.z) * frequency + phase.z;
-
-      const center = baseNoise.noise(nx, nz);
-      const offsets = [
-        baseNoise.noise(nx + 1, nz),
-        baseNoise.noise(nx - 1, nz),
-        baseNoise.noise(nx, nz + 1),
-        baseNoise.noise(nx, nz - 1),
-      ];
-
-      const averageOffsets =
-        offsets.reduce((sum, value) => sum + value, 0) / offsets.length;
-      const diffused = lerp(center, averageOffsets, clamp(smoothing, 0, 1));
-      const normalized = (diffused - 0.5) * 2;
-      const value = normalized * amplitude;
-
-      return {
-        value,
-        raw: normalized,
-        domain: { x: normalized, z: normalized },
+        value: Math.hypot(warpedDomain.x, warpedDomain.z),
+        raw: magnitude,
+        domain: combineDomainWarp({ x: 0, z: 0 }, warpedDomain),
       };
     },
   };
 }
 
 const OPERATOR_FACTORIES = Object.freeze({
-  fbm: createFbmOperator,
-  ridged: createRidgedOperator,
-  anisotropicSine: createAnisotropicSineOperator,
-  worley: createWorleyOperator,
-  domainWarp: createDomainWarpOperator,
-  diffusion: createDiffusionOperator,
+  fbm: createScalarWaveformOperator('fbm'),
+  ridge: createScalarWaveformOperator('ridge'),
+  ridged: createScalarWaveformOperator('ridge'),
+  worley: createScalarWaveformOperator('worley'),
+  sine: createScalarWaveformOperator('sine'),
+  anisotropicSine: createScalarWaveformOperator('sine'),
+  diffusion: createScalarWaveformOperator('diffusion'),
+  warp: (config) => createDomainWarpOperator(config),
+  domainWarp: (config) => createDomainWarpOperator(config),
 });
 
 function resolveTransfer(transfer, overrides) {
