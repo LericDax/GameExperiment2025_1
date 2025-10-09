@@ -1,6 +1,17 @@
 # Noise Waveform Library
 
-This catalog enumerates the waveform identifiers recognized by the terrain formation modulation system (TFMS). Use these labels when configuring samplers or composing higher-level operators. Waveforms implemented in code today are marked with **(available)**; the remaining entries outline planned extensions for designers.
+This catalog enumerates the waveform identifiers recognized by the terrain formation modulation system (TFMS). Use these labels when configuring samplers or composing higher-level operators. Waveforms implemented in code today are marked with **(available)**; the remaining entries outline planned extensions for designers. The library now includes deterministic **Kamea planetary matrices** that can be remapped into waveform operator space for hybrid workflows.
+
+## Planetary Kamea matrices (available)
+
+The `world/kamea.js` module exposes canonical planetary squares with deterministic seeding helpers so that systems downstream of the noise samplers can remain reproducible.
+
+- **Canonical sources** — `Saturn 3x3`, `Jupiter 4x4`, `Mars 5x5`, `Sun 6x6`, `Venus 7x7`, `Mercury 8x8`, and `Moon 9x9`. The helper `getCanonicalKameaMatrix(name)` returns a cloned 2D array.
+- **Deterministic seeds** — `deriveKameaSeed(name, salt)` and `createDeterministicSeed(...components)` provide hash-based seeds compatible with other procedural systems without reusing noise sampler salts.
+- **Encoders** — `encodeUnit`, `encodeBipolar`, `encodeZScore`, `encodePhase`, and `encodeProbability` reshape a matrix into normalized ranges (`[0,1]`, `[-1,1]`, z-score, `Φ=2π·norm`, row/column probability) ready for modulation chains.
+- **Resamplers** — `projectToOperatorSpace(matrix, size, options)` and `projectToTerrainSpace(matrix, width, height, options)` resample via bilinear or bicubic interpolation with periodic tiling. Pass `createDeterministicSamplingHook(seed, { jitter })` to introduce reproducible micro-jitter suitable for later operator stages.
+
+When designing TFMS presets, treat Kamea matrices as structured macro-patterns that can be blended with noise by resampling into a compatible resolution and applying the desired encoder before mixing.
 
 ## Core noise waveforms
 - **FBM** (available) — fractal Brownian motion stack of value noise octaves. Defaults: 5 octaves, gain 0.5, lacunarity 2.
