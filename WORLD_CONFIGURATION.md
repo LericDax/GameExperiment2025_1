@@ -57,6 +57,19 @@ This reference aggregates every tunable world-generation option exposed by the v
 | `baseHeight` | Base Height (alias) | Legacy top-level alias mirroring the terrain base height for compatibility. | `number` | `6` | `0` – `512` | `1` |
 | `maxHeight` | Max Height (alias) | Legacy top-level alias mirroring the terrain max height for compatibility. | `number` | `20` | `1` – `1024` | `1` |
 
+#### TFMS Temperaments
+| Path | Label | Description | Type | Default | Range | Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| `terrain.tfms.temperament` | Planetary Temperament | Selects which canonical Kamea matrix seeds the TFMS modulation network. | `string` | `"Saturn 3x3"` | _n/a_ | _n/a_ |
+| `terrain.tfms.kamea.modulationStrength` | FM Modulation Strength | Scales the FM matrix derived from the selected temperament. | `number` | `≈0.5` (derived) | `0` – `1` | `0.01` |
+| `terrain.tfms.kamea.warpStrength` | Warp Strength | Scales the primary and 90° companion warp vectors injected before noise sampling. | `number` | `≈0.38` (derived) | `0` – `1` | `0.01` |
+| `terrain.tfms.kamea.phaseStrength` | Phase Strength | Scales temperament-driven phase offsets in radians. | `number` | `≈0.22` (derived) | `0` – `1` | `0.01` |
+| `terrain.tfms.kamea.spectralProfile` | Spectral Profile | Chooses the FFT mask applied to the Kamea kernel (`low`, `band`, or `custom`). | `string` | `"band"` | _n/a_ | _n/a_ |
+| `terrain.tfms.kamea.spectralStrength` | Spectral Strength | Scales the FFT-derived filter contribution when shaping operator output. | `number` | `≈0.5` (derived) | `0` – `1` | `0.01` |
+| `terrain.tfms.kamea.erosionPreset` | Erosion Preset | Selects conductance presets for anisotropic diffusion (`gentle`, `standard`, `aggressive`). | `string` | `"standard"` | _n/a_ | _n/a_ |
+
+Temperament patches are assembled via `make_kamea_patch`, which calls helpers such as `kamea_to_fm_matrix`, `kamea_to_warp`, `kamea_to_spectral`, and `kamea_to_phase` to project a planetary square into FM, warp, spectral, and phase domains before the TFMS network evaluates waveforms.【F:three-demo/docs/kamea-matrices.md†L43-L55】 Softmax gating blends FBM, ridged, Worley, warp, and diffusion operators using the patch’s logits so different planets emphasise distinct waveform families.
+
 ### Biomes
 | Path | Label | Description | Type | Default | Range | Step |
 | --- | --- | --- | --- | --- | --- | --- |

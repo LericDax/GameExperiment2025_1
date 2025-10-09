@@ -40,3 +40,15 @@ The module provides encoder helpers that leave the source matrix untouched and r
 - `createDeterministicSamplingHook(seed, { jitter, salt })` – reproducible sampling offsets for downstream procedural stages.
 
 All resamplers default to periodic tiling so Kamea patterns wrap seamlessly when used as waveforms or terrain layers.
+
+## Temperament patches
+
+The terrain modulation system consumes compact **Kamea patches** that translate a planetary square into modulation targets:
+
+- `kamea_to_fm_matrix(source, { operatorCount, strength })` – resamples a matrix into an `N × N` FM modulation matrix.
+- `kamea_to_warp(source, { operatorCount, strength })` – produces primary warp vectors plus their 90° companions for domain warping.
+- `kamea_to_phase(source, { operatorCount, strength })` – computes per-operator phase offsets in radians.
+- `kamea_to_spectral(source, { operatorCount, profile, strength })` – runs FFT/ IFFT passes with Hermitian safeguards to yield spectral kernels, filter hooks, and anisotropic conductance fields.
+- `make_kamea_patch(temperament, options)` – assembles a full patch with FM, warp, phase, spectral, and temperament gating metadata.
+
+`createTfmsNetwork` now requests a patch for the configured temperament and uses it to drive FM modulation (`Ṽ = C + M·tanh(C)`), domain warps, phase injection, and spectral filtering before evaluating waveforms. The generated gating weights blend FBM, ridged, Worley, warp, and diffusion operators via a softmax informed by the patch’s logits.
