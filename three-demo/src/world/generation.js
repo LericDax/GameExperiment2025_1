@@ -1357,6 +1357,17 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
   };
 
   const pendingValues = Array.from(pendingEntries.values());
+
+  pendingValues.forEach((entry) => {
+    if (!entry) {
+      return;
+    }
+    const occluding = isBlockOccluding(entry, blockMaterials);
+    entry.isOccluding = occluding;
+    if (!occluding && entry.coordinateKey) {
+      solidBlockKeys.delete(entry.coordinateKey);
+    }
+  });
   let occupancyMinY = Number.POSITIVE_INFINITY;
   let occupancyMaxY = Number.NEGATIVE_INFINITY;
 
@@ -1544,7 +1555,11 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
           }
           return true;
         }
-        if (!isBlockOccluding(neighborEntry, blockMaterials)) {
+        const neighborOccluding =
+          typeof neighborEntry.isOccluding === 'boolean'
+            ? neighborEntry.isOccluding
+            : isBlockOccluding(neighborEntry, blockMaterials);
+        if (!neighborOccluding) {
           return true;
         }
       }
@@ -1592,7 +1607,11 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         if (neighborEntry === entry) {
           continue;
         }
-        if (!isBlockOccluding(neighborEntry, blockMaterials)) {
+        const neighborOccluding =
+          typeof neighborEntry.isOccluding === 'boolean'
+            ? neighborEntry.isOccluding
+            : isBlockOccluding(neighborEntry, blockMaterials);
+        if (!neighborOccluding) {
           exposed = true;
           break;
         }
