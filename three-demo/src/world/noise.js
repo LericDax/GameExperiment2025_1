@@ -80,6 +80,21 @@ export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   sine: createAnisotropicSineSampler,
   anisotropicSine: createAnisotropicSineSampler,
   AnisotropicSine: createAnisotropicSineSampler,
+  cosine: createAnisotropicCosineSampler,
+  anisotropicCosine: createAnisotropicCosineSampler,
+  AnisotropicCosine: createAnisotropicCosineSampler,
+  square: createAnisotropicSquareSampler,
+  anisotropicSquare: createAnisotropicSquareSampler,
+  AnisotropicSquare: createAnisotropicSquareSampler,
+  sawtooth: createAnisotropicSawtoothSampler,
+  anisotropicSawtooth: createAnisotropicSawtoothSampler,
+  AnisotropicSawtooth: createAnisotropicSawtoothSampler,
+  triangle: createAnisotropicTriangleSampler,
+  anisotropicTriangle: createAnisotropicTriangleSampler,
+  AnisotropicTriangle: createAnisotropicTriangleSampler,
+  pulse: createAnisotropicPulseSampler,
+  anisotropicPulse: createAnisotropicPulseSampler,
+  AnisotropicPulse: createAnisotropicPulseSampler,
   warp: createDomainWarpSampler,
   domainWarp: createDomainWarpSampler,
   DomainWarp: createDomainWarpSampler,
@@ -327,14 +342,25 @@ function createWorleySampler({
   };
 }
 
-function createAnisotropicSineSampler({
-  seed = 1,
-  orientation = Math.PI / 4,
-  harmonics = 3,
-  phaseOffset = 0,
-  bias = 0,
-  harmonicFalloff = 1,
-}) {
+const TWO_PI = Math.PI * 2;
+
+function normalizeAngle01(angle) {
+  const normalized = angle / TWO_PI;
+  return normalized - Math.floor(normalized);
+}
+
+function createAnisotropicWaveformSampler(
+  waveformFn,
+  {
+    seed = 1,
+    orientation = Math.PI / 4,
+    harmonics = 3,
+    phaseOffset = 0,
+    bias = 0,
+    harmonicFalloff = 1,
+    ...waveformConfig
+  } = {},
+) {
   const cosAngle = Math.cos(orientation);
   const sinAngle = Math.sin(orientation);
   const harmonicCount = Math.max(1, Math.floor(harmonics));
@@ -348,17 +374,99 @@ function createAnisotropicSineSampler({
 
     for (let i = 1; i <= harmonicCount; i += 1) {
       const harmonicWeight = 1 / Math.pow(i, harmonicFalloff);
-      const phaseJitter = random2D(jitterSeed, i, 0) * Math.PI * 2;
+      const phaseJitter = random2D(jitterSeed, i, 0) * TWO_PI;
       value +=
-        Math.sin(u * i + phaseJitter) *
-        Math.cos(v * i + phaseJitter * 0.5) *
-        harmonicWeight;
+        waveformFn({
+          u,
+          v,
+          harmonic: i,
+          phase: phaseJitter,
+          config: waveformConfig,
+        }) * harmonicWeight;
       weight += harmonicWeight;
     }
 
     const normalized = weight > 0 ? value / weight : 0;
     return clamp(normalized + bias, -1, 1);
   };
+}
+
+function sineWaveform({ u, v, harmonic, phase }) {
+  return (
+    Math.sin(u * harmonic + phase) *
+    Math.cos(v * harmonic + phase * 0.5)
+  );
+}
+
+function cosineWaveform({ u, v, harmonic, phase }) {
+  return (
+    Math.cos(u * harmonic + phase) *
+    Math.cos(v * harmonic + phase * 0.5)
+  );
+}
+
+function squareWaveform({ u, v, harmonic, phase, config }) {
+  const dutyCycle = clamp(config?.dutyCycle ?? 0.5, 0.01, 0.99);
+  const normalized = normalizeAngle01(u * harmonic + phase);
+  const gate = normalized < dutyCycle ? 1 : -1;
+  return gate * Math.cos(v * harmonic + phase * 0.5);
+}
+
+function sawtoothWaveform({ u, v, harmonic, phase }) {
+  const normalized = normalizeAngle01(u * harmonic + phase);
+  const saw = normalized * 2 - 1;
+  return saw * Math.cos(v * harmonic + phase * 0.5);
+}
+
+function triangleWaveform({ u, v, harmonic, phase }) {
+  const normalized = normalizeAngle01(u * harmonic + phase);
+  const tri = 1 - 4 * Math.abs(normalized - 0.5);
+  return tri * Math.cos(v * harmonic + phase * 0.5);
+}
+
+function pulseWaveform({ u, v, harmonic, phase, config }) {
+  const dutyCycle = clamp(config?.dutyCycle ?? 0.2, 0.01, 0.99);
+  const highValue = clamp(config?.highValue ?? 1, -1, 1);
+  const lowValue = clamp(config?.lowValue ?? -1, -1, 1);
+  const normalized = normalizeAngle01(u * harmonic + phase);
+  const gate = normalized < dutyCycle ? highValue : lowValue;
+  return gate * Math.cos(v * harmonic + phase * 0.5);
+}
+
+function createAnisotropicSineSampler(config = {}) {
+  return createAnisotropicWaveformSampler(sineWaveform, config);
+}
+
+function createAnisotropicCosineSampler(config = {}) {
+  return createAnisotropicWaveformSampler(cosineWaveform, config);
+}
+
+function createAnisotropicSquareSampler({ harmonics = 1, ...config } = {}) {
+  return createAnisotropicWaveformSampler(squareWaveform, {
+    ...config,
+    harmonics,
+  });
+}
+
+function createAnisotropicSawtoothSampler({ harmonics = 1, ...config } = {}) {
+  return createAnisotropicWaveformSampler(sawtoothWaveform, {
+    ...config,
+    harmonics,
+  });
+}
+
+function createAnisotropicTriangleSampler({ harmonics = 1, ...config } = {}) {
+  return createAnisotropicWaveformSampler(triangleWaveform, {
+    ...config,
+    harmonics,
+  });
+}
+
+function createAnisotropicPulseSampler({ harmonics = 1, ...config } = {}) {
+  return createAnisotropicWaveformSampler(pulseWaveform, {
+    ...config,
+    harmonics,
+  });
 }
 
 function createDomainWarpSampler({
