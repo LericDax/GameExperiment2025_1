@@ -87,11 +87,16 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
   Parameters: `source`, `taps`, `decay`, `delay`, `diffusion`, `frequency`, and `orientation`.
 
 ## Exotic / emergent
-- **HyperbolicTangentField** — tanh nonlinearity shaping into sigmoids.
-- **SigmoidStepField** — logistic mapping for plateaus.
-- **ExponentialField** — exponential attenuation of height.
-- **SDFPrimitives** — signed distance fields for primitive shapes.
-- **MultifractalBlend** — multi-exponent fractal synthesis.
+- **HyperbolicTangentField** (available) — tanh remap that compresses extremes while preserving mid-band detail.
+  Parameters: `source` (noise spec, default `valueNoise`), `gain` (pre-scaling before tanh), `bias` (input offset), and `mix` (0–1 blend with the unshaped source).
+- **SigmoidStepField** (available) — logistic shaping that pushes the field toward plateaus around a configurable threshold.
+  Parameters: `source` (noise spec), `threshold` (center of the step), `steepness` (slope), `low` / `high` (plateau levels), and `mix` (blend with the raw input).
+- **ExponentialField** (available) — exponential attenuation or expansion useful for erosion masks and falloffs.
+  Parameters: `source` (noise spec), `decay` (attenuation amount), `bias` (pre-normalization offset), `invert` (flip the envelope), `offset` (post adjustment), and `mix` (blend with the source).
+- **SDFPrimitives** (available) — signed-distance primitive tiling (circles, squares, diamonds, crosses) with seeded jitter per cell.
+  Parameters: `primitive` (`circle`, `square`, `diamond`, or `cross`), `cellSize`, `radius` (relative to the cell), `jitter` (center offset), `smoothness` (edge falloff), `rotationJitter` (random rotation for anisotropic shapes), and `invert`.
+- **MultifractalBlend** (available) — power-weighted multifractal mixer that exaggerates peaks or valleys.
+  Parameters: `baseType` (noise spec), `octaves`, `gain`, `lacunarity`, `exponent` (base power), `exponentSlope` (power change per octave), `offset` (post adjustment), and `mix`.
 
 ---
 
@@ -151,5 +156,10 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 | `noiseChorus` / `NoiseChorus` | Detuned noise chorus sampler (available) |
 | `resonantFilterField` / `ResonantFilterField` | Resonant filter terrain sampler (available) |
 | `reverberantDecayField` / `ReverberantDecayField` | Reverberant decay field sampler (available) |
+| `hyperbolicTangentField` / `HyperbolicTangentField` | Tanh-shaped field remap (available) |
+| `sigmoidStepField` / `SigmoidStepField` | Logistic plateau remap (available) |
+| `exponentialField` / `ExponentialField` | Exponential attenuation remap (available) |
+| `sdfPrimitives` / `SDFPrimitives` | Primitive signed-distance tiling field (available) |
+| `multifractalBlend` / `MultifractalBlend` | Power-weighted multifractal blend (available) |
 
 Future identifiers will follow the PascalCase names listed above unless otherwise noted. Designers can use this table to map configuration data to runtime waveform factories.
