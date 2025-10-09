@@ -694,6 +694,31 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     const isWater = type === 'water';
     const isFluid = isFluidType(type);
     let collisionMode = options.collisionMode;
+    let isSolid = undefined;
+    let isSoft = undefined;
+
+    if (type === 'cryoshard_glass') {
+      const isDevBuild = !import.meta.env || import.meta.env.DEV;
+      if (isDevBuild && collisionMode === 'solid') {
+        const message =
+          '[world generation] cryoshard_glass blocks should never request solid collision; forcing soft mode.';
+        console.assert(collisionMode !== 'solid', message, {
+          position: { x, y, z },
+          options,
+        });
+        if (typeof console?.warn === 'function') {
+          console.warn(message, {
+            position: { x, y, z },
+            options,
+          });
+        }
+      }
+      collisionMode = 'soft';
+      isSolid = false;
+      isSoft = true;
+      entry.isOccluding = false;
+    }
+
     if (!collisionMode) {
       if (isFluid) {
         collisionMode = 'liquid';
@@ -705,8 +730,12 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
         collisionMode = 'none';
       }
     }
-    const isSolid = collisionMode === 'solid';
-    const isSoft = collisionMode === 'soft';
+    if (typeof isSolid !== 'boolean') {
+      isSolid = collisionMode === 'solid';
+    }
+    if (typeof isSoft !== 'boolean') {
+      isSoft = collisionMode === 'soft';
+    }
 
     const destructible =
       typeof options.destructible === 'boolean'
@@ -771,6 +800,7 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     fluidBlockKeys.delete(coordinateKey);
 
     entry.isSolid = isSolid;
+    entry.isSoft = isSoft;
     entry.isWater = isWater;
     entry.destructible = destructible;
     entry.collisionMode = collisionMode;
