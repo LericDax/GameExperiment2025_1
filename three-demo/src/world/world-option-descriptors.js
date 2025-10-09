@@ -11,7 +11,821 @@
 // Group descriptors only include `children` and serve for logical grouping.
 
 const numberType = 'number'
+const stringType = 'string'
+const enumType = 'enum'
 const groupType = 'group'
+
+const tfmsWaveformOptions = Object.freeze([
+  Object.freeze({
+    value: 'primary-fbm',
+    label: 'Primary FBM',
+    description: 'Fractal Brownian motion carrier used for macro height variation.',
+  }),
+  Object.freeze({
+    value: 'ridge-noise',
+    label: 'Ridge Noise',
+    description: 'Ridged FBM emphasizing sharp mountain crests and valleys.',
+  }),
+  Object.freeze({
+    value: 'anisotropic-banding',
+    label: 'Anisotropic Banding',
+    description: 'Directional sine banding that introduces layered striations.',
+  }),
+  Object.freeze({
+    value: 'tectonic-worley',
+    label: 'Tectonic Worley',
+    description: 'Cellular Worley noise that injects tectonic plate style features.',
+  }),
+  Object.freeze({
+    value: 'domain-warp',
+    label: 'Domain Warp',
+    description: 'Vector warp field that distorts the sampling domain of other operators.',
+  }),
+  Object.freeze({
+    value: 'diffusion-mask',
+    label: 'Diffusion Mask',
+    description: 'Anisotropic diffusion mask used for soft erosion-style blending.',
+  }),
+])
+
+const tfmsTransferOptions = Object.freeze([
+  Object.freeze({ value: 'identity', label: 'Identity' }),
+  Object.freeze({ value: 'abs', label: 'Absolute' }),
+  Object.freeze({ value: 'square', label: 'Square' }),
+  Object.freeze({ value: 'cube', label: 'Cube' }),
+  Object.freeze({ value: 'tanh', label: 'Tanh' }),
+  Object.freeze({ value: 'smoothstep', label: 'Smoothstep' }),
+  Object.freeze({ value: 'sigmoid', label: 'Sigmoid' }),
+  Object.freeze({ value: 'clamp01', label: 'Clamp 0-1' }),
+  Object.freeze({ value: 'clamp11', label: 'Clamp -1-1' }),
+])
+
+function createTfmsOperatorGroup({
+  index,
+  id,
+  label,
+  description,
+  defaults,
+  tectonic,
+  warpStep = 0.5,
+  domainWarpRange,
+}) {
+  const basePath = Object.freeze(['terrain', 'tfms', 'operators', index])
+  const modulationBase = Object.freeze([...basePath, 'modulation'])
+  const envelopeBase = Object.freeze([...basePath, 'envelope'])
+
+  const makeEnvelopePath = (key, axis) =>
+    axis
+      ? Object.freeze([...envelopeBase, key, axis])
+      : Object.freeze([...envelopeBase, key])
+  const makeModulationPath = (key, axis) =>
+    axis
+      ? Object.freeze([...modulationBase, key, axis])
+      : Object.freeze([...modulationBase, key])
+
+  return Object.freeze({
+    id: `terrain.tfms.operators.${id}`,
+    label,
+    description,
+    type: groupType,
+    children: Object.freeze([
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.waveformId`,
+        label: 'Waveform Bank',
+        description:
+          'Select which sampled waveform bank drives this operator before modulation.',
+        type: enumType,
+        default: defaults.waveformId,
+        options: tfmsWaveformOptions,
+        path: Object.freeze([...basePath, 'waveformId']),
+      }),
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.weight`,
+        label: 'Weight',
+        description:
+          'Linear mix amount applied after the transfer function. Higher values make this operator more dominant in the final envelope.',
+        type: numberType,
+        min: -8,
+        max: 8,
+        step: 0.01,
+        default: defaults.weight,
+        path: Object.freeze([...basePath, 'weight']),
+      }),
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.bias`,
+        label: 'Bias',
+        description:
+          'Constant offset applied after weighting. Useful for nudging operators above or below neutral terrain.',
+        type: numberType,
+        min: -8,
+        max: 8,
+        step: 0.01,
+        default: defaults.bias,
+        path: Object.freeze([...basePath, 'bias']),
+      }),
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.transfer`,
+        label: 'Transfer Function',
+        description:
+          'Shape the raw waveform output before mixing. Non-linear transfers accentuate ridges, terraces, or plateaus.',
+        type: enumType,
+        default: defaults.transfer,
+        options: tfmsTransferOptions,
+        path: Object.freeze([...basePath, 'transfer', 'id']),
+      }),
+      tectonic
+        ? Object.freeze({
+            id: `terrain.tfms.operators.${id}.tectonic`,
+            label: 'Tectonic Weight',
+            description:
+              'Contribution of this operator to the tectonic accumulator prior to the blend stage.',
+            type: numberType,
+            min: 0,
+            max: 1,
+            step: 0.01,
+            default: tectonic.weight,
+            path: Object.freeze([...basePath, 'tectonic', 'weight']),
+          })
+        : null,
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.envelope.amplitude`,
+        label: 'Amplitude Multiplier',
+        description:
+          'Scales the operator amplitude relative to the referenced terrain option (Base Height/Detail/Ridge strength).',
+        type: numberType,
+        min: 0,
+        max: defaults.amplitude.max,
+        step: 0.01,
+        default: defaults.amplitude.multiplier,
+        path: Object.freeze([
+          ...makeEnvelopePath('amplitude'),
+          'multiplier',
+        ]),
+      }),
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.envelope.frequency`,
+        label: 'Frequency Multiplier',
+        description:
+          'Scales the sampling frequency relative to its linked terrain control.',
+        type: numberType,
+        min: defaults.frequency.min,
+        max: defaults.frequency.max,
+        step: 0.0001,
+        default: defaults.frequency.multiplier,
+        path: Object.freeze([
+          ...makeEnvelopePath('frequency'),
+          'multiplier',
+        ]),
+      }),
+      domainWarpRange
+        ? Object.freeze({
+            id: `terrain.tfms.operators.${id}.envelope.warp.x`,
+            label: 'Domain Warp X',
+            description:
+              'Amount of lateral domain warping injected along the X axis before sampling the waveform.',
+            type: numberType,
+            min: domainWarpRange.min,
+            max: domainWarpRange.max,
+            step: warpStep,
+            default: domainWarpRange.value,
+            path: Object.freeze([
+              ...makeEnvelopePath('warp', 'x'),
+              'value',
+            ]),
+          })
+        : null,
+      domainWarpRange
+        ? Object.freeze({
+            id: `terrain.tfms.operators.${id}.envelope.warp.z`,
+            label: 'Domain Warp Z',
+            description:
+              'Amount of lateral domain warping injected along the Z axis before sampling the waveform.',
+            type: numberType,
+            min: domainWarpRange.min,
+            max: domainWarpRange.max,
+            step: warpStep,
+            default: domainWarpRange.value,
+            path: Object.freeze([
+              ...makeEnvelopePath('warp', 'z'),
+              'value',
+            ]),
+          })
+        : null,
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.modulation.amplitude`,
+        label: 'Modulation Amplitude Bias',
+        description:
+          'Base FM modulation applied to amplitude before matrix routing contributes additional offsets.',
+        type: numberType,
+        min: -1,
+        max: 1,
+        step: 0.01,
+        default: defaults.modulation.amplitude,
+        path: Object.freeze([
+          ...makeModulationPath('amplitude'),
+          'value',
+        ]),
+      }),
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.modulation.frequency`,
+        label: 'Modulation Frequency Bias',
+        description:
+          'Base FM modulation applied to frequency before matrix routing contributes additional offsets.',
+        type: numberType,
+        min: -1,
+        max: 1,
+        step: 0.01,
+        default: defaults.modulation.frequency,
+        path: Object.freeze([
+          ...makeModulationPath('frequency'),
+          'value',
+        ]),
+      }),
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.modulation.phase.x`,
+        label: 'Modulation Phase X',
+        description:
+          'Phase modulation bias applied along the X axis (in radians) prior to modulation matrix routing.',
+        type: numberType,
+        min: -Math.PI,
+        max: Math.PI,
+        step: 0.01,
+        default: 0,
+        path: Object.freeze([
+          ...makeModulationPath('phase', 'x'),
+          'value',
+        ]),
+      }),
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.modulation.phase.z`,
+        label: 'Modulation Phase Z',
+        description:
+          'Phase modulation bias applied along the Z axis (in radians) prior to modulation matrix routing.',
+        type: numberType,
+        min: -Math.PI,
+        max: Math.PI,
+        step: 0.01,
+        default: 0,
+        path: Object.freeze([
+          ...makeModulationPath('phase', 'z'),
+          'value',
+        ]),
+      }),
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.modulation.warp.x`,
+        label: 'Modulation Warp X',
+        description:
+          'Domain warp modulation bias applied along the X axis prior to matrix routing.',
+        type: numberType,
+        min: domainWarpRange ? domainWarpRange.min : -128,
+        max: domainWarpRange ? domainWarpRange.max : 128,
+        step: warpStep,
+        default: 0,
+        path: Object.freeze([
+          ...makeModulationPath('warp', 'x'),
+          'value',
+        ]),
+      }),
+      Object.freeze({
+        id: `terrain.tfms.operators.${id}.modulation.warp.z`,
+        label: 'Modulation Warp Z',
+        description:
+          'Domain warp modulation bias applied along the Z axis prior to matrix routing.',
+        type: numberType,
+        min: domainWarpRange ? domainWarpRange.min : -128,
+        max: domainWarpRange ? domainWarpRange.max : 128,
+        step: warpStep,
+        default: 0,
+        path: Object.freeze([
+          ...makeModulationPath('warp', 'z'),
+          'value',
+        ]),
+      }),
+    ].filter(Boolean)),
+  })
+}
+
+const tfmsOperatorGroups = Object.freeze([
+  createTfmsOperatorGroup({
+    index: 0,
+    id: 'primary-fbm',
+    label: 'Primary FBM Carrier',
+    description:
+      'Macro-scale FBM carrier responsible for continent-sized plateaus and valleys.',
+    defaults: {
+      waveformId: 'primary-fbm',
+      weight: 1,
+      bias: 0,
+      transfer: 'identity',
+      amplitude: { multiplier: 1, min: 0, max: 256 },
+      frequency: { multiplier: 1, min: 0.0001, max: 1 },
+      modulation: { amplitude: 0, frequency: 0 },
+    },
+    tectonic: { weight: 0.18 },
+    domainWarpRange: { value: 0, min: -128, max: 128 },
+  }),
+  createTfmsOperatorGroup({
+    index: 1,
+    id: 'ridge-noise',
+    label: 'Ridge Noise Enhancer',
+    description:
+      'Ridged FBM emphasizing mountainous silhouettes and razor-sharp crests.',
+    defaults: {
+      waveformId: 'ridge-noise',
+      weight: 0.75,
+      bias: 0,
+      transfer: 'abs',
+      amplitude: { multiplier: 1, min: 0, max: 64 },
+      frequency: { multiplier: 1, min: 0.0001, max: 1 },
+      modulation: { amplitude: 0, frequency: 0 },
+    },
+    tectonic: null,
+    domainWarpRange: { value: 0, min: -128, max: 128 },
+  }),
+  createTfmsOperatorGroup({
+    index: 2,
+    id: 'anisotropic-banding',
+    label: 'Anisotropic Banding',
+    description:
+      'Directional banding introducing stratified layers and dunes to terrain surfaces.',
+    defaults: {
+      waveformId: 'anisotropic-banding',
+      weight: 0.5,
+      bias: 0,
+      transfer: 'tanh',
+      amplitude: { multiplier: 0.75, min: 0, max: 128 },
+      frequency: { multiplier: 1.5, min: 0.0001, max: 2 },
+      modulation: { amplitude: 0, frequency: 0 },
+    },
+    tectonic: null,
+    domainWarpRange: { value: 0, min: -64, max: 64 },
+    warpStep: 0.25,
+  }),
+  createTfmsOperatorGroup({
+    index: 3,
+    id: 'tectonic-worley',
+    label: 'Tectonic Worley Cells',
+    description:
+      'Worley cells simulating tectonic plate interactions and fault lines.',
+    defaults: {
+      waveformId: 'tectonic-worley',
+      weight: 0.35,
+      bias: 0,
+      transfer: 'smoothstep',
+      amplitude: { multiplier: 0.45, min: 0, max: 128 },
+      frequency: { multiplier: 0.45, min: 0.0001, max: 1 },
+      modulation: { amplitude: 0, frequency: 0 },
+    },
+    tectonic: { weight: 0.4 },
+    domainWarpRange: { value: 0, min: -128, max: 128 },
+  }),
+  createTfmsOperatorGroup({
+    index: 4,
+    id: 'domain-warp',
+    label: 'Domain Warp Field',
+    description:
+      'Vector field that bends sample coordinates for downstream operators.',
+    defaults: {
+      waveformId: 'domain-warp',
+      weight: 0,
+      bias: 0,
+      transfer: 'identity',
+      amplitude: { multiplier: 0.32, min: 0, max: 256 },
+      frequency: { multiplier: 0.65, min: 0.0001, max: 1 },
+      modulation: { amplitude: 0, frequency: 0 },
+    },
+    tectonic: null,
+    domainWarpRange: { value: 0, min: -128, max: 128 },
+  }),
+  createTfmsOperatorGroup({
+    index: 5,
+    id: 'diffusion-mask',
+    label: 'Diffusion Mask',
+    description:
+      'Diffusion mask that softens peaks and blends neighbouring operator responses.',
+    defaults: {
+      waveformId: 'diffusion-mask',
+      weight: 0.55,
+      bias: 0,
+      transfer: 'tanh',
+      amplitude: { multiplier: 0.35, min: 0, max: 128 },
+      frequency: { multiplier: 1.2, min: 0.0001, max: 2 },
+      modulation: { amplitude: 0, frequency: 0 },
+    },
+    tectonic: null,
+    domainWarpRange: { value: 0, min: -128, max: 128 },
+  }),
+])
+
+const tfmsModulationMatrixGroup = Object.freeze({
+  id: 'terrain.tfms.modulationMatrix',
+  label: 'Modulation Matrix',
+  description:
+    'Fine-tune cross-operator frequency and amplitude modulation. Gains are applied before routing into each operator.',
+  type: groupType,
+  children: Object.freeze([
+    Object.freeze({
+      id: 'terrain.tfms.modulationMatrix.diffusion-primary',
+      label: 'Diffusion → Primary (Amplitude)',
+      description:
+        'How strongly the diffusion mask modulates the primary FBM amplitude.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0.4,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'modulationMatrix',
+        0,
+        'gain',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.modulationMatrix.diffusion-ridge',
+      label: 'Diffusion → Ridge (Amplitude)',
+      description:
+        'Modulation gain from the diffusion mask into the ridge operator amplitude.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0.3,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'modulationMatrix',
+        1,
+        'gain',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.modulationMatrix.diffusion-banding',
+      label: 'Diffusion → Banding (Amplitude)',
+      description:
+        'Modulation gain from the diffusion mask into the anisotropic banding amplitude.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0.25,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'modulationMatrix',
+        2,
+        'gain',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.modulationMatrix.domain-primary-x',
+      label: 'Domain Warp → Primary (X)',
+      description:
+        'Domain warp strength routed into the primary FBM X-axis domain.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0.7,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'modulationMatrix',
+        3,
+        'gain',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.modulationMatrix.domain-primary-z',
+      label: 'Domain Warp → Primary (Z)',
+      description:
+        'Domain warp strength routed into the primary FBM Z-axis domain.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0.7,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'modulationMatrix',
+        4,
+        'gain',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.modulationMatrix.domain-ridge-x',
+      label: 'Domain Warp → Ridge (X)',
+      description:
+        'Domain warp gain routed into the ridge operator X-axis domain.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0.5,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'modulationMatrix',
+        5,
+        'gain',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.modulationMatrix.domain-ridge-z',
+      label: 'Domain Warp → Ridge (Z)',
+      description:
+        'Domain warp gain routed into the ridge operator Z-axis domain.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0.5,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'modulationMatrix',
+        6,
+        'gain',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.modulationMatrix.tectonic-ridge',
+      label: 'Tectonic → Ridge (Amplitude)',
+      description:
+        'Raw tectonic Worley value routed into the ridge operator amplitude.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0.35,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'modulationMatrix',
+        7,
+        'gain',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.modulationMatrix.tectonic-banding',
+      label: 'Tectonic → Banding (Frequency)',
+      description:
+        'Frequency modulation routed from the tectonic Worley carrier into the banding operator.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0.2,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'modulationMatrix',
+        8,
+        'gain',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.modulationMatrix.ridge-domain',
+      label: 'Ridge → Domain Warp (Amplitude)',
+      description:
+        'How strongly ridge output amplifies the domain warp envelope.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0.35,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'modulationMatrix',
+        9,
+        'gain',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.modulationMatrix.tectonic-diffusion',
+      label: 'Tectonic → Diffusion (Amplitude)',
+      description:
+        'Raw tectonic Worley contribution routed into the diffusion mask amplitude.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0.45,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'modulationMatrix',
+        10,
+        'gain',
+        'value',
+      ]),
+    }),
+  ]),
+})
+
+const tfmsKameaGroup = Object.freeze({
+  id: 'terrain.tfms.kamea',
+  label: 'Kamea Temperament',
+  description:
+    'Planetary temperament settings projected into the TFMS modulation network.',
+  type: groupType,
+  children: Object.freeze([
+    Object.freeze({
+      id: 'terrain.tfms.temperament',
+      label: 'Planetary Temperament',
+      description:
+        'Selects which canonical Kamea matrix seeds the TFMS modulation network.',
+      type: stringType,
+      default: 'Saturn 3x3',
+      path: Object.freeze(['terrain', 'tfms', 'temperament']),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.kamea.modulationStrength',
+      label: 'FM Modulation Strength',
+      description:
+        'Scales the FM matrix derived from the selected temperament.',
+      type: numberType,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.5,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'kamea',
+        'modulationStrength',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.kamea.warpStrength',
+      label: 'Warp Strength',
+      description:
+        'Scales the primary and 90° companion warp vectors injected before noise sampling.',
+      type: numberType,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.375,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'kamea',
+        'warpStrength',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.kamea.phaseStrength',
+      label: 'Phase Strength',
+      description:
+        'Scales temperament-driven phase offsets in radians.',
+      type: numberType,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.225,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'kamea',
+        'phaseStrength',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.kamea.spectralProfile',
+      label: 'Spectral Profile',
+      description:
+        'Chooses the FFT mask applied to the Kamea kernel (`low`, `band`, or `custom`).',
+      type: stringType,
+      default: 'band',
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'kamea',
+        'spectralProfile',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.kamea.spectralStrength',
+      label: 'Spectral Strength',
+      description:
+        'Scales the FFT-derived filter contribution when shaping operator output.',
+      type: numberType,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.5,
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'kamea',
+        'spectralStrength',
+        'value',
+      ]),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.kamea.erosionPreset',
+      label: 'Erosion Preset',
+      description:
+        'Selects conductance presets for anisotropic diffusion (`gentle`, `standard`, `aggressive`).',
+      type: stringType,
+      default: 'standard',
+      path: Object.freeze([
+        'terrain',
+        'tfms',
+        'kamea',
+        'erosionPreset',
+      ]),
+    }),
+  ]),
+})
+
+const terrainTfmsGlobalGroup = Object.freeze({
+  id: 'terrain.tfms.global',
+  label: 'TFMS Global Settings',
+  description:
+    'High-level TFMS controls that influence every operator before the modulation network evaluates waveforms.',
+  type: groupType,
+  children: Object.freeze([
+    Object.freeze({
+      id: 'terrain.tfms.baseAttenuation',
+      label: 'Base Attenuation',
+      description:
+        'Scales the combined TFMS envelope before it is added to the terrain base height.',
+      type: numberType,
+      min: 0,
+      max: 2,
+      step: 0.01,
+      default: 0.82,
+      path: Object.freeze(['terrain', 'tfms', 'baseAttenuation']),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.clamp.min',
+      label: 'Envelope Clamp Minimum',
+      description:
+        'Lower clamp applied to the final TFMS envelope before biome adjustments.',
+      type: numberType,
+      min: -128,
+      max: 0,
+      step: 0.5,
+      default: -24,
+      path: Object.freeze(['terrain', 'tfms', 'clamp', 'min']),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.clamp.max',
+      label: 'Envelope Clamp Maximum',
+      description:
+        'Upper clamp applied to the final TFMS envelope before biome adjustments.',
+      type: numberType,
+      min: 0,
+      max: 128,
+      step: 0.5,
+      default: 24,
+      path: Object.freeze(['terrain', 'tfms', 'clamp', 'max']),
+    }),
+    Object.freeze({
+      id: 'terrain.tfms.biomeBlendStrength',
+      label: 'Biome Blend Strength',
+      description:
+        'Controls how strongly biome height offsets influence the TFMS envelope when blending across biome boundaries.',
+      type: numberType,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      default: 0.45,
+      path: Object.freeze(['terrain', 'tfms', 'biomeBlendStrength']),
+    }),
+  ]),
+})
+
+const terrainTfmsGroup = Object.freeze({
+  id: 'terrain.tfms',
+  label: 'Terrain FM Synthesis',
+  description:
+    'Configure the Terrain FM Synthesis (TFMS) operators that sculpt heightfields before biome blending.',
+  type: groupType,
+  children: Object.freeze([
+    terrainTfmsGlobalGroup,
+    tfmsKameaGroup,
+    ...tfmsOperatorGroups,
+    tfmsModulationMatrixGroup,
+  ]),
+})
 
 const seedDescriptor = Object.freeze({
   id: 'seed',
@@ -380,6 +1194,7 @@ export const worldOptionDescriptors = Object.freeze([
   waterGroup,
   legacyWaterLevelDescriptor,
   terrainGroup,
+  terrainTfmsGroup,
   legacyBaseHeightDescriptor,
   legacyMaxHeightDescriptor,
   biomesGroup,

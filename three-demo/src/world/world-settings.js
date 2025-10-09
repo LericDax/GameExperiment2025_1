@@ -81,6 +81,75 @@ const defaultTerrainCore = Object.freeze({
   ]),
 })
 
+const defaultTerrainTfmsClamp = Object.freeze({
+  min: getDescriptorDefault(['terrain', 'tfms', 'clamp', 'min']),
+  max: getDescriptorDefault(['terrain', 'tfms', 'clamp', 'max']),
+})
+
+const defaultTerrainTfmsBaseAttenuation = getDescriptorDefault([
+  'terrain',
+  'tfms',
+  'baseAttenuation',
+])
+
+const defaultTerrainTfmsBiomeBlendStrength = getDescriptorDefault([
+  'terrain',
+  'tfms',
+  'biomeBlendStrength',
+])
+
+const defaultTerrainTfmsTemperament = getDescriptorDefault([
+  'terrain',
+  'tfms',
+  'temperament',
+])
+
+const defaultTerrainTfmsKameaModulation = getDescriptorDefault([
+  'terrain',
+  'tfms',
+  'kamea',
+  'modulationStrength',
+  'value',
+])
+
+const defaultTerrainTfmsKameaWarp = getDescriptorDefault([
+  'terrain',
+  'tfms',
+  'kamea',
+  'warpStrength',
+  'value',
+])
+
+const defaultTerrainTfmsKameaPhase = getDescriptorDefault([
+  'terrain',
+  'tfms',
+  'kamea',
+  'phaseStrength',
+  'value',
+])
+
+const defaultTerrainTfmsKameaSpectral = getDescriptorDefault([
+  'terrain',
+  'tfms',
+  'kamea',
+  'spectralStrength',
+  'value',
+])
+
+const defaultTerrainTfmsKameaProfile = getDescriptorDefault([
+  'terrain',
+  'tfms',
+  'kamea',
+  'spectralProfile',
+])
+
+const defaultTerrainTfmsKameaErosion = getDescriptorDefault([
+  'terrain',
+  'tfms',
+  'kamea',
+  'erosionPreset',
+])
+
 const defaultTerrainTfmsPreset = createDefaultTerrainTfmsPreset(defaultTerrainCore)
 
 const defaultTerrainOptions = Object.freeze({
@@ -390,10 +459,46 @@ function cloneTfmsMatrixEntry(entry, index) {
   }
 }
 
+function cloneTfmsClamp(clamp) {
+  const fallback = defaultTerrainTfmsClamp
+  const min = Number.isFinite(clamp?.min) ? clamp.min : fallback?.min
+  const max = Number.isFinite(clamp?.max) ? clamp.max : fallback?.max
+  const result = {}
+  if (Number.isFinite(min)) {
+    result.min = min
+  }
+  if (Number.isFinite(max)) {
+    result.max = max
+  }
+  return result
+}
+
 function cloneTfmsKamea(kamea) {
   if (!kamea || typeof kamea !== 'object') {
     return {
-      temperament: 'Saturn 3x3',
+      temperament: defaultTerrainTfmsTemperament,
+      modulationStrength: cloneTfmsRange({
+        value: defaultTerrainTfmsKameaModulation,
+        min: 0,
+        max: 1,
+      }),
+      warpStrength: cloneTfmsRange({
+        value: defaultTerrainTfmsKameaWarp,
+        min: 0,
+        max: 1,
+      }),
+      phaseStrength: cloneTfmsRange({
+        value: defaultTerrainTfmsKameaPhase,
+        min: 0,
+        max: 1,
+      }),
+      spectralStrength: cloneTfmsRange({
+        value: defaultTerrainTfmsKameaSpectral,
+        min: 0,
+        max: 1,
+      }),
+      spectralProfile: defaultTerrainTfmsKameaProfile,
+      erosionPreset: defaultTerrainTfmsKameaErosion,
       ranges: {
         modulationStrength: { min: 0, max: 1 },
         warpStrength: { min: 0, max: 1 },
@@ -409,20 +514,52 @@ function cloneTfmsKamea(kamea) {
     })
   }
   return {
-    temperament: typeof kamea.temperament === 'string' ? kamea.temperament : 'Saturn 3x3',
-    modulationStrength: cloneTfmsRange(kamea.modulationStrength),
-    warpStrength: cloneTfmsRange(kamea.warpStrength),
-    phaseStrength: cloneTfmsRange(kamea.phaseStrength),
-    spectralStrength: cloneTfmsRange(kamea.spectralStrength),
+    temperament:
+      typeof kamea.temperament === 'string'
+        ? kamea.temperament
+        : defaultTerrainTfmsTemperament,
+    modulationStrength: cloneTfmsRange(
+      kamea.modulationStrength ?? {
+        value: defaultTerrainTfmsKameaModulation,
+        min: 0,
+        max: 1,
+      },
+    ),
+    warpStrength: cloneTfmsRange(
+      kamea.warpStrength ?? {
+        value: defaultTerrainTfmsKameaWarp,
+        min: 0,
+        max: 1,
+      },
+    ),
+    phaseStrength: cloneTfmsRange(
+      kamea.phaseStrength ?? {
+        value: defaultTerrainTfmsKameaPhase,
+        min: 0,
+        max: 1,
+      },
+    ),
+    spectralStrength: cloneTfmsRange(
+      kamea.spectralStrength ?? {
+        value: defaultTerrainTfmsKameaSpectral,
+        min: 0,
+        max: 1,
+      },
+    ),
     spectralProfile:
-      typeof kamea.spectralProfile === 'string' ? kamea.spectralProfile : 'band',
+      typeof kamea.spectralProfile === 'string'
+        ? kamea.spectralProfile
+        : defaultTerrainTfmsKameaProfile,
     erosionPreset:
-      typeof kamea.erosionPreset === 'string' ? kamea.erosionPreset : 'standard',
+      typeof kamea.erosionPreset === 'string'
+        ? kamea.erosionPreset
+        : defaultTerrainTfmsKameaErosion,
     ranges,
   }
 }
 
 function cloneTfmsPreset(preset = {}) {
+  const clonedKamea = cloneTfmsKamea(preset.kamea)
   return {
     waveforms: Array.isArray(preset.waveforms)
       ? preset.waveforms.map((waveform, index) => cloneTfmsWaveform(waveform, index))
@@ -441,7 +578,18 @@ function cloneTfmsPreset(preset = {}) {
       preset.tectonic && typeof preset.tectonic === 'object'
         ? { ...preset.tectonic }
         : {},
-    kamea: cloneTfmsKamea(preset.kamea),
+    kamea: clonedKamea,
+    temperament:
+      typeof preset.temperament === 'string'
+        ? preset.temperament
+        : clonedKamea.temperament ?? defaultTerrainTfmsTemperament,
+    baseAttenuation: Number.isFinite(preset.baseAttenuation)
+      ? preset.baseAttenuation
+      : defaultTerrainTfmsBaseAttenuation,
+    clamp: cloneTfmsClamp(preset.clamp),
+    biomeBlendStrength: Number.isFinite(preset.biomeBlendStrength)
+      ? preset.biomeBlendStrength
+      : defaultTerrainTfmsBiomeBlendStrength,
     defaults:
       preset.defaults && typeof preset.defaults === 'object'
         ? { ...preset.defaults }
@@ -459,6 +607,60 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   const ridgeStrength = terrainDefaults.ridgeStrength
   const ridgeFrequency = terrainDefaults.ridgeFrequency
   const ridgeOffset = terrainDefaults.ridgeOffset
+
+  const clampValue = (value, min, max) => {
+    let next = value
+    if (Number.isFinite(min)) {
+      next = Math.max(min, next)
+    }
+    if (Number.isFinite(max)) {
+      next = Math.min(max, next)
+    }
+    return next
+  }
+
+  const baseAttenuation = Number.isFinite(defaultTerrainTfmsBaseAttenuation)
+    ? defaultTerrainTfmsBaseAttenuation
+    : 1
+  const clampMin = Number.isFinite(defaultTerrainTfmsClamp?.min)
+    ? defaultTerrainTfmsClamp.min
+    : -24
+  const clampMax = Number.isFinite(defaultTerrainTfmsClamp?.max)
+    ? defaultTerrainTfmsClamp.max
+    : 24
+  const biomeBlendStrength = Number.isFinite(defaultTerrainTfmsBiomeBlendStrength)
+    ? defaultTerrainTfmsBiomeBlendStrength
+    : 0.45
+
+  const derivedModulation = clampValue(baseAmplitude / 16, 0.3, 1)
+  const derivedWarp = clampValue(derivedModulation * 0.75, 0, 1)
+  const derivedPhase = clampValue(derivedModulation * 0.45, 0, 1)
+  const derivedSpectral = clampValue(detailAmplitude / 6, 0.2, 1)
+
+  const modulationStrength = Number.isFinite(defaultTerrainTfmsKameaModulation)
+    ? defaultTerrainTfmsKameaModulation
+    : derivedModulation
+  const warpStrength = Number.isFinite(defaultTerrainTfmsKameaWarp)
+    ? defaultTerrainTfmsKameaWarp
+    : derivedWarp
+  const phaseStrength = Number.isFinite(defaultTerrainTfmsKameaPhase)
+    ? defaultTerrainTfmsKameaPhase
+    : derivedPhase
+  const spectralStrength = Number.isFinite(defaultTerrainTfmsKameaSpectral)
+    ? defaultTerrainTfmsKameaSpectral
+    : derivedSpectral
+  const temperament =
+    typeof defaultTerrainTfmsTemperament === 'string'
+      ? defaultTerrainTfmsTemperament
+      : 'Saturn 3x3'
+  const spectralProfile =
+    typeof defaultTerrainTfmsKameaProfile === 'string'
+      ? defaultTerrainTfmsKameaProfile
+      : 'band'
+  const erosionPreset =
+    typeof defaultTerrainTfmsKameaErosion === 'string'
+      ? defaultTerrainTfmsKameaErosion
+      : 'standard'
 
   const waveforms = [
     Object.freeze({
@@ -894,13 +1096,13 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   })
 
   const kamea = Object.freeze({
-    temperament: 'Saturn 3x3',
-    modulationStrength: Object.freeze({ min: 0, max: 1 }),
-    warpStrength: Object.freeze({ min: 0, max: 1 }),
-    phaseStrength: Object.freeze({ min: 0, max: 1 }),
-    spectralProfile: 'band',
-    spectralStrength: Object.freeze({ min: 0, max: 1 }),
-    erosionPreset: 'standard',
+    temperament,
+    modulationStrength: Object.freeze({ value: modulationStrength, min: 0, max: 1 }),
+    warpStrength: Object.freeze({ value: warpStrength, min: 0, max: 1 }),
+    phaseStrength: Object.freeze({ value: phaseStrength, min: 0, max: 1 }),
+    spectralProfile,
+    spectralStrength: Object.freeze({ value: spectralStrength, min: 0, max: 1 }),
+    erosionPreset,
     ranges: kameaRanges,
   })
 
@@ -911,6 +1113,10 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     transferFunctions: Object.freeze({}),
     tectonic,
     kamea,
+    temperament,
+    baseAttenuation,
+    clamp: Object.freeze({ min: clampMin, max: clampMax }),
+    biomeBlendStrength,
     defaults: Object.freeze({
       baseAmplitude,
       baseFrequency,
@@ -1408,14 +1614,47 @@ function applyTfmsOverrides(target, overrides) {
     }
   }
 
+  if (normalizedOverrides.hasOwnProperty('baseAttenuation')) {
+    if (isFiniteNumber(normalizedOverrides.baseAttenuation)) {
+      target.baseAttenuation = normalizedOverrides.baseAttenuation
+    }
+  }
+
+  if (normalizedOverrides.clamp && isObject(normalizedOverrides.clamp)) {
+    target.clamp = target.clamp ?? cloneTfmsClamp(target.clamp)
+    if (
+      normalizedOverrides.clamp.hasOwnProperty('min') &&
+      isFiniteNumber(normalizedOverrides.clamp.min)
+    ) {
+      target.clamp.min = normalizedOverrides.clamp.min
+    }
+    if (
+      normalizedOverrides.clamp.hasOwnProperty('max') &&
+      isFiniteNumber(normalizedOverrides.clamp.max)
+    ) {
+      target.clamp.max = normalizedOverrides.clamp.max
+    }
+  }
+
+  if (normalizedOverrides.hasOwnProperty('biomeBlendStrength')) {
+    if (isFiniteNumber(normalizedOverrides.biomeBlendStrength)) {
+      target.biomeBlendStrength = normalizedOverrides.biomeBlendStrength
+    }
+  }
+
   if (typeof normalizedOverrides.temperament === 'string') {
     target.kamea.temperament = normalizedOverrides.temperament
+    target.temperament = normalizedOverrides.temperament
   }
   if (typeof normalizedOverrides.kameaTemperament === 'string') {
     target.kamea.temperament = normalizedOverrides.kameaTemperament
+    target.temperament = normalizedOverrides.kameaTemperament
   }
   if (normalizedOverrides.kamea && isObject(normalizedOverrides.kamea)) {
     mergeTfmsKamea(target.kamea, normalizedOverrides.kamea)
+  }
+  if (target.kamea && typeof target.kamea.temperament === 'string') {
+    target.temperament = target.kamea.temperament
   }
 }
 
