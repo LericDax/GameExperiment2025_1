@@ -14,22 +14,183 @@ The `world/kamea.js` module exposes canonical planetary squares with determinist
 When designing TFMS presets, treat Kamea matrices as structured macro-patterns that can be blended with noise by resampling into a compatible resolution and applying the desired encoder before mixing.
 
 ## Core noise waveforms
-- **FBM** (available) — fractal Brownian motion stack of value noise octaves. Defaults: 5 octaves, gain 0.5, lacunarity 2.
+- **FBM** (available) — see [FBM details](#fbm-fbm-fbm) for parameters and usage.
 - **Turbulence** (available) — absolute-value FBM variant for turbulent ridges. Defaults mirror FBM.
-- **RidgedFBM** (available via `ridge`) — inverted FBM emphasizing peaks and crests. Defaults mirror FBM with ridge sharpness 2.
-- **Worley** (available) — cellular Voronoi noise driven by random feature points. Defaults: jitter 0.75, falloff 1, Euclidean distance.
+- **RidgedFBM** (available via `ridge`) — see [Ridged FBM details](#ridged-fbm-ridge-ridged) for parameters and usage.
+- **Worley** (available) — see [Worley details](#worley-worley) for parameters and usage.
 - **Billow** (available) — puffed turbulence with rounded hill profiles. Defaults mirror FBM.
 - **ValueNoise** (available) — base scalar lattice noise. Defaults: normalized value noise seeded per lattice.
 - **GradientNoise** (available) — smooth alternative to value noise. Defaults: Perlin-style gradients derived from the seed.
 - **SimplexNoise** (available) — efficient gradient noise alternative for large worlds. Defaults: 2D simplex gradients seeded deterministically.
 
+### FBM (`fbm`, `FBM`)
+
+Fractal Brownian motion stacks multiple value-noise octaves with diminishing amplitude to produce smooth, self-similar terrain bands. It yields a scalar height/value in the `[-1, 1]` range suitable for direct displacement or mask work.【F:three-demo/src/world/noise.js†L284-L320】
+
+**Parameters & defaults**
+
+- `seed` (default `1`) — base seed routed to each octave.
+- `octaves` (default `5`) — number of stacked octaves, rounded down to an integer ≥1.
+- `gain` (default `0.5`) — amplitude multiplier applied per octave.
+- `lacunarity` (default `2`) — frequency multiplier applied per octave.
+
+**Aliases** — `fbm`, `FBM`.
+
+**TFMS example**
+
+```js
+import { createNoiseSampler } from '../world/noise.js';
+
+const fbmSampler = createNoiseSampler('fbm', {
+  seed: 1337,
+  octaves: 6,
+  gain: 0.48,
+  lacunarity: 2.1,
+});
+
+const fbmNode = {
+  type: 'fbm',
+  config: {
+    seed: 1337,
+    octaves: 6,
+    gain: 0.48,
+    lacunarity: 2.1,
+  },
+};
+```
+
+**Determinism** — Unit tests assert that identical seeds reproduce the same FBM samples and that changing the seed alters the field while keeping samples clamped to `[-1, 1]`.【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L21-L39】
+
+### Ridged FBM (`ridge`, `ridged`)
+
+Ridged FBM inverts and sharpens the FBM stack to emphasize crests and valley walls while still producing scalar output in `[-1, 1]`. Internally it evaluates a standard FBM field and remaps it with a ridge exponent.【F:three-demo/src/world/noise.js†L794-L815】
+
+**Parameters & defaults**
+
+- `seed` (default `1`) — used to derive an internal FBM sampler.
+- `octaves` (default `5`) — forwarded to the internal FBM stack.
+- `gain` (default `0.5`) — amplitude falloff per octave.
+- `lacunarity` (default `2`) — frequency multiplier per octave.
+- `ridgeSharpness` (default `2`) — exponent controlling how aggressively valleys are inverted.
+
+**Aliases** — `ridge`, `ridged`, `RidgedFBM`.
+
+**TFMS example**
+
+```js
+import { createNoiseSampler } from '../world/noise.js';
+
+const ridgedSampler = createNoiseSampler('ridge', {
+  seed: 314,
+  octaves: 4,
+  gain: 0.45,
+  lacunarity: 1.9,
+  ridgeSharpness: 2.4,
+});
+
+const ridgedNode = {
+  type: 'ridge',
+  config: {
+    seed: 314,
+    octaves: 4,
+    gain: 0.45,
+    lacunarity: 1.9,
+    ridgeSharpness: 2.4,
+  },
+};
+```
+
+**Determinism** — Automated coverage mirrors the FBM guarantees, ensuring repeatable results for a given seed and ridge configuration while remaining within `[-1, 1]`.【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L21-L55】
+
+### Worley (`worley`)
+
+Worley noise distributes jittered feature points per lattice cell and computes a falloff curve from the nearest point, producing cellular masks normalized to `[-1, 1]`. The implementation supports Euclidean and Manhattan distances via the `distance` parameter.【F:three-demo/src/world/noise.js†L816-L858】
+
+**Parameters & defaults**
+
+- `seed` (default `1`) — offsets the hashed jitter streams.
+- `jitter` (default `0.75`) — scales how far feature points drift from cell centers (0 disables jitter).
+- `falloff` (default `1`) — exponential falloff applied to the nearest-distance metric.
+- `distance` (default `'euclidean'`) — toggles between Euclidean and Manhattan distance metrics.
+
+**Aliases** — `worley`, `Worley`.
+
+**TFMS example**
+
+```js
+import { createNoiseSampler } from '../world/noise.js';
+
+const cellularMask = createNoiseSampler('worley', {
+  seed: 9001,
+  jitter: 0.6,
+  falloff: 1.3,
+  distance: 'manhattan',
+});
+
+const worleyNode = {
+  type: 'worley',
+  config: {
+    seed: 9001,
+    jitter: 0.6,
+    falloff: 1.3,
+    distance: 'manhattan',
+  },
+};
+```
+
+**Determinism** — Tests confirm identical seeds reproduce the same feature layout and that alternate seeds change cell placement without exceeding the expected range.【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L21-L34】【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L163-L165】
+
 ## Analytic / trigonometric waveforms
-- **AnisotropicSine** (available via `sine`) — directional sine bands ideal for dunes. Parameters: `orientation` (radians), `phaseOffset`, `harmonics`, `harmonicFalloff`, `bias`.
+- **AnisotropicSine** (available via `sine`) — see [Anisotropic Sine details](#anisotropic-sine-sine-anisotropicsine) for parameters and usage.
 - **AnisotropicCosine** (available via `cosine`) — cosine counterpart with alternating ridge emphasis. Shares the sine parameters above.
 - **AnisotropicSquare** (available via `square`) — thresholded band pattern suited for terraces. Adds `dutyCycle` (0–1) in addition to the sine parameters.
 - **AnisotropicSawtooth** (available via `sawtooth`) — linear ramp wave useful for repeating slopes. Shares the sine parameters.
 - **AnisotropicTriangle** (available via `triangle`) — symmetric ramp pattern for jagged peaks. Shares the sine parameters.
 - **AnisotropicPulse** (available via `pulse`) — directional on/off mask. Supports the sine parameters plus `dutyCycle`, `highValue`, and `lowValue` to control pulse width and thresholds.
+
+### Anisotropic Sine (`sine`, `anisotropicSine`)
+
+This directional waveform projects coordinates onto a rotated basis, layering harmonic sine products to generate dune-like bands. Outputs remain within `[-1, 1]` (after bias) and are ideal for modulation masks.【F:three-demo/src/world/noise.js†L844-L886】
+
+**Parameters & defaults**
+
+- `seed` (default `1`) — introduces per-harmonic phase jitter for subtle variation.
+- `orientation` (default `Math.PI / 4`) — rotation (radians) of the primary bands.
+- `harmonics` (default `3`) — count of harmonic layers (minimum 1).
+- `phaseOffset` (default `0`) — base phase shift applied before harmonic jitter.
+- `harmonicFalloff` (default `1`) — amplitude decay exponent across harmonics.
+- `bias` (default `0`) — post-sum offset applied before clamping.
+
+**Aliases** — `sine`, `anisotropicSine`, `AnisotropicSine`.
+
+**TFMS example**
+
+```js
+import { createNoiseSampler } from '../world/noise.js';
+
+const duneBands = createNoiseSampler('sine', {
+  seed: 512,
+  orientation: Math.PI / 6,
+  harmonics: 5,
+  harmonicFalloff: 1.15,
+  phaseOffset: 0.25,
+  bias: 0.05,
+});
+
+const sineNode = {
+  type: 'sine',
+  config: {
+    seed: 512,
+    orientation: Math.PI / 6,
+    harmonics: 5,
+    harmonicFalloff: 1.15,
+    phaseOffset: 0.25,
+    bias: 0.05,
+  },
+};
+```
+
+**Determinism** — Re-using the same seed reproduces identical band placement, while different seeds inject new phase jitter as verified by automated tests.【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L21-L34】【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L179-L187】
 
 ## Fractal / spectral variants
 - **PinkNoise** (available via `pinkNoise`, alias `FractalPinkNoise`) — 1/f spectral slope balancing smooth coherence with gentle high-frequency accents. Defaults: 6 octaves, lacunarity 2.
@@ -44,16 +205,92 @@ When designing TFMS presets, treat Kamea matrices as structured macro-patterns t
 - **WhiteNoise** (available via `whiteNoise`) — zero-correlation random scalar field normalized to [-1, 1].
 
 ## Structural / geometric
-- **DomainWarp** (available via `warp`) — coordinate warp derived from another field.
+- **DomainWarp** (available via `warp`) — see [Domain Warp details](#domain-warp-warp-domainwarp) for parameters and usage.
 - **CurlNoise** (available via `curlNoise`) — divergence-free vector warp derived from simplex curl; ideal for fluid domain offsets.
 - **CellEdgeDistance** (available via `cellEdgeDistance`) — scalar mask emphasizing Voronoi cell boundaries using the F2 - F1 gap.
 - **TerraceQuantized** (available via `terraceQuantized`) — stepped remap that snaps a base heightfield into terraces with optional smoothing.
 - **VoronoiBlend** (available via `voronoiBlend`) — blended F1/F2 Voronoi ratio suited for island silhouettes and cellular plateaus.
 
+### Domain Warp (`warp`, `domainWarp`)
+
+Domain warping produces a deterministic 2D vector offset `{ x, z }`, typically combined with `projectSampleCoordinates` to distort downstream samplers. Each component is normalized to `[-1, 1]` so you can scale the warp strength externally.【F:three-demo/src/world/noise.js†L1814-L1847】
+
+**Parameters & defaults**
+
+- `seed` (default `1`) — drives the paired value-noise sources for the X/Z offsets.
+- `strength` (default `0.5`) — starting amplitude for the first octave (affects both components).
+- `scale` (default `1`) — base frequency of the warp field.
+- `octaves` (default `1`) — number of stacked warp octaves.
+- `gain` (default `0.5`) — amplitude multiplier per warp octave.
+- `lacunarity` (default `2`) — frequency multiplier per warp octave.
+
+**Aliases** — `warp`, `domainWarp`, `DomainWarp`.
+
+**TFMS example**
+
+```js
+import { createNoiseSampler } from '../world/noise.js';
+
+const warpSampler = createNoiseSampler('domainWarp', {
+  seed: 4242,
+  strength: 0.7,
+  scale: 0.9,
+  octaves: 3,
+  gain: 0.55,
+  lacunarity: 2.25,
+});
+
+const warpNode = {
+  type: 'warp',
+  config: {
+    seed: 4242,
+    strength: 0.7,
+    scale: 0.9,
+    octaves: 3,
+    gain: 0.55,
+    lacunarity: 2.25,
+  },
+};
+```
+
+**Determinism** — Tests validate that the warp returns identical vectors for repeated seeds, remains magnitude-normalized, and responds to seed changes with new offsets.【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L585-L620】
+
 ## Diffusion / smoothing
-- **IsotropicDiffusion** (available via `diffusion` / `isotropicDiffusion`) — uniform blur similar to thermal erosion. Parameter: `smoothing` (0–1) controls blend strength.
+- **IsotropicDiffusion** (available via `diffusion` / `isotropicDiffusion`) — see [Diffusion details](#diffusion-diffusion-isotropicdiffusion) for parameters and usage.
 - **AnisotropicDiffusion** (available via `anisotropicDiffusion`) — edge-aware smoothing that follows a dominant orientation. Parameters: `smoothing` (0–1), `orientation` (radians), `anisotropy` (0–1 directional weighting), and `step` (sampling distance).
 - **HydraulicErosion** (available via `hydraulicErosion`) — lightweight hydraulic erosion approximation mixing slope-based erosion and deposition. Parameters: `smoothing` (0–1), `erosionRate` (0–1), `depositionRate` (0–1), and `step` (sampling distance).
+
+### Diffusion (`diffusion`, `isotropicDiffusion`)
+
+Isotropic diffusion blends each lattice sample toward the average of its four axial neighbors, yielding a quick blur suitable for evening out harsh gradients. The sampler returns scalar values in `[-1, 1]` after interpolation and clamping.【F:three-demo/src/world/noise.js†L2114-L2132】
+
+**Parameters & defaults**
+
+- `seed` (default `1`) — initializes the underlying value-noise field.
+- `smoothing` (default `0.5`) — blend factor between the original value and the neighbor average (`0` keeps the original sample, `1` fully averages).
+
+**Aliases** — `diffusion`, `isotropicDiffusion`, `Diffusion`, `IsotropicDiffusion`.
+
+**TFMS example**
+
+```js
+import { createNoiseSampler } from '../world/noise.js';
+
+const diffusionSampler = createNoiseSampler('diffusion', {
+  seed: 777,
+  smoothing: 0.65,
+});
+
+const diffusionNode = {
+  type: 'diffusion',
+  config: {
+    seed: 777,
+    smoothing: 0.65,
+  },
+};
+```
+
+**Determinism** — Unit tests guarantee repeatable smoothing results for identical seeds and smoothing factors, while distinct seeds provide decorrelated starting patterns.【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L21-L34】【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L414-L416】
 
 ## Hybrid / procedural
 - **BandsFBM** (available via `bandsFbm`) — sine-band FBM fusion that multiplies fractal value noise with anisotropic sine masking.
@@ -115,15 +352,15 @@ When designing TFMS presets, treat Kamea matrices as structured macro-patterns t
 
 | Identifier | Notes |
 | --- | --- |
-| `fbm` / `FBM` | FBM sampler (available) |
+| [`fbm` / `FBM`](#fbm-fbm-fbm) | FBM sampler (available) |
 | `turbulence` / `Turbulence` | Turbulence absolute-value FBM (available) |
-| `ridge` / `ridged` | Ridged FBM variant (available) |
+| [`ridge` / `ridged`](#ridged-fbm-ridge-ridged) | Ridged FBM variant (available) |
 | `billow` / `Billow` | Billow puffed FBM (available) |
-| `worley` | Worley cellular sampler (available) |
+| [`worley`](#worley-worley) | Worley cellular sampler (available) |
 | `valueNoise` / `ValueNoise` | Base value noise sampler (available) |
 | `gradientNoise` / `GradientNoise` | Gradient noise sampler (available) |
 | `simplexNoise` / `SimplexNoise` | Simplex noise sampler (available) |
-| `sine` / `anisotropicSine` | Directional sine pattern (available) |
+| [`sine` / `anisotropicSine`](#anisotropic-sine-sine-anisotropicsine) | Directional sine pattern (available) |
 | `cosine` / `anisotropicCosine` | Directional cosine pattern (available) |
 | `square` / `anisotropicSquare` | Duty-cycle controlled square wave (available) |
 | `sawtooth` / `anisotropicSawtooth` | Linear ramp anisotropic sawtooth (available) |
@@ -143,12 +380,12 @@ When designing TFMS presets, treat Kamea matrices as structured macro-patterns t
 | `waveletNoise` / `WaveletNoise` | Tileable wavelet-based sampler (available) |
 | `spectralNoise` / `SpectralNoise` | Configurable spectral blend sampler (available) |
 | `poissonBlueMask` / `PoissonBlueMask` | Blue-noise feature mask sampler (available) |
-| `warp` / `domainWarp` | Domain-warp vector field (available) |
+| [`warp` / `domainWarp`](#domain-warp-warp-domainwarp) | Domain-warp vector field (available) |
 | `curlNoise` / `CurlNoise` | Divergence-free curl vector warp (available) |
 | `cellEdgeDistance` / `CellEdgeDistance` | Worley cell edge distance mask (available) |
 | `terraceQuantized` / `TerraceQuantized` | Quantized terrace remapping sampler (available) |
 | `voronoiBlend` / `VoronoiBlend` | F1/F2 Voronoi blend sampler (available) |
-| `diffusion` / `isotropicDiffusion` | Diffusion-based smoother (available) |
+| [`diffusion` / `isotropicDiffusion`](#diffusion-diffusion-isotropicdiffusion) | Diffusion-based smoother (available) |
 | `anisotropicDiffusion` / `AnisotropicDiffusion` | Directional diffusion smoother (available) |
 | `hydraulicErosion` / `HydraulicErosion` | Hydraulic erosion approximation (available) |
 | `bandsFbm` / `BandsFBM` | FBM modulated by anisotropic sine bands (available) |
