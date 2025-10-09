@@ -2,6 +2,80 @@
 
 This catalog enumerates the waveform identifiers recognized by the terrain formation modulation system (TFMS). Use these labels when configuring samplers or composing higher-level operators. Waveforms implemented in code today are marked with **(available)**; the remaining entries outline planned extensions for designers. The library now includes deterministic **Kamea planetary matrices** that can be remapped into waveform operator space for hybrid workflows.
 
+## Sampler plumbing and domain-warp composition
+
+The TFMS stack routes every scalar or vector waveform through three utility helpers exported by `world/noise.js`: `createNoiseSampler`, `projectSampleCoordinates`, and `combineDomainWarp`. Understanding how they connect makes it easier to debug complex presets.
+
+1. **Factory resolution — `createNoiseSampler`.** When an operator requests a waveform by ID, `createNoiseSampler(type, config)` looks up the corresponding factory in `NOISE_WAVEFORM_FACTORIES`. The map includes lowercase, PascalCase, and legacy aliases, so `ridge`, `RidgedFBM`, and `ridged` all resolve to the same sampler implementation. An unknown ID immediately throws an `Unknown noise waveform` error, preventing silent fallbacks.【F:three-demo/src/world/noise.js†L36-L160】
+2. **Coordinate projection — `projectSampleCoordinates`.** Before sampling, TFMS applies frequency scaling, phase offsets, and any accumulated warp vectors to the `(x, z)` point. The helper accepts an existing `domainWarp` vector, adds it to the incoming position, and returns the adjusted coordinates ready for sampling.【F:three-demo/src/world/noise.js†L36-L44】
+3. **Warp accumulation — `combineDomainWarp`.** Vector waveforms (such as `warp` and `curlNoise`) return `(x, z)` offsets that must be added into the running domain state. `combineDomainWarp` simply adds the new delta to the base warp so that downstream samplers inherit the distortion.【F:three-demo/src/world/noise.js†L47-L51】
+
+The TFMS operator factories wire these utilities together. Scalar operators call `createNoiseSampler` up front, then use `projectSampleCoordinates` on every evaluation to feed the sampler and clamp the response. Vector operators (domain warps) compose their offsets with `combineDomainWarp` so later operators see the warped domain.【F:three-demo/src/world/tfms/operators.js†L44-L211】
+
+```
+Base (x,z)
+   │
+   ▼  projectSampleCoordinates
+Sample coords ──► waveform sampler ──► scalar value
+   │                          │
+   │ combineDomainWarp ◄──────┘
+   ▼
+Warped domain passed to the next operator
+```
+
+### Domain-warp walkthrough
+
+The snippet below mirrors what the TFMS runtime performs for a scalar operator that consumes a prior warp and forwards its own output. Use it as a template when building bespoke samplers.
+
+```js
+import {
+  combineDomainWarp,
+  createNoiseSampler,
+  projectSampleCoordinates,
+} from '../world/noise.js';
+
+const baseHeight = createNoiseSampler('fbm', { seed: 1337 });
+const canyonWarp = createNoiseSampler('warp', { seed: 2025, strength: 0.6 });
+
+export function sampleHeight(x, z, state) {
+  const warpDomain = projectSampleCoordinates(x, z, {
+    frequency: state.warpFrequency,
+    phase: state.phase,
+    domainWarp: state.previousWarp,
+  });
+  const warpVector = canyonWarp(warpDomain.x, warpDomain.z);
+  const accumulatedWarp = combineDomainWarp(state.previousWarp, {
+    x: warpVector.x * state.warpStrength,
+    z: warpVector.z * state.warpStrength,
+  });
+
+  const scalarDomain = projectSampleCoordinates(x, z, {
+    frequency: state.baseFrequency,
+    phase: state.phase,
+    domainWarp: accumulatedWarp,
+  });
+  return baseHeight(scalarDomain.x, scalarDomain.z);
+}
+```
+
+Unit tests cover each helper so you can validate custom integrations: the domain-warp sampler tests confirm deterministic vector outputs and normalized magnitudes, while separate cases exercise both `projectSampleCoordinates` and `combineDomainWarp` directly.【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L585-L679】
+
+### Deterministic seeding and alias consumption
+
+- **Hash-based salts.** Every sampler factory derives deterministic sub-seeds through the shared `hashSeed(seed, salt)` helper, ensuring repeatable noise while isolating internal jitter streams. Because `hashSeed` is pure, identical input parameters always produce the same pseudo-random gradients.【F:three-demo/src/world/noise.js†L2378-L2386】
+- **Factory aliases.** `NOISE_WAVEFORM_FACTORIES` exposes aliases for each waveform, including PascalCase, camelCase, and historical names. TFMS operator factories reuse those same keys so configuration files and presets can freely mix alias styles without breaking determinism.【F:three-demo/src/world/noise.js†L62-L160】【F:three-demo/src/world/tfms/operators.js†L94-L222】
+- **Operator seeding.** When TFMS builds a network, it passes either the operator-specific seed or a derived fallback (`seed * 1.17 + index * 137.53`) into the sampler factory so each lane remains reproducible even if you omit explicit seeds.【F:three-demo/src/world/tfms/operators.js†L269-L320】
+- **Validation harness.** The waveform regression tests iterate through the alias list (e.g., `pinkNoise`, `PinkNoise`, `FractalPinkNoise`) to guarantee that every alias maps to a deterministic sampler bounded to `[-1, 1]` and seeded correctly.【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L31-L583】
+
+For live tuning, cross-reference the TFMS rows in the world configuration reference—they document how sampler seeds, warp strengths, and temperament-derived modifiers are surfaced in presets so you can verify override paths end-to-end.【F:WORLD_CONFIGURATION.md†L48-L111】
+
+### Troubleshooting checklist
+
+- **"Unknown noise waveform" error.** This means the ID you provided does not exist in `NOISE_WAVEFORM_FACTORIES`. Double-check spelling or use one of the listed aliases. The thrown error stops evaluation early, so the stack trace will point to the offending operator.【F:three-demo/src/world/noise.js†L54-L59】
+- **Unexpected alias behavior.** Run the waveform regression suite (`node --test src/world/__tests__/noise-waveforms.test.js`) to confirm your environment resolves aliases the same way as CI. The tests cover scalar, vector, and exotic samplers, making it easy to spot mismatches.【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L15-L663】
+- **Warp drift or stretching.** Inspect the accumulated domain vectors. If the magnitude exceeds `1`, reduce the warp amplitude or seed jitter—tests enforce the normalization constraint, so any deviation indicates a custom sampler returning unbounded values.【F:three-demo/src/world/__tests__/noise-waveforms.test.js†L585-L663】
+- **Preset verification.** Use the options listed in the world configuration reference to validate that your TFMS overrides align with supported paths (for example, `terrain.tfms.kamea.warpStrength`). Incorrect paths will be dropped during normalization.【F:WORLD_CONFIGURATION.md†L48-L111】
+
 ## Planetary Kamea matrices (available)
 
 The `world/kamea.js` module exposes canonical planetary squares with deterministic seeding helpers so that systems downstream of the noise samplers can remain reproducible.
