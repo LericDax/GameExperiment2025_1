@@ -516,6 +516,72 @@ for (const { label, aliases, config } of HYBRID_NOISE_CASES) {
   }
 }
 
+const EXOTIC_WAVEFORM_CASES = [
+  {
+    label: 'Hyperbolic tangent field',
+    aliases: ['hyperbolicTangentField', 'HyperbolicTangentField'],
+    config: { source: 'simplexNoise', gain: 1.75, bias: 0.2, mix: 0.8 },
+  },
+  {
+    label: 'Sigmoid step field',
+    aliases: ['sigmoidStepField', 'SigmoidStepField'],
+    config: {
+      source: 'gradientNoise',
+      threshold: 0.1,
+      steepness: 7,
+      low: -0.8,
+      high: 0.9,
+      mix: 0.9,
+    },
+  },
+  {
+    label: 'Exponential field',
+    aliases: ['exponentialField', 'ExponentialField'],
+    config: {
+      source: 'fbm',
+      decay: 1.8,
+      bias: 0.05,
+      invert: true,
+      mix: 0.65,
+      offset: -0.1,
+    },
+  },
+  {
+    label: 'SDF primitives field',
+    aliases: ['sdfPrimitives', 'SDFPrimitives'],
+    config: {
+      primitive: 'square',
+      cellSize: 9,
+      radius: 0.4,
+      jitter: 0.25,
+      smoothness: 0.3,
+      rotationJitter: 0.5,
+    },
+  },
+  {
+    label: 'Multifractal blend',
+    aliases: ['multifractalBlend', 'MultifractalBlend'],
+    config: {
+      baseType: 'simplexNoise',
+      octaves: 4,
+      gain: 0.55,
+      lacunarity: 2.15,
+      exponent: 1.35,
+      exponentSlope: 0.15,
+      mix: 0.85,
+      offset: 0.05,
+    },
+  },
+];
+
+for (const { label, aliases, config } of EXOTIC_WAVEFORM_CASES) {
+  for (const alias of aliases) {
+    test(`${label} sampler (${alias}) is repeatable and bounded`, () => {
+      assertDeterministicScalar(alias, config);
+    });
+  }
+}
+
 test('Domain warp sampler produces repeatable vector offsets', () => {
   const samplerA = createNoiseSampler('warp', {
     seed: 4242,

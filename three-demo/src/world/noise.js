@@ -154,6 +154,16 @@ export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   ResonantFilterField: createResonantFilterFieldSampler,
   reverberantDecayField: createReverberantDecayFieldSampler,
   ReverberantDecayField: createReverberantDecayFieldSampler,
+  hyperbolicTangentField: createHyperbolicTangentFieldSampler,
+  HyperbolicTangentField: createHyperbolicTangentFieldSampler,
+  sigmoidStepField: createSigmoidStepFieldSampler,
+  SigmoidStepField: createSigmoidStepFieldSampler,
+  exponentialField: createExponentialFieldSampler,
+  ExponentialField: createExponentialFieldSampler,
+  sdfPrimitives: createSdfPrimitivesSampler,
+  SDFPrimitives: createSdfPrimitivesSampler,
+  multifractalBlend: createMultifractalBlendSampler,
+  MultifractalBlend: createMultifractalBlendSampler,
   warpedFbm: createWarpedFbmSampler,
   WarpedFBM: createWarpedFbmSampler,
   warp: createDomainWarpSampler,
@@ -1605,6 +1615,202 @@ function createReverberantDecayFieldSampler({
   };
 }
 
+function createHyperbolicTangentFieldSampler({
+  seed = 1,
+  source = 'valueNoise',
+  gain = 1.5,
+  bias = 0,
+  mix = 1,
+} = {}) {
+  const baseSampler = resolveSamplerSpec(source, 'valueNoise', seed, 1403);
+  const normalizedGain = Math.max(0, Math.abs(gain));
+  const normalizedBias = clamp(bias, -2, 2);
+  const blend = clamp(mix, 0, 1);
+
+  return (x, z) => {
+    const base = baseSampler(x, z);
+    const shaped = Math.tanh(base * normalizedGain + normalizedBias);
+    const value = lerp(base, shaped, blend);
+    return clamp(value, -1, 1);
+  };
+}
+
+function createSigmoidStepFieldSampler({
+  seed = 1,
+  source = 'valueNoise',
+  threshold = 0,
+  steepness = 6,
+  low = -1,
+  high = 1,
+  mix = 1,
+} = {}) {
+  const baseSampler = resolveSamplerSpec(source, 'valueNoise', seed, 1409);
+  const normalizedThreshold = clamp(threshold, -1, 1);
+  const slope = Math.max(0.1, Math.abs(steepness));
+  const lowValue = clamp(low, -1, 1);
+  const highValue = clamp(high, -1, 1);
+  const blend = clamp(mix, 0, 1);
+
+  return (x, z) => {
+    const base = baseSampler(x, z);
+    const shifted = base - normalizedThreshold;
+    const logistic = 1 / (1 + Math.exp(-shifted * slope));
+    const plateau = lerp(lowValue, highValue, logistic);
+    const shaped = clamp(plateau, -1, 1);
+    const value = lerp(base, shaped, blend);
+    return clamp(value, -1, 1);
+  };
+}
+
+function createExponentialFieldSampler({
+  seed = 1,
+  source = 'valueNoise',
+  decay = 1.5,
+  bias = 0,
+  invert = false,
+  mix = 1,
+  offset = 0,
+} = {}) {
+  const baseSampler = resolveSamplerSpec(source, 'valueNoise', seed, 1417);
+  const attenuation = Math.max(1e-3, Math.abs(decay));
+  const normalizedBias = clamp(bias, -1, 1);
+  const blend = clamp(mix, 0, 1);
+  const offsetNormalized = clamp(offset, -1, 1);
+
+  return (x, z) => {
+    const base = baseSampler(x, z);
+    const normalized = clamp((base + 1) * 0.5 + normalizedBias, 0, 1);
+    const envelope = Math.exp(-normalized * attenuation);
+    const shaped = invert ? envelope : 1 - envelope;
+    const remapped = clamp(shaped * 2 - 1 + offsetNormalized, -1, 1);
+    const value = lerp(base, remapped, blend);
+    return clamp(value, -1, 1);
+  };
+}
+
+function createSdfPrimitivesSampler({
+  seed = 1,
+  primitive = 'circle',
+  cellSize = 12,
+  radius = 0.35,
+  jitter = 0.2,
+  smoothness = 0.2,
+  rotationJitter = 0,
+  invert = false,
+} = {}) {
+  const normalizedPrimitive =
+    typeof primitive === 'string' ? primitive.toLowerCase() : 'circle';
+  const size = Math.max(1, Math.abs(cellSize));
+  const radiusRatio = clamp(radius, 0.05, 0.9);
+  const jitterAmount = clamp(jitter, 0, 0.49) * size;
+  const softness = Math.max(1e-3, smoothness) * size;
+  const rotationRange = clamp(rotationJitter, 0, 1) * Math.PI;
+  const offsetSeedX = hashSeed(seed, 1421);
+  const offsetSeedZ = hashSeed(seed, 1427);
+  const rotationSeed = hashSeed(seed, 1433);
+
+  return (x, z) => {
+    const scaledX = x / size;
+    const scaledZ = z / size;
+    const cellX = Math.floor(scaledX);
+    const cellZ = Math.floor(scaledZ);
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let dz = -1; dz <= 1; dz += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const cx = cellX + dx;
+        const cz = cellZ + dz;
+        const centerX =
+          (cx + 0.5) * size + (random2D(offsetSeedX, cx, cz) - 0.5) * 2 * jitterAmount;
+        const centerZ =
+          (cz + 0.5) * size + (random2D(offsetSeedZ, cz, cx) - 0.5) * 2 * jitterAmount;
+        const angle = rotationRange > 0
+          ? (random2D(rotationSeed, cx, cz) - 0.5) * rotationRange
+          : 0;
+        const cosAngle = Math.cos(angle);
+        const sinAngle = Math.sin(angle);
+        const localX = x - centerX;
+        const localZ = z - centerZ;
+        const rotatedX = localX * cosAngle - localZ * sinAngle;
+        const rotatedZ = localX * sinAngle + localZ * cosAngle;
+        const extent = radiusRatio * size;
+
+        let distance;
+        if (normalizedPrimitive === 'square' || normalizedPrimitive === 'box') {
+          distance = signedDistanceBox(rotatedX, rotatedZ, extent, extent);
+        } else if (normalizedPrimitive === 'diamond') {
+          distance = Math.abs(rotatedX) + Math.abs(rotatedZ) - extent;
+        } else if (normalizedPrimitive === 'cross') {
+          const arm = extent * 0.5;
+          const bar = extent * 0.2;
+          const vertical = signedDistanceBox(rotatedX, rotatedZ, bar, arm);
+          const horizontal = signedDistanceBox(rotatedX, rotatedZ, arm, bar);
+          distance = Math.min(vertical, horizontal);
+        } else {
+          distance = Math.hypot(rotatedX, rotatedZ) - extent;
+        }
+
+        if (distance < bestDistance) {
+          bestDistance = distance;
+        }
+      }
+    }
+
+    const normalizedDistance = clamp(-bestDistance / softness, -1, 1);
+    const shaped = invert ? -normalizedDistance : normalizedDistance;
+    return clamp(shaped, -1, 1);
+  };
+}
+
+function createMultifractalBlendSampler({
+  seed = 1,
+  baseType = 'simplexNoise',
+  octaves = 5,
+  gain = 0.5,
+  lacunarity = 2,
+  exponent = 1.2,
+  exponentSlope = 0.1,
+  mix = 1,
+  offset = 0,
+} = {}) {
+  const octaveCount = Math.max(1, Math.floor(octaves));
+  const normalizedGain = Math.max(0, Math.abs(gain));
+  const normalizedLacunarity = Math.max(1, Math.abs(lacunarity));
+  const baseSampler = resolveSamplerSpec(baseType, 'simplexNoise', seed, 1439);
+  const additionalSamplers = new Array(Math.max(0, octaveCount - 1))
+    .fill(null)
+    .map((_, index) =>
+      resolveSamplerSpec(baseType, 'simplexNoise', seed, 1447 + index * 11),
+    );
+  const samplers = [baseSampler, ...additionalSamplers];
+  const mixAmount = clamp(mix, 0, 1);
+  const offsetNormalized = clamp(offset, -1, 1);
+
+  return (x, z) => {
+    let frequency = 1;
+    let amplitude = 1;
+    let total = 0;
+    let amplitudeSum = 0;
+
+    for (let i = 0; i < samplers.length; i += 1) {
+      const sampler = samplers[i];
+      const sample = sampler(x * frequency, z * frequency);
+      const power = Math.max(0.1, exponent + exponentSlope * i);
+      const shaped = Math.sign(sample) * Math.pow(Math.abs(sample), power);
+      total += shaped * amplitude;
+      amplitudeSum += amplitude;
+      amplitude *= normalizedGain;
+      frequency *= normalizedLacunarity;
+    }
+
+    const normalized = amplitudeSum > 0 ? total / amplitudeSum : 0;
+    const offsetValue = clamp(normalized + offsetNormalized, -1, 1);
+    const baseValue = baseSampler(x, z);
+    const blended = lerp(baseValue, offsetValue, mixAmount);
+    return clamp(blended, -1, 1);
+  };
+}
+
 function createDomainWarpSampler({
   seed = 1,
   strength = 0.5,
@@ -2044,6 +2250,18 @@ function createSimplexNoiseSampler({ seed = 1 }) {
 function createValueNoise(seed, octaveIndex) {
   const octaveSeed = hashSeed(seed, octaveIndex + 1);
   return new ValueNoise2D(octaveSeed);
+}
+
+function signedDistanceBox(x, z, halfSizeX, halfSizeZ) {
+  const hx = Math.max(1e-6, halfSizeX);
+  const hz = Math.max(1e-6, halfSizeZ);
+  const dx = Math.abs(x) - hx;
+  const dz = Math.abs(z) - hz;
+  const outsideX = Math.max(dx, 0);
+  const outsideZ = Math.max(dz, 0);
+  const outsideDistance = Math.hypot(outsideX, outsideZ);
+  const insideDistance = Math.min(Math.max(dx, dz), 0);
+  return outsideDistance + insideDistance;
 }
 
 class GradientNoise2D {
