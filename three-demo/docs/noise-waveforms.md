@@ -53,10 +53,10 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
   Parameters: `sources` (array of `{ type, config, amplitude }` entries), `mixFrequency` (weight field scale), `softmaxTemperature` (>0 controlling blend contrast), and `mixBias` (-1–1 post offset). All nested samplers derive deterministic seeds from the top-level seed.
 
 ## Spectral / stochastic
-- **GaborNoise** — sparse oriented impulse noise.
-- **WaveletNoise** — tileable low-alias noise.
-- **SpectralNoise** — FFT-filtered noise with custom power spectrum.
-- **PoissonBlueMask** — blue-noise distributed feature mask.
+- **GaborNoise** (available) — deterministic sparse Gabor impulse field for oriented micro-structure. Defaults: 6 impulses, bandwidth 2.5, unit frequency.
+- **WaveletNoise** (available) — tileable multi-resolution wavelet blend seeded for seamless tiling. Defaults: 4 octaves, 4 modes, period 32.
+- **SpectralNoise** (available) — configurable power-spectrum sampler supporting custom slopes/weights and base noise types.
+- **PoissonBlueMask** (available) — blue-noise-style feature selector using Poisson-prioritized impulses. Defaults: radius 2, falloff 1.5.
 
 ## Synth-inspired waveforms
 - **Wavetable** — sampled or custom waveforms read from a table.
@@ -110,6 +110,10 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 | `velvetNoise` / `VelvetNoise` | +3 dB/octave airy micro-detail sampler (available) |
 | `blueNoise` / `BlueNoise` | High-frequency accent sampler (available) |
 | `whiteNoise` / `WhiteNoise` | Uniform random scalar field (available) |
+| `gaborNoise` / `GaborNoise` | Sparse Gabor impulse sampler (available) |
+| `waveletNoise` / `WaveletNoise` | Tileable wavelet-based sampler (available) |
+| `spectralNoise` / `SpectralNoise` | Configurable spectral blend sampler (available) |
+| `poissonBlueMask` / `PoissonBlueMask` | Blue-noise feature mask sampler (available) |
 | `warp` / `domainWarp` | Domain-warp vector field (available) |
 | `curlNoise` / `CurlNoise` | Divergence-free curl vector warp (available) |
 | `cellEdgeDistance` / `CellEdgeDistance` | Worley cell edge distance mask (available) |

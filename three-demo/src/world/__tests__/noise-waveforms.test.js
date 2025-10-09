@@ -124,6 +124,42 @@ for (const { label, aliases, config } of SPECTRAL_NOISE_CASES) {
   }
 }
 
+const STOCHASTIC_NOISE_CASES = [
+  {
+    label: 'Spectral noise',
+    aliases: ['spectralNoise', 'SpectralNoise'],
+    config: {
+      octaves: 5,
+      lacunarity: 1.9,
+      slope: -0.75,
+      baseSampler: 'gradient',
+    },
+  },
+  {
+    label: 'Gabor noise',
+    aliases: ['gaborNoise', 'GaborNoise'],
+    config: { frequency: 1.15, impulses: 5, bandwidth: 2.25 },
+  },
+  {
+    label: 'Wavelet noise',
+    aliases: ['waveletNoise', 'WaveletNoise'],
+    config: { period: 28, octaves: 3, modesPerOctave: 5, gain: 0.55 },
+  },
+  {
+    label: 'Poisson blue mask',
+    aliases: ['poissonBlueMask', 'PoissonBlueMask'],
+    config: { frequency: 0.85, radius: 2.5, falloff: 1.25 },
+  },
+];
+
+for (const { label, aliases, config } of STOCHASTIC_NOISE_CASES) {
+  for (const alias of aliases) {
+    test(`${label} sampler (${alias}) is repeatable and bounded`, () => {
+      assertDeterministicScalar(alias, config);
+    });
+  }
+}
+
 test('Worley sampler is repeatable and bounded', () => {
   assertDeterministicScalar('worley', { jitter: 0.65, falloff: 1.25 });
 });
