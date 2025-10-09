@@ -3,14 +3,14 @@
 This catalog enumerates the waveform identifiers recognized by the terrain formation modulation system (TFMS). Use these labels when configuring samplers or composing higher-level operators. Waveforms implemented in code today are marked with **(available)**; the remaining entries outline planned extensions for designers.
 
 ## Core noise waveforms
-- **FBM** (available) — fractal Brownian motion stack of value noise octaves.
-- **Turbulence** — absolute-value FBM variant for turbulent ridges.
-- **RidgedFBM** (available via `ridge`) — inverted FBM emphasizing peaks and crests.
-- **Worley** (available) — cellular Voronoi noise driven by random feature points.
-- **Billow** — puffed turbulence with rounded hill profiles.
-- **ValueNoise** — base scalar lattice noise.
-- **GradientNoise** — smooth alternative to value noise.
-- **SimplexNoise** — efficient gradient noise alternative for large worlds.
+- **FBM** (available) — fractal Brownian motion stack of value noise octaves. Defaults: 5 octaves, gain 0.5, lacunarity 2.
+- **Turbulence** (available) — absolute-value FBM variant for turbulent ridges. Defaults mirror FBM.
+- **RidgedFBM** (available via `ridge`) — inverted FBM emphasizing peaks and crests. Defaults mirror FBM with ridge sharpness 2.
+- **Worley** (available) — cellular Voronoi noise driven by random feature points. Defaults: jitter 0.75, falloff 1, Euclidean distance.
+- **Billow** (available) — puffed turbulence with rounded hill profiles. Defaults mirror FBM.
+- **ValueNoise** (available) — base scalar lattice noise. Defaults: normalized value noise seeded per lattice.
+- **GradientNoise** (available) — smooth alternative to value noise. Defaults: Perlin-style gradients derived from the seed.
+- **SimplexNoise** (available) — efficient gradient noise alternative for large worlds. Defaults: 2D simplex gradients seeded deterministically.
 
 ## Analytic / trigonometric waveforms
 - **AnisotropicSine** (available via `sine`) — directional sine bands ideal for dunes.
@@ -77,9 +77,14 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 
 | Identifier | Notes |
 | --- | --- |
-| `fbm` | FBM sampler (available) |
+| `fbm` / `FBM` | FBM sampler (available) |
+| `turbulence` / `Turbulence` | Turbulence absolute-value FBM (available) |
 | `ridge` / `ridged` | Ridged FBM variant (available) |
+| `billow` / `Billow` | Billow puffed FBM (available) |
 | `worley` | Worley cellular sampler (available) |
+| `valueNoise` / `ValueNoise` | Base value noise sampler (available) |
+| `gradientNoise` / `GradientNoise` | Gradient noise sampler (available) |
+| `simplexNoise` / `SimplexNoise` | Simplex noise sampler (available) |
 | `sine` / `anisotropicSine` | Directional sine pattern (available) |
 | `warp` / `domainWarp` | Domain-warp vector field (available) |
 | `diffusion` | Diffusion-based smoother (available) |
