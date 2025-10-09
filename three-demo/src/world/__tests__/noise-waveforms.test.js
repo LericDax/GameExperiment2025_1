@@ -38,6 +38,14 @@ test('FBM sampler is repeatable and bounded', () => {
   assertDeterministicScalar('fbm', { octaves: 4, gain: 0.45, lacunarity: 2.1 });
 });
 
+test('Turbulence sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('turbulence', {
+    octaves: 4,
+    gain: 0.5,
+    lacunarity: 2.2,
+  });
+});
+
 test('Ridged sampler is repeatable and bounded', () => {
   assertDeterministicScalar('ridge', {
     octaves: 3,
@@ -47,8 +55,28 @@ test('Ridged sampler is repeatable and bounded', () => {
   });
 });
 
+test('Billow sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('billow', {
+    octaves: 3,
+    gain: 0.45,
+    lacunarity: 1.8,
+  });
+});
+
 test('Worley sampler is repeatable and bounded', () => {
   assertDeterministicScalar('worley', { jitter: 0.65, falloff: 1.25 });
+});
+
+test('Value noise sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('valueNoise');
+});
+
+test('Gradient noise sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('gradientNoise');
+});
+
+test('Simplex noise sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('simplexNoise');
 });
 
 test('Anisotropic sine sampler is repeatable and bounded', () => {

@@ -61,14 +61,30 @@ export function createNoiseSampler(type, config = {}) {
 
 export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   fbm: createFbmSampler,
+  FBM: createFbmSampler,
+  turbulence: createTurbulenceSampler,
+  Turbulence: createTurbulenceSampler,
   ridge: createRidgedSampler,
   ridged: createRidgedSampler,
+  RidgedFBM: createRidgedSampler,
+  billow: createBillowSampler,
+  Billow: createBillowSampler,
   worley: createWorleySampler,
+  Worley: createWorleySampler,
+  valueNoise: createValueNoiseSampler,
+  ValueNoise: createValueNoiseSampler,
+  gradientNoise: createGradientNoiseSampler,
+  GradientNoise: createGradientNoiseSampler,
+  simplexNoise: createSimplexNoiseSampler,
+  SimplexNoise: createSimplexNoiseSampler,
   sine: createAnisotropicSineSampler,
   anisotropicSine: createAnisotropicSineSampler,
+  AnisotropicSine: createAnisotropicSineSampler,
   warp: createDomainWarpSampler,
   domainWarp: createDomainWarpSampler,
+  DomainWarp: createDomainWarpSampler,
   diffusion: createDiffusionSampler,
+  Diffusion: createDiffusionSampler,
 });
 
 export const NOISE_WAVEFORM_CATALOG = Object.freeze([
@@ -176,6 +192,69 @@ function createFbmSampler({
     for (let i = 0; i < octaveNoises.length; i += 1) {
       const noise = octaveNoises[i];
       const sample = toSignedRange(noise.noise(x * frequency, z * frequency));
+      total += sample * amplitude;
+      amplitudeSum += amplitude;
+      amplitude *= gain;
+      frequency *= lacunarity;
+    }
+
+    const normalized = amplitudeSum > 0 ? total / amplitudeSum : 0;
+    return clamp(normalized, -1, 1);
+  };
+}
+
+function createTurbulenceSampler({
+  seed = 1,
+  octaves = 5,
+  gain = 0.5,
+  lacunarity = 2,
+}) {
+  const octaveNoises = new Array(Math.max(1, Math.floor(octaves)))
+    .fill(null)
+    .map((_, index) => createValueNoise(seed, index));
+
+  return (x, z) => {
+    let total = 0;
+    let amplitudeSum = 0;
+    let amplitude = 1;
+    let frequency = 1;
+
+    for (let i = 0; i < octaveNoises.length; i += 1) {
+      const noise = octaveNoises[i];
+      const sample = Math.abs(
+        toSignedRange(noise.noise(x * frequency, z * frequency)),
+      );
+      total += sample * amplitude;
+      amplitudeSum += amplitude;
+      amplitude *= gain;
+      frequency *= lacunarity;
+    }
+
+    const normalized = amplitudeSum > 0 ? total / amplitudeSum : 0;
+    return clamp(normalized * 2 - 1, -1, 1);
+  };
+}
+
+function createBillowSampler({
+  seed = 1,
+  octaves = 5,
+  gain = 0.5,
+  lacunarity = 2,
+}) {
+  const octaveNoises = new Array(Math.max(1, Math.floor(octaves)))
+    .fill(null)
+    .map((_, index) => createValueNoise(seed, index));
+
+  return (x, z) => {
+    let total = 0;
+    let amplitudeSum = 0;
+    let amplitude = 1;
+    let frequency = 1;
+
+    for (let i = 0; i < octaveNoises.length; i += 1) {
+      const noise = octaveNoises[i];
+      const base = toSignedRange(noise.noise(x * frequency, z * frequency));
+      const sample = 2 * Math.abs(base) - 1;
       total += sample * amplitude;
       amplitudeSum += amplitude;
       amplitude *= gain;
@@ -338,9 +417,143 @@ function createDiffusionSampler({ seed = 1, smoothing = 0.5 }) {
   };
 }
 
+function createValueNoiseSampler({ seed = 1 }) {
+  const baseNoise = createValueNoise(seed, 0);
+  return (x, z) => {
+    const sample = toSignedRange(baseNoise.noise(x, z));
+    return clamp(sample, -1, 1);
+  };
+}
+
+function createGradientNoiseSampler({ seed = 1 }) {
+  const gradientNoise = new GradientNoise2D(hashSeed(seed, 31));
+  return (x, z) => {
+    const sample = gradientNoise.noise(x, z);
+    return clamp(sample, -1, 1);
+  };
+}
+
+function createSimplexNoiseSampler({ seed = 1 }) {
+  const simplexNoise = new SimplexNoise2D(hashSeed(seed, 53));
+  return (x, z) => {
+    return simplexNoise.noise(x, z);
+  };
+}
+
 function createValueNoise(seed, octaveIndex) {
   const octaveSeed = hashSeed(seed, octaveIndex + 1);
   return new ValueNoise2D(octaveSeed);
+}
+
+class GradientNoise2D {
+  constructor(seed = 1) {
+    this.seed = seed;
+  }
+
+  fade(t) {
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  }
+
+  dotGradient(ix, iz, x, z) {
+    const angle = random2D(this.seed, ix, iz) * Math.PI * 2;
+    const gx = Math.cos(angle);
+    const gz = Math.sin(angle);
+    const dx = x - ix;
+    const dz = z - iz;
+    return gx * dx + gz * dz;
+  }
+
+  noise(x, z) {
+    const x0 = Math.floor(x);
+    const z0 = Math.floor(z);
+    const x1 = x0 + 1;
+    const z1 = z0 + 1;
+
+    const sx = this.fade(x - x0);
+    const sz = this.fade(z - z0);
+
+    const n0 = this.dotGradient(x0, z0, x, z);
+    const n1 = this.dotGradient(x1, z0, x, z);
+    const ix0 = lerp(n0, n1, sx);
+
+    const n2 = this.dotGradient(x0, z1, x, z);
+    const n3 = this.dotGradient(x1, z1, x, z);
+    const ix1 = lerp(n2, n3, sx);
+
+    return lerp(ix0, ix1, sz);
+  }
+}
+
+class SimplexNoise2D {
+  constructor(seed = 1) {
+    this.seed = seed;
+    this.gradients = [
+      [1, 1],
+      [-1, 1],
+      [1, -1],
+      [-1, -1],
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ];
+  }
+
+  gradient(ix, iz) {
+    const r = random2D(this.seed, ix, iz) * this.gradients.length;
+    const index = Math.floor(r) % this.gradients.length;
+    return this.gradients[index];
+  }
+
+  noise(xin, zin) {
+    const F2 = 0.5 * (Math.sqrt(3) - 1);
+    const G2 = (3 - Math.sqrt(3)) / 6;
+
+    const s = (xin + zin) * F2;
+    const i = Math.floor(xin + s);
+    const j = Math.floor(zin + s);
+    const t = (i + j) * G2;
+    const X0 = i - t;
+    const Z0 = j - t;
+    const x0 = xin - X0;
+    const z0 = zin - Z0;
+
+    const i1 = x0 > z0 ? 1 : 0;
+    const j1 = x0 > z0 ? 0 : 1;
+
+    const x1 = x0 - i1 + G2;
+    const z1 = z0 - j1 + G2;
+    const x2 = x0 - 1 + 2 * G2;
+    const z2 = z0 - 1 + 2 * G2;
+
+    let n0 = 0;
+    let n1 = 0;
+    let n2 = 0;
+
+    let t0 = 0.5 - x0 * x0 - z0 * z0;
+    if (t0 > 0) {
+      const [gx0, gz0] = this.gradient(i, j);
+      t0 *= t0;
+      n0 = t0 * t0 * (gx0 * x0 + gz0 * z0);
+    }
+
+    let t1 = 0.5 - x1 * x1 - z1 * z1;
+    if (t1 > 0) {
+      const [gx1, gz1] = this.gradient(i + i1, j + j1);
+      t1 *= t1;
+      n1 = t1 * t1 * (gx1 * x1 + gz1 * z1);
+    }
+
+    let t2 = 0.5 - x2 * x2 - z2 * z2;
+    if (t2 > 0) {
+      const [gx2, gz2] = this.gradient(i + 1, j + 1);
+      t2 *= t2;
+      n2 = t2 * t2 * (gx2 * x2 + gz2 * z2);
+    }
+
+    const value = 70 * (n0 + n1 + n2);
+    return clamp(value, -1, 1);
+  }
 }
 
 function hashSeed(seed, salt) {

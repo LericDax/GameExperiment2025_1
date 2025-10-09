@@ -89,14 +89,30 @@ function createDomainWarpOperator(config) {
 
 const OPERATOR_FACTORIES = Object.freeze({
   fbm: createScalarWaveformOperator('fbm'),
+  FBM: createScalarWaveformOperator('fbm'),
+  turbulence: createScalarWaveformOperator('turbulence'),
+  Turbulence: createScalarWaveformOperator('turbulence'),
   ridge: createScalarWaveformOperator('ridge'),
   ridged: createScalarWaveformOperator('ridge'),
+  RidgedFBM: createScalarWaveformOperator('ridge'),
+  billow: createScalarWaveformOperator('billow'),
+  Billow: createScalarWaveformOperator('billow'),
   worley: createScalarWaveformOperator('worley'),
+  Worley: createScalarWaveformOperator('worley'),
+  valueNoise: createScalarWaveformOperator('valueNoise'),
+  ValueNoise: createScalarWaveformOperator('valueNoise'),
+  gradientNoise: createScalarWaveformOperator('gradientNoise'),
+  GradientNoise: createScalarWaveformOperator('gradientNoise'),
+  simplexNoise: createScalarWaveformOperator('simplexNoise'),
+  SimplexNoise: createScalarWaveformOperator('simplexNoise'),
   sine: createScalarWaveformOperator('sine'),
   anisotropicSine: createScalarWaveformOperator('sine'),
+  AnisotropicSine: createScalarWaveformOperator('sine'),
   diffusion: createScalarWaveformOperator('diffusion'),
+  Diffusion: createScalarWaveformOperator('diffusion'),
   warp: (config) => createDomainWarpOperator(config),
   domainWarp: (config) => createDomainWarpOperator(config),
+  DomainWarp: (config) => createDomainWarpOperator(config),
 });
 
 function resolveTransfer(transfer, overrides) {
