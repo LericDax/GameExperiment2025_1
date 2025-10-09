@@ -21,6 +21,11 @@ import {
 
 const DEFAULT_DENSITY_SEED = 9103;
 let objectDensityField = new ValueNoise2D(DEFAULT_DENSITY_SEED);
+let testPlacementHook = null;
+
+export function __setTestPlacementHook(callback) {
+  testPlacementHook = typeof callback === 'function' ? callback : null;
+}
 
 export function configureVoxelObjectPlacement({ seedHash } = {}) {
   const normalizedSeed =
@@ -189,6 +194,30 @@ export function populateColumnWithVoxelObjects({
   waterLevel = 0,
   distanceToWater = Infinity,
 }) {
+  if (typeof testPlacementHook === 'function') {
+    try {
+      testPlacementHook({
+        addBlock,
+        addDecorationInstance,
+        addPrototypeInstance,
+        addDecorationMesh,
+        biome,
+        columnSample,
+        groundHeight,
+        slope,
+        worldX,
+        worldZ,
+        isUnderwater,
+        isShore,
+        waterLevel,
+        distanceToWater,
+        randomSource,
+      });
+    } catch (error) {
+      console.warn('[voxel-object-placement] test placement hook threw an error', error);
+    }
+  }
+
   if (!biome) {
     return;
   }
