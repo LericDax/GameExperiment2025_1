@@ -69,6 +69,17 @@ export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   RidgedFBM: createRidgedSampler,
   billow: createBillowSampler,
   Billow: createBillowSampler,
+  pinkNoise: createPinkNoiseSampler,
+  PinkNoise: createPinkNoiseSampler,
+  FractalPinkNoise: createPinkNoiseSampler,
+  brownNoise: createBrownNoiseSampler,
+  BrownNoise: createBrownNoiseSampler,
+  FractalBrownNoise: createBrownNoiseSampler,
+  blueNoise: createBlueNoiseSampler,
+  BlueNoise: createBlueNoiseSampler,
+  FractalBlueNoise: createBlueNoiseSampler,
+  whiteNoise: createWhiteNoiseSampler,
+  WhiteNoise: createWhiteNoiseSampler,
   worley: createWorleySampler,
   Worley: createWorleySampler,
   valueNoise: createValueNoiseSampler,
@@ -130,9 +141,9 @@ export const NOISE_WAVEFORM_CATALOG = Object.freeze([
   {
     category: 'Fractal / spectral variants',
     ids: [
-      'FractalPinkNoise',
-      'FractalBrownNoise',
-      'FractalBlueNoise',
+      'PinkNoise',
+      'BrownNoise',
+      'BlueNoise',
       'WhiteNoise',
     ],
   },
@@ -278,6 +289,73 @@ function createBillowSampler({
 
     const normalized = amplitudeSum > 0 ? total / amplitudeSum : 0;
     return clamp(normalized, -1, 1);
+  };
+}
+
+function createSpectralNoiseSampler({
+  seed = 1,
+  octaves = 6,
+  lacunarity = 2,
+  slope = -1,
+}) {
+  const octaveCount = Math.max(1, Math.floor(octaves));
+  const spectralLacunarity = Math.max(1e-3, Math.abs(lacunarity));
+  const noiseLayers = new Array(octaveCount)
+    .fill(null)
+    .map((_, index) => createValueNoise(seed, index));
+  const frequencies = new Array(octaveCount)
+    .fill(null)
+    .map((_, index) => Math.pow(spectralLacunarity, index));
+  const weights = frequencies.map((frequency) => Math.pow(frequency, slope));
+  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+
+  return (x, z) => {
+    let total = 0;
+
+    for (let i = 0; i < octaveCount; i += 1) {
+      const sample = toSignedRange(
+        noiseLayers[i].noise(x * frequencies[i], z * frequencies[i]),
+      );
+      total += sample * weights[i];
+    }
+
+    const normalized = weightSum > 0 ? total / weightSum : 0;
+    return clamp(normalized, -1, 1);
+  };
+}
+
+function createPinkNoiseSampler({ seed = 1, octaves = 6, lacunarity = 2 } = {}) {
+  return createSpectralNoiseSampler({
+    seed: hashSeed(seed, 73),
+    octaves,
+    lacunarity,
+    slope: -1,
+  });
+}
+
+function createBrownNoiseSampler({ seed = 1, octaves = 6, lacunarity = 2 } = {}) {
+  return createSpectralNoiseSampler({
+    seed: hashSeed(seed, 89),
+    octaves,
+    lacunarity,
+    slope: -2,
+  });
+}
+
+function createBlueNoiseSampler({ seed = 1, octaves = 6, lacunarity = 2 } = {}) {
+  return createSpectralNoiseSampler({
+    seed: hashSeed(seed, 97),
+    octaves,
+    lacunarity,
+    slope: 1,
+  });
+}
+
+function createWhiteNoiseSampler({ seed = 1 } = {}) {
+  const whiteSeed = hashSeed(seed, 131);
+  return (x, z) => {
+    const value = toSignedRange(random2D(whiteSeed, x, z));
+    return clamp(value, -1, 1);
   };
 }
 

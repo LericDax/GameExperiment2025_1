@@ -21,10 +21,10 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 - **AnisotropicPulse** (available via `pulse`) — directional on/off mask. Supports the sine parameters plus `dutyCycle`, `highValue`, and `lowValue` to control pulse width and thresholds.
 
 ## Fractal / spectral variants
-- **FractalPinkNoise** — 1/f spectral distribution for smooth coherence.
-- **FractalBrownNoise** — cumulative Brownian process generating drifts.
-- **FractalBlueNoise** — decorrelated spatial noise for fine detail.
-- **WhiteNoise** — pure random scalar field.
+- **PinkNoise** (available via `pinkNoise`, alias `FractalPinkNoise`) — 1/f spectral slope balancing smooth coherence with gentle high-frequency accents. Defaults: 6 octaves, lacunarity 2.
+- **BrownNoise** (available via `brownNoise`, alias `FractalBrownNoise`) — 1/f² accumulation that accentuates low-frequency drift and large-scale gradients. Defaults mirror PinkNoise with a steeper slope.
+- **BlueNoise** (available via `blueNoise`, alias `FractalBlueNoise`) — high-frequency biased spectrum ideal for crisp micro-detail without banding. Defaults mirror PinkNoise with a positive slope.
+- **WhiteNoise** (available via `whiteNoise`) — zero-correlation random scalar field normalized to [-1, 1].
 
 ## Structural / geometric
 - **DomainWarp** (available via `warp`) — coordinate warp derived from another field.
@@ -91,6 +91,10 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 | `sawtooth` / `anisotropicSawtooth` | Linear ramp anisotropic sawtooth (available) |
 | `triangle` / `anisotropicTriangle` | Symmetric anisotropic triangle wave (available) |
 | `pulse` / `anisotropicPulse` | Configurable pulse gate waveform (available) |
+| `pinkNoise` / `PinkNoise` | 1/f spectral falloff sampler (available) |
+| `brownNoise` / `BrownNoise` | 1/f² drift-emphasized sampler (available) |
+| `blueNoise` / `BlueNoise` | High-frequency accent sampler (available) |
+| `whiteNoise` / `WhiteNoise` | Uniform random scalar field (available) |
 | `warp` / `domainWarp` | Domain-warp vector field (available) |
 | `diffusion` | Diffusion-based smoother (available) |
 

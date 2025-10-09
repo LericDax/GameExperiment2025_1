@@ -63,6 +63,22 @@ test('Billow sampler is repeatable and bounded', () => {
   });
 });
 
+test('Pink noise sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('pinkNoise', { octaves: 5, lacunarity: 2.05 });
+});
+
+test('Brown noise sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('brownNoise', { octaves: 5, lacunarity: 2.05 });
+});
+
+test('Blue noise sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('blueNoise', { octaves: 5, lacunarity: 2.05 });
+});
+
+test('White noise sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('whiteNoise');
+});
+
 test('Worley sampler is repeatable and bounded', () => {
   assertDeterministicScalar('worley', { jitter: 0.65, falloff: 1.25 });
 });
