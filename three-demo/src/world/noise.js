@@ -128,6 +128,32 @@ export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   pulse: createAnisotropicPulseSampler,
   anisotropicPulse: createAnisotropicPulseSampler,
   AnisotropicPulse: createAnisotropicPulseSampler,
+  wavetable: createWavetableSampler,
+  Wavetable: createWavetableSampler,
+  fmComposite: createFmCompositeSampler,
+  FMComposite: createFmCompositeSampler,
+  amComposite: createAmCompositeSampler,
+  AMComposite: createAmCompositeSampler,
+  ringMod: createRingModSampler,
+  RingMod: createRingModSampler,
+  phaseDistortedSine: createPhaseDistortedSineSampler,
+  PhaseDistortedSine: createPhaseDistortedSineSampler,
+  pulseWidthModulation: createPulseWidthModulationSampler,
+  PulseWidthModulation: createPulseWidthModulationSampler,
+  additiveHarmonicStack: createAdditiveHarmonicStackSampler,
+  AdditiveHarmonicStack: createAdditiveHarmonicStackSampler,
+  subtractiveFilterBank: createSubtractiveFilterBankSampler,
+  SubtractiveFilterBank: createSubtractiveFilterBankSampler,
+  granularNoise: createGranularNoiseSampler,
+  GranularNoise: createGranularNoiseSampler,
+  sampleAndHold: createSampleAndHoldSampler,
+  SampleAndHold: createSampleAndHoldSampler,
+  noiseChorus: createNoiseChorusSampler,
+  NoiseChorus: createNoiseChorusSampler,
+  resonantFilterField: createResonantFilterFieldSampler,
+  ResonantFilterField: createResonantFilterFieldSampler,
+  reverberantDecayField: createReverberantDecayFieldSampler,
+  ReverberantDecayField: createReverberantDecayFieldSampler,
   warpedFbm: createWarpedFbmSampler,
   WarpedFBM: createWarpedFbmSampler,
   warp: createDomainWarpSampler,
@@ -941,6 +967,642 @@ function createAnisotropicPulseSampler({ harmonics = 1, ...config } = {}) {
     ...config,
     harmonics,
   });
+}
+
+function resolveSamplerSpec(spec, fallbackType, seed, salt) {
+  if (typeof spec === 'function') {
+    return spec;
+  }
+  if (spec && typeof spec === 'object') {
+    const type = spec.type ?? fallbackType;
+    const config = spec.config ?? {};
+    return createNoiseSampler(type, {
+      seed: hashSeed(seed, salt),
+      ...config,
+    });
+  }
+  const normalized =
+    typeof spec === 'string' && spec.length > 0 ? spec : fallbackType;
+  return createNoiseSampler(normalized, { seed: hashSeed(seed, salt) });
+}
+
+function createWaveShapeEvaluator(shape) {
+  const normalized =
+    typeof shape === 'string' ? shape.toLowerCase() : 'sine';
+  if (normalized === 'square') {
+    return (phase) => (Math.sin(phase) >= 0 ? 1 : -1);
+  }
+  if (normalized === 'triangle') {
+    return (phase) => {
+      const t = wrap01(phase / TWO_PI);
+      return 1 - 4 * Math.abs(t - 0.5);
+    };
+  }
+  if (normalized === 'saw' || normalized === 'sawtooth') {
+    return (phase) => {
+      const t = wrap01(phase / TWO_PI);
+      return t * 2 - 1;
+    };
+  }
+  if (normalized === 'pulse') {
+    return (phase) => (wrap01(phase / TWO_PI) < 0.5 ? 1 : -1);
+  }
+  return (phase) => Math.sin(phase);
+}
+
+function normalizeArrayRange(values) {
+  const maxAbs = values.reduce(
+    (max, value) => Math.max(max, Math.abs(Number.isFinite(value) ? value : 0)),
+    0,
+  );
+  if (maxAbs < 1e-6) {
+    return values.map(() => 0);
+  }
+  return values.map((value) => clamp((value ?? 0) / maxAbs, -1, 1));
+}
+
+function buildWaveTable(source, fallbackLength, seed) {
+  if (Array.isArray(source) && source.length >= 2) {
+    return normalizeArrayRange(source);
+  }
+  const length = Math.max(2, Math.floor(fallbackLength ?? 64));
+  const baseSeed = hashSeed(seed, 1201);
+  const harmonicSeed = hashSeed(seed, 1205);
+  const table = new Array(length).fill(0).map((_, index) => {
+    const t = index / length;
+    const base = Math.sin(t * TWO_PI);
+    const harmonic = Math.sin(
+      t * TWO_PI * 3 + random2D(harmonicSeed, index, length) * TWO_PI,
+    );
+    const random = toSignedRange(random2D(baseSeed, index, length - index));
+    return base * 0.6 + harmonic * 0.3 + random * 0.35;
+  });
+  return normalizeArrayRange(table);
+}
+
+function sampleWavetable(table, position) {
+  if (!table || table.length === 0) {
+    return 0;
+  }
+  const size = table.length;
+  const wrapped = wrap01(position);
+  const scaled = wrapped * size;
+  const index0 = Math.floor(scaled) % size;
+  const index1 = (index0 + 1) % size;
+  const t = scaled - Math.floor(scaled);
+  return lerp(table[index0], table[index1], t);
+}
+
+function createWavetableSampler({
+  seed = 1,
+  table,
+  tableLength = 64,
+  morph = 0,
+  morphTable,
+  morphDepth = 0.5,
+  morphFrequency = 0.2,
+  frequency = 1,
+  phaseOffset = 0,
+  orientation = Math.PI / 4,
+  drift = 0,
+  amplitude = 1,
+} = {}) {
+  const cosAngle = Math.cos(orientation);
+  const sinAngle = Math.sin(orientation);
+  const baseTable = buildWaveTable(table, tableLength, hashSeed(seed, 1211));
+  const morphTarget = buildWaveTable(
+    morphTable,
+    baseTable.length,
+    hashSeed(seed, 1217),
+  );
+  const morphBias = clamp(morph, 0, 1);
+  const morphStrength = clamp(morphDepth, 0, 1);
+  const driftSeed = hashSeed(seed, 1223);
+  const normalizedAmplitude = clamp(Math.abs(amplitude), 0, 2);
+
+  return (x, z) => {
+    const u = x * cosAngle + z * sinAngle;
+    const v = -x * sinAngle + z * cosAngle;
+    const driftPhase = random2D(driftSeed, Math.floor(u), Math.floor(v));
+    const morphOscillation = Math.sin(
+      v * morphFrequency * TWO_PI + driftPhase * TWO_PI,
+    );
+    const morphAmount = clamp(
+      morphBias + morphStrength * (morphOscillation * 0.5 + 0.5),
+      0,
+      1,
+    );
+    const phase = u * frequency + phaseOffset + drift * morphAmount;
+    const baseSample = sampleWavetable(baseTable, phase);
+    const morphSample = sampleWavetable(
+      morphTarget,
+      phase + morphAmount * 0.25,
+    );
+    const blended = lerp(baseSample, morphSample, morphAmount);
+    return clamp(blended * normalizedAmplitude, -1, 1);
+  };
+}
+
+function createFmCompositeSampler({
+  seed = 1,
+  carrierShape = 'sine',
+  carrierFrequency = 1,
+  modulator = 'simplexNoise',
+  modulatorFrequency = 0.5,
+  modulationIndex = 1,
+  modulationDepth = 0.5,
+  feedback = 0,
+  orientation = Math.PI / 4,
+  modulatorOrientationOffset = Math.PI / 3,
+  phaseOffset = 0,
+} = {}) {
+  const cosAngle = Math.cos(orientation);
+  const sinAngle = Math.sin(orientation);
+  const modOrientation = orientation + modulatorOrientationOffset;
+  const modCos = Math.cos(modOrientation);
+  const modSin = Math.sin(modOrientation);
+  const modSampler = resolveSamplerSpec(modulator, 'simplexNoise', seed, 1231);
+  const feedbackSampler = resolveSamplerSpec(
+    { type: 'valueNoise' },
+    'valueNoise',
+    seed,
+    1237,
+  );
+  const carrierEvaluator = createWaveShapeEvaluator(carrierShape);
+  const normalizedIndex = Math.max(0, Math.abs(modulationIndex));
+  const normalizedDepth = clamp(modulationDepth, 0, 2);
+  const feedbackAmount = clamp(feedback, 0, 1);
+
+  return (x, z) => {
+    const u = x * cosAngle + z * sinAngle;
+    const mu = x * modCos + z * modSin;
+    const mv = -x * modSin + z * modCos;
+    const modSignal = modSampler(mu * modulatorFrequency, mv * modulatorFrequency);
+    const feedbackSignal =
+      feedbackAmount > 0
+        ? feedbackSampler(
+            (x + modSignal * feedbackAmount) * carrierFrequency,
+            (z - modSignal * feedbackAmount) * carrierFrequency,
+          )
+        : 0;
+    const fmPhase =
+      u * carrierFrequency * TWO_PI +
+      phaseOffset * TWO_PI +
+      modSignal * normalizedIndex * TWO_PI +
+      feedbackSignal * feedbackAmount * Math.PI;
+    const amplitude = 1 + normalizedDepth * modSignal * 0.5;
+    const value = carrierEvaluator(fmPhase) * clamp(amplitude, -2, 2);
+    return clamp(value, -1, 1);
+  };
+}
+
+function createAmCompositeSampler({
+  seed = 1,
+  carrierShape = 'sine',
+  carrierFrequency = 1,
+  modulator = 'valueNoise',
+  modulatorFrequency = 0.5,
+  modulationDepth = 0.75,
+  orientation = Math.PI / 4,
+  phaseOffset = 0,
+} = {}) {
+  const cosAngle = Math.cos(orientation);
+  const sinAngle = Math.sin(orientation);
+  const modSampler = resolveSamplerSpec(modulator, 'valueNoise', seed, 1243);
+  const carrierEvaluator = createWaveShapeEvaluator(carrierShape);
+  const depth = clamp(modulationDepth, 0, 1.5);
+
+  return (x, z) => {
+    const u = x * cosAngle + z * sinAngle;
+    const modValue =
+      (modSampler(x * modulatorFrequency, z * modulatorFrequency) + 1) * 0.5;
+    const amplitude = clamp(1 - depth + depth * modValue * 2, 0, 2);
+    const carrier = carrierEvaluator(u * carrierFrequency * TWO_PI + phaseOffset * TWO_PI);
+    return clamp(carrier * amplitude, -1, 1);
+  };
+}
+
+function createRingModSampler({
+  seed = 1,
+  carrierShape = 'sine',
+  carrierFrequency = 1,
+  modulator = 'simplexNoise',
+  modulatorShape = null,
+  modulatorFrequency = 0.75,
+  orientation = Math.PI / 4,
+  modulatorOrientationOffset = Math.PI / 6,
+  depth = 1,
+  phaseOffset = 0,
+} = {}) {
+  const cosAngle = Math.cos(orientation);
+  const sinAngle = Math.sin(orientation);
+  const modOrientation = orientation + modulatorOrientationOffset;
+  const modCos = Math.cos(modOrientation);
+  const modSin = Math.sin(modOrientation);
+  const carrierEvaluator = createWaveShapeEvaluator(carrierShape);
+  const modSampler = resolveSamplerSpec(modulator, 'simplexNoise', seed, 1249);
+  const modEvaluator =
+    modulatorShape != null ? createWaveShapeEvaluator(modulatorShape) : null;
+  const normalizedDepth = clamp(depth, 0, 1.5);
+  const carrierPhaseOffset = random2D(hashSeed(seed, 1251), 0, 0) * TWO_PI;
+  const modPhaseOffset = random2D(hashSeed(seed, 1253), 0, 0) * TWO_PI;
+
+  return (x, z) => {
+    const u = x * cosAngle + z * sinAngle;
+    const carrier = carrierEvaluator(
+      u * carrierFrequency * TWO_PI + phaseOffset * TWO_PI + carrierPhaseOffset,
+    );
+    const mu = x * modCos + z * modSin;
+    const mv = -x * modSin + z * modCos;
+    const modNoise = modSampler(
+      mu * modulatorFrequency,
+      mv * modulatorFrequency,
+    );
+    const modValue =
+      modEvaluator != null
+        ? clamp(
+            modEvaluator(mu * modulatorFrequency * TWO_PI + modPhaseOffset) *
+              0.8 +
+              modNoise * 0.2,
+            -1,
+            1,
+          )
+        : modNoise;
+    const combined = carrier * modValue * normalizedDepth;
+    return clamp(combined, -1, 1);
+  };
+}
+
+function createPhaseDistortedSineSampler({
+  seed = 1,
+  frequency = 1,
+  orientation = Math.PI / 4,
+  phaseOffset = 0,
+  distortionAmount = 1,
+  distortionBias = 0,
+  distortionFrequency = 0.5,
+  modulator = 'valueNoise',
+} = {}) {
+  const cosAngle = Math.cos(orientation);
+  const sinAngle = Math.sin(orientation);
+  const modSampler = resolveSamplerSpec(modulator, 'valueNoise', seed, 1255);
+  const amount = clamp(distortionAmount, 0, 4);
+  const bias = clamp(distortionBias, -2, 2);
+
+  return (x, z) => {
+    const u = x * cosAngle + z * sinAngle;
+    const v = -x * sinAngle + z * cosAngle;
+    const modValue = modSampler(
+      v * distortionFrequency,
+      u * distortionFrequency,
+    );
+    const distortion = Math.tanh(modValue * amount + bias);
+    const phase =
+      u * frequency * TWO_PI + phaseOffset * TWO_PI + distortion * Math.PI;
+    return clamp(Math.sin(phase), -1, 1);
+  };
+}
+
+function createPulseWidthModulationSampler({
+  seed = 1,
+  frequency = 1,
+  baseDutyCycle = 0.5,
+  modulationDepth = 0.4,
+  modulatorFrequency = 0.35,
+  orientation = Math.PI / 4,
+  phaseOffset = 0,
+  bias = 0,
+  modulator = 'valueNoise',
+} = {}) {
+  const cosAngle = Math.cos(orientation);
+  const sinAngle = Math.sin(orientation);
+  const modSampler = resolveSamplerSpec(modulator, 'valueNoise', seed, 1267);
+  const depth = clamp(modulationDepth, 0, 0.9);
+  const baseDuty = clamp(baseDutyCycle, 0.05, 0.95);
+  const biasNormalized = clamp(bias, -1, 1);
+
+  return (x, z) => {
+    const u = x * cosAngle + z * sinAngle;
+    const v = -x * sinAngle + z * cosAngle;
+    const modValue = modSampler(u * modulatorFrequency, v * modulatorFrequency);
+    const duty = clamp(baseDuty + modValue * depth * 0.5, 0.05, 0.95);
+    const phase = wrap01(u * frequency + phaseOffset);
+    const gate = phase < duty ? 1 : -1;
+    const lateral = Math.cos(v * frequency * 0.5 * TWO_PI);
+    const sample = gate * lateral + biasNormalized;
+    return clamp(sample, -1, 1);
+  };
+}
+
+function createAdditiveHarmonicStackSampler({
+  seed = 1,
+  harmonics = 5,
+  harmonicFalloff = 1,
+  frequency = 1,
+  orientation = Math.PI / 4,
+  detune = 0,
+  phaseOffset = 0,
+} = {}) {
+  const cosAngle = Math.cos(orientation);
+  const sinAngle = Math.sin(orientation);
+  const harmonicCount = Math.max(1, Math.floor(harmonics));
+  const falloff = Math.max(0.01, harmonicFalloff);
+  const detuneAmount = clamp(detune, -0.5, 0.5);
+  const phaseSeed = hashSeed(seed, 1279);
+
+  return (x, z) => {
+    const u = x * cosAngle + z * sinAngle;
+    let total = 0;
+    let weight = 0;
+    for (let i = 1; i <= harmonicCount; i += 1) {
+      const harmonicWeight = 1 / Math.pow(i, falloff);
+      const phaseJitter = random2D(phaseSeed, i, Math.floor(u)) * TWO_PI;
+      const detuneRatio = 1 + detuneAmount * (i - 1);
+      const sample = Math.sin(
+        u * frequency * detuneRatio * TWO_PI +
+          phaseOffset * TWO_PI +
+          phaseJitter,
+      );
+      total += sample * harmonicWeight;
+      weight += harmonicWeight;
+    }
+    const normalized = weight > 0 ? total / weight : 0;
+    return clamp(normalized, -1, 1);
+  };
+}
+
+function createSubtractiveFilterBankSampler({
+  seed = 1,
+  source = 'whiteNoise',
+  filterBands,
+  frequency = 1,
+  resonance = 0.5,
+  orientation = Math.PI / 4,
+} = {}) {
+  const cosAngle = Math.cos(orientation);
+  const sinAngle = Math.sin(orientation);
+  const baseSampler = resolveSamplerSpec(source, 'whiteNoise', seed, 1285);
+  const bands = (filterBands && filterBands.length > 0
+    ? filterBands
+    : [
+        { center: 0.5, width: 0.75, gain: 1 },
+        { center: 1.2, width: 0.5, gain: -0.45 },
+        { center: 2.2, width: 0.35, gain: 0.3 },
+      ]
+  ).map((band, index) => ({
+    center: Math.max(1e-3, Math.abs(band.center ?? (index + 1))),
+    width: Math.max(0.05, Math.abs(band.width ?? 0.5)),
+    gain: band.gain ?? 1,
+  }));
+  const normalizedResonance = clamp(resonance, 0, 2);
+
+  return (x, z) => {
+    let total = 0;
+    let weight = 0;
+    for (const band of bands) {
+      const offset = band.width * 0.5;
+      const forward = baseSampler(
+        (x + cosAngle * offset) * frequency * band.center,
+        (z + sinAngle * offset) * frequency * band.center,
+      );
+      const backward = baseSampler(
+        (x - cosAngle * offset) * frequency * band.center,
+        (z - sinAngle * offset) * frequency * band.center,
+      );
+      const bandPass = (forward - backward) * 0.5;
+      const attenuated =
+        baseSampler(x * frequency * band.center, z * frequency * band.center) -
+        bandPass * normalizedResonance;
+      total += clamp(attenuated, -1, 1) * band.gain;
+      weight += Math.abs(band.gain);
+    }
+    const normalized = weight > 1e-6 ? total / weight : 0;
+    return clamp(normalized, -1, 1);
+  };
+}
+
+function createGranularNoiseSampler({
+  seed = 1,
+  density = 2,
+  grainSize = 1,
+  falloff = 2,
+  jitter = 0.4,
+  randomness = 0.6,
+} = {}) {
+  const grainsPerCell = Math.max(1, Math.floor(density));
+  const fractional = clamp(density - grainsPerCell, 0, 0.999);
+  const falloffStrength = Math.max(0.5, falloff);
+  const grainScale = Math.max(0.2, grainSize);
+  const jitterAmount = clamp(jitter, 0, 1);
+  const randomnessAmount = clamp(randomness, 0, 1);
+  const amplitudeSeeds = new Array(grainsPerCell).fill(null).map((_, index) => ({
+    offsetSeedX: hashSeed(seed, 1291 + index * 13),
+    offsetSeedZ: hashSeed(seed, 1297 + index * 17),
+    amplitudeSeed: hashSeed(seed, 1301 + index * 19),
+  }));
+  const probabilitySeed = hashSeed(seed, 1307);
+
+  return (x, z) => {
+    const gx = Math.floor(x / grainScale);
+    const gz = Math.floor(z / grainScale);
+    let total = 0;
+    let weight = 0;
+
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dz = -1; dz <= 1; dz += 1) {
+        const cellX = gx + dx;
+        const cellZ = gz + dz;
+        const cellBaseProbability = random2D(probabilitySeed, cellX, cellZ);
+        const activeFraction =
+          cellBaseProbability < fractional ? grainsPerCell + 1 : grainsPerCell;
+        for (let i = 0; i < activeFraction; i += 1) {
+          const seeds = amplitudeSeeds[i % amplitudeSeeds.length];
+          const ox =
+            (random2D(seeds.offsetSeedX, cellX, cellZ) - 0.5) *
+            jitterAmount *
+            grainScale;
+          const oz =
+            (random2D(seeds.offsetSeedZ, cellX, cellZ) - 0.5) *
+            jitterAmount *
+            grainScale;
+          const centerX = (cellX + ox) * grainScale;
+          const centerZ = (cellZ + oz) * grainScale;
+          const dxSample = x - centerX;
+          const dzSample = z - centerZ;
+          const distance = Math.hypot(dxSample, dzSample);
+          const influence = Math.exp(-Math.pow(distance, falloffStrength));
+          if (influence < 1e-4) {
+            continue;
+          }
+          const amplitude =
+            toSignedRange(random2D(seeds.amplitudeSeed, cellX, cellZ)) *
+            (1 - randomnessAmount * 0.5) +
+            randomnessAmount * (Math.sin(distance * TWO_PI) * 0.5);
+          total += amplitude * influence;
+          weight += influence;
+        }
+      }
+    }
+
+    const normalized = weight > 1e-6 ? total / weight : 0;
+    return clamp(normalized, -1, 1);
+  };
+}
+
+function createSampleAndHoldSampler({
+  seed = 1,
+  cellSize = 2,
+  jitter = 0.2,
+  smoothness = 0,
+  bias = 0,
+} = {}) {
+  const size = Math.max(0.5, Math.abs(cellSize));
+  const jitterAmount = clamp(jitter, 0, 1);
+  const smooth = clamp(smoothness, 0, 1);
+  const biasNormalized = clamp(bias, -1, 1);
+  const valueSeed = hashSeed(seed, 1313);
+  const jitterSeedX = hashSeed(seed, 1319);
+  const jitterSeedZ = hashSeed(seed, 1321);
+
+  return (x, z) => {
+    const gx = Math.floor(x / size);
+    const gz = Math.floor(z / size);
+    const baseValue = toSignedRange(random2D(valueSeed, gx, gz));
+    const offsetX =
+      (random2D(jitterSeedX, gx, gz) - 0.5) * jitterAmount * size;
+    const offsetZ =
+      (random2D(jitterSeedZ, gx, gz) - 0.5) * jitterAmount * size;
+    const sample = baseValue + biasNormalized;
+
+    if (smooth <= 0) {
+      return clamp(sample, -1, 1);
+    }
+
+    const nx = Math.floor((x + offsetX) / size);
+    const nz = Math.floor((z + offsetZ) / size);
+    const neighborValue = toSignedRange(random2D(valueSeed, nx, nz));
+    const blended = lerp(sample, neighborValue + biasNormalized, smooth);
+    return clamp(blended, -1, 1);
+  };
+}
+
+function createNoiseChorusSampler({
+  seed = 1,
+  baseType = 'simplexNoise',
+  voices = 3,
+  detune = 0.03,
+  spread = 0.5,
+  frequency = 1,
+} = {}) {
+  const voiceCount = Math.max(1, Math.floor(voices));
+  const detuneAmount = clamp(detune, -0.2, 0.2);
+  const spreadAmount = Math.max(0, spread);
+  const voiceSamplers = new Array(voiceCount).fill(null).map((_, index) =>
+    resolveSamplerSpec(baseType, baseType, seed, 1327 + index * 7),
+  );
+
+  return (x, z) => {
+    let total = 0;
+    for (let i = 0; i < voiceCount; i += 1) {
+      const sampler = voiceSamplers[i];
+      const voicePosition = i - (voiceCount - 1) / 2;
+      const detuneRatio = 1 + detuneAmount * voicePosition;
+      const offsetX =
+        (random2D(hashSeed(seed, 1361 + i * 11), Math.floor(x), Math.floor(z)) -
+          0.5) *
+        spreadAmount;
+      const offsetZ =
+        (random2D(hashSeed(seed, 1373 + i * 13), Math.floor(z), Math.floor(x)) -
+          0.5) *
+        spreadAmount;
+      total += sampler(
+        (x + offsetX) * frequency * detuneRatio,
+        (z + offsetZ) * frequency * detuneRatio,
+      );
+    }
+    const normalized = total / voiceCount;
+    return clamp(normalized, -1, 1);
+  };
+}
+
+function createResonantFilterFieldSampler({
+  seed = 1,
+  source = 'valueNoise',
+  resonance = 1.2,
+  q = 0.8,
+  frequency = 1,
+  bandwidth = 0.75,
+  orientation = Math.PI / 4,
+} = {}) {
+  const cosAngle = Math.cos(orientation);
+  const sinAngle = Math.sin(orientation);
+  const baseSampler = resolveSamplerSpec(source, 'valueNoise', seed, 1381);
+  const normalizedResonance = clamp(resonance, 0, 5);
+  const normalizedQ = clamp(q, 0.1, 3);
+  const offset = Math.max(0.1, Math.abs(bandwidth));
+
+  return (x, z) => {
+    const base = baseSampler(x * frequency, z * frequency);
+    const forward = baseSampler(
+      (x + cosAngle * offset) * frequency,
+      (z + sinAngle * offset) * frequency,
+    );
+    const backward = baseSampler(
+      (x - cosAngle * offset) * frequency,
+      (z - sinAngle * offset) * frequency,
+    );
+    const bandPass = (forward - backward) * 0.5;
+    const resonant = base + bandPass * normalizedResonance;
+    const damped = resonant / (1 + normalizedResonance * normalizedQ);
+    return clamp(damped, -1, 1);
+  };
+}
+
+function createReverberantDecayFieldSampler({
+  seed = 1,
+  source = 'valueNoise',
+  taps = 4,
+  decay = 0.6,
+  delay = 1.5,
+  diffusion = 0.25,
+  frequency = 1,
+  orientation = Math.PI / 4,
+} = {}) {
+  const cosAngle = Math.cos(orientation);
+  const sinAngle = Math.sin(orientation);
+  const baseSampler = resolveSamplerSpec(source, 'valueNoise', seed, 1387);
+  const tapCount = Math.max(1, Math.floor(taps));
+  const decayFactor = clamp(decay, 0, 0.95);
+  const stepDistance = Math.max(0.1, Math.abs(delay));
+  const diffusionAmount = clamp(diffusion, 0, 2);
+  const jitterSeedX = hashSeed(seed, 1393);
+  const jitterSeedZ = hashSeed(seed, 1399);
+
+  return (x, z) => {
+    let total = 0;
+    let weight = 0;
+    let sampleX = x;
+    let sampleZ = z;
+
+    for (let i = 0; i < tapCount; i += 1) {
+      const attenuation = Math.pow(decayFactor, i);
+      const jitterX =
+        (random2D(jitterSeedX, i, Math.floor(x)) - 0.5) * diffusionAmount;
+      const jitterZ =
+        (random2D(jitterSeedZ, i, Math.floor(z)) - 0.5) * diffusionAmount;
+      const sample = baseSampler(
+        (sampleX + jitterX) * frequency,
+        (sampleZ + jitterZ) * frequency,
+      );
+      total += sample * attenuation;
+      weight += attenuation;
+      sampleX -= cosAngle * stepDistance;
+      sampleZ -= sinAngle * stepDistance;
+    }
+
+    const normalized = weight > 1e-6 ? total / weight : 0;
+    return clamp(normalized, -1, 1);
+  };
 }
 
 function createDomainWarpSampler({

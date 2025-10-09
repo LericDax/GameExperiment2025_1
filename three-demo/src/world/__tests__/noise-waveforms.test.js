@@ -231,6 +231,186 @@ test('Anisotropic pulse sampler honors duty cycle and thresholds', () => {
   });
 });
 
+const SYNTH_WAVEFORM_CASES = [
+  {
+    label: 'Wavetable',
+    aliases: ['wavetable', 'Wavetable'],
+    config: {
+      tableLength: 48,
+      morph: 0.35,
+      morphDepth: 0.55,
+      morphFrequency: 0.25,
+      frequency: 0.85,
+      phaseOffset: 0.15,
+      orientation: Math.PI / 5,
+      drift: 0.2,
+      amplitude: 0.9,
+    },
+  },
+  {
+    label: 'FM composite',
+    aliases: ['fmComposite', 'FMComposite'],
+    config: {
+      carrierShape: 'triangle',
+      carrierFrequency: 0.95,
+      modulatorFrequency: 0.6,
+      modulationIndex: 1.4,
+      modulationDepth: 0.6,
+      orientation: Math.PI / 6,
+      modulatorOrientationOffset: Math.PI / 5,
+      phaseOffset: 0.2,
+      feedback: 0.35,
+      modulator: { type: 'valueNoise', config: { octaves: 3, gain: 0.55 } },
+    },
+  },
+  {
+    label: 'AM composite',
+    aliases: ['amComposite', 'AMComposite'],
+    config: {
+      carrierShape: 'saw',
+      carrierFrequency: 1.1,
+      modulatorFrequency: 0.7,
+      modulationDepth: 0.8,
+      orientation: Math.PI / 7,
+      phaseOffset: 0.12,
+      modulator: 'simplexNoise',
+    },
+  },
+  {
+    label: 'Ring modulation',
+    aliases: ['ringMod', 'RingMod'],
+    config: {
+      carrierShape: 'sine',
+      carrierFrequency: 0.9,
+      modulatorShape: 'triangle',
+      modulatorFrequency: 0.55,
+      orientation: Math.PI / 8,
+      modulatorOrientationOffset: Math.PI / 4,
+      depth: 0.85,
+      phaseOffset: 0.05,
+    },
+  },
+  {
+    label: 'Phase distorted sine',
+    aliases: ['phaseDistortedSine', 'PhaseDistortedSine'],
+    config: {
+      frequency: 0.9,
+      orientation: Math.PI / 7,
+      phaseOffset: 0.08,
+      distortionAmount: 1.3,
+      distortionBias: -0.15,
+      distortionFrequency: 0.55,
+      modulator: 'simplexNoise',
+    },
+  },
+  {
+    label: 'Pulse width modulation',
+    aliases: ['pulseWidthModulation', 'PulseWidthModulation'],
+    config: {
+      frequency: 0.95,
+      baseDutyCycle: 0.45,
+      modulationDepth: 0.5,
+      modulatorFrequency: 0.4,
+      orientation: Math.PI / 5,
+      phaseOffset: 0.1,
+      bias: 0.1,
+      modulator: 'gradientNoise',
+    },
+  },
+  {
+    label: 'Additive harmonic stack',
+    aliases: ['additiveHarmonicStack', 'AdditiveHarmonicStack'],
+    config: {
+      harmonics: 6,
+      harmonicFalloff: 1.25,
+      frequency: 0.8,
+      orientation: Math.PI / 6,
+      detune: 0.08,
+      phaseOffset: 0.1,
+    },
+  },
+  {
+    label: 'Subtractive filter bank',
+    aliases: ['subtractiveFilterBank', 'SubtractiveFilterBank'],
+    config: {
+      source: 'whiteNoise',
+      frequency: 0.85,
+      resonance: 0.65,
+      orientation: Math.PI / 4,
+      filterBands: [
+        { center: 0.6, width: 0.8, gain: 0.9 },
+        { center: 1.4, width: 0.6, gain: -0.5 },
+        { center: 2.1, width: 0.4, gain: 0.35 },
+      ],
+    },
+  },
+  {
+    label: 'Granular noise',
+    aliases: ['granularNoise', 'GranularNoise'],
+    config: {
+      density: 2.5,
+      grainSize: 1.4,
+      falloff: 2.1,
+      jitter: 0.55,
+      randomness: 0.45,
+    },
+  },
+  {
+    label: 'Sample and hold',
+    aliases: ['sampleAndHold', 'SampleAndHold'],
+    config: {
+      cellSize: 1.8,
+      jitter: 0.35,
+      smoothness: 0.45,
+      bias: 0.1,
+    },
+  },
+  {
+    label: 'Noise chorus',
+    aliases: ['noiseChorus', 'NoiseChorus'],
+    config: {
+      baseType: 'simplexNoise',
+      voices: 4,
+      detune: 0.04,
+      spread: 0.6,
+      frequency: 0.9,
+    },
+  },
+  {
+    label: 'Resonant filter field',
+    aliases: ['resonantFilterField', 'ResonantFilterField'],
+    config: {
+      source: 'gradientNoise',
+      resonance: 1.4,
+      q: 0.85,
+      frequency: 0.95,
+      bandwidth: 0.65,
+      orientation: Math.PI / 5,
+    },
+  },
+  {
+    label: 'Reverberant decay field',
+    aliases: ['reverberantDecayField', 'ReverberantDecayField'],
+    config: {
+      source: 'valueNoise',
+      taps: 5,
+      decay: 0.6,
+      delay: 1.25,
+      diffusion: 0.35,
+      frequency: 0.9,
+      orientation: Math.PI / 6,
+    },
+  },
+];
+
+for (const { label, aliases, config } of SYNTH_WAVEFORM_CASES) {
+  for (const alias of aliases) {
+    test(`${label} sampler (${alias}) is repeatable and bounded`, () => {
+      assertDeterministicScalar(alias, config);
+    });
+  }
+}
+
 test('Diffusion sampler is repeatable and bounded', () => {
   assertDeterministicScalar('diffusion', { smoothing: 0.6 });
 });
