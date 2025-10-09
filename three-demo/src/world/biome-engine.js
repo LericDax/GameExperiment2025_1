@@ -1,10 +1,55 @@
 import { ValueNoise2D } from './noise.js';
 import { defaultWorldOptions, biomeOptionMetadata } from './world-settings.js';
 
-const biomeModuleMap = import.meta.glob('./biomes/*.json', {
-  import: 'default',
-  eager: true,
-});
+const isNodeEnvironment = typeof process !== 'undefined' && !!process.versions?.node;
+let nodeFs = null;
+let nodePath = null;
+let toFilePath = null;
+
+if (isNodeEnvironment) {
+  const [fsModule, pathModule, urlModule] = await Promise.all([
+    import('node:fs'),
+    import('node:path'),
+    import('node:url'),
+  ]);
+  nodeFs = fsModule.default ?? fsModule;
+  nodePath = pathModule.default ?? pathModule;
+  toFilePath = urlModule.fileURLToPath;
+}
+
+function loadBiomeModules() {
+  if (typeof import.meta?.glob === 'function') {
+    return import.meta.glob('./biomes/*.json', {
+      import: 'default',
+      eager: true,
+    });
+  }
+  if (!nodeFs || !nodePath || !toFilePath) {
+    return {};
+  }
+  const baseDir = nodePath.join(nodePath.dirname(toFilePath(import.meta.url)), 'biomes');
+  let entries = [];
+  try {
+    entries = nodeFs.readdirSync(baseDir, { withFileTypes: true });
+  } catch (_error) {
+    return {};
+  }
+  const modules = {};
+  entries.forEach((entry) => {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) {
+      return;
+    }
+    try {
+      const raw = nodeFs.readFileSync(nodePath.join(baseDir, entry.name), 'utf8');
+      modules[`./biomes/${entry.name}`] = JSON.parse(raw);
+    } catch (_error) {
+      // ignore malformed biome definitions when running in fallback mode
+    }
+  });
+  return modules;
+}
+
+const biomeModuleMap = loadBiomeModules();
 
 /*
  * Biome onboarding checklist:
