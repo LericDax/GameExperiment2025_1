@@ -89,6 +89,51 @@ test('Anisotropic sine sampler is repeatable and bounded', () => {
   });
 });
 
+test('Anisotropic cosine sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('cosine', {
+    orientation: Math.PI / 3,
+    harmonics: 3,
+    harmonicFalloff: 1.1,
+    phaseOffset: 0.15,
+  });
+});
+
+test('Anisotropic square sampler respects duty cycle deterministically', () => {
+  assertDeterministicScalar('square', {
+    orientation: Math.PI / 5,
+    phaseOffset: 0.25,
+    harmonics: 2,
+    dutyCycle: 0.4,
+  });
+});
+
+test('Anisotropic sawtooth sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('sawtooth', {
+    orientation: Math.PI / 7,
+    phaseOffset: -0.1,
+    harmonics: 2,
+  });
+});
+
+test('Anisotropic triangle sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('triangle', {
+    orientation: Math.PI / 8,
+    phaseOffset: 0.35,
+    harmonics: 3,
+  });
+});
+
+test('Anisotropic pulse sampler honors duty cycle and thresholds', () => {
+  assertDeterministicScalar('pulse', {
+    orientation: Math.PI / 9,
+    phaseOffset: -0.2,
+    harmonics: 2,
+    dutyCycle: 0.3,
+    highValue: 0.85,
+    lowValue: -0.6,
+  });
+});
+
 test('Diffusion sampler is repeatable and bounded', () => {
   assertDeterministicScalar('diffusion', { smoothing: 0.6 });
 });

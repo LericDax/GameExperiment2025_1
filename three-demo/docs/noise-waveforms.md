@@ -13,12 +13,12 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 - **SimplexNoise** (available) — efficient gradient noise alternative for large worlds. Defaults: 2D simplex gradients seeded deterministically.
 
 ## Analytic / trigonometric waveforms
-- **AnisotropicSine** (available via `sine`) — directional sine bands ideal for dunes.
-- **AnisotropicCosine** — cosine variant with a phase shift for alternating ridges.
-- **AnisotropicSquare** — thresholded sine for terraces and cliffs.
-- **AnisotropicSawtooth** — linear ramp wave useful for repeating slopes.
-- **AnisotropicTriangle** — symmetric ramp pattern for jagged peaks.
-- **AnisotropicPulse** — binary mask aligned to a direction.
+- **AnisotropicSine** (available via `sine`) — directional sine bands ideal for dunes. Parameters: `orientation` (radians), `phaseOffset`, `harmonics`, `harmonicFalloff`, `bias`.
+- **AnisotropicCosine** (available via `cosine`) — cosine counterpart with alternating ridge emphasis. Shares the sine parameters above.
+- **AnisotropicSquare** (available via `square`) — thresholded band pattern suited for terraces. Adds `dutyCycle` (0–1) in addition to the sine parameters.
+- **AnisotropicSawtooth** (available via `sawtooth`) — linear ramp wave useful for repeating slopes. Shares the sine parameters.
+- **AnisotropicTriangle** (available via `triangle`) — symmetric ramp pattern for jagged peaks. Shares the sine parameters.
+- **AnisotropicPulse** (available via `pulse`) — directional on/off mask. Supports the sine parameters plus `dutyCycle`, `highValue`, and `lowValue` to control pulse width and thresholds.
 
 ## Fractal / spectral variants
 - **FractalPinkNoise** — 1/f spectral distribution for smooth coherence.
@@ -86,6 +86,11 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 | `gradientNoise` / `GradientNoise` | Gradient noise sampler (available) |
 | `simplexNoise` / `SimplexNoise` | Simplex noise sampler (available) |
 | `sine` / `anisotropicSine` | Directional sine pattern (available) |
+| `cosine` / `anisotropicCosine` | Directional cosine pattern (available) |
+| `square` / `anisotropicSquare` | Duty-cycle controlled square wave (available) |
+| `sawtooth` / `anisotropicSawtooth` | Linear ramp anisotropic sawtooth (available) |
+| `triangle` / `anisotropicTriangle` | Symmetric anisotropic triangle wave (available) |
+| `pulse` / `anisotropicPulse` | Configurable pulse gate waveform (available) |
 | `warp` / `domainWarp` | Domain-warp vector field (available) |
 | `diffusion` | Diffusion-based smoother (available) |
 
