@@ -94,6 +94,14 @@ export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   FractalBlueNoise: createBlueNoiseSampler,
   whiteNoise: createWhiteNoiseSampler,
   WhiteNoise: createWhiteNoiseSampler,
+  gaborNoise: createGaborNoiseSampler,
+  GaborNoise: createGaborNoiseSampler,
+  waveletNoise: createWaveletNoiseSampler,
+  WaveletNoise: createWaveletNoiseSampler,
+  spectralNoise: createSpectralNoiseSampler,
+  SpectralNoise: createSpectralNoiseSampler,
+  poissonBlueMask: createPoissonBlueMaskSampler,
+  PoissonBlueMask: createPoissonBlueMaskSampler,
   worley: createWorleySampler,
   Worley: createWorleySampler,
   valueNoise: createValueNoiseSampler,
@@ -374,35 +382,287 @@ function createBandsFbmSampler({
   };
 }
 
+function createGaborNoiseSampler({
+  seed = 1,
+  frequency = 1,
+  impulses = 6,
+  bandwidth = 2.5,
+} = {}) {
+  const impulseCount = Math.max(1, Math.floor(impulses));
+  const baseFrequency = Math.max(1e-3, Math.abs(frequency));
+  const envelopeWidth = Math.max(0.5, Math.abs(bandwidth));
+  const gaussianFalloff = 1 / (envelopeWidth * envelopeWidth);
+  const radius = Math.max(
+    1,
+    Math.ceil(envelopeWidth * Math.sqrt(Math.log(1000))),
+  );
+  const impulseSeeds = new Array(impulseCount).fill(null).map((_, index) => ({
+    offsetSeedX: hashSeed(seed, 337 + index * 17),
+    offsetSeedZ: hashSeed(seed, 389 + index * 19),
+    orientationSeed: hashSeed(seed, 557 + index * 29),
+    phaseSeed: hashSeed(seed, 673 + index * 31),
+  }));
+
+  return (x, z) => {
+    const sx = x * baseFrequency;
+    const sz = z * baseFrequency;
+    const ix = Math.floor(sx);
+    const iz = Math.floor(sz);
+    let total = 0;
+    let weightSum = 0;
+
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      for (let dz = -radius; dz <= radius; dz += 1) {
+        const cellX = ix + dx;
+        const cellZ = iz + dz;
+
+        for (let i = 0; i < impulseSeeds.length; i += 1) {
+          const seeds = impulseSeeds[i];
+          const offsetX = random2D(seeds.offsetSeedX, cellX, cellZ) - 0.5;
+          const offsetZ = random2D(seeds.offsetSeedZ, cellX, cellZ) - 0.5;
+          const orientation =
+            random2D(seeds.orientationSeed, cellX, cellZ) * Math.PI * 2;
+          const cosTheta = Math.cos(orientation);
+          const sinTheta = Math.sin(orientation);
+          const phase = random2D(seeds.phaseSeed, cellX, cellZ) * Math.PI * 2;
+          const centerX = cellX + offsetX;
+          const centerZ = cellZ + offsetZ;
+          const dxSample = sx - centerX;
+          const dzSample = sz - centerZ;
+          const dist2 = dxSample * dxSample + dzSample * dzSample;
+          const weight = Math.exp(-dist2 * gaussianFalloff);
+          if (weight < 1e-6) {
+            continue;
+          }
+          const projection = dxSample * cosTheta + dzSample * sinTheta;
+          const wave = Math.cos(2 * Math.PI * projection + phase);
+          total += wave * weight;
+          weightSum += weight;
+        }
+      }
+    }
+
+    const normalized = weightSum > 0 ? total / weightSum : 0;
+    return clamp(normalized, -1, 1);
+  };
+}
+
+function createWaveletNoiseSampler({
+  seed = 1,
+  period = 32,
+  octaves = 4,
+  modesPerOctave = 4,
+  gain = 0.5,
+} = {}) {
+  const periodSize = Math.max(2, Math.floor(period));
+  const octaveCount = Math.max(1, Math.floor(octaves));
+  const modeCount = Math.max(1, Math.floor(modesPerOctave));
+  const normalizedGain = clamp(gain, 0, 1);
+  const maxMode = Math.max(1, Math.floor(periodSize / 2));
+
+  const modeParameters = new Array(octaveCount)
+    .fill(null)
+    .map((_, octave) => {
+      const amplitude = Math.pow(normalizedGain, octave);
+      const frequencyMultiplier = Math.pow(2, octave);
+      return new Array(modeCount).fill(null).map((__, modeIndex) => {
+        const baseSeed = hashSeed(seed, 911 + octave * 73 + modeIndex * 19);
+        const rx = random2D(baseSeed, 0, 0);
+        const rz = random2D(baseSeed, 17.11, 43.7);
+        const kx = 1 + Math.floor(rx * maxMode);
+        const kz = 1 + Math.floor(rz * maxMode);
+        const phase = random2D(baseSeed, 73.17, 19.31) * Math.PI * 2;
+        return {
+          kx: kx * frequencyMultiplier,
+          kz: kz * frequencyMultiplier,
+          amplitude,
+          phase,
+        };
+      });
+    });
+
+  return (x, z) => {
+    const u = wrap01(x / periodSize);
+    const v = wrap01(z / periodSize);
+    let total = 0;
+    let weightSum = 0;
+
+    for (const octaveModes of modeParameters) {
+      for (const mode of octaveModes) {
+        if (mode.amplitude <= 0) {
+          continue;
+        }
+        const angle = 2 * Math.PI * (mode.kx * u + mode.kz * v) + mode.phase;
+        const value = Math.sin(angle) * mode.amplitude;
+        total += value;
+        weightSum += mode.amplitude;
+      }
+    }
+
+    const normalized = weightSum > 0 ? total / weightSum : 0;
+    return clamp(normalized, -1, 1);
+  };
+}
+
 function createSpectralNoiseSampler({
   seed = 1,
   octaves = 6,
   lacunarity = 2,
   slope = -1,
-}) {
-  const octaveCount = Math.max(1, Math.floor(octaves));
+  weights,
+  frequencyMultipliers,
+  baseSampler = 'value',
+} = {}) {
+  const hasWeights = Array.isArray(weights) && weights.length > 0;
+  const hasFrequencies =
+    Array.isArray(frequencyMultipliers) && frequencyMultipliers.length > 0;
+  const weightLength = hasWeights ? weights.length : 0;
+  const frequencyLength = hasFrequencies ? frequencyMultipliers.length : 0;
+  const fallbackOctaves = Math.max(1, Math.floor(octaves));
+  const octaveCount =
+    weightLength > 0 && frequencyLength > 0
+      ? Math.min(weightLength, frequencyLength)
+      : weightLength > 0
+      ? weightLength
+      : frequencyLength > 0
+      ? frequencyLength
+      : fallbackOctaves;
   const spectralLacunarity = Math.max(1e-3, Math.abs(lacunarity));
-  const noiseLayers = new Array(octaveCount)
+  const normalizedBase =
+    typeof baseSampler === 'string' ? baseSampler.toLowerCase() : 'value';
+
+  const amplitudeWeights = hasWeights
+    ? weights
+        .slice(0, octaveCount)
+        .map((weight) => Math.max(0, Math.abs(weight)))
+    : null;
+  const frequencies = hasFrequencies
+    ? frequencyMultipliers
+        .slice(0, octaveCount)
+        .map((value) => Math.max(1e-3, Math.abs(value)))
+    : new Array(octaveCount)
+        .fill(null)
+        .map((_, index) => Math.pow(spectralLacunarity, index));
+
+  const layerSamplers = new Array(octaveCount)
     .fill(null)
-    .map((_, index) => createValueNoise(seed, index));
-  const frequencies = new Array(octaveCount)
-    .fill(null)
-    .map((_, index) => Math.pow(spectralLacunarity, index));
-  const weights = frequencies.map((frequency) => Math.pow(frequency, slope));
-  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+    .map((_, index) => {
+      const layerSeed = hashSeed(seed, 401 + index * 37);
+      if (
+        normalizedBase === 'gradient' ||
+        normalizedBase === 'gradientnoise'
+      ) {
+        const gradient = new GradientNoise2D(layerSeed);
+        return (lx, lz) => gradient.noise(lx, lz);
+      }
+      if (
+        normalizedBase === 'simplex' ||
+        normalizedBase === 'simplexnoise'
+      ) {
+        const simplex = new SimplexNoise2D(layerSeed);
+        return (lx, lz) => simplex.noise(lx, lz);
+      }
+      if (normalizedBase === 'white' || normalizedBase === 'whitenoise') {
+        return (lx, lz) => toSignedRange(random2D(layerSeed, lx, lz));
+      }
+      const valueNoise = createValueNoise(seed, index);
+      return (lx, lz) => toSignedRange(valueNoise.noise(lx, lz));
+    });
+
+  const weightsPerLayer =
+    amplitudeWeights ??
+    frequencies.map((frequency) => Math.pow(frequency, slope));
+  const weightSum = weightsPerLayer.reduce((sum, weight) => sum + weight, 0);
 
   return (x, z) => {
     let total = 0;
 
     for (let i = 0; i < octaveCount; i += 1) {
-      const sample = toSignedRange(
-        noiseLayers[i].noise(x * frequencies[i], z * frequencies[i]),
-      );
-      total += sample * weights[i];
+      const sample = layerSamplers[i](x * frequencies[i], z * frequencies[i]);
+      total += sample * weightsPerLayer[i];
     }
 
-    const normalized = weightSum > 0 ? total / weightSum : 0;
+    const normalized = weightSum > 1e-9 ? total / weightSum : 0;
     return clamp(normalized, -1, 1);
+  };
+}
+
+function createPoissonBlueMaskSampler({
+  seed = 1,
+  frequency = 1,
+  radius = 2,
+  falloff = 1.5,
+  bias = 0,
+} = {}) {
+  const density = Math.max(1e-3, Math.abs(frequency));
+  const cellRadius = Math.max(1, Math.floor(radius));
+  const influenceRadius = Math.max(0.5, Math.abs(radius));
+  const falloffStrength = Math.max(0.1, Math.abs(falloff));
+  const biasNormalized = clamp(bias, -1, 1);
+  const prioritySeed = hashSeed(seed, 1039);
+  const offsetSeedX = hashSeed(seed, 1063);
+  const offsetSeedZ = hashSeed(seed, 1097);
+
+  function cellPriority(ix, iz) {
+    return random2D(prioritySeed, ix, iz);
+  }
+
+  function cellHasFeature(ix, iz) {
+    const centerPriority = cellPriority(ix, iz);
+    for (let dx = -cellRadius; dx <= cellRadius; dx += 1) {
+      for (let dz = -cellRadius; dz <= cellRadius; dz += 1) {
+        if (dx === 0 && dz === 0) {
+          continue;
+        }
+        if (dx * dx + dz * dz > cellRadius * cellRadius) {
+          continue;
+        }
+        const neighborPriority = cellPriority(ix + dx, iz + dz);
+        if (neighborPriority > centerPriority) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  function cellOffset(ix, iz) {
+    const ox = random2D(offsetSeedX, ix, iz);
+    const oz = random2D(offsetSeedZ, ix, iz);
+    return { x: ox, z: oz };
+  }
+
+  return (x, z) => {
+    const sx = x * density;
+    const sz = z * density;
+    const gx = Math.floor(sx);
+    const gz = Math.floor(sz);
+    let best = 0;
+    const searchRadius = cellRadius + 1;
+
+    for (let dx = -searchRadius; dx <= searchRadius; dx += 1) {
+      for (let dz = -searchRadius; dz <= searchRadius; dz += 1) {
+        const cellX = gx + dx;
+        const cellZ = gz + dz;
+        if (!cellHasFeature(cellX, cellZ)) {
+          continue;
+        }
+        const { x: offsetX, z: offsetZ } = cellOffset(cellX, cellZ);
+        const centerX = cellX + offsetX;
+        const centerZ = cellZ + offsetZ;
+        const dxSample = sx - centerX;
+        const dzSample = sz - centerZ;
+        const distance = Math.hypot(dxSample, dzSample);
+        const influence = Math.max(1e-3, influenceRadius * falloffStrength);
+        const normalized = Math.max(0, 1 - distance / influence);
+        if (normalized > best) {
+          best = normalized;
+        }
+      }
+    }
+
+    const value = clamp(best * 2 - 1 + biasNormalized, -1, 1);
+    return value;
   };
 }
 
@@ -1248,6 +1508,11 @@ function random2D(seed, x, z) {
 
 function toSignedRange(value) {
   return value * 2 - 1;
+}
+
+function wrap01(value) {
+  const fractional = value - Math.floor(value);
+  return fractional < 0 ? fractional + 1 : fractional;
 }
 
 function clamp(value, min, max) {
