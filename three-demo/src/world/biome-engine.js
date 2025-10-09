@@ -1,8 +1,8 @@
-import { ValueNoise2D } from './noise.js';
-import { defaultWorldOptions, biomeOptionMetadata } from './world-settings.js';
+import { ValueNoise2D } from "./noise.js";
+import { defaultWorldOptions, biomeOptionMetadata } from "./world-settings.js";
 
-const biomeModuleMap = import.meta.glob('./biomes/*.json', {
-  import: 'default',
+const biomeModuleMap = import.meta.glob("./biomes/*.json", {
+  import: "default",
   eager: true,
 });
 
@@ -19,11 +19,11 @@ const biomeModuleMap = import.meta.glob('./biomes/*.json', {
  *    sampling and placement expectations for the new biome.
  */
 const rawBiomeDefinitions = Object.values(biomeModuleMap)
-  .filter((definition) => definition && typeof definition === 'object')
+  .filter((definition) => definition && typeof definition === "object")
   .map((definition) => ({ ...definition }))
   .sort((a, b) => {
-    const idA = String(a?.id ?? '').toLowerCase();
-    const idB = String(b?.id ?? '').toLowerCase();
+    const idA = String(a?.id ?? "").toLowerCase();
+    const idB = String(b?.id ?? "").toLowerCase();
     if (idA && idB) {
       return idA.localeCompare(idB);
     }
@@ -37,15 +37,28 @@ const rawBiomeDefinitions = Object.values(biomeModuleMap)
   });
 
 const NEUTRAL_BASE_PALETTE = {
-  grass: '#4a9c47',
-  dirt: '#6b4a2f',
-  stone: '#8c8c8c',
-  sand: '#d7c27a',
-  water: '#1f4d8f',
-  leaf: '#3f7c35',
-  log: '#725032',
-  cloud: '#f7f8fb',
+  grass: "#4a9c47",
+  dirt: "#6b4a2f",
+  stone: "#8c8c8c",
+  sand: "#d7c27a",
+  water: "#1f4d8f",
+  leaf: "#3f7c35",
+  log: "#725032",
+  cloud: "#f7f8fb",
 };
+
+const defaultFmOperators = Array.isArray(
+  defaultWorldOptions?.terrain?.fm?.operators,
+)
+  ? defaultWorldOptions.terrain.fm.operators
+  : [];
+const FM_OPERATOR_COUNT = defaultFmOperators.length;
+const fmOperatorIdIndexMap = new Map();
+defaultFmOperators.forEach((operator, index) => {
+  if (operator && typeof operator.id === "string") {
+    fmOperatorIdIndexMap.set(operator.id, index);
+  }
+});
 
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
@@ -56,41 +69,145 @@ function mixValues(a, b, weight) {
 }
 
 function normalizeMultiplier(value, fallback = 1) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
   }
   return Math.max(0, value);
+}
+
+function normalizeFmOperatorWeights(definition) {
+  if (FM_OPERATOR_COUNT === 0) {
+    return null;
+  }
+
+  const weights = new Array(FM_OPERATOR_COUNT).fill(1);
+  let hasOverride = false;
+
+  if (Array.isArray(definition)) {
+    for (let index = 0; index < definition.length; index += 1) {
+      if (index >= FM_OPERATOR_COUNT) {
+        break;
+      }
+      const value = definition[index];
+      if (Number.isFinite(value)) {
+        weights[index] = value;
+        if (!hasOverride && value !== 1) {
+          hasOverride = true;
+        }
+      }
+    }
+  } else if (definition && typeof definition === "object") {
+    Object.entries(definition).forEach(([key, rawValue]) => {
+      let index = fmOperatorIdIndexMap.get(key);
+      if (index === undefined) {
+        const numericIndex = Number.parseInt(key, 10);
+        if (Number.isFinite(numericIndex)) {
+          index = numericIndex;
+        }
+      }
+      if (
+        Number.isFinite(index) &&
+        index >= 0 &&
+        index < FM_OPERATOR_COUNT &&
+        Number.isFinite(rawValue)
+      ) {
+        weights[index] = rawValue;
+        if (!hasOverride && rawValue !== 1) {
+          hasOverride = true;
+        }
+      }
+    });
+  }
+
+  return hasOverride ? weights : null;
+}
+
+function normalizeBiomeFmProfile(definition) {
+  if (
+    !definition ||
+    typeof definition !== "object" ||
+    FM_OPERATOR_COUNT === 0
+  ) {
+    return null;
+  }
+
+  const weights = normalizeFmOperatorWeights(
+    definition.operatorWeights ?? definition.weights,
+  );
+
+  const profile = {};
+  let hasData = false;
+
+  if (weights) {
+    profile.operatorWeights = weights;
+    hasData = true;
+  }
+
+  if (Number.isFinite(definition.baseShift)) {
+    profile.baseShift = definition.baseShift;
+    hasData = true;
+  }
+  if (Number.isFinite(definition.slopeWeight)) {
+    profile.slopeWeight = definition.slopeWeight;
+    hasData = true;
+  }
+  if (Number.isFinite(definition.altitudeWeight)) {
+    profile.altitudeWeight = definition.altitudeWeight;
+    hasData = true;
+  }
+  if (Number.isFinite(definition.min)) {
+    profile.min = definition.min;
+    hasData = true;
+  }
+  if (Number.isFinite(definition.max)) {
+    profile.max = definition.max;
+    hasData = true;
+  }
+  if (Number.isFinite(definition.blendStrength)) {
+    profile.blendStrength = clamp01(definition.blendStrength);
+    hasData = true;
+  }
+
+  return hasData ? profile : null;
 }
 
 function resolveBiomeOption(option, value) {
   const defaults = defaultWorldOptions.biomes;
   const fallback = defaults[option];
   const metadata = biomeOptionMetadata[option] ?? {};
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
   }
-  const min = Number.isFinite(metadata.min) ? metadata.min : Number.NEGATIVE_INFINITY;
-  const max = Number.isFinite(metadata.max) ? metadata.max : Number.POSITIVE_INFINITY;
+  const min = Number.isFinite(metadata.min)
+    ? metadata.min
+    : Number.NEGATIVE_INFINITY;
+  const max = Number.isFinite(metadata.max)
+    ? metadata.max
+    : Number.POSITIVE_INFINITY;
   const clamped = Math.min(Math.max(value, min), max);
-  if (option === 'scale' && clamped === 0) {
+  if (option === "scale" && clamped === 0) {
     return fallback;
   }
   return clamped;
 }
 
 function normalizeCategoryMultipliers(definition) {
-  if (!definition || typeof definition !== 'object' || Array.isArray(definition)) {
+  if (
+    !definition ||
+    typeof definition !== "object" ||
+    Array.isArray(definition)
+  ) {
     return {};
   }
   return Object.fromEntries(
     Object.entries(definition)
-      .filter((entry) => typeof entry[0] === 'string')
+      .filter((entry) => typeof entry[0] === "string")
       .map(([key, value]) => [key, normalizeMultiplier(value, 1)]),
   );
 }
 
 function cloneShaderMetadata(value) {
-  if (!value || typeof value !== 'object') {
+  if (!value || typeof value !== "object") {
     return null;
   }
   try {
@@ -103,7 +220,10 @@ function cloneShaderMetadata(value) {
 const DEFAULT_WEATHER_DURATION = { min: 180, max: 420 };
 const MIN_WEATHER_DURATION = 30;
 
-function normaliseWeatherDuration(duration, fallback = DEFAULT_WEATHER_DURATION) {
+function normaliseWeatherDuration(
+  duration,
+  fallback = DEFAULT_WEATHER_DURATION,
+) {
   const fallbackMin = Number.isFinite(fallback?.min)
     ? fallback.min
     : DEFAULT_WEATHER_DURATION.min;
@@ -118,23 +238,28 @@ function normaliseWeatherDuration(duration, fallback = DEFAULT_WEATHER_DURATION)
 }
 
 function normaliseBiomeWeather(definition) {
-  if (!definition || typeof definition !== 'object') {
+  if (!definition || typeof definition !== "object") {
     return null;
   }
 
   const candidatesSource = Array.isArray(definition.candidates)
     ? definition.candidates
     : Array.isArray(definition)
-    ? definition
-    : [];
+      ? definition
+      : [];
   const defaultDuration = normaliseWeatherDuration(definition.defaultDuration);
 
   const candidates = candidatesSource
-    .filter((candidate) => candidate && typeof candidate.id === 'string')
+    .filter((candidate) => candidate && typeof candidate.id === "string")
     .map((candidate) => {
       const weightValue = Number(candidate.weight);
-      const weight = Number.isFinite(weightValue) ? Math.max(0, weightValue) : 1;
-      const duration = normaliseWeatherDuration(candidate.duration, defaultDuration);
+      const weight = Number.isFinite(weightValue)
+        ? Math.max(0, weightValue)
+        : 1;
+      const duration = normaliseWeatherDuration(
+        candidate.duration,
+        defaultDuration,
+      );
       return {
         id: String(candidate.id),
         weight,
@@ -159,7 +284,7 @@ export function createBiomeEngine({
   biomeOptions = null,
 } = {}) {
   if (!THREE) {
-    throw new Error('createBiomeEngine requires a THREE instance');
+    throw new Error("createBiomeEngine requires a THREE instance");
   }
 
   const temperatureNoise = new ValueNoise2D(seed * 1.37 + 97);
@@ -168,29 +293,29 @@ export function createBiomeEngine({
   const moistureDetailNoise = new ValueNoise2D(seed * 2.03 + 311);
   const varianceNoise = new ValueNoise2D(seed * 1.73 + 443);
 
-  const climateScale = resolveBiomeOption('scale', biomeOptions?.scale);
+  const climateScale = resolveBiomeOption("scale", biomeOptions?.scale);
   const detailMultiplier = resolveBiomeOption(
-    'detailMultiplier',
+    "detailMultiplier",
     biomeOptions?.detailMultiplier,
   );
   const moistureDetailMultiplier = resolveBiomeOption(
-    'moistureDetailMultiplier',
+    "moistureDetailMultiplier",
     biomeOptions?.moistureDetailMultiplier,
   );
   const varianceMultiplier = resolveBiomeOption(
-    'varianceMultiplier',
+    "varianceMultiplier",
     biomeOptions?.varianceMultiplier,
   );
   const variationStrength = resolveBiomeOption(
-    'variationStrength',
+    "variationStrength",
     biomeOptions?.variationStrength,
   );
   const uniformity = clamp01(
-    resolveBiomeOption('uniformity', biomeOptions?.uniformity),
+    resolveBiomeOption("uniformity", biomeOptions?.uniformity),
   );
   const weightExponent = Math.max(
     0,
-    resolveBiomeOption('weightExponent', biomeOptions?.weightExponent),
+    resolveBiomeOption("weightExponent", biomeOptions?.weightExponent),
   );
 
   const detailScale = climateScale * detailMultiplier;
@@ -207,7 +332,7 @@ export function createBiomeEngine({
   );
 
   if (rawBiomeDefinitions.length === 0) {
-    throw new Error('No biome JSON definitions were discovered.');
+    throw new Error("No biome JSON definitions were discovered.");
   }
 
   const biomes = rawBiomeDefinitions.map((definition, index) => {
@@ -242,7 +367,7 @@ export function createBiomeEngine({
       id: definition.id ?? `biome_${index}`,
       label: definition.label ?? definition.id ?? `Biome ${index + 1}`,
       tags: Array.isArray(definition.tags)
-        ? definition.tags.filter((tag) => typeof tag === 'string')
+        ? definition.tags.filter((tag) => typeof tag === "string")
         : [],
       climate: {
         temperature: clamp01(definition.climate?.temperature ?? 0.5),
@@ -252,11 +377,14 @@ export function createBiomeEngine({
       palette,
       paletteColors,
       terrain: {
-        surfaceBlock: terrainDefinition.surfaceBlock ?? 'grass',
-        shoreBlock: terrainDefinition.shoreBlock ?? 'sand',
-        subSurfaceBlock: terrainDefinition.subSurfaceBlock ?? 'dirt',
-        subSurfaceDepth: Math.max(1, Math.floor(terrainDefinition.subSurfaceDepth ?? 4)),
-        deepBlock: terrainDefinition.deepBlock ?? 'stone',
+        surfaceBlock: terrainDefinition.surfaceBlock ?? "grass",
+        shoreBlock: terrainDefinition.shoreBlock ?? "sand",
+        subSurfaceBlock: terrainDefinition.subSurfaceBlock ?? "dirt",
+        subSurfaceDepth: Math.max(
+          1,
+          Math.floor(terrainDefinition.subSurfaceDepth ?? 4),
+        ),
+        deepBlock: terrainDefinition.deepBlock ?? "stone",
         treeDensity: clamp01(terrainDefinition.treeDensity ?? 0.08),
         shrubChance: clamp01(terrainDefinition.shrubChance ?? 0.02),
         flowerChance: clamp01(terrainDefinition.flowerChance ?? 0.01),
@@ -268,13 +396,17 @@ export function createBiomeEngine({
         objectDensityMultipliers,
         treeHeight: {
           min: Math.max(1, Math.floor(treeHeight.min ?? 3)),
-          max: Math.max(Math.floor(treeHeight.max ?? 6), Math.floor(treeHeight.min ?? 3)),
+          max: Math.max(
+            Math.floor(treeHeight.max ?? 6),
+            Math.floor(treeHeight.min ?? 3),
+          ),
         },
         heightOffset: terrainDefinition.heightOffset ?? 0,
+        fmProfile: normalizeBiomeFmProfile(terrainDefinition.fmProfile),
       },
       shader: {
-        fogColor: new THREE.Color(shaderDefinition.fogColor ?? '#a9d6ff'),
-        tintColor: new THREE.Color(shaderDefinition.tintColor ?? '#ffffff'),
+        fogColor: new THREE.Color(shaderDefinition.fogColor ?? "#a9d6ff"),
+        tintColor: new THREE.Color(shaderDefinition.tintColor ?? "#ffffff"),
         tintStrength: clamp01(shaderDefinition.tintStrength ?? 0),
         effects: cloneShaderMetadata(shaderDefinition.effects),
         hazards: cloneShaderMetadata(shaderDefinition.hazards),
