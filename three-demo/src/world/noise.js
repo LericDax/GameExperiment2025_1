@@ -69,6 +69,8 @@ export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   RidgedFBM: createRidgedSampler,
   billow: createBillowSampler,
   Billow: createBillowSampler,
+  bandsFbm: createBandsFbmSampler,
+  BandsFBM: createBandsFbmSampler,
   pinkNoise: createPinkNoiseSampler,
   PinkNoise: createPinkNoiseSampler,
   FractalPinkNoise: createPinkNoiseSampler,
@@ -118,6 +120,8 @@ export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   pulse: createAnisotropicPulseSampler,
   anisotropicPulse: createAnisotropicPulseSampler,
   AnisotropicPulse: createAnisotropicPulseSampler,
+  warpedFbm: createWarpedFbmSampler,
+  WarpedFBM: createWarpedFbmSampler,
   warp: createDomainWarpSampler,
   domainWarp: createDomainWarpSampler,
   DomainWarp: createDomainWarpSampler,
@@ -129,6 +133,8 @@ export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   TerraceQuantized: createTerraceQuantizedSampler,
   voronoiBlend: createVoronoiBlendSampler,
   VoronoiBlend: createVoronoiBlendSampler,
+  noiseMixWaveset: createNoiseMixWavesetSampler,
+  NoiseMixWaveset: createNoiseMixWavesetSampler,
   diffusion: createDiffusionSampler,
   isotropicDiffusion: createDiffusionSampler,
   Diffusion: createDiffusionSampler,
@@ -321,6 +327,50 @@ function createBillowSampler({
 
     const normalized = amplitudeSum > 0 ? total / amplitudeSum : 0;
     return clamp(normalized, -1, 1);
+  };
+}
+
+function createBandsFbmSampler({
+  seed = 1,
+  octaves = 5,
+  gain = 0.5,
+  lacunarity = 2,
+  bandFrequency = 1,
+  bandStrength = 0.75,
+  bandSharpness = 2,
+  orientation = Math.PI / 4,
+  harmonics = 3,
+  harmonicFalloff = 1,
+  phaseOffset = 0,
+  bandBias = 0,
+} = {}) {
+  const fbmSeed = hashSeed(seed, 563);
+  const bandSeed = hashSeed(seed, 577);
+  const baseFbm = createFbmSampler({
+    seed: fbmSeed,
+    octaves,
+    gain,
+    lacunarity,
+  });
+  const bandSampler = createAnisotropicSineSampler({
+    seed: bandSeed,
+    orientation,
+    harmonics,
+    harmonicFalloff,
+    phaseOffset,
+    bias: bandBias,
+  });
+  const frequency = Math.max(1e-3, Math.abs(bandFrequency));
+  const sharpness = Math.max(0.1, bandSharpness);
+  const strength = clamp(bandStrength, 0, 1);
+
+  return (x, z) => {
+    const fbmSample = baseFbm(x, z);
+    const bandValue = bandSampler(x * frequency, z * frequency);
+    const bandMask = Math.pow(clamp(1 - Math.abs(bandValue), 0, 1), sharpness);
+    const modulation = strength * bandMask + (1 - strength);
+    const combined = fbmSample * modulation;
+    return clamp(combined, -1, 1);
   };
 }
 
@@ -671,6 +721,49 @@ function createDomainWarpSampler({
   };
 }
 
+function createWarpedFbmSampler({
+  seed = 1,
+  octaves = 5,
+  gain = 0.5,
+  lacunarity = 2,
+  warpStrength = 0.75,
+  warpScale = 1,
+  warpOctaves = 2,
+  warpGain = 0.5,
+  warpLacunarity = 2,
+  warpMix = 1,
+} = {}) {
+  const baseSeed = hashSeed(seed, 631);
+  const warpSeed = hashSeed(seed, 677);
+  const baseSampler = createFbmSampler({
+    seed: baseSeed,
+    octaves,
+    gain,
+    lacunarity,
+  });
+  const warpSampler = createDomainWarpSampler({
+    seed: warpSeed,
+    strength: warpStrength,
+    scale: warpScale,
+    octaves: warpOctaves,
+    gain: warpGain,
+    lacunarity: warpLacunarity,
+  });
+  const blend = clamp(warpMix, 0, 1);
+
+  return (x, z) => {
+    const baseSample = baseSampler(x, z);
+    if (blend <= 0) {
+      return baseSample;
+    }
+
+    const warp = warpSampler(x, z);
+    const warpedSample = baseSampler(x + warp.x, z + warp.z);
+    const mixed = lerp(baseSample, warpedSample, blend);
+    return clamp(mixed, -1, 1);
+  };
+}
+
 function createCurlNoiseSampler({
   seed = 1,
   strength = 0.75,
@@ -782,6 +875,77 @@ function createVoronoiBlendSampler({
     const shaped = Math.pow(clamp(ratio, 0, 1), exponent);
     const biased = clamp(shaped + bias, 0, 1);
     return clamp(biased * 2 - 1, -1, 1);
+  };
+}
+
+function createNoiseMixWavesetSampler({
+  seed = 1,
+  sources,
+  mixFrequency = 1,
+  softmaxTemperature = 0.75,
+  mixBias = 0,
+} = {}) {
+  const defaultSources = [
+    { type: 'fbm' },
+    { type: 'ridge' },
+    { type: 'turbulence' },
+  ];
+  const sourceList =
+    Array.isArray(sources) && sources.length > 0 ? sources : defaultSources;
+  const resolvedSources = sourceList.map((source, index) => {
+    const rawType = source?.type ?? source?.id ?? 'fbm';
+    const normalizedType =
+      typeof rawType === 'string' &&
+      rawType.toLowerCase() !== 'noisemixwaveset'
+        ? rawType
+        : 'fbm';
+    const config = { ...(source?.config ?? {}) };
+    const amplitude = clamp(Math.abs(source?.amplitude ?? 1), 0, 1);
+    const samplerSeed = hashSeed(seed, 751 + index * 37);
+    const weightSeed = hashSeed(seed, 863 + index * 61);
+    const sampler = createNoiseSampler(normalizedType, {
+      seed: samplerSeed,
+      ...config,
+    });
+    const weightNoise = createValueNoise(weightSeed, 0);
+    return { sampler, weightNoise, amplitude };
+  });
+  const frequency = Math.max(1e-3, Math.abs(mixFrequency));
+  const temperature = Math.max(0.05, Math.abs(softmaxTemperature));
+  const bias = clamp(mixBias, -1, 1);
+
+  return (x, z) => {
+    if (resolvedSources.length === 0) {
+      return 0;
+    }
+
+    let weightSum = 0;
+    const weights = new Array(resolvedSources.length);
+    const samples = new Array(resolvedSources.length);
+
+    for (let i = 0; i < resolvedSources.length; i += 1) {
+      const entry = resolvedSources[i];
+      const weightSample = toSignedRange(
+        entry.weightNoise.noise(x * frequency, z * frequency),
+      );
+      const weight = Math.exp(weightSample / temperature);
+      weights[i] = weight;
+      weightSum += weight;
+
+      const sample = clamp(entry.sampler(x, z), -1, 1) * entry.amplitude;
+      samples[i] = clamp(sample, -1, 1);
+    }
+
+    if (weightSum <= 1e-9) {
+      return 0;
+    }
+
+    let mixed = 0;
+    for (let i = 0; i < resolvedSources.length; i += 1) {
+      mixed += (weights[i] / weightSum) * samples[i];
+    }
+
+    return clamp(mixed + bias, -1, 1);
   };
 }
 
