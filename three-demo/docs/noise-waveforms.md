@@ -45,9 +45,12 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 - **HydraulicErosion** (available via `hydraulicErosion`) — lightweight hydraulic erosion approximation mixing slope-based erosion and deposition. Parameters: `smoothing` (0–1), `erosionRate` (0–1), `depositionRate` (0–1), and `step` (sampling distance).
 
 ## Hybrid / procedural
-- **BandsFBM** — sine-band FBM fusion.
-- **WarpedFBM** — domain-warped fractal terrain.
-- **NoiseMixWaveset** — multi-noise mixture using softmax weighting.
+- **BandsFBM** (available via `bandsFbm`) — sine-band FBM fusion that multiplies fractal value noise with anisotropic sine masking.
+  Parameters: `octaves`, `gain`, `lacunarity`, `bandFrequency` (stripe density), `bandStrength` (0–1 modulation depth), `bandSharpness` (>0 falloff exponent), `orientation`, `harmonics`, `harmonicFalloff`, `phaseOffset`, and `bandBias` (post-bias for the band mask).
+- **WarpedFBM** (available via `warpedFbm`) — domain-warped fractal terrain that blends between unwarped and warped FBM samples.
+  Parameters: `octaves`, `gain`, `lacunarity`, `warpStrength` (initial warp amplitude), `warpScale` (base warp frequency), `warpOctaves`, `warpGain`, `warpLacunarity`, and `warpMix` (0–1 blend between original and warped evaluations).
+- **NoiseMixWaveset** (available via `noiseMixWaveset`) — multi-noise mixture using softmax weighting to blend heterogeneous sources.
+  Parameters: `sources` (array of `{ type, config, amplitude }` entries), `mixFrequency` (weight field scale), `softmaxTemperature` (>0 controlling blend contrast), and `mixBias` (-1–1 post offset). All nested samplers derive deterministic seeds from the top-level seed.
 
 ## Spectral / stochastic
 - **GaborNoise** — sparse oriented impulse noise.
@@ -115,5 +118,8 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 | `diffusion` / `isotropicDiffusion` | Diffusion-based smoother (available) |
 | `anisotropicDiffusion` / `AnisotropicDiffusion` | Directional diffusion smoother (available) |
 | `hydraulicErosion` / `HydraulicErosion` | Hydraulic erosion approximation (available) |
+| `bandsFbm` / `BandsFBM` | FBM modulated by anisotropic sine bands (available) |
+| `warpedFbm` / `WarpedFBM` | Domain-warped FBM blend (available) |
+| `noiseMixWaveset` / `NoiseMixWaveset` | Softmax-weighted hybrid noise mixture (available) |
 
 Future identifiers will follow the PascalCase names listed above unless otherwise noted. Designers can use this table to map configuration data to runtime waveform factories.

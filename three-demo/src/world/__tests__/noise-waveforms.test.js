@@ -239,6 +239,67 @@ test('Voronoi blend sampler is repeatable and bounded', () => {
   });
 });
 
+const HYBRID_NOISE_CASES = [
+  {
+    label: 'Bands FBM',
+    aliases: ['bandsFbm', 'BandsFBM'],
+    config: {
+      octaves: 4,
+      gain: 0.45,
+      lacunarity: 2.15,
+      bandFrequency: 1.6,
+      bandStrength: 0.7,
+      bandSharpness: 2.3,
+      orientation: Math.PI / 5,
+      harmonics: 4,
+      harmonicFalloff: 1.2,
+      phaseOffset: 0.2,
+      bandBias: 0.05,
+    },
+  },
+  {
+    label: 'Warped FBM',
+    aliases: ['warpedFbm', 'WarpedFBM'],
+    config: {
+      octaves: 4,
+      gain: 0.5,
+      lacunarity: 2.3,
+      warpStrength: 0.8,
+      warpScale: 0.75,
+      warpOctaves: 3,
+      warpGain: 0.55,
+      warpLacunarity: 2.1,
+      warpMix: 0.9,
+    },
+  },
+  {
+    label: 'Noise mix waveset',
+    aliases: ['noiseMixWaveset', 'NoiseMixWaveset'],
+    config: {
+      mixFrequency: 0.85,
+      softmaxTemperature: 0.65,
+      mixBias: 0.05,
+      sources: [
+        { type: 'fbm', config: { octaves: 3, gain: 0.45 }, amplitude: 0.9 },
+        {
+          type: 'ridge',
+          config: { ridgeSharpness: 2.6, gain: 0.4 },
+          amplitude: 0.85,
+        },
+        { type: 'blueNoise', amplitude: 0.6 },
+      ],
+    },
+  },
+];
+
+for (const { label, aliases, config } of HYBRID_NOISE_CASES) {
+  for (const alias of aliases) {
+    test(`${label} sampler (${alias}) is repeatable and bounded`, () => {
+      assertDeterministicScalar(alias, config);
+    });
+  }
+}
+
 test('Domain warp sampler produces repeatable vector offsets', () => {
   const samplerA = createNoiseSampler('warp', {
     seed: 4242,

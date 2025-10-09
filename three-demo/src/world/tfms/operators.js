@@ -100,6 +100,8 @@ const OPERATOR_FACTORIES = Object.freeze({
   RidgedFBM: createScalarWaveformOperator('ridge'),
   billow: createScalarWaveformOperator('billow'),
   Billow: createScalarWaveformOperator('billow'),
+  bandsFbm: createScalarWaveformOperator('bandsFbm'),
+  BandsFBM: createScalarWaveformOperator('bandsFbm'),
   pinkNoise: createScalarWaveformOperator('pinkNoise'),
   PinkNoise: createScalarWaveformOperator('pinkNoise'),
   FractalPinkNoise: createScalarWaveformOperator('pinkNoise'),
@@ -149,6 +151,8 @@ const OPERATOR_FACTORIES = Object.freeze({
   pulse: createScalarWaveformOperator('pulse'),
   anisotropicPulse: createScalarWaveformOperator('pulse'),
   AnisotropicPulse: createScalarWaveformOperator('pulse'),
+  warpedFbm: createScalarWaveformOperator('warpedFbm'),
+  WarpedFBM: createScalarWaveformOperator('warpedFbm'),
   diffusion: createScalarWaveformOperator('diffusion'),
   isotropicDiffusion: createScalarWaveformOperator('diffusion'),
   Diffusion: createScalarWaveformOperator('diffusion'),
@@ -168,6 +172,8 @@ const OPERATOR_FACTORIES = Object.freeze({
   TerraceQuantized: createScalarWaveformOperator('terraceQuantized'),
   voronoiBlend: createScalarWaveformOperator('voronoiBlend'),
   VoronoiBlend: createScalarWaveformOperator('voronoiBlend'),
+  noiseMixWaveset: createScalarWaveformOperator('noiseMixWaveset'),
+  NoiseMixWaveset: createScalarWaveformOperator('noiseMixWaveset'),
 });
 
 function resolveTransfer(transfer, overrides) {
