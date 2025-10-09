@@ -55,6 +55,386 @@ function mixValues(a, b, weight) {
   return a * (1 - weight) + b * weight;
 }
 
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeNumeric(value) {
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeVectorOverride(value) {
+  if (Number.isFinite(value)) {
+    return { x: value, z: value };
+  }
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const x = Number.isFinite(value.x) ? value.x : undefined;
+  const z = Number.isFinite(value.z) ? value.z : undefined;
+  if (x === undefined && z === undefined) {
+    return undefined;
+  }
+  const result = {};
+  if (x !== undefined) {
+    result.x = x;
+  }
+  if (z !== undefined) {
+    result.z = z;
+  }
+  return result;
+}
+
+function normalizeOperatorModulationOverride(value) {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const result = {};
+  const amplitude = normalizeNumeric(value.amplitude);
+  if (amplitude !== undefined) {
+    result.amplitude = amplitude;
+  }
+  const frequency = normalizeNumeric(value.frequency);
+  if (frequency !== undefined) {
+    result.frequency = frequency;
+  }
+  const phase = normalizeVectorOverride(value.phase);
+  if (phase) {
+    result.phase = phase;
+  }
+  const warp = normalizeVectorOverride(value.warp);
+  if (warp) {
+    result.warp = warp;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function normalizeOperatorEnvelopeOverride(value) {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const result = {};
+  const amplitude = normalizeNumeric(value.amplitude);
+  if (amplitude !== undefined) {
+    result.amplitude = amplitude;
+  }
+  const frequency = normalizeNumeric(value.frequency);
+  if (frequency !== undefined) {
+    result.frequency = frequency;
+  }
+  const phase = normalizeVectorOverride(value.phase);
+  if (phase) {
+    result.phase = phase;
+  }
+  const warp = normalizeVectorOverride(value.warp ?? value.domainWarp);
+  if (warp) {
+    result.warp = warp;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function normalizeWaveformOverrides(definition) {
+  if (Array.isArray(definition)) {
+    return definition
+      .map((entry) => normalizeWaveformOverrides({ [entry?.id ?? '']: entry })[0])
+      .filter(Boolean);
+  }
+  if (!isPlainObject(definition)) {
+    return [];
+  }
+  return Object.entries(definition)
+    .map(([id, value]) => {
+      if (!isPlainObject(value)) {
+        return null;
+      }
+      const waveformId = typeof value.id === 'string' ? value.id : id;
+      if (!waveformId) {
+        return null;
+      }
+      const override = { id: waveformId };
+      if (typeof value.type === 'string') {
+        override.type = value.type;
+      }
+      if (value.seedTemplate || value.seed) {
+        const templateSource = value.seedTemplate ?? value.seed;
+        const seedTemplate = {};
+        if (Number.isFinite(templateSource?.value)) {
+          seedTemplate.value = templateSource.value;
+        }
+        if (Number.isFinite(templateSource?.multiplier)) {
+          seedTemplate.multiplier = templateSource.multiplier;
+        }
+        if (Number.isFinite(templateSource?.offset)) {
+          seedTemplate.offset = templateSource.offset;
+        }
+        if (Object.keys(seedTemplate).length > 0) {
+          override.seedTemplate = seedTemplate;
+        }
+      }
+      if (isPlainObject(value.settings)) {
+        override.settings = { ...value.settings };
+      }
+      return Object.keys(override).length > 1 ? override : null;
+    })
+    .filter(Boolean);
+}
+
+function normalizeOperatorOverrides(definition) {
+  let source = [];
+  if (Array.isArray(definition)) {
+    source = definition.filter(isPlainObject);
+  } else if (isPlainObject(definition)) {
+    source = Object.entries(definition)
+      .map(([id, value]) =>
+        isPlainObject(value)
+          ? {
+              id: typeof value.id === 'string' ? value.id : id,
+              ...value,
+            }
+          : null,
+      )
+      .filter(Boolean);
+  }
+
+  return source
+    .map((candidate) => {
+      const operatorId =
+        typeof candidate.id === 'string'
+          ? candidate.id
+          : typeof candidate.operatorId === 'string'
+            ? candidate.operatorId
+            : null;
+      if (!operatorId) {
+        return null;
+      }
+      const override = { id: operatorId };
+      if (typeof candidate.type === 'string') {
+        override.type = candidate.type;
+      }
+      if (typeof candidate.waveformId === 'string') {
+        override.waveformId = candidate.waveformId;
+      }
+      if (Number.isFinite(candidate.weight)) {
+        override.weight = candidate.weight;
+      }
+      if (Number.isFinite(candidate.bias)) {
+        override.bias = candidate.bias;
+      }
+      if (Number.isFinite(candidate.amplitude)) {
+        override.amplitude = candidate.amplitude;
+      }
+      if (Number.isFinite(candidate.frequency)) {
+        override.frequency = candidate.frequency;
+      }
+      const phase = normalizeVectorOverride(candidate.phase);
+      if (phase) {
+        override.phase = phase;
+      }
+      const domainWarp = normalizeVectorOverride(
+        candidate.domainWarp ?? candidate.warp,
+      );
+      if (domainWarp) {
+        override.domainWarp = domainWarp;
+      }
+      if (candidate.transfer) {
+        if (typeof candidate.transfer === 'string') {
+          override.transfer = candidate.transfer;
+        } else if (isPlainObject(candidate.transfer)) {
+          const transferOverride = {};
+          if (typeof candidate.transfer.id === 'string') {
+            transferOverride.id = candidate.transfer.id;
+          }
+          if (typeof candidate.transfer.type === 'string') {
+            transferOverride.type = candidate.transfer.type;
+          }
+          if (Object.keys(transferOverride).length > 0) {
+            override.transfer = transferOverride;
+          }
+        }
+      }
+      if (isPlainObject(candidate.transferSettings)) {
+        override.transferSettings = { ...candidate.transferSettings };
+      }
+      if (isPlainObject(candidate.settings)) {
+        override.settings = { ...candidate.settings };
+      }
+      if (isPlainObject(candidate.tectonic)) {
+        const tectonic = {};
+        if (Number.isFinite(candidate.tectonic.weight)) {
+          tectonic.weight = candidate.tectonic.weight;
+        }
+        if (Number.isFinite(candidate.tectonic.bias)) {
+          tectonic.bias = candidate.tectonic.bias;
+        }
+        if (Object.keys(tectonic).length > 0) {
+          override.tectonic = tectonic;
+        }
+      }
+      const envelope = normalizeOperatorEnvelopeOverride(
+        candidate.envelope,
+      );
+      if (envelope) {
+        override.envelope = envelope;
+      }
+      const modulation = normalizeOperatorModulationOverride(
+        candidate.modulation,
+      );
+      if (modulation) {
+        override.modulation = modulation;
+      }
+      if (candidate.seedTemplate || candidate.seed) {
+        const templateSource = candidate.seedTemplate ?? candidate.seed;
+        const seedTemplate = {};
+        if (Number.isFinite(templateSource?.value)) {
+          seedTemplate.value = templateSource.value;
+        }
+        if (Number.isFinite(templateSource?.multiplier)) {
+          seedTemplate.multiplier = templateSource.multiplier;
+        }
+        if (Number.isFinite(templateSource?.offset)) {
+          seedTemplate.offset = templateSource.offset;
+        }
+        if (Object.keys(seedTemplate).length > 0) {
+          override.seedTemplate = seedTemplate;
+        }
+      }
+      return Object.keys(override).length > 1 ? override : null;
+    })
+    .filter(Boolean);
+}
+
+function normalizeMatrixOverrides(definition) {
+  if (!definition) {
+    return [];
+  }
+  let entries = [];
+  if (Array.isArray(definition)) {
+    entries = definition.filter(isPlainObject);
+  } else if (isPlainObject(definition)) {
+    entries = Object.entries(definition).flatMap(([targetId, value]) => {
+      if (Array.isArray(value)) {
+        return value
+          .map((entry) =>
+            isPlainObject(entry)
+              ? { targetId, ...entry }
+              : null,
+          )
+          .filter(Boolean);
+      }
+      if (!isPlainObject(value)) {
+        return [];
+      }
+      return Object.entries(value)
+        .map(([sourceId, entry]) =>
+          isPlainObject(entry)
+            ? { sourceId, targetId, ...entry }
+            : null,
+        )
+        .filter(Boolean);
+    });
+  }
+
+  return entries
+    .map((entry) => {
+      const sourceId =
+        typeof entry.sourceId === 'string'
+          ? entry.sourceId
+          : typeof entry.source === 'string'
+            ? entry.source
+            : null;
+      const targetId =
+        typeof entry.targetId === 'string'
+          ? entry.targetId
+          : typeof entry.target === 'string'
+            ? entry.target
+            : null;
+      if (!sourceId && !targetId && typeof entry.id !== 'string') {
+        return null;
+      }
+      const override = {};
+      if (typeof entry.id === 'string') {
+        override.id = entry.id;
+      }
+      if (sourceId) {
+        override.sourceId = sourceId;
+      }
+      if (targetId) {
+        override.targetId = targetId;
+      }
+      const gain = normalizeNumeric(entry.gain ?? entry.depth);
+      if (gain !== undefined) {
+        override.gain = gain;
+      }
+      const bias = normalizeNumeric(entry.bias);
+      if (bias !== undefined) {
+        override.bias = bias;
+      }
+      const routing = entry.routing ?? entry.mode;
+      if (typeof routing === 'string') {
+        override.routing = routing;
+      }
+      const channel = entry.channel ?? entry.modulationChannel;
+      if (typeof channel === 'string') {
+        override.channel = channel;
+      }
+      const axis = entry.axis ?? entry.component;
+      if (typeof axis === 'string') {
+        override.axis = axis;
+      }
+      return Object.keys(override).length > 0 ? override : null;
+    })
+    .filter(Boolean);
+}
+
+function normalizeBiomeFmProfile(definition) {
+  if (!isPlainObject(definition)) {
+    return null;
+  }
+
+  const blendSource =
+    Number(definition.blendStrength ?? definition.blend ?? definition.mix ?? 1);
+  const blend = clamp01(Number.isFinite(blendSource) ? blendSource : 1);
+
+  const overrides = {};
+
+  const waveformOverrides = normalizeWaveformOverrides(definition.waveforms);
+  if (waveformOverrides.length > 0) {
+    overrides.waveforms = waveformOverrides;
+  }
+
+  const operatorOverrides = normalizeOperatorOverrides(definition.operators);
+  if (operatorOverrides.length > 0) {
+    overrides.operators = operatorOverrides;
+  }
+
+  const matrixOverrides = normalizeMatrixOverrides(
+    definition.modulationMatrix ?? definition.matrix,
+  );
+  if (matrixOverrides.length > 0) {
+    overrides.modulationMatrix = matrixOverrides;
+  }
+
+  if (isPlainObject(definition.transferFunctions)) {
+    const transferFunctions = Object.fromEntries(
+      Object.entries(definition.transferFunctions).filter(
+        ([key, value]) => typeof key === 'string' && typeof value === 'string',
+      ),
+    );
+    if (Object.keys(transferFunctions).length > 0) {
+      overrides.transferFunctions = transferFunctions;
+    }
+  }
+
+  if (Object.keys(overrides).length === 0) {
+    return null;
+  }
+
+  return {
+    blend,
+    overrides,
+  };
+}
+
 function normalizeMultiplier(value, fallback = 1) {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return fallback;
@@ -281,6 +661,7 @@ export function createBiomeEngine({
         references: cloneShaderMetadata(shaderDefinition.references),
       },
       weather: normaliseBiomeWeather(definition.weather),
+      tfmsProfile: normalizeBiomeFmProfile(definition.tfmsProfile),
     };
   });
 

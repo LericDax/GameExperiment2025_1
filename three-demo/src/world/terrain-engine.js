@@ -94,18 +94,79 @@ export function createTerrainEngine({
     biomeOptions: worldConfig.biomes,
   });
 
-  function computeElevation(x, z) {
-    const { envelope } = tfmsNetwork.evaluate({
+  const biomeTfmsNetworks = new Map();
+  const biomeBlendStrength = clamp01(tfmsConfig.biomeBlendStrength ?? 0);
+  if (biomeBlendStrength > 0 && Array.isArray(biomeEngine?.biomes)) {
+    biomeEngine.biomes.forEach((biome, index) => {
+      const profile = biome?.tfmsProfile;
+      if (!profile?.overrides) {
+        return;
+      }
+      const overrideConfig = createBiomeTfmsConfiguration(
+        tfmsConfig,
+        profile.overrides,
+      );
+      if (!overrideConfig) {
+        return;
+      }
+      const overrideSeed =
+        seed * 1.91 + 73 + hashBiomeSeed(biome?.id ?? `biome-${index}`);
+      const overrideNetwork = createTfmsNetwork({
+        seed: overrideSeed,
+        operators: overrideConfig.operators,
+        modulationMatrix: overrideConfig.modulationMatrix,
+        transferFunctions: overrideConfig.transferFunctions,
+        tectonic: overrideConfig.tectonic,
+        temperament: overrideConfig.temperament,
+        kameaOptions: overrideConfig.kamea,
+      });
+      biomeTfmsNetworks.set(biome.id, {
+        network: overrideNetwork,
+        blend: clamp01(profile.blend),
+      });
+    });
+  }
+
+  function evaluateTfmsEnvelope(x, z, biome = null) {
+    const baseResult = tfmsNetwork.evaluate({
       x,
       z,
       context: { terrain: config },
     });
+    let envelope = baseResult.envelope;
+
+    if (biome && biomeBlendStrength > 0) {
+      const profileEntry = biomeTfmsNetworks.get(biome.id);
+      if (profileEntry?.network) {
+        const blendWeight = clamp01(
+          (profileEntry.blend ?? 0) * biomeBlendStrength,
+        );
+        if (blendWeight > 0) {
+          const overrideResult = profileEntry.network.evaluate({
+            x,
+            z,
+            context: { terrain: config },
+          });
+          envelope = mixValues(
+            baseResult.envelope,
+            overrideResult.envelope,
+            blendWeight,
+          );
+        }
+      }
+    }
+
+    return envelope;
+  }
+
+  function computeElevation(x, z, biome = null) {
+    const envelope = evaluateTfmsEnvelope(x, z, biome);
     return config.baseHeight + envelope;
   }
 
   function sampleColumn(x, z) {
     const biomeSample = biomeEngine.getBiomeAt(x, z);
-    let height = computeElevation(x, z);
+    let height = computeElevation(x, z, biomeSample.biome);
     const climateAdjustment =
       (biomeSample.climate.moisture - 0.5) * config.climateHeightInfluence;
     height += climateAdjustment;
@@ -703,5 +764,697 @@ function resolveSeedConfiguration(seedTemplate, seed, index) {
   template.offset = offset;
   template.value = value;
   return { value, template };
+}
+
+function clamp01(value) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  if (value <= 0) {
+    return 0;
+  }
+  if (value >= 1) {
+    return 1;
+  }
+  return value;
+}
+
+function mixValues(a, b, weight) {
+  return a * (1 - weight) + b * weight;
+}
+
+function hashBiomeSeed(value) {
+  if (typeof value !== 'string' || value.length === 0) {
+    return 0;
+  }
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash % 9973;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function createBiomeTfmsConfiguration(baseConfig, overrides) {
+  if (!isPlainObject(overrides)) {
+    return null;
+  }
+  const clone = cloneTfmsConfig(baseConfig);
+  let mutated = false;
+
+  if (Array.isArray(overrides.waveforms) && overrides.waveforms.length > 0) {
+    if (applyWaveformOverrides(clone.waveforms, overrides.waveforms)) {
+      mutated = true;
+    }
+  }
+
+  if (Array.isArray(overrides.operators) && overrides.operators.length > 0) {
+    if (applyOperatorOverrides(clone.operators, overrides.operators)) {
+      mutated = true;
+    }
+  }
+
+  if (
+    Array.isArray(overrides.modulationMatrix) &&
+    overrides.modulationMatrix.length > 0
+  ) {
+    if (
+      applyMatrixOverrides(
+        clone.modulationMatrix,
+        overrides.modulationMatrix,
+      )
+    ) {
+      mutated = true;
+    }
+  }
+
+  if (isPlainObject(overrides.transferFunctions)) {
+    const entries = Object.entries(overrides.transferFunctions).filter(
+      ([key, value]) => typeof key === 'string' && typeof value === 'string',
+    );
+    if (entries.length > 0) {
+      clone.transferFunctions = {
+        ...clone.transferFunctions,
+        ...Object.fromEntries(entries),
+      };
+      mutated = true;
+    }
+  }
+
+  return mutated ? clone : null;
+}
+
+function cloneTfmsConfig(config) {
+  return {
+    waveforms: Array.isArray(config?.waveforms)
+      ? config.waveforms.map((waveform) => ({
+          id: waveform?.id ?? null,
+          type: waveform?.type ?? 'fbm',
+          seedTemplate: cloneBiomeSeedTemplate(waveform?.seedTemplate),
+          settings: waveform?.settings ? { ...waveform.settings } : {},
+        }))
+      : [],
+    operators: Array.isArray(config?.operators)
+      ? config.operators.map((operator) => cloneBiomeTfmsOperator(operator))
+      : [],
+    modulationMatrix: Array.isArray(config?.modulationMatrix)
+      ? config.modulationMatrix.map((entry) => cloneBiomeMatrixEntry(entry))
+      : [],
+    transferFunctions:
+      config?.transferFunctions && typeof config.transferFunctions === 'object'
+        ? { ...config.transferFunctions }
+        : {},
+    tectonic:
+      config?.tectonic && typeof config.tectonic === 'object'
+        ? { ...config.tectonic }
+        : {},
+    temperament: config?.temperament ?? null,
+    kamea: cloneKameaOptions(config?.kamea),
+  };
+}
+
+function cloneBiomeTfmsOperator(operator) {
+  const base = {
+    id: operator?.id ?? null,
+    type: operator?.type ?? 'fbm',
+    waveformId: operator?.waveformId ?? operator?.id ?? null,
+    seed: operator?.seed,
+    seedTemplate: cloneBiomeSeedTemplate(operator?.seedTemplate),
+    weight: operator?.weight,
+    bias: operator?.bias,
+    amplitude: operator?.amplitude,
+    frequency: operator?.frequency,
+    phase: cloneVector(operator?.phase),
+    domainWarp: cloneVector(operator?.domainWarp),
+    transfer: operator?.transfer,
+    transferSettings: operator?.transferSettings
+      ? { ...operator.transferSettings }
+      : undefined,
+    tectonic: operator?.tectonic ? { ...operator.tectonic } : undefined,
+    settings: operator?.settings ? { ...operator.settings } : undefined,
+    modulation: cloneBiomeModulation(operator?.modulation),
+    envelope: cloneBiomeEnvelope(operator?.envelope),
+  };
+  return base;
+}
+
+function cloneBiomeMatrixEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return {
+      id: null,
+      source: undefined,
+      target: undefined,
+      sourceId: null,
+      targetId: null,
+      routing: 'amplitude',
+      channel: 'value',
+      axis: undefined,
+      gain: 0,
+      bias: 0,
+    };
+  }
+  const clone = {
+    id: entry.id ?? null,
+    source: entry.source,
+    target: entry.target,
+    sourceId: entry.sourceId ?? null,
+    targetId: entry.targetId ?? null,
+    routing: entry.routing ?? 'amplitude',
+    channel: entry.channel ?? 'value',
+    axis: entry.axis,
+    gain: entry.gain,
+    bias: entry.bias,
+  };
+  if (entry.gainRange && typeof entry.gainRange === 'object') {
+    clone.gainRange = { ...entry.gainRange };
+  }
+  if (entry.biasRange && typeof entry.biasRange === 'object') {
+    clone.biasRange = { ...entry.biasRange };
+  }
+  return clone;
+}
+
+function cloneVector(vector) {
+  if (!vector || typeof vector !== 'object') {
+    return { x: 0, z: 0 };
+  }
+  return {
+    x: Number.isFinite(vector.x) ? vector.x : 0,
+    z: Number.isFinite(vector.z) ? vector.z : 0,
+  };
+}
+
+function cloneBiomeModulation(modulation) {
+  if (!modulation || typeof modulation !== 'object') {
+    return {
+      amplitude: { value: 0 },
+      frequency: { value: 0 },
+      phase: { x: { value: 0 }, z: { value: 0 } },
+      warp: { x: { value: 0 }, z: { value: 0 } },
+    };
+  }
+  return {
+    amplitude: cloneBiomeRange(modulation.amplitude),
+    frequency: cloneBiomeRange(modulation.frequency),
+    phase: {
+      x: cloneBiomeRange(modulation?.phase?.x),
+      z: cloneBiomeRange(modulation?.phase?.z),
+    },
+    warp: {
+      x: cloneBiomeRange(modulation?.warp?.x),
+      z: cloneBiomeRange(modulation?.warp?.z),
+    },
+  };
+}
+
+function cloneBiomeEnvelope(envelope) {
+  if (!envelope || typeof envelope !== 'object') {
+    return {
+      amplitude: { value: 0 },
+      frequency: { value: 0 },
+      phase: { x: { value: 0 }, z: { value: 0 } },
+      warp: { x: { value: 0 }, z: { value: 0 } },
+    };
+  }
+  return {
+    amplitude: cloneBiomeRange(envelope.amplitude),
+    frequency: cloneBiomeRange(envelope.frequency),
+    phase: {
+      x: cloneBiomeRange(envelope?.phase?.x),
+      z: cloneBiomeRange(envelope?.phase?.z),
+    },
+    warp: {
+      x: cloneBiomeRange((envelope?.warp ?? envelope?.domainWarp)?.x),
+      z: cloneBiomeRange((envelope?.warp ?? envelope?.domainWarp)?.z),
+    },
+  };
+}
+
+function cloneBiomeRange(range) {
+  if (!range || typeof range !== 'object') {
+    return { value: 0 };
+  }
+  const clone = {};
+  if (Number.isFinite(range.value)) {
+    clone.value = range.value;
+  }
+  if (Number.isFinite(range.min)) {
+    clone.min = range.min;
+  }
+  if (Number.isFinite(range.max)) {
+    clone.max = range.max;
+  }
+  if (typeof range.baseKey === 'string') {
+    clone.baseKey = range.baseKey;
+  }
+  if (Number.isFinite(range.base)) {
+    clone.base = range.base;
+  }
+  if (Number.isFinite(range.multiplier)) {
+    clone.multiplier = range.multiplier;
+  }
+  if (typeof range.axis === 'string') {
+    clone.axis = range.axis;
+  }
+  if (typeof range.channel === 'string') {
+    clone.channel = range.channel;
+  }
+  return clone;
+}
+
+function cloneBiomeSeedTemplate(seedTemplate) {
+  if (!seedTemplate || typeof seedTemplate !== 'object') {
+    return undefined;
+  }
+  const clone = {};
+  if (Number.isFinite(seedTemplate.value)) {
+    clone.value = seedTemplate.value;
+  }
+  if (Number.isFinite(seedTemplate.multiplier)) {
+    clone.multiplier = seedTemplate.multiplier;
+  }
+  if (Number.isFinite(seedTemplate.offset)) {
+    clone.offset = seedTemplate.offset;
+  }
+  return clone;
+}
+
+function cloneKameaOptions(kamea) {
+  if (!kamea || typeof kamea !== 'object') {
+    return undefined;
+  }
+  const clone = {
+    temperament: kamea.temperament,
+    modulationStrength: cloneRange(kamea.modulationStrength),
+    warpStrength: cloneRange(kamea.warpStrength),
+    phaseStrength: cloneRange(kamea.phaseStrength),
+    spectralStrength: cloneRange(kamea.spectralStrength),
+    spectralProfile: kamea.spectralProfile,
+    erosionPreset: kamea.erosionPreset,
+  };
+  if (kamea.ranges && typeof kamea.ranges === 'object') {
+    clone.ranges = Object.fromEntries(
+      Object.entries(kamea.ranges).map(([key, value]) => [
+        key,
+        cloneRange(value),
+      ]),
+    );
+  }
+  return clone;
+}
+
+function applyWaveformOverrides(target, overrides) {
+  if (!Array.isArray(target)) {
+    return false;
+  }
+  const waveformById = new Map();
+  target.forEach((waveform, index) => {
+    const id = waveform?.id ?? `waveform-${index}`;
+    waveformById.set(id, waveform);
+  });
+  let mutated = false;
+  overrides.forEach((override) => {
+    if (!isPlainObject(override)) {
+      return;
+    }
+    const id = typeof override.id === 'string' ? override.id : null;
+    if (!id) {
+      return;
+    }
+    const targetWaveform = waveformById.get(id);
+    if (!targetWaveform) {
+      return;
+    }
+    if (typeof override.type === 'string') {
+      targetWaveform.type = override.type;
+      mutated = true;
+    }
+    if (isPlainObject(override.settings)) {
+      targetWaveform.settings = {
+        ...targetWaveform.settings,
+        ...override.settings,
+      };
+      mutated = true;
+    }
+    if (isPlainObject(override.seedTemplate)) {
+      const nextSeed = targetWaveform.seedTemplate
+        ? { ...targetWaveform.seedTemplate }
+        : {};
+      if (Number.isFinite(override.seedTemplate.value)) {
+        nextSeed.value = override.seedTemplate.value;
+      }
+      if (Number.isFinite(override.seedTemplate.multiplier)) {
+        nextSeed.multiplier = override.seedTemplate.multiplier;
+      }
+      if (Number.isFinite(override.seedTemplate.offset)) {
+        nextSeed.offset = override.seedTemplate.offset;
+      }
+      targetWaveform.seedTemplate = nextSeed;
+      mutated = true;
+    }
+  });
+  return mutated;
+}
+
+function applyOperatorOverrides(target, overrides) {
+  if (!Array.isArray(target)) {
+    return false;
+  }
+  const operatorById = new Map();
+  target.forEach((operator) => {
+    if (operator && typeof operator.id === 'string') {
+      operatorById.set(operator.id, operator);
+    }
+  });
+  let mutated = false;
+  overrides.forEach((override) => {
+    if (!isPlainObject(override)) {
+      return;
+    }
+    const id = typeof override.id === 'string' ? override.id : null;
+    if (!id) {
+      return;
+    }
+    const operator = operatorById.get(id);
+    if (!operator) {
+      return;
+    }
+    if (typeof override.type === 'string') {
+      operator.type = override.type;
+      mutated = true;
+    }
+    if (typeof override.waveformId === 'string') {
+      operator.waveformId = override.waveformId;
+      mutated = true;
+    }
+    if (Number.isFinite(override.weight)) {
+      operator.weight = override.weight;
+      mutated = true;
+    }
+    if (Number.isFinite(override.bias)) {
+      operator.bias = override.bias;
+      mutated = true;
+    }
+    if (Number.isFinite(override.amplitude)) {
+      operator.amplitude = override.amplitude;
+      mutated = true;
+    }
+    if (Number.isFinite(override.frequency)) {
+      operator.frequency = override.frequency;
+      mutated = true;
+    }
+    if (override.phase && applyVectorOverrideProperty(operator, 'phase', override.phase)) {
+      mutated = true;
+    }
+    if (
+      override.domainWarp &&
+      applyVectorOverrideProperty(operator, 'domainWarp', override.domainWarp)
+    ) {
+      mutated = true;
+    }
+    if (override.transfer) {
+      if (typeof override.transfer === 'string') {
+        operator.transfer = override.transfer;
+        mutated = true;
+      } else if (isPlainObject(override.transfer)) {
+        operator.transfer = {
+          ...operator.transfer,
+          ...override.transfer,
+        };
+        mutated = true;
+      }
+    }
+    if (isPlainObject(override.transferSettings)) {
+      operator.transferSettings = {
+        ...operator.transferSettings,
+        ...override.transferSettings,
+      };
+      mutated = true;
+    }
+    if (isPlainObject(override.settings)) {
+      operator.settings = {
+        ...operator.settings,
+        ...override.settings,
+      };
+      mutated = true;
+    }
+    if (isPlainObject(override.tectonic)) {
+      operator.tectonic = operator.tectonic ? { ...operator.tectonic } : {};
+      if (Number.isFinite(override.tectonic.weight)) {
+        operator.tectonic.weight = override.tectonic.weight;
+        mutated = true;
+      }
+      if (Number.isFinite(override.tectonic.bias)) {
+        operator.tectonic.bias = override.tectonic.bias;
+        mutated = true;
+      }
+    }
+    if (isPlainObject(override.seedTemplate)) {
+      const nextSeed = operator.seedTemplate ? { ...operator.seedTemplate } : {};
+      if (Number.isFinite(override.seedTemplate.value)) {
+        nextSeed.value = override.seedTemplate.value;
+      }
+      if (Number.isFinite(override.seedTemplate.multiplier)) {
+        nextSeed.multiplier = override.seedTemplate.multiplier;
+      }
+      if (Number.isFinite(override.seedTemplate.offset)) {
+        nextSeed.offset = override.seedTemplate.offset;
+      }
+      operator.seedTemplate = nextSeed;
+      mutated = true;
+    }
+    if (
+      override.envelope &&
+      applyEnvelopeOverride(operator.envelope, override.envelope)
+    ) {
+      mutated = true;
+    }
+    if (
+      override.modulation &&
+      applyModulationOverride(operator.modulation, override.modulation)
+    ) {
+      mutated = true;
+    }
+  });
+  return mutated;
+}
+
+function applyMatrixOverrides(targetMatrix, overrides) {
+  if (!Array.isArray(targetMatrix)) {
+    return false;
+  }
+  let mutated = false;
+  overrides.forEach((override) => {
+    if (!isPlainObject(override)) {
+      return;
+    }
+    const entry = findMatrixEntry(targetMatrix, override);
+    if (!entry) {
+      return;
+    }
+    if (typeof override.routing === 'string') {
+      entry.routing = override.routing;
+      mutated = true;
+    }
+    if (typeof override.channel === 'string') {
+      entry.channel = override.channel;
+      mutated = true;
+    }
+    if (typeof override.axis === 'string') {
+      entry.axis = override.axis;
+      mutated = true;
+    }
+    if (Number.isFinite(override.gain)) {
+      entry.gain = override.gain;
+      if (entry.gainRange) {
+        entry.gainRange = { ...entry.gainRange, value: override.gain };
+      }
+      mutated = true;
+    }
+    if (Number.isFinite(override.bias)) {
+      entry.bias = override.bias;
+      if (entry.biasRange) {
+        entry.biasRange = { ...entry.biasRange, value: override.bias };
+      }
+      mutated = true;
+    }
+  });
+  return mutated;
+}
+
+function applyVectorOverrideProperty(target, property, override) {
+  if (!isPlainObject(override)) {
+    return false;
+  }
+  const x = Number.isFinite(override.x) ? override.x : undefined;
+  const z = Number.isFinite(override.z) ? override.z : undefined;
+  if (x === undefined && z === undefined) {
+    return false;
+  }
+  const next = target[property] && typeof target[property] === 'object'
+    ? { ...target[property] }
+    : { x: 0, z: 0 };
+  if (x !== undefined) {
+    next.x = x;
+  }
+  if (z !== undefined) {
+    next.z = z;
+  }
+  target[property] = next;
+  return true;
+}
+
+function applyEnvelopeOverride(targetEnvelope, override) {
+  if (!isPlainObject(override)) {
+    return false;
+  }
+  if (!targetEnvelope || typeof targetEnvelope !== 'object') {
+    return false;
+  }
+  let mutated = false;
+  if (Number.isFinite(override.amplitude)) {
+    targetEnvelope.amplitude = {
+      ...(targetEnvelope.amplitude ?? {}),
+      value: override.amplitude,
+    };
+    mutated = true;
+  }
+  if (Number.isFinite(override.frequency)) {
+    targetEnvelope.frequency = {
+      ...(targetEnvelope.frequency ?? {}),
+      value: override.frequency,
+    };
+    mutated = true;
+  }
+  if (override.phase && isPlainObject(override.phase)) {
+    targetEnvelope.phase = targetEnvelope.phase
+      ? { ...targetEnvelope.phase }
+      : { x: {}, z: {} };
+    if (Number.isFinite(override.phase.x)) {
+      targetEnvelope.phase.x = {
+        ...(targetEnvelope.phase.x ?? {}),
+        value: override.phase.x,
+      };
+      mutated = true;
+    }
+    if (Number.isFinite(override.phase.z)) {
+      targetEnvelope.phase.z = {
+        ...(targetEnvelope.phase.z ?? {}),
+        value: override.phase.z,
+      };
+      mutated = true;
+    }
+  }
+  if (override.warp && isPlainObject(override.warp)) {
+    targetEnvelope.warp = targetEnvelope.warp
+      ? { ...targetEnvelope.warp }
+      : { x: {}, z: {} };
+    if (Number.isFinite(override.warp.x)) {
+      targetEnvelope.warp.x = {
+        ...(targetEnvelope.warp.x ?? {}),
+        value: override.warp.x,
+      };
+      mutated = true;
+    }
+    if (Number.isFinite(override.warp.z)) {
+      targetEnvelope.warp.z = {
+        ...(targetEnvelope.warp.z ?? {}),
+        value: override.warp.z,
+      };
+      mutated = true;
+    }
+  }
+  return mutated;
+}
+
+function applyModulationOverride(targetModulation, override) {
+  if (!isPlainObject(override)) {
+    return false;
+  }
+  if (!targetModulation || typeof targetModulation !== 'object') {
+    return false;
+  }
+  let mutated = false;
+  if (Number.isFinite(override.amplitude)) {
+    targetModulation.amplitude = {
+      ...(targetModulation.amplitude ?? {}),
+      value: override.amplitude,
+    };
+    mutated = true;
+  }
+  if (Number.isFinite(override.frequency)) {
+    targetModulation.frequency = {
+      ...(targetModulation.frequency ?? {}),
+      value: override.frequency,
+    };
+    mutated = true;
+  }
+  if (override.phase && isPlainObject(override.phase)) {
+    targetModulation.phase = targetModulation.phase
+      ? { ...targetModulation.phase }
+      : { x: {}, z: {} };
+    if (Number.isFinite(override.phase.x)) {
+      targetModulation.phase.x = {
+        ...(targetModulation.phase.x ?? {}),
+        value: override.phase.x,
+      };
+      mutated = true;
+    }
+    if (Number.isFinite(override.phase.z)) {
+      targetModulation.phase.z = {
+        ...(targetModulation.phase.z ?? {}),
+        value: override.phase.z,
+      };
+      mutated = true;
+    }
+  }
+  if (override.warp && isPlainObject(override.warp)) {
+    targetModulation.warp = targetModulation.warp
+      ? { ...targetModulation.warp }
+      : { x: {}, z: {} };
+    if (Number.isFinite(override.warp.x)) {
+      targetModulation.warp.x = {
+        ...(targetModulation.warp.x ?? {}),
+        value: override.warp.x,
+      };
+      mutated = true;
+    }
+    if (Number.isFinite(override.warp.z)) {
+      targetModulation.warp.z = {
+        ...(targetModulation.warp.z ?? {}),
+        value: override.warp.z,
+      };
+      mutated = true;
+    }
+  }
+  return mutated;
+}
+
+function findMatrixEntry(matrix, override) {
+  if (!Array.isArray(matrix)) {
+    return null;
+  }
+  if (typeof override.id === 'string') {
+    const direct = matrix.find((entry) => entry.id === override.id);
+    if (direct) {
+      return direct;
+    }
+  }
+  const sourceId = typeof override.sourceId === 'string' ? override.sourceId : null;
+  const targetId = typeof override.targetId === 'string' ? override.targetId : null;
+  const routing = typeof override.routing === 'string' ? override.routing : null;
+  const channel = typeof override.channel === 'string' ? override.channel : null;
+  const axis = typeof override.axis === 'string' ? override.axis : null;
+  return matrix.find((entry) => {
+    const matchesSource = sourceId ? entry.sourceId === sourceId : true;
+    const matchesTarget = targetId ? entry.targetId === targetId : true;
+    const matchesRouting = routing ? entry.routing === routing : true;
+    const matchesChannel = channel ? entry.channel === channel : true;
+    const matchesAxis = axis ? entry.axis === axis : true;
+    return matchesSource && matchesTarget && matchesRouting && matchesChannel && matchesAxis;
+  }) ?? null;
 }
 

@@ -34,6 +34,47 @@ The example above makes the biome 40% lighter overall while keeping flowers clos
 
 Some voxel libraries expose an `ignoreBiomeTint` flag so that specific blocks render without the biome palette mix. When this flag is set you may now supply a `tint` hex string for each voxel and the renderer will calculate the correct biome tint multiplier so the final shaded colour matches your request. If you omit the `tint` string, the instance keeps the neutral `[1, 1, 1]` multiplier (no extra tint), making it easy to author props that should display their base texture colours untouched.
 
+## Terrain modulation profiles (`tfmsProfile`)
+
+Biomes can optionally expose a `tfmsProfile` block to steer the terrain FM synthesis network toward biome-specific behaviour. Profiles are blended with the global TFMS configuration using the world's `terrain.tfms.biomeBlendStrength` value, allowing climates to morph operator behaviour smoothly instead of jumping between presets.
+
+Supported keys include:
+
+| Key | Type | Description |
+| --- | ---- | ----------- |
+| `blendStrength` | `number` (0–1, optional) | Local weight multiplier applied to the global biome blend strength. Defaults to `1`. |
+| `operators` | `object` or `array` | Per-operator overrides keyed by operator `id` (or provided as an array of override objects with an `id` field). Each override can set `type`, `waveformId`, `transfer`, `transferSettings`, `weight`, `bias`, `amplitude`, `frequency`, `phase`, `domainWarp`, `settings`, `seedTemplate`, `tectonic`, and nested `envelope`/`modulation` ranges. |
+| `modulationMatrix` | `object` or `array` | Partial FM matrix tweaks keyed by target operator id (and optionally source id). Entries support `gain`, `bias`, `routing`, `channel`, and `axis` updates so you can gently redirect modulation depth without rebuilding the matrix. |
+| `transferFunctions` | `object` (optional) | String remaps for custom transfer function ids. |
+
+Example:
+
+```json
+"tfmsProfile": {
+  "blendStrength": 0.75,
+  "operators": {
+    "primary": {
+      "waveformId": "ridge-primary",
+      "transfer": "tanh",
+      "amplitude": 1.2,
+      "domainWarp": { "x": 0.15, "z": -0.05 },
+      "modulation": { "amplitude": 0.35 }
+    }
+  },
+  "modulationMatrix": {
+    "primary": {
+      "diffusion": {
+        "gain": 0.42,
+        "routing": "amplitude",
+        "channel": "value"
+      }
+    }
+  }
+}
+```
+
+Malformed overrides are ignored during biome registration, ensuring invalid payloads never crash climate selection or terrain sampling.
+
 ## Distribution targets
 
 - **Ice Spire Tundra** — aim for at least 12% coverage when sampling 5 000 climate probes within a 2 048 block radius (`/biomes coverage ice_spire_tundra threshold=0.12`). The dedicated developer command reports the exact share so designers can confirm adjustments keep the biome within the intended rarity band.
