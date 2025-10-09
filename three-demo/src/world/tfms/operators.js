@@ -3,6 +3,7 @@ import {
   createNoiseSampler,
   projectSampleCoordinates,
 } from '../noise.js';
+import { make_kamea_patch } from '../kamea-patch.js';
 
 const DEFAULT_TRANSFER_FUNCTIONS = Object.freeze({
   identity: (value) => value,
@@ -271,16 +272,52 @@ export function createTfmsNetwork({
   modulationMatrix = [],
   transferFunctions = {},
   tectonic = {},
+  temperament = null,
+  kameaPatch = null,
+  kameaOptions = {},
 } = {}) {
+  const operatorCount = operators.length;
+  const normalizedKameaOptions =
+    kameaOptions && typeof kameaOptions === 'object' ? { ...kameaOptions } : {};
+  const resolvedKameaPatch =
+    operatorCount > 0
+      ? kameaPatch ??
+        (temperament
+          ? make_kamea_patch(temperament, {
+              ...normalizedKameaOptions,
+              operatorCount,
+              seed: normalizedKameaOptions.seed ?? seed,
+            })
+          : null)
+      : null;
+  const gating = resolvedKameaPatch?.gating ?? null;
+  const gatingWeights = gating?.weights ?? {};
+  const gatingBiases = gating?.biases ?? {};
+
   const operatorInstances = operators.map((operatorConfig, index) => {
     const factory = OPERATOR_FACTORIES[operatorConfig.type];
     if (!factory) {
       throw new Error(`Unknown TFMS operator type: ${operatorConfig.type}`);
     }
 
-    const instance = factory({
+    const waveformGroup = resolveWaveformBankType(operatorConfig.type);
+    const gatingWeight =
+      waveformGroup && gatingWeights[waveformGroup] != null
+        ? gatingWeights[waveformGroup]
+        : 1;
+    const gatingBias =
+      waveformGroup && gatingBiases[waveformGroup] != null
+        ? gatingBiases[waveformGroup]
+        : 0;
+    const config = {
       ...operatorConfig,
-      seed: operatorConfig.seed ?? seed * 1.17 + index * 137.53,
+      weight: (operatorConfig.weight ?? 1) * gatingWeight,
+      bias: (operatorConfig.bias ?? 0) + gatingBias,
+    };
+
+    const instance = factory({
+      ...config,
+      seed: config.seed ?? seed * 1.17 + index * 137.53,
     });
 
     return {
@@ -294,26 +331,40 @@ export function createTfmsNetwork({
         bias: 0,
         transfer: 'identity',
         tectonic: { weight: 0 },
-        ...operatorConfig,
+        ...config,
         phase: {
-          x: operatorConfig?.phase?.x ?? 0,
-          z: operatorConfig?.phase?.z ?? 0,
+          x: config?.phase?.x ?? 0,
+          z: config?.phase?.z ?? 0,
         },
         domainWarp: {
-          x: operatorConfig?.domainWarp?.x ?? 0,
-          z: operatorConfig?.domainWarp?.z ?? 0,
+          x: config?.domainWarp?.x ?? 0,
+          z: config?.domainWarp?.z ?? 0,
         },
         tectonic: {
-          weight: operatorConfig?.tectonic?.weight ?? 0,
-          ...operatorConfig?.tectonic,
+          weight: config?.tectonic?.weight ?? 0,
+          ...config?.tectonic,
         },
       },
-      transfer: resolveTransfer(
-        operatorConfig.transfer,
-        transferFunctions,
-      ),
+      transfer: resolveTransfer(config.transfer, transferFunctions),
     };
   });
+
+  const kameaPatchRef = resolvedKameaPatch;
+  const fmMatrix = kameaPatchRef?.fmMatrix ?? null;
+  const fmStrength = kameaPatchRef?.fmStrength ?? 1;
+  const warpPatch = kameaPatchRef?.warp ?? null;
+  const phasePatch = kameaPatchRef?.phase ?? null;
+  const spectralFilters = Array.isArray(kameaPatchRef?.spectral?.filters)
+    ? kameaPatchRef.spectral.filters
+    : [];
+  const spectralConductance = Array.isArray(
+    kameaPatchRef?.spectral?.conductance,
+  )
+    ? kameaPatchRef.spectral.conductance
+    : [];
+  const baseCarrierVector = operatorInstances.map(
+    (operator) => operator.config.amplitude ?? 1,
+  );
 
   const modulationByTarget = operatorInstances.map(() => []);
   modulationMatrix.forEach((entry, entryIndex) => {
@@ -358,6 +409,37 @@ export function createTfmsNetwork({
     frequency: 1,
   }));
 
+  function computeFmContribution(index, currentState) {
+    if (!fmMatrix || !fmMatrix[index]) {
+      return 0;
+    }
+    const row = fmMatrix[index];
+    if (!row.length) {
+      return 0;
+    }
+    let dot = 0;
+    for (let sourceIndex = 0; sourceIndex < row.length; sourceIndex += 1) {
+      const coefficient = row[sourceIndex];
+      if (!coefficient) {
+        continue;
+      }
+      let carrierValue = 0;
+      if (sourceIndex < baseCarrierVector.length) {
+        const state =
+          sourceIndex < index
+            ? currentState[sourceIndex] ?? lastState[sourceIndex]
+            : lastState[sourceIndex];
+        if (state && typeof state.raw === 'number') {
+          carrierValue = state.raw;
+        } else {
+          carrierValue = baseCarrierVector[sourceIndex];
+        }
+      }
+      dot += coefficient * Math.tanh(carrierValue);
+    }
+    return dot * fmStrength;
+  }
+
   function evaluateOperator(index, x, z, time, context, currentState) {
     const operator = operatorInstances[index];
     const modulationEntries = modulationByTarget[index];
@@ -400,11 +482,16 @@ export function createTfmsNetwork({
     }
 
     const baseConfig = operator.config;
-    const amplitude = (baseConfig.amplitude ?? 1) * (1 + modulation.amplitude);
-    const frequency = Math.max(
-      1e-6,
-      (baseConfig.frequency ?? 1) * (1 + modulation.frequency),
-    );
+    const fmContribution = computeFmContribution(index, currentState);
+    let amplitude =
+      (baseConfig.amplitude ?? 1) * (1 + modulation.amplitude) + fmContribution;
+    let frequency =
+      (baseConfig.frequency ?? 1) * (1 + modulation.frequency) +
+      fmContribution * 0.05;
+    if (!Number.isFinite(frequency)) {
+      frequency = 0;
+    }
+    frequency = Math.max(1e-6, frequency);
     const phase = {
       x: (baseConfig.phase?.x ?? 0) + modulation.phase.x,
       z: (baseConfig.phase?.z ?? 0) + modulation.phase.z,
@@ -414,7 +501,39 @@ export function createTfmsNetwork({
       z: (baseConfig.domainWarp?.z ?? 0) + modulation.domainWarp.z,
     };
 
-    const evaluation = operator.evaluate({
+    if (warpPatch) {
+      const primary = warpPatch.primary?.[index];
+      if (primary) {
+        domainWarp.x += primary.x;
+        domainWarp.z += primary.z;
+      }
+      const companion = warpPatch.companion?.[index];
+      if (companion) {
+        domainWarp.x += companion.x;
+        domainWarp.z += companion.z;
+      }
+    }
+
+    if (phasePatch) {
+      const px = phasePatch.x?.[index];
+      const pz = phasePatch.z?.[index];
+      if (Number.isFinite(px)) {
+        phase.x += px;
+      }
+      if (Number.isFinite(pz)) {
+        phase.z += pz;
+      }
+    }
+
+    const conductanceValue = spectralConductance[index];
+    if (
+      Number.isFinite(conductanceValue) &&
+      isDiffusionOperatorType(baseConfig.type)
+    ) {
+      amplitude *= 1 + conductanceValue;
+    }
+
+    let evaluation = operator.evaluate({
       x,
       z,
       amplitude,
@@ -424,6 +543,30 @@ export function createTfmsNetwork({
       time,
       context,
     });
+
+    if (spectralFilters[index]) {
+      const filter = spectralFilters[index];
+      const filteredValue = filter(evaluation.value, {
+        operatorIndex: index,
+        sample: evaluation,
+        patch: kameaPatchRef,
+        stage: 'value',
+      });
+      const filteredRaw =
+        typeof evaluation.raw === 'number'
+          ? filter(evaluation.raw, {
+              operatorIndex: index,
+              sample: evaluation,
+              patch: kameaPatchRef,
+              stage: 'raw',
+            })
+          : filteredValue;
+      evaluation = {
+        ...evaluation,
+        value: filteredValue,
+        raw: filteredRaw,
+      };
+    }
 
     const sample = {
       ...evaluation,
@@ -513,11 +656,38 @@ export function createTfmsNetwork({
     getOperators() {
       return operatorInstances.map((operator) => operator.config);
     },
+    getKameaPatch() {
+      return kameaPatchRef;
+    },
   };
 }
 
 export const TFMS_TRANSFER_FUNCTIONS = DEFAULT_TRANSFER_FUNCTIONS;
 export const TFMS_TECTONIC_BLENDERS = DEFAULT_TECTONIC_BLENDERS;
+
+function resolveWaveformBankType(type) {
+  if (!type) {
+    return null;
+  }
+  const normalized = String(type).toLowerCase();
+  if (normalized.includes('diffusion') || normalized.includes('erosion')) {
+    return 'diffusion';
+  }
+  if (normalized.includes('worley')) {
+    return 'worley';
+  }
+  if (normalized.includes('ridge')) {
+    return 'ridged';
+  }
+  if (normalized.includes('warp') || normalized.includes('curl')) {
+    return 'warp';
+  }
+  return 'fbm';
+}
+
+function isDiffusionOperatorType(type) {
+  return resolveWaveformBankType(type) === 'diffusion';
+}
 
 function resolveSourceValue(state, channel) {
   if (!state) {

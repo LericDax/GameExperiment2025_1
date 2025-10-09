@@ -77,12 +77,15 @@ export function createTerrainEngine({
     defaults: config,
   });
 
+  const { temperament: tfmsTemperament, ...kameaOptions } = tfmsConfig.kamea ?? {};
   const tfmsNetwork = createTfmsNetwork({
     seed: seed * 1.91 + 73,
     operators: tfmsConfig.operators,
     modulationMatrix: tfmsConfig.modulationMatrix,
     transferFunctions: tfmsConfig.transferFunctions,
     tectonic: tfmsConfig.tectonic,
+    temperament: tfmsTemperament,
+    kameaOptions,
   });
 
   const biomeEngine = createBiomeEngine({
@@ -149,6 +152,16 @@ function normalizeTfmsConfiguration({ seed, terrainConfig, defaults }) {
         ...(custom.operators[index] ?? {}),
       }))
     : fallback.operators;
+  const kameaOptions = { ...fallback.kamea };
+  if (typeof custom.temperament === 'string') {
+    kameaOptions.temperament = custom.temperament;
+  }
+  if (typeof custom.kameaTemperament === 'string') {
+    kameaOptions.temperament = custom.kameaTemperament;
+  }
+  if (custom.kamea && typeof custom.kamea === 'object') {
+    Object.assign(kameaOptions, custom.kamea);
+  }
   return {
     operators,
     modulationMatrix: Array.isArray(custom.modulationMatrix)
@@ -162,6 +175,7 @@ function normalizeTfmsConfiguration({ seed, terrainConfig, defaults }) {
       typeof custom.transferFunctions === 'object'
         ? custom.transferFunctions
         : fallback.transferFunctions,
+    kamea: kameaOptions,
   };
 }
 
@@ -347,10 +361,23 @@ function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
 
   const transferFunctions = {};
 
+  const modulationStrength = Math.min(1, Math.max(0.3, baseAmplitude / 16));
+  const spectralStrength = Math.min(1, Math.max(0.2, detailAmplitude / 6));
+  const kamea = {
+    temperament: 'Saturn 3x3',
+    modulationStrength,
+    warpStrength: modulationStrength * 0.75,
+    phaseStrength: modulationStrength * 0.45,
+    spectralProfile: 'band',
+    spectralStrength,
+    erosionPreset: 'standard',
+  };
+
   return {
     operators,
     modulationMatrix,
     tectonic,
     transferFunctions,
+    kamea,
   };
 }
