@@ -63,8 +63,11 @@ function createScalarWaveformOperator(type) {
   };
 }
 
-function createDomainWarpOperator(config) {
-  const samplerFactory = createNoiseSampler('warp', config);
+function createDomainWarpOperator(typeOrConfig, maybeConfig) {
+  const type = typeof typeOrConfig === 'string' ? typeOrConfig : 'warp';
+  const config =
+    typeof typeOrConfig === 'string' ? { ...maybeConfig } : { ...typeOrConfig };
+  const samplerFactory = createNoiseSampler(type, config);
   return {
     evaluate({ x, z, amplitude, frequency, phase, domainWarp }) {
       const coords = projectSampleCoordinates(x, z, {
@@ -151,6 +154,14 @@ const OPERATOR_FACTORIES = Object.freeze({
   warp: (config) => createDomainWarpOperator(config),
   domainWarp: (config) => createDomainWarpOperator(config),
   DomainWarp: (config) => createDomainWarpOperator(config),
+  curlNoise: (config) => createDomainWarpOperator('curlNoise', config),
+  CurlNoise: (config) => createDomainWarpOperator('curlNoise', config),
+  cellEdgeDistance: createScalarWaveformOperator('cellEdgeDistance'),
+  CellEdgeDistance: createScalarWaveformOperator('cellEdgeDistance'),
+  terraceQuantized: createScalarWaveformOperator('terraceQuantized'),
+  TerraceQuantized: createScalarWaveformOperator('terraceQuantized'),
+  voronoiBlend: createScalarWaveformOperator('voronoiBlend'),
+  VoronoiBlend: createScalarWaveformOperator('voronoiBlend'),
 });
 
 function resolveTransfer(transfer, overrides) {

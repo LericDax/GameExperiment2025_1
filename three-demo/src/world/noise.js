@@ -121,6 +121,14 @@ export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   warp: createDomainWarpSampler,
   domainWarp: createDomainWarpSampler,
   DomainWarp: createDomainWarpSampler,
+  curlNoise: createCurlNoiseSampler,
+  CurlNoise: createCurlNoiseSampler,
+  cellEdgeDistance: createCellEdgeDistanceSampler,
+  CellEdgeDistance: createCellEdgeDistanceSampler,
+  terraceQuantized: createTerraceQuantizedSampler,
+  TerraceQuantized: createTerraceQuantizedSampler,
+  voronoiBlend: createVoronoiBlendSampler,
+  VoronoiBlend: createVoronoiBlendSampler,
   diffusion: createDiffusionSampler,
   Diffusion: createDiffusionSampler,
 });
@@ -655,6 +663,154 @@ function createDomainWarpSampler({
       z: clamp(offsetZ, -1, 1),
     };
   };
+}
+
+function createCurlNoiseSampler({
+  seed = 1,
+  strength = 0.75,
+  frequency = 1,
+  step = 0.5,
+} = {}) {
+  const curlNoise = new SimplexNoise2D(hashSeed(seed, 227));
+  const eps = Math.max(1e-3, Math.abs(step));
+  const freq = Math.max(1e-3, Math.abs(frequency));
+
+  return (x, z) => {
+    const sx = x * freq;
+    const sz = z * freq;
+    const dNx =
+      curlNoise.noise(sx + eps, sz) - curlNoise.noise(sx - eps, sz);
+    const dNz =
+      curlNoise.noise(sx, sz + eps) - curlNoise.noise(sx, sz - eps);
+    const curlX = (dNz / (2 * eps)) * strength;
+    const curlZ = (-dNx / (2 * eps)) * strength;
+
+    let vx = clamp(curlX, -1, 1);
+    let vz = clamp(curlZ, -1, 1);
+    const magnitude = Math.hypot(vx, vz);
+    if (magnitude > 1) {
+      vx /= magnitude;
+      vz /= magnitude;
+    }
+
+    return { x: vx, z: vz };
+  };
+}
+
+function createCellEdgeDistanceSampler({
+  seed = 1,
+  jitter = 0.75,
+  falloff = 1,
+  distance = 'euclidean',
+} = {}) {
+  const jitterSeedX = seed * 1.91 + 17;
+  const jitterSeedZ = seed * 1.53 + 31;
+  const shapedFalloff = Math.max(1e-3, Math.abs(falloff));
+
+  return (x, z) => {
+    const distances = collectVoronoiDistances(
+      x,
+      z,
+      jitterSeedX,
+      jitterSeedZ,
+      jitter,
+      distance,
+    );
+    const f1 = distances[0] ?? 0;
+    const f2 = distances[1] ?? f1;
+    const edgeDistance = Math.max(0, f2 - f1);
+    const normalized = Math.exp(-edgeDistance * shapedFalloff);
+    return clamp(normalized * 2 - 1, -1, 1);
+  };
+}
+
+function createTerraceQuantizedSampler({
+  seed = 1,
+  steps = 5,
+  smoothness = 0.1,
+  bias = 0,
+} = {}) {
+  const baseNoise = createValueNoise(seed * 1.79 + 23, 0);
+  const terraceSteps = Math.max(2, Math.floor(steps));
+  const blend = clamp(smoothness, 0, 1);
+
+  return (x, z) => {
+    const sample = toSignedRange(baseNoise.noise(x, z));
+    const normalized = clamp((sample + 1) * 0.5 + bias, 0, 1);
+    const scaled = normalized * (terraceSteps - 1);
+    const index = Math.floor(scaled);
+    const fraction = scaled - index;
+    const baseValue = index / (terraceSteps - 1);
+    const nextValue =
+      index + 1 <= terraceSteps - 1
+        ? (index + 1) / (terraceSteps - 1)
+        : baseValue;
+    const terraced = lerp(baseValue, nextValue, fraction * blend);
+    return clamp(terraced * 2 - 1, -1, 1);
+  };
+}
+
+function createVoronoiBlendSampler({
+  seed = 1,
+  jitter = 0.75,
+  distance = 'euclidean',
+  blendExponent = 1,
+  bias = 0,
+} = {}) {
+  const jitterSeedX = seed * 2.11 + 41;
+  const jitterSeedZ = seed * 1.73 + 59;
+  const exponent = Math.max(1e-3, Math.abs(blendExponent));
+
+  return (x, z) => {
+    const distances = collectVoronoiDistances(
+      x,
+      z,
+      jitterSeedX,
+      jitterSeedZ,
+      jitter,
+      distance,
+    );
+    const f1 = distances[0] ?? 0;
+    const f2 = distances[1] ?? f1;
+    const ratio = f2 <= 1e-6 ? 0 : Math.max(0, f2 - f1) / Math.max(f2, 1e-6);
+    const shaped = Math.pow(clamp(ratio, 0, 1), exponent);
+    const biased = clamp(shaped + bias, 0, 1);
+    return clamp(biased * 2 - 1, -1, 1);
+  };
+}
+
+function collectVoronoiDistances(
+  x,
+  z,
+  jitterSeedX,
+  jitterSeedZ,
+  jitter,
+  distance,
+) {
+  const cellX = Math.floor(x);
+  const cellZ = Math.floor(z);
+  const distances = [];
+
+  for (let dz = -1; dz <= 1; dz += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      const cx = cellX + dx;
+      const cz = cellZ + dz;
+      const rx = random2D(jitterSeedX, cx, cz) * jitter;
+      const rz = random2D(jitterSeedZ, cx, cz) * jitter;
+      const px = cx + rx;
+      const pz = cz + rz;
+      const dxp = x - px;
+      const dzp = z - pz;
+      const candidate =
+        distance === 'manhattan'
+          ? Math.abs(dxp) + Math.abs(dzp)
+          : Math.hypot(dxp, dzp);
+      distances.push(candidate);
+    }
+  }
+
+  distances.sort((a, b) => a - b);
+  return distances;
 }
 
 function createDiffusionSampler({ seed = 1, smoothing = 0.5 }) {
