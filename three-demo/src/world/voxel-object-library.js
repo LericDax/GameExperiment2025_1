@@ -1,62 +1,8 @@
 import { clearVoxelObjectPrototypeCache } from './voxel-object-prototypes.js';
 
-const isNodeEnvironment = typeof process !== 'undefined' && !!process.versions?.node;
-let nodeFs = null;
-let nodePath = null;
-let toFilePath = null;
-
-if (isNodeEnvironment) {
-  const [fsModule, pathModule, urlModule] = await Promise.all([
-    import('node:fs'),
-    import('node:path'),
-    import('node:url'),
-  ]);
-  nodeFs = fsModule.default ?? fsModule;
-  nodePath = pathModule.default ?? pathModule;
-  toFilePath = urlModule.fileURLToPath;
-}
-
-function loadVoxelObjectModules() {
-  if (typeof import.meta?.glob === 'function') {
-    return import.meta.glob('./voxel-objects/**/*.json', {
-      eager: true,
-    });
-  }
-  if (!nodeFs || !nodePath || !toFilePath) {
-    return {};
-  }
-  const baseDir = nodePath.join(nodePath.dirname(toFilePath(import.meta.url)), 'voxel-objects');
-  const modules = {};
-  const visit = (dir) => {
-    let entries = [];
-    try {
-      entries = nodeFs.readdirSync(dir, { withFileTypes: true });
-    } catch (_error) {
-      return;
-    }
-    entries.forEach((entry) => {
-      const entryPath = nodePath.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        visit(entryPath);
-        return;
-      }
-      if (!entry.isFile() || !entry.name.endsWith('.json')) {
-        return;
-      }
-      try {
-        const raw = nodeFs.readFileSync(entryPath, 'utf8');
-        const relative = nodePath.relative(baseDir, entryPath).replace(/\\/g, '/');
-        modules[`./voxel-objects/${relative}`] = { default: JSON.parse(raw) };
-      } catch (_error) {
-        // ignore malformed voxel object definitions in fallback mode
-      }
-    });
-  };
-  visit(baseDir);
-  return modules;
-}
-
-const voxelObjectModules = loadVoxelObjectModules();
+const voxelObjectModules = import.meta.glob('./voxel-objects/**/*.json', {
+  eager: true,
+});
 
 const DEFAULT_DESTRUCTION_MODE = 'prototype';
 const ALLOWED_DESTRUCTION_MODES = new Set([
