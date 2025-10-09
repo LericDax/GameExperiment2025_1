@@ -75,6 +75,18 @@ export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   brownNoise: createBrownNoiseSampler,
   BrownNoise: createBrownNoiseSampler,
   FractalBrownNoise: createBrownNoiseSampler,
+  redNoise: createRedNoiseSampler,
+  RedNoise: createRedNoiseSampler,
+  greenNoise: createGreenNoiseSampler,
+  GreenNoise: createGreenNoiseSampler,
+  blackNoise: createBlackNoiseSampler,
+  BlackNoise: createBlackNoiseSampler,
+  greyNoise: createGreyNoiseSampler,
+  GreyNoise: createGreyNoiseSampler,
+  violetNoise: createVioletNoiseSampler,
+  VioletNoise: createVioletNoiseSampler,
+  velvetNoise: createVelvetNoiseSampler,
+  VelvetNoise: createVelvetNoiseSampler,
   blueNoise: createBlueNoiseSampler,
   BlueNoise: createBlueNoiseSampler,
   FractalBlueNoise: createBlueNoiseSampler,
@@ -143,6 +155,12 @@ export const NOISE_WAVEFORM_CATALOG = Object.freeze([
     ids: [
       'PinkNoise',
       'BrownNoise',
+      'RedNoise',
+      'GreenNoise',
+      'BlackNoise',
+      'GreyNoise',
+      'VioletNoise',
+      'VelvetNoise',
       'BlueNoise',
       'WhiteNoise',
     ],
@@ -339,6 +357,60 @@ function createBrownNoiseSampler({ seed = 1, octaves = 6, lacunarity = 2 } = {})
     octaves,
     lacunarity,
     slope: -2,
+  });
+}
+
+function createRedNoiseSampler({ seed = 1, octaves = 6, lacunarity = 2 } = {}) {
+  return createSpectralNoiseSampler({
+    seed: hashSeed(seed, 151),
+    octaves,
+    lacunarity,
+    slope: -2,
+  });
+}
+
+function createGreenNoiseSampler({ seed = 1, octaves = 6, lacunarity = 2 } = {}) {
+  return createSpectralNoiseSampler({
+    seed: hashSeed(seed, 163),
+    octaves,
+    lacunarity,
+    slope: -0.5,
+  });
+}
+
+function createBlackNoiseSampler({ seed = 1, octaves = 6, lacunarity = 2 } = {}) {
+  return createSpectralNoiseSampler({
+    seed: hashSeed(seed, 179),
+    octaves,
+    lacunarity,
+    slope: -3,
+  });
+}
+
+function createGreyNoiseSampler({ seed = 1, octaves = 6, lacunarity = 2 } = {}) {
+  return createSpectralNoiseSampler({
+    seed: hashSeed(seed, 193),
+    octaves,
+    lacunarity,
+    slope: -0.2,
+  });
+}
+
+function createVioletNoiseSampler({ seed = 1, octaves = 6, lacunarity = 2 } = {}) {
+  return createSpectralNoiseSampler({
+    seed: hashSeed(seed, 199),
+    octaves,
+    lacunarity,
+    slope: 2,
+  });
+}
+
+function createVelvetNoiseSampler({ seed = 1, octaves = 6, lacunarity = 2 } = {}) {
+  return createSpectralNoiseSampler({
+    seed: hashSeed(seed, 211),
+    octaves,
+    lacunarity,
+    slope: 0.5,
   });
 }
 
