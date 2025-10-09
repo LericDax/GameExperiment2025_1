@@ -59,19 +59,32 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 - **PoissonBlueMask** (available) — blue-noise-style feature selector using Poisson-prioritized impulses. Defaults: radius 2, falloff 1.5.
 
 ## Synth-inspired waveforms
-- **Wavetable** — sampled or custom waveforms read from a table.
-- **FMComposite** — frequency-modulated blend of multiple fields.
-- **AMComposite** — amplitude-modulated noise composition.
-- **RingMod** — multiplicative combination of two sources.
-- **PhaseDistortedSine** — non-linear phase modulation.
-- **PulseWidthModulation** — duty-controlled anisotropic square.
-- **AdditiveHarmonicStack** — sum of harmonic sinusoids.
-- **SubtractiveFilterBank** — spectral filtering applied to noise.
-- **GranularNoise** — localized particle impulse clusters.
-- **SampleAndHold** — quantized blocky noise akin to pixelation.
-- **NoiseChorus** — detuned stack of similar noise fields.
-- **ResonantFilterField** — band-passed feedback terrain pattern.
-- **ReverberantDecayField** — recursive delayed diffusion waves.
+- **Wavetable** (available via `wavetable`) — sampled or procedural table playback with morphing.
+  Parameters: `table` (array of samples) or `tableLength` (default 64) to generate a seeded table, `morph` (0–1 base blend), `morphDepth` (0–1 modulation depth), `morphFrequency`, `frequency`, `phaseOffset`, `orientation`, `drift` (phase drift amount), and `amplitude`.
+- **FMComposite** (available via `fmComposite`) — frequency-modulated blend of carrier and modulator.
+  Parameters: `carrierShape` (`sine`, `triangle`, `square`, `saw`, `pulse`), `carrierFrequency`, `modulator` (type or sampler spec), `modulatorFrequency`, `modulationIndex`, `modulationDepth`, `feedback`, `orientation`, `modulatorOrientationOffset`, and `phaseOffset`.
+- **AMComposite** (available via `amComposite`) — amplitude-modulated noise composition.
+  Parameters: `carrierShape`, `carrierFrequency`, `modulator`, `modulatorFrequency`, `modulationDepth`, `orientation`, and `phaseOffset`.
+- **RingMod** (available via `ringMod`) — multiplicative combination of two sources.
+  Parameters: `carrierShape`, `carrierFrequency`, `modulator` (noise spec) or `modulatorShape`, `modulatorFrequency`, `orientation`, `modulatorOrientationOffset`, `depth`, and `phaseOffset`.
+- **PhaseDistortedSine** (available via `phaseDistortedSine`) — non-linear phase modulation of a sine carrier.
+  Parameters: `frequency`, `orientation`, `phaseOffset`, `distortionAmount`, `distortionBias`, `distortionFrequency`, and `modulator` (noise spec).
+- **PulseWidthModulation** (available via `pulseWidthModulation`) — duty-controlled anisotropic square with modulation.
+  Parameters: `frequency`, `baseDutyCycle`, `modulationDepth`, `modulatorFrequency`, `orientation`, `phaseOffset`, `bias`, and `modulator` (noise spec).
+- **AdditiveHarmonicStack** (available via `additiveHarmonicStack`) — sum of harmonic sinusoids with detune.
+  Parameters: `harmonics`, `harmonicFalloff`, `frequency`, `orientation`, `detune`, and `phaseOffset`.
+- **SubtractiveFilterBank** (available via `subtractiveFilterBank`) — spectral filtering applied to noise.
+  Parameters: `source` (noise spec), `filterBands` (array of `{ center, width, gain }`), `frequency`, `resonance`, and `orientation`.
+- **GranularNoise** (available via `granularNoise`) — localized particle impulse clusters.
+  Parameters: `density` (grains per cell), `grainSize`, `falloff`, `jitter`, and `randomness` (grain waveform variation).
+- **SampleAndHold** (available via `sampleAndHold`) — quantized blocky noise akin to pixelation.
+  Parameters: `cellSize`, `jitter`, `smoothness` (blend to neighbor), and `bias`.
+- **NoiseChorus** (available via `noiseChorus`) — detuned stack of similar noise fields.
+  Parameters: `baseType` (noise spec), `voices`, `detune`, `spread`, and `frequency`.
+- **ResonantFilterField** (available via `resonantFilterField`) — band-passed feedback terrain pattern.
+  Parameters: `source`, `resonance`, `q`, `frequency`, `bandwidth`, and `orientation`.
+- **ReverberantDecayField** (available via `reverberantDecayField`) — recursive delayed diffusion waves.
+  Parameters: `source`, `taps`, `decay`, `delay`, `diffusion`, `frequency`, and `orientation`.
 
 ## Exotic / emergent
 - **HyperbolicTangentField** — tanh nonlinearity shaping into sigmoids.
@@ -125,5 +138,18 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 | `bandsFbm` / `BandsFBM` | FBM modulated by anisotropic sine bands (available) |
 | `warpedFbm` / `WarpedFBM` | Domain-warped FBM blend (available) |
 | `noiseMixWaveset` / `NoiseMixWaveset` | Softmax-weighted hybrid noise mixture (available) |
+| `wavetable` / `Wavetable` | Morphable wavetable playback sampler (available) |
+| `fmComposite` / `FMComposite` | Frequency-modulated composite sampler (available) |
+| `amComposite` / `AMComposite` | Amplitude-modulated composite sampler (available) |
+| `ringMod` / `RingMod` | Ring modulation sampler (available) |
+| `phaseDistortedSine` / `PhaseDistortedSine` | Phase-distorted sine sampler (available) |
+| `pulseWidthModulation` / `PulseWidthModulation` | PWM anisotropic square sampler (available) |
+| `additiveHarmonicStack` / `AdditiveHarmonicStack` | Additive harmonic sum sampler (available) |
+| `subtractiveFilterBank` / `SubtractiveFilterBank` | Subtractive filter bank sampler (available) |
+| `granularNoise` / `GranularNoise` | Granular impulse cluster sampler (available) |
+| `sampleAndHold` / `SampleAndHold` | Sample-and-hold quantized sampler (available) |
+| `noiseChorus` / `NoiseChorus` | Detuned noise chorus sampler (available) |
+| `resonantFilterField` / `ResonantFilterField` | Resonant filter terrain sampler (available) |
+| `reverberantDecayField` / `ReverberantDecayField` | Reverberant decay field sampler (available) |
 
 Future identifiers will follow the PascalCase names listed above unless otherwise noted. Designers can use this table to map configuration data to runtime waveform factories.
