@@ -1,6 +1,6 @@
-import { ValueNoise2D } from './noise.js';
 import { createBiomeEngine } from './biome-engine.js';
 import { defaultWorldOptions } from './world-settings.js';
+import { createTfmsNetwork } from './tfms/operators.js';
 
 export function createTerrainEngine({
   THREE,
@@ -71,9 +71,19 @@ export function createTerrainEngine({
         : defaults.climateHeightInfluence,
   };
 
-  const elevationNoise = new ValueNoise2D(seed * 1.11 + 67);
-  const detailNoise = new ValueNoise2D(seed * 1.59 + 139);
-  const ridgeNoise = new ValueNoise2D(seed * 2.03 + 211);
+  const tfmsConfig = normalizeTfmsConfiguration({
+    seed,
+    terrainConfig,
+    defaults: config,
+  });
+
+  const tfmsNetwork = createTfmsNetwork({
+    seed: seed * 1.91 + 73,
+    operators: tfmsConfig.operators,
+    modulationMatrix: tfmsConfig.modulationMatrix,
+    transferFunctions: tfmsConfig.transferFunctions,
+    tectonic: tfmsConfig.tectonic,
+  });
 
   const biomeEngine = createBiomeEngine({
     THREE,
@@ -82,25 +92,12 @@ export function createTerrainEngine({
   });
 
   function computeElevation(x, z) {
-    const n1 = elevationNoise.noise(
-      x * config.primaryFrequency + config.primaryOffset,
-      z * config.primaryFrequency + config.primaryOffset,
-    );
-    const n2 = detailNoise.noise(
-      x * config.detailFrequency + config.detailOffset,
-      z * config.detailFrequency + config.detailOffset,
-    );
-    const ridges = ridgeNoise.noise(
-      x * config.ridgeFrequency + config.ridgeOffset,
-      z * config.ridgeFrequency + config.ridgeOffset,
-    );
-    const ridgeInfluence = (ridges - 0.5) * config.ridgeStrength;
-    return (
-      config.baseHeight +
-      n1 * config.primaryAmplitude +
-      n2 * config.detailAmplitude +
-      ridgeInfluence
-    );
+    const { envelope } = tfmsNetwork.evaluate({
+      x,
+      z,
+      context: { terrain: config },
+    });
+    return config.baseHeight + envelope;
   }
 
   function sampleColumn(x, z) {
@@ -108,7 +105,23 @@ export function createTerrainEngine({
     let height = computeElevation(x, z);
     const climateAdjustment =
       (biomeSample.climate.moisture - 0.5) * config.climateHeightInfluence;
-    height += climateAdjustment + (biomeSample.biome.terrain.heightOffset ?? 0);
+    height += climateAdjustment;
+    const biomeOffset = biomeSample.biome.terrain.heightOffset ?? 0;
+    height += biomeOffset;
+
+    if (terrainConfig?.clamp) {
+      const minClamp = terrainConfig.clamp.min;
+      const maxClamp = terrainConfig.clamp.max;
+      if (Number.isFinite(minClamp)) {
+        height = Math.max(minClamp, height);
+      }
+      if (Number.isFinite(maxClamp)) {
+        height = Math.min(maxClamp, height);
+      }
+    }
+    if (Number.isFinite(config.maxHeight)) {
+      height = Math.min(config.maxHeight, height);
+    }
     return {
       ...biomeSample,
       height,
@@ -124,5 +137,220 @@ export function createTerrainEngine({
     dispose() {
       biomeEngine.dispose?.();
     },
+  };
+}
+
+function normalizeTfmsConfiguration({ seed, terrainConfig, defaults }) {
+  const fallback = createDefaultTfmsConfiguration({ seed, terrainConfig, defaults });
+  const custom = terrainConfig.tfms ?? {};
+  const operators = Array.isArray(custom.operators)
+    ? fallback.operators.map((defaultOperator, index) => ({
+        ...defaultOperator,
+        ...(custom.operators[index] ?? {}),
+      }))
+    : fallback.operators;
+  return {
+    operators,
+    modulationMatrix: Array.isArray(custom.modulationMatrix)
+      ? custom.modulationMatrix
+      : fallback.modulationMatrix,
+    tectonic: {
+      ...fallback.tectonic,
+      ...(typeof custom.tectonic === 'object' ? custom.tectonic : {}),
+    },
+    transferFunctions:
+      typeof custom.transferFunctions === 'object'
+        ? custom.transferFunctions
+        : fallback.transferFunctions,
+  };
+}
+
+function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
+  const terrain = terrainConfig ?? {};
+  const baseAmplitude = terrain.primaryAmplitude ?? defaults.primaryAmplitude;
+  const baseFrequency = terrain.primaryFrequency ?? defaults.primaryFrequency;
+  const baseOffset = terrain.primaryOffset ?? defaults.primaryOffset;
+  const detailAmplitude = terrain.detailAmplitude ?? defaults.detailAmplitude;
+  const detailFrequency = terrain.detailFrequency ?? defaults.detailFrequency;
+  const detailOffset = terrain.detailOffset ?? defaults.detailOffset;
+  const ridgeStrength = terrain.ridgeStrength ?? defaults.ridgeStrength;
+  const ridgeFrequency = terrain.ridgeFrequency ?? defaults.ridgeFrequency;
+  const ridgeOffset = terrain.ridgeOffset ?? defaults.ridgeOffset;
+
+  const operators = [
+    {
+      id: 'primary-fbm',
+      type: 'fbm',
+      seed: seed * 1.11 + 113,
+      amplitude: baseAmplitude,
+      frequency: baseFrequency,
+      phase: { x: baseOffset, z: baseOffset },
+      octaves: 6,
+      lacunarity: 2,
+      gain: 0.48,
+      weight: 1,
+      transfer: 'identity',
+      tectonic: { weight: 0.18 },
+    },
+    {
+      id: 'ridge-noise',
+      type: 'ridged',
+      seed: seed * 1.59 + 223,
+      amplitude: ridgeStrength,
+      frequency: ridgeFrequency,
+      phase: { x: ridgeOffset, z: ridgeOffset },
+      octaves: 3,
+      lacunarity: 2.05,
+      gain: 0.5,
+      weight: 0.75,
+      transfer: 'abs',
+    },
+    {
+      id: 'anisotropic-banding',
+      type: 'anisotropicSine',
+      seed: seed * 1.73 + 257,
+      amplitude: detailAmplitude * 0.75,
+      frequency: detailFrequency * 1.5,
+      phase: { x: detailOffset, z: detailOffset },
+      orientation: Math.PI / 5,
+      harmonics: 3,
+      bias: 0,
+      weight: 0.5,
+      transfer: 'tanh',
+    },
+    {
+      id: 'tectonic-worley',
+      type: 'worley',
+      seed: seed * 1.91 + 307,
+      amplitude: detailAmplitude * 0.45,
+      frequency: Math.max(0.0001, baseFrequency * 0.45),
+      jitter: 0.85,
+      falloff: 1.35,
+      distanceMetric: 'euclidean',
+      weight: 0.35,
+      transfer: 'smoothstep',
+      transferSettings: { smoothness: 0.4 },
+      tectonic: { weight: 0.4 },
+    },
+    {
+      id: 'domain-warp',
+      type: 'domainWarp',
+      seed: seed * 2.13 + 353,
+      amplitude: baseAmplitude * 0.32,
+      frequency: Math.max(0.0001, baseFrequency * 0.65),
+      power: 1.1,
+      gain: 0.9,
+      weight: 0,
+      transfer: 'identity',
+    },
+    {
+      id: 'diffusion-mask',
+      type: 'diffusion',
+      seed: seed * 2.31 + 409,
+      amplitude: detailAmplitude * 0.35,
+      frequency: Math.max(0.0001, detailFrequency * 1.2),
+      smoothing: 0.68,
+      weight: 0.55,
+      transfer: 'tanh',
+    },
+  ];
+
+  const modulationMatrix = [
+    {
+      source: 5,
+      target: 0,
+      routing: 'amplitude',
+      channel: 'transferred',
+      gain: 0.4,
+    },
+    {
+      source: 5,
+      target: 1,
+      routing: 'amplitude',
+      channel: 'transferred',
+      gain: 0.3,
+    },
+    {
+      source: 5,
+      target: 2,
+      routing: 'amplitude',
+      channel: 'transferred',
+      gain: 0.25,
+    },
+    {
+      source: 4,
+      target: 0,
+      routing: 'domainWarp',
+      channel: 'domainX',
+      gain: 0.7,
+      axis: 'x',
+    },
+    {
+      source: 4,
+      target: 0,
+      routing: 'domainWarp',
+      channel: 'domainZ',
+      gain: 0.7,
+      axis: 'z',
+    },
+    {
+      source: 4,
+      target: 1,
+      routing: 'domainWarp',
+      channel: 'domainX',
+      gain: 0.5,
+      axis: 'x',
+    },
+    {
+      source: 4,
+      target: 1,
+      routing: 'domainWarp',
+      channel: 'domainZ',
+      gain: 0.5,
+      axis: 'z',
+    },
+    {
+      source: 3,
+      target: 1,
+      routing: 'amplitude',
+      channel: 'raw',
+      gain: 0.35,
+    },
+    {
+      source: 3,
+      target: 2,
+      routing: 'frequency',
+      channel: 'raw',
+      gain: 0.2,
+    },
+    {
+      source: 1,
+      target: 4,
+      routing: 'amplitude',
+      channel: 'transferred',
+      gain: 0.35,
+    },
+    {
+      source: 3,
+      target: 5,
+      routing: 'amplitude',
+      channel: 'raw',
+      gain: 0.45,
+    },
+  ];
+
+  const tectonic = {
+    blend: 'additive',
+    strength: 0.35,
+    bias: 0,
+  };
+
+  const transferFunctions = {};
+
+  return {
+    operators,
+    modulationMatrix,
+    tectonic,
+    transferFunctions,
   };
 }
