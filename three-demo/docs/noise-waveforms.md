@@ -34,10 +34,10 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 
 ## Structural / geometric
 - **DomainWarp** (available via `warp`) — coordinate warp derived from another field.
-- **CurlNoise** — vector field curl magnitude for fluid-like motion.
-- **CellEdgeDistance** — edge distance between Worley cells.
-- **TerraceQuantized** — stepped remap of elevation values.
-- **VoronoiBlend** — blended F1/F2 Worley distances for island shapes.
+- **CurlNoise** (available via `curlNoise`) — divergence-free vector warp derived from simplex curl; ideal for fluid domain offsets.
+- **CellEdgeDistance** (available via `cellEdgeDistance`) — scalar mask emphasizing Voronoi cell boundaries using the F2 - F1 gap.
+- **TerraceQuantized** (available via `terraceQuantized`) — stepped remap that snaps a base heightfield into terraces with optional smoothing.
+- **VoronoiBlend** (available via `voronoiBlend`) — blended F1/F2 Voronoi ratio suited for island silhouettes and cellular plateaus.
 
 ## Diffusion / smoothing
 - **IsotropicDiffusion** (available via `diffusion`) — uniform blur similar to thermal erosion.
@@ -108,6 +108,10 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 | `blueNoise` / `BlueNoise` | High-frequency accent sampler (available) |
 | `whiteNoise` / `WhiteNoise` | Uniform random scalar field (available) |
 | `warp` / `domainWarp` | Domain-warp vector field (available) |
+| `curlNoise` / `CurlNoise` | Divergence-free curl vector warp (available) |
+| `cellEdgeDistance` / `CellEdgeDistance` | Worley cell edge distance mask (available) |
+| `terraceQuantized` / `TerraceQuantized` | Quantized terrace remapping sampler (available) |
+| `voronoiBlend` / `VoronoiBlend` | F1/F2 Voronoi blend sampler (available) |
 | `diffusion` | Diffusion-based smoother (available) |
 
 Future identifiers will follow the PascalCase names listed above unless otherwise noted. Designers can use this table to map configuration data to runtime waveform factories.

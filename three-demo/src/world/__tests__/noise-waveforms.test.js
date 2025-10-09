@@ -199,6 +199,28 @@ test('Diffusion sampler is repeatable and bounded', () => {
   assertDeterministicScalar('diffusion', { smoothing: 0.6 });
 });
 
+test('Cell edge distance sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('cellEdgeDistance', {
+    jitter: 0.6,
+    falloff: 1.35,
+  });
+});
+
+test('Terrace quantized sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('terraceQuantized', {
+    steps: 6,
+    smoothness: 0.25,
+    bias: 0.05,
+  });
+});
+
+test('Voronoi blend sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('voronoiBlend', {
+    jitter: 0.7,
+    blendExponent: 1.4,
+  });
+});
+
 test('Domain warp sampler produces repeatable vector offsets', () => {
   const samplerA = createNoiseSampler('warp', {
     seed: 4242,
@@ -234,6 +256,49 @@ test('Domain warp sampler produces repeatable vector offsets', () => {
   }
 
   assert.ok(differenceDetected, 'domain warp should vary with seed');
+});
+
+test('Curl noise sampler produces repeatable vector offsets', () => {
+  const samplerA = createNoiseSampler('curlNoise', {
+    seed: 777,
+    strength: 0.85,
+    frequency: 0.75,
+    step: 0.35,
+  });
+  const samplerB = createNoiseSampler('curlNoise', {
+    seed: 777,
+    strength: 0.85,
+    frequency: 0.75,
+    step: 0.35,
+  });
+  const samplerC = createNoiseSampler('curlNoise', {
+    seed: 778,
+    strength: 0.85,
+    frequency: 0.75,
+    step: 0.35,
+  });
+
+  let differenceDetected = false;
+
+  for (const [x, z] of SAMPLE_POINTS) {
+    const warpA = samplerA(x, z);
+    const warpB = samplerB(x, z);
+    const warpC = samplerC(x, z);
+    assert.ok(
+      Math.abs(warpA.x - warpB.x) < 1e-9 && Math.abs(warpA.z - warpB.z) < 1e-9,
+      'curl noise warp should be deterministic',
+    );
+    const magnitude = Math.hypot(warpA.x, warpA.z);
+    assert.ok(magnitude <= 1 + 1e-6, 'curl noise warp magnitude should remain normalized');
+    if (
+      !differenceDetected &&
+      (Math.abs(warpA.x - warpC.x) > 1e-6 || Math.abs(warpA.z - warpC.z) > 1e-6)
+    ) {
+      differenceDetected = true;
+    }
+  }
+
+  assert.ok(differenceDetected, 'curl noise warp should vary with seed');
 });
 
 test('projectSampleCoordinates applies frequency, phase, and domain warp', () => {
