@@ -130,7 +130,13 @@ export const NOISE_WAVEFORM_FACTORIES = Object.freeze({
   voronoiBlend: createVoronoiBlendSampler,
   VoronoiBlend: createVoronoiBlendSampler,
   diffusion: createDiffusionSampler,
+  isotropicDiffusion: createDiffusionSampler,
   Diffusion: createDiffusionSampler,
+  IsotropicDiffusion: createDiffusionSampler,
+  anisotropicDiffusion: createAnisotropicDiffusionSampler,
+  AnisotropicDiffusion: createAnisotropicDiffusionSampler,
+  hydraulicErosion: createHydraulicErosionSampler,
+  HydraulicErosion: createHydraulicErosionSampler,
 });
 
 export const NOISE_WAVEFORM_CATALOG = Object.freeze([
@@ -825,9 +831,104 @@ function createDiffusionSampler({ seed = 1, smoothing = 0.5 }) {
       baseNoise.noise(x, z + 1),
       baseNoise.noise(x, z - 1),
     ];
-    const average = neighbors.reduce((sum, value) => sum + value, 0) / neighbors.length;
+    const average =
+      neighbors.reduce((sum, value) => sum + value, 0) / neighbors.length;
     const blended = lerp(center, average, smooth);
     return clamp(toSignedRange(blended), -1, 1);
+  };
+}
+
+function createAnisotropicDiffusionSampler({
+  seed = 1,
+  smoothing = 0.6,
+  orientation = 0,
+  anisotropy = 0.5,
+  step = 1,
+} = {}) {
+  const baseNoise = new ValueNoise2D(hashSeed(seed, 211));
+  const smooth = clamp(smoothing, 0, 1);
+  const anisotropicWeight = clamp(anisotropy, 0, 1);
+  const distance = Math.max(1e-3, Math.abs(step));
+
+  return (x, z) => {
+    const angle = orientation;
+    const dirX = Math.cos(angle);
+    const dirZ = Math.sin(angle);
+    const stepX = dirX * distance;
+    const stepZ = dirZ * distance;
+    const perpX = -dirZ * distance;
+    const perpZ = dirX * distance;
+
+    const center = baseNoise.noise(x, z);
+    const axialAverage =
+      (baseNoise.noise(x + stepX, z + stepZ) +
+        baseNoise.noise(x - stepX, z - stepZ)) /
+      2;
+    const lateralAverage =
+      (baseNoise.noise(x + perpX, z + perpZ) +
+        baseNoise.noise(x - perpX, z - perpZ)) /
+      2;
+
+    const axialWeight = 0.5 + anisotropicWeight / 2;
+    const lateralWeight = 1 - axialWeight;
+    const orientedBlend = axialAverage * axialWeight + lateralAverage * lateralWeight;
+    const blended = lerp(center, orientedBlend, smooth);
+    return clamp(toSignedRange(blended), -1, 1);
+  };
+}
+
+function createHydraulicErosionSampler({
+  seed = 1,
+  smoothing = 0.4,
+  erosionRate = 0.45,
+  depositionRate = 0.25,
+  step = 1,
+} = {}) {
+  const baseNoise = new ValueNoise2D(hashSeed(seed, 223));
+  const smooth = clamp(smoothing, 0, 1);
+  const erosion = clamp(erosionRate, 0, 1);
+  const deposition = clamp(depositionRate, 0, 1);
+  const distance = Math.max(1e-3, Math.abs(step));
+
+  return (x, z) => {
+    const offsets = [
+      [distance, 0],
+      [-distance, 0],
+      [0, distance],
+      [0, -distance],
+      [distance, distance],
+      [-distance, distance],
+      [distance, -distance],
+      [-distance, -distance],
+    ];
+
+    const center = baseNoise.noise(x, z);
+    const neighborSamples = offsets.map(([dx, dz]) =>
+      baseNoise.noise(x + dx, z + dz),
+    );
+
+    let lowestNeighbor = neighborSamples[0];
+    let highestNeighbor = neighborSamples[0];
+    let sumNeighbors = 0;
+
+    for (let i = 0; i < neighborSamples.length; i += 1) {
+      const sample = neighborSamples[i];
+      if (sample < lowestNeighbor) {
+        lowestNeighbor = sample;
+      }
+      if (sample > highestNeighbor) {
+        highestNeighbor = sample;
+      }
+      sumNeighbors += sample;
+    }
+
+    const average = sumNeighbors / neighborSamples.length;
+    const erosionAmount = Math.max(0, center - lowestNeighbor) * erosion;
+    const depositionAmount = Math.max(0, highestNeighbor - center) * deposition;
+    const eroded = center - erosionAmount + depositionAmount;
+    const smoothed = lerp(eroded, average, smooth);
+    const normalized = clamp(smoothed, 0, 1);
+    return clamp(toSignedRange(normalized), -1, 1);
   };
 }
 

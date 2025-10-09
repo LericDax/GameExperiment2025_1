@@ -199,6 +199,24 @@ test('Diffusion sampler is repeatable and bounded', () => {
   assertDeterministicScalar('diffusion', { smoothing: 0.6 });
 });
 
+test('Anisotropic diffusion sampler honors orientation and anisotropy deterministically', () => {
+  assertDeterministicScalar('anisotropicDiffusion', {
+    smoothing: 0.65,
+    orientation: Math.PI / 4,
+    anisotropy: 0.75,
+    step: 1.25,
+  });
+});
+
+test('Hydraulic erosion sampler is repeatable and bounded', () => {
+  assertDeterministicScalar('hydraulicErosion', {
+    smoothing: 0.35,
+    erosionRate: 0.4,
+    depositionRate: 0.3,
+    step: 1.1,
+  });
+});
+
 test('Cell edge distance sampler is repeatable and bounded', () => {
   assertDeterministicScalar('cellEdgeDistance', {
     jitter: 0.6,

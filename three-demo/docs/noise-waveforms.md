@@ -40,9 +40,9 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 - **VoronoiBlend** (available via `voronoiBlend`) — blended F1/F2 Voronoi ratio suited for island silhouettes and cellular plateaus.
 
 ## Diffusion / smoothing
-- **IsotropicDiffusion** (available via `diffusion`) — uniform blur similar to thermal erosion.
-- **AnisotropicDiffusion** — edge-preserving smoothing for ridgelines.
-- **HydraulicErosion** — iterative erosion simulation field.
+- **IsotropicDiffusion** (available via `diffusion` / `isotropicDiffusion`) — uniform blur similar to thermal erosion. Parameter: `smoothing` (0–1) controls blend strength.
+- **AnisotropicDiffusion** (available via `anisotropicDiffusion`) — edge-aware smoothing that follows a dominant orientation. Parameters: `smoothing` (0–1), `orientation` (radians), `anisotropy` (0–1 directional weighting), and `step` (sampling distance).
+- **HydraulicErosion** (available via `hydraulicErosion`) — lightweight hydraulic erosion approximation mixing slope-based erosion and deposition. Parameters: `smoothing` (0–1), `erosionRate` (0–1), `depositionRate` (0–1), and `step` (sampling distance).
 
 ## Hybrid / procedural
 - **BandsFBM** — sine-band FBM fusion.
@@ -112,6 +112,8 @@ This catalog enumerates the waveform identifiers recognized by the terrain forma
 | `cellEdgeDistance` / `CellEdgeDistance` | Worley cell edge distance mask (available) |
 | `terraceQuantized` / `TerraceQuantized` | Quantized terrace remapping sampler (available) |
 | `voronoiBlend` / `VoronoiBlend` | F1/F2 Voronoi blend sampler (available) |
-| `diffusion` | Diffusion-based smoother (available) |
+| `diffusion` / `isotropicDiffusion` | Diffusion-based smoother (available) |
+| `anisotropicDiffusion` / `AnisotropicDiffusion` | Directional diffusion smoother (available) |
+| `hydraulicErosion` / `HydraulicErosion` | Hydraulic erosion approximation (available) |
 
 Future identifiers will follow the PascalCase names listed above unless otherwise noted. Designers can use this table to map configuration data to runtime waveform factories.
