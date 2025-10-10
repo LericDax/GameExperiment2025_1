@@ -187,7 +187,7 @@ const RAW_TFMS_SCHEMATA = [
           id: 'primary-fbm',
           bias: 0.18,
           envelope: { amplitude: { multiplier: 0.78 } },
-          modulation: { amplitude: 0.22 },
+          modulation: { amplitude: { multiplier: 0.22 } },
         },
         {
           id: 'anisotropic-banding',
@@ -197,14 +197,14 @@ const RAW_TFMS_SCHEMATA = [
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: 0.28 },
+          modulation: { amplitude: { multiplier: 0.28 } },
           envelope: { amplitude: { multiplier: 0.52 } },
         },
         {
           id: 'diffusion-mask',
           weight: 0.52,
           transfer: { id: 'smoothstep', smoothness: 0.48 },
-          modulation: { amplitude: 0.26 },
+          modulation: { amplitude: { multiplier: 0.26 } },
         },
       ],
       modulationMatrix: [
@@ -259,17 +259,17 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'ridge-noise',
           weight: 0.98,
-          modulation: { amplitude: 0.18 },
+          modulation: { amplitude: { multiplier: 0.18 } },
           envelope: { warp: { x: 12, z: 16 } },
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: 0.34 },
+          modulation: { amplitude: { multiplier: 0.34 } },
         },
         {
           id: 'tectonic-worley',
           weight: 0.62,
-          modulation: { amplitude: 0.24 },
+          modulation: { amplitude: { multiplier: 0.24 } },
         },
         {
           id: 'diffusion-mask',
@@ -324,22 +324,22 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: -0.16,
-          modulation: { amplitude: 0.32 },
+          modulation: { amplitude: { multiplier: 0.32 } },
         },
         {
           id: 'diffusion-mask',
           weight: 0.86,
           transfer: { id: 'sigmoid' },
-          modulation: { amplitude: 0.48 },
+          modulation: { amplitude: { multiplier: 0.48 } },
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: 0.46 },
+          modulation: { amplitude: { multiplier: 0.46 } },
         },
         {
           id: 'tectonic-worley',
           weight: 0.38,
-          modulation: { amplitude: 0.22 },
+          modulation: { amplitude: { multiplier: 0.22 } },
         },
         {
           id: 'anisotropic-banding',
@@ -403,19 +403,19 @@ const RAW_TFMS_SCHEMATA = [
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: 0.56 },
+          modulation: { amplitude: { multiplier: 0.56 } },
           envelope: { amplitude: { multiplier: 0.52 } },
         },
         {
           id: 'diffusion-mask',
           weight: 0.74,
           transfer: { id: 'tanh' },
-          modulation: { amplitude: 0.42 },
+          modulation: { amplitude: { multiplier: 0.42 } },
         },
         {
           id: 'ridge-noise',
           weight: 0.58,
-          modulation: { amplitude: 0.16 },
+          modulation: { amplitude: { multiplier: 0.16 } },
         },
         {
           id: 'anisotropic-banding',
@@ -480,16 +480,16 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'ridge-noise',
           weight: 1.08,
-          modulation: { amplitude: 0.28 },
+          modulation: { amplitude: { multiplier: 0.28 } },
         },
         {
           id: 'tectonic-worley',
           weight: 0.72,
-          modulation: { amplitude: 0.32 },
+          modulation: { amplitude: { multiplier: 0.32 } },
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: 0.22 },
+          modulation: { amplitude: { multiplier: 0.22 } },
         },
         {
           id: 'diffusion-mask',
@@ -545,12 +545,12 @@ const RAW_TFMS_SCHEMATA = [
           id: 'primary-fbm',
           bias: 0.12,
           envelope: { amplitude: { multiplier: 0.94 } },
-          modulation: { amplitude: 0.24 },
+          modulation: { amplitude: { multiplier: 0.24 } },
         },
         {
           id: 'ridge-noise',
           weight: 0.82,
-          modulation: { amplitude: 0.22 },
+          modulation: { amplitude: { multiplier: 0.22 } },
         },
         {
           id: 'anisotropic-banding',
@@ -562,11 +562,11 @@ const RAW_TFMS_SCHEMATA = [
           id: 'diffusion-mask',
           weight: 0.5,
           transfer: { id: 'smoothstep', smoothness: 0.36 },
-          modulation: { amplitude: 0.28 },
+          modulation: { amplitude: { multiplier: 0.28 } },
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: 0.3 },
+          modulation: { amplitude: { multiplier: 0.3 } },
         },
       ],
       modulationMatrix: [
@@ -621,7 +621,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'ridge-noise',
           weight: 1.02,
-          modulation: { amplitude: 0.26 },
+          modulation: { amplitude: { multiplier: 0.26 } },
         },
         {
           id: 'anisotropic-banding',
@@ -633,12 +633,12 @@ const RAW_TFMS_SCHEMATA = [
           id: 'diffusion-mask',
           weight: 0.58,
           transfer: { id: 'tanh' },
-          modulation: { amplitude: 0.34 },
+          modulation: { amplitude: { multiplier: 0.34 } },
         },
         {
           id: 'tectonic-worley',
           weight: 0.52,
-          modulation: { amplitude: 0.28 },
+          modulation: { amplitude: { multiplier: 0.28 } },
         },
       ],
       modulationMatrix: [
@@ -685,12 +685,12 @@ const RAW_TFMS_SCHEMATA = [
           id: 'primary-fbm',
           bias: 0.18,
           envelope: { amplitude: { multiplier: 0.96 } },
-          modulation: { amplitude: 0.24 },
+          modulation: { amplitude: { multiplier: 0.24 } },
         },
         {
           id: 'ridge-noise',
           weight: 0.84,
-          modulation: { amplitude: 0.2 },
+          modulation: { amplitude: { multiplier: 0.2 } },
         },
         {
           id: 'anisotropic-banding',
@@ -700,13 +700,13 @@ const RAW_TFMS_SCHEMATA = [
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: 0.38 },
+          modulation: { amplitude: { multiplier: 0.38 } },
         },
         {
           id: 'diffusion-mask',
           weight: 0.52,
           transfer: { id: 'tanh' },
-          modulation: { amplitude: 0.3 },
+          modulation: { amplitude: { multiplier: 0.3 } },
         },
       ],
       modulationMatrix: [
