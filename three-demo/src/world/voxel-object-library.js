@@ -1,8 +1,32 @@
 import { clearVoxelObjectPrototypeCache } from './voxel-object-prototypes.js';
 
-const voxelObjectModules = import.meta.glob('./voxel-objects/**/*.json', {
-  eager: true,
-});
+function loadVoxelObjectModules() {
+  let modules;
+  let globError = null;
+  try {
+    modules = import.meta.glob('./voxel-objects/**/*.json', {
+      eager: true,
+    });
+  } catch (error) {
+    globError = error;
+  }
+
+  if (modules && typeof modules === 'object') {
+    return modules;
+  }
+
+  if (globalThis.__VOXEL_OBJECT_MODULE_MAP__) {
+    return globalThis.__VOXEL_OBJECT_MODULE_MAP__;
+  }
+
+  if (globError) {
+    throw globError;
+  }
+
+  throw new Error('Voxel object module map is not available in this environment.');
+}
+
+const voxelObjectModules = loadVoxelObjectModules();
 
 const DEFAULT_DESTRUCTION_MODE = 'prototype';
 const ALLOWED_DESTRUCTION_MODES = new Set([
