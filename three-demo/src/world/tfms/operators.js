@@ -229,7 +229,29 @@ function resolveTransfer(transfer, overrides) {
   const visited = new Set();
   let current = transfer;
 
-  while (typeof current === 'string') {
+  while (current != null) {
+    if (typeof current === 'function') {
+      return current;
+    }
+
+    if (typeof current === 'object') {
+      const identifier =
+        (typeof current.id === 'string' && current.id) ||
+        (typeof current.type === 'string' && current.type);
+      if (identifier) {
+        if (visited.has(identifier)) {
+          return DEFAULT_TRANSFER_FUNCTIONS.identity;
+        }
+        current = identifier;
+        continue;
+      }
+      break;
+    }
+
+    if (typeof current !== 'string') {
+      break;
+    }
+
     if (visited.has(current)) {
       return DEFAULT_TRANSFER_FUNCTIONS.identity;
     }
@@ -244,6 +266,20 @@ function resolveTransfer(transfer, overrides) {
       return overrideValue;
     }
 
+    if (
+      overrideValue &&
+      typeof overrideValue === 'object' &&
+      ((typeof overrideValue.id === 'string' && overrideValue.id) ||
+        (typeof overrideValue.type === 'string' && overrideValue.type))
+    ) {
+      const identifier = overrideValue.id ?? overrideValue.type;
+      if (visited.has(identifier)) {
+        return DEFAULT_TRANSFER_FUNCTIONS.identity;
+      }
+      current = identifier;
+      continue;
+    }
+
     if (typeof overrideValue === 'string') {
       current = overrideValue;
       continue;
@@ -254,10 +290,6 @@ function resolveTransfer(transfer, overrides) {
     }
 
     break;
-  }
-
-  if (typeof current === 'function') {
-    return current;
   }
 
   return DEFAULT_TRANSFER_FUNCTIONS.identity;
