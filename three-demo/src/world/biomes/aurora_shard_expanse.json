@@ -79,6 +79,13 @@
       "gustField": "aurora_shard_expanse:electromagnetic"
     }
   },
+  "tfmsProfile": {
+    "blend": 0.88,
+    "schemaPool": [
+      { "id": "glacial-aurora-spires", "weight": 4 },
+      { "id": "tundra-drumlin-fields", "weight": 1.5 }
+    ]
+  },
   "weather": {
     "candidates": [
       {

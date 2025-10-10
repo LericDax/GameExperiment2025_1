@@ -45,6 +45,13 @@
     "tintColor": "#3de0f0",
     "tintStrength": 0.55
   },
+  "tfmsProfile": {
+    "blend": 0.85,
+    "schemaPool": [
+      { "id": "fungal-noctilucent-basins", "weight": 5 },
+      { "id": "temperate-bog", "weight": 1.5 }
+    ]
+  },
   "weather": {
     "candidates": [
       {
