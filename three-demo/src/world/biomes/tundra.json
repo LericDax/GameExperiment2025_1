@@ -42,8 +42,16 @@
   "tfmsProfile": {
     "blend": 0.82,
     "schemaPool": [
-      { "id": "tundra-drumlin-fields", "weight": 4 },
-      { "id": "glacial-aurora-spires", "weight": 1 }
+      { "id": "tundra-drumlin-fields", "weight": 3.0 },
+      { "id": "tundra-drumlin-fields", "weight": 1.2, "blend": 0.62 },
+      { "id": "polar-borealis-banks", "weight": 2.2 },
+      { "id": "polar-borealis-banks", "weight": 0.9, "blend": 0.72 },
+      { "id": "glacial-icefall-cirques", "weight": 1.5 },
+      { "id": "glacial-icefall-cirques", "weight": 0.7, "blend": 0.55 },
+      { "id": "tundra-sastrugi-flow", "weight": 1.1 },
+      { "id": "tundra-crystal-deltas", "weight": 0.9 },
+      { "id": "polar-fissure-shelves", "weight": 0.8 },
+      { "id": "mountain-needle-crown", "weight": 0.5 }
     ]
   },
   "weather": {

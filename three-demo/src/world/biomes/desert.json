@@ -42,8 +42,16 @@
   "tfmsProfile": {
     "blend": 0.78,
     "schemaPool": [
-      { "id": "desert-dune-sea", "weight": 3 },
-      { "id": "desert-oasis-mesas", "weight": 2 }
+      { "id": "desert-harmattan-surge", "weight": 3.6 },
+      { "id": "desert-dune-sea", "weight": 4.0 },
+      { "id": "desert-dune-sea", "weight": 1.5, "blend": 0.58 },
+      { "id": "desert-crescent-ridges", "weight": 2.4 },
+      { "id": "desert-glass-pan", "weight": 1.8 },
+      { "id": "desert-salt-spines", "weight": 1.3 },
+      { "id": "desert-mirage-flats", "weight": 1.1 },
+      { "id": "desert-wadi-lattice", "weight": 0.9 },
+      { "id": "desert-oasis-mesas", "weight": 0.8 },
+      { "id": "desert-oasis-mesas", "weight": 0.4, "blend": 0.72 }
     ]
   },
   "weather": {

@@ -43,8 +43,16 @@
   "tfmsProfile": {
     "blend": 0.86,
     "schemaPool": [
-      { "id": "polar-reef-atolls", "weight": 5 },
-      { "id": "temperate-bog", "weight": 1 }
+      { "id": "polar-reef-atolls", "weight": 4.8 },
+      { "id": "polar-reef-atolls", "weight": 2.4, "blend": 0.9 },
+      { "id": "polar-reef-atolls", "weight": 1.1, "blend": 0.65 },
+      { "id": "tundra-crystal-deltas", "weight": 1.7 },
+      { "id": "tundra-crystal-deltas", "weight": 0.7, "blend": 0.82 },
+      { "id": "tundra-crystal-deltas", "weight": 0.5, "blend": 0.58 },
+      { "id": "coastal-fjord-scars", "weight": 1.4 },
+      { "id": "coastal-fjord-scars", "weight": 0.6, "blend": 0.55 },
+      { "id": "abyssal-vent-fields", "weight": 0.8 },
+      { "id": "abyssal-vent-fields", "weight": 0.4, "blend": 0.6 }
     ]
   },
   "weather": {
