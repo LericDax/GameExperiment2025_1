@@ -25,9 +25,30 @@ The table below lists each default operator in the shipping preset, showing how 
 | `domain-warp` | `domainWarp` | `0 / 0` | `identity` | Amp: `primaryAmplitude ×0.32`, Freq: `primaryFrequency ×0.65`, Phase: `primaryOffset`, Warp: disabled | Supplies domain offsets for FBM and ridged layers; zero direct weight keeps it modulation-only.【F:three-demo/src/world/world-settings.js†L1116-L1154】 |
 | `diffusion-mask` | `diffusion` | `0.55 / 0` | `tanh` | Amp: `detailAmplitude ×0.35`, Freq: `detailFrequency ×1.2`, Phase: `detailOffset`, Warp: disabled | Acts as attenuation mask and FM source for core layers, smoothing small-scale noise.【F:three-demo/src/world/world-settings.js†L1154-L1203】 |
 
-### Operator slot count
+## Operator slot selection (1–6 carriers)
 
-Designers can now specify how many operators are active in the terrain preset. The `terrain.tfms.operatorCount` descriptor accepts values from one to six and determines how many entries from the operator array are evaluated at runtime.【F:three-demo/src/world/world-option-descriptors.js†L626-L648】【F:three-demo/src/world/world-settings.js†L676-L704】 The terrain engine slices both the operator list and modulation matrix to that count so out-of-range routes are ignored automatically.【F:three-demo/src/world/terrain-engine.js†L232-L308】 Biome TFMS profiles consult the active operator map when normalising overrides, ensuring invalid IDs are skipped and per-slot weights only apply to existing carriers.【F:three-demo/src/world/biome-engine.js†L100-L188】【F:three-demo/src/world/biome-engine.js†L500-L548】
+The TFMS preset exposes six canonical carriers in a fixed evaluation order. Designers can down-select anywhere from one to six slots via `terrain.tfms.operatorCount` to suit performance, biome variation, or stylistic targets.【F:three-demo/src/world/world-option-descriptors.js†L626-L648】【F:three-demo/src/world/world-settings.js†L676-L704】 The terrain engine truncates both the operator array and modulation matrix to the requested count so disabled slots never receive routing, and biome overrides rebuild their operator lookup map against the active slice before applying weights or modulation.【F:three-demo/src/world/terrain-engine.js†L232-L308】【F:three-demo/src/world/biome-engine.js†L100-L188】【F:three-demo/src/world/biome-engine.js†L500-L548】
+
+```
+Slot stack overview (left = earliest evaluation)
+1 ▸ primary-fbm
+2 ▸ primary-fbm ─ ridge-noise
+3 ▸ primary-fbm ─ ridge-noise ─ anisotropic-banding
+4 ▸ primary-fbm ─ ridge-noise ─ anisotropic-banding ─ tectonic-worley
+5 ▸ primary-fbm ─ ridge-noise ─ anisotropic-banding ─ tectonic-worley ─ domain-warp
+6 ▸ primary-fbm ─ ridge-noise ─ anisotropic-banding ─ tectonic-worley ─ domain-warp ─ diffusion-mask
+```
+
+| Active slots | Included carriers | Typical use cases | Notes |
+| --- | --- | --- | --- |
+| 1 | `primary-fbm` | Low-cost block-outs, fast biome prototyping. | Retains tectonic accumulation but omits explicit modulation; ideal for mobile previews. |
+| 2 | `primary-fbm`, `ridge-noise` | Classic macro + ridge layering. | Keeps peaks sharp without banding or diffusion smoothing. |
+| 3 | `primary-fbm`, `ridge-noise`, `anisotropic-banding` | Stylised mesas or striated cliffs. | Introduces directional striations; modulation links expand automatically. |
+| 4 | `primary-fbm`, `ridge-noise`, `anisotropic-banding`, `tectonic-worley` | Mountainous worlds with tectonic plateaus. | Enables tectonic routing that boosts ridges and diffusion masks. |
+| 5 | `primary-fbm`, `ridge-noise`, `anisotropic-banding`, `tectonic-worley`, `domain-warp` | Organic, winding terrain needing warped valleys. | Domain warp restores non-linear flow while keeping diffusion optional. |
+| 6 | All carriers | Shipping-quality preset with full FM interplay. | Full matrix with diffusion smoothing and warp/band interplay active. |
+
+When experimenting with fewer slots, review the [modulation matrix semantics](#modulation-matrix-semantics) to verify that removed carriers do not carry critical modulation responsibilities. Consider duplicating missing modulation through biome overrides if a truncated preset exposes gaps.
 
 ### Waveform and seed library
 Each operator references a waveform bank seeded deterministically from the world seed using multiplier/offset pairs. Adjusting waveform seed templates in the preset cascades through biome overrides because the terrain engine clones them when normalising TFMS configurations.【F:three-demo/src/world/world-settings.js†L648-L714】【F:three-demo/src/world/terrain-engine.js†L164-L304】
@@ -59,7 +80,22 @@ TFMS schemata bundle named operator overrides with metadata about the climates, 
 
 When introducing a new schema, populate the `tags` array so designers can search the compendium, fill in `biomes.ids` or `biomes.tags` to nudge selection toward certain biome families, and describe acceptable climates with `{min, max, ideal}` envelopes for temperature and moisture. Adjacency metadata lets you boost or penalise rolls when neighbouring biome tags align with the schema’s strengths. Operator overrides work exactly like biome JSON overrides: list `operatorWeights` to remap slot weights, adjust individual operators (weights, bias, modulation, envelope), and patch modulation entries by `id`.【F:three-demo/src/world/tfms/schemata.js†L5-L123】
 
-### Assigning schemata in biome JSON
+### Schema atlas overview
+
+| Schema ID | Label | Biome focus | Climate window (`temperature`, `moisture`) | Default blend | Highlights |
+| --- | --- | --- | --- | --- | --- |
+| `temperate-canopy` | Temperate Canopy Weave | Temperate forests (`temperate_forest`, leafy tags) | `0.45–0.72 (ideal 0.6)`, `0.58–0.92 (ideal 0.76)` | `0.85` | Boosted diffusion mask and warp to weave layered canopy plateaus.【F:three-demo/src/world/tfms/schemata.js†L3-L54】 |
+| `temperate-terraces` | Temperate Terraced Shelves | Upland temperate biomes (`temperate_forest`, `aurora_shard_expanse`) | `0.38–0.64 (ideal 0.5)`, `0.42–0.75 (ideal 0.55)` | `0.75` | Emphasises ridge terracing with restrained diffusion to keep shelves crisp.【F:three-demo/src/world/tfms/schemata.js†L55-L105】 |
+| `temperate-bog` | Temperate Bog Basins | Fungal wetlands (`noctilucent_fungus_glade`) | `0.35–0.6 (ideal 0.48)`, `0.65–0.95 (ideal 0.82)` | `0.9` | Strong diffusion smoothing with anisotropic warp to form peat channels.【F:three-demo/src/world/tfms/schemata.js†L106-L168】 |
+
+```
+Biome schema selection pipeline
+Biome tags & climate → Filtered schema candidates → Weighted roll → Overrides merge → TFMS clone
+```
+
+## Assigning schema compendia to biomes
+
+### Declaring schemata in biome JSON
 
 Biomes attach schemata via a `tfmsProfile.schema` field. The value may be a single schema `id` string or a weighted array of objects containing `{id, weight}` (and optional `blend` overrides). `createBiomeEngine` normalises those declarations, resolving real schema definitions during load so the runtime works with frozen metadata instead of string lookups.【F:three-demo/src/world/biome-engine.js†L520-L632】 The shipped temperate forest biome, for example, mixes the “Temperate Canopy Weave” and “Temperate Terraced Shelves” schemata with a 3:1 weight bias while keeping its familiar blend strength.【F:three-demo/src/world/biomes/temperate.json†L33-L47】
 
