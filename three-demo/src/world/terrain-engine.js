@@ -9,12 +9,14 @@
  * presets map onto runtime evaluation.
  */
 import { createBiomeEngine } from './biome-engine.js';
+import { listCanonicalKameaNames } from './kamea.js';
 import { defaultWorldOptions } from './world-settings.js';
 import { createTfmsNetwork } from './tfms/operators.js';
 
 const MIN_OPERATOR_COUNT = 1;
 // Keep in sync with docs/tfms-system.md#operator-slot-selection-1-6-carriers.
 const MAX_OPERATOR_COUNT = 6;
+const CANONICAL_KAMEA_TEMPERAMENTS = new Set(listCanonicalKameaNames());
 
 /**
  * Build the base TFMS terrain graph and optional biome override networks.
@@ -100,22 +102,19 @@ export function createTerrainEngine({
         : defaults.climateHeightInfluence,
   };
 
-  const tfmsConfig = normalizeTfmsConfiguration({
+  let tfmsConfig = normalizeTfmsConfiguration({
     seed,
     terrainConfig,
     defaults: config,
   });
 
-  const { temperament: tfmsTemperament, ...kameaOptions } = tfmsConfig.kamea ?? {};
-  const tfmsNetwork = createTfmsNetwork({
-    seed: seed * 1.91 + 73,
-    operators: tfmsConfig.operators,
-    modulationMatrix: tfmsConfig.modulationMatrix,
-    transferFunctions: tfmsConfig.transferFunctions,
-    tectonic: tfmsConfig.tectonic,
-    temperament: tfmsTemperament,
-    kameaOptions,
+  const tfmsState = instantiateTfmsNetwork({
+    baseSeed: seed,
+    tfmsConfig,
+    defaults: config,
   });
+  const tfmsNetwork = tfmsState.network;
+  tfmsConfig = tfmsState.config;
 
   const biomeEngine = createBiomeEngine({
     THREE,
@@ -336,6 +335,197 @@ export function createTerrainEngine({
   };
 }
 
+function instantiateTfmsNetwork({ baseSeed, tfmsConfig, defaults }) {
+  const networkSeed = baseSeed * 1.91 + 73;
+  const primaryOptions = buildTfmsNetworkOptions(tfmsConfig, networkSeed);
+
+  try {
+    return {
+      network: createTfmsNetwork(primaryOptions),
+      config: tfmsConfig,
+    };
+  } catch (error) {
+    console.warn(
+      '[terrain] Failed to create TFMS network with overrides. Falling back to default preset.',
+      error,
+    );
+  }
+
+  const fallbackConfig = createDefaultTfmsConfiguration({
+    seed: baseSeed,
+    terrainConfig: null,
+    defaults,
+  });
+  const fallbackTemperament = resolveTemperamentSelection({
+    customConfig: null,
+    fallbackConfig,
+  }).temperament;
+  if (fallbackTemperament) {
+    fallbackConfig.temperament = fallbackTemperament;
+    fallbackConfig.kamea = {
+      ...(fallbackConfig.kamea ?? {}),
+      temperament: fallbackTemperament,
+    };
+  }
+
+  const fallbackOptions = buildTfmsNetworkOptions(fallbackConfig, networkSeed);
+
+  try {
+    return {
+      network: createTfmsNetwork(fallbackOptions),
+      config: fallbackConfig,
+    };
+  } catch (fallbackError) {
+    console.error(
+      '[terrain] Failed to construct fallback TFMS network. Using stub network instead.',
+      fallbackError,
+    );
+    return {
+      network: createStubTfmsNetwork(),
+      config: fallbackConfig,
+    };
+  }
+}
+
+function buildTfmsNetworkOptions(config, seed) {
+  if (!config) {
+    return {
+      seed,
+      operators: [],
+      modulationMatrix: [],
+      transferFunctions: {},
+      tectonic: {},
+      temperament: null,
+      kameaOptions: {},
+    };
+  }
+
+  const { temperament: kameaTemperament, ...kameaOptions } = config.kamea ?? {};
+
+  return {
+    seed,
+    operators: config.operators ?? [],
+    modulationMatrix: config.modulationMatrix ?? [],
+    transferFunctions: config.transferFunctions ?? {},
+    tectonic: config.tectonic ?? {},
+    temperament: kameaTemperament ?? config.temperament ?? null,
+    kameaOptions,
+  };
+}
+
+function createStubTfmsNetwork() {
+  return {
+    evaluate() {
+      return {
+        envelope: 0,
+        rawEnvelope: 0,
+        tectonic: 0,
+        operators: [],
+      };
+    },
+    getOperators() {
+      return [];
+    },
+    getKameaPatch() {
+      return null;
+    },
+  };
+}
+
+function resolveTemperamentSelection({ customConfig, fallbackConfig }) {
+  const defaultTemperament = getDefaultTerrainTemperament();
+  const fallbackTemperament =
+    typeof fallbackConfig?.temperament === 'string'
+      ? fallbackConfig.temperament
+      : typeof fallbackConfig?.kamea?.temperament === 'string'
+        ? fallbackConfig.kamea.temperament
+        : null;
+
+  const customCandidates = [];
+  if (customConfig) {
+    if (typeof customConfig.temperament === 'string') {
+      customCandidates.push(customConfig.temperament.trim());
+    }
+    if (typeof customConfig.kameaTemperament === 'string') {
+      customCandidates.push(customConfig.kameaTemperament.trim());
+    }
+    if (typeof customConfig?.kamea?.temperament === 'string') {
+      customCandidates.push(customConfig.kamea.temperament.trim());
+    }
+  }
+  const normalizedCandidates = customCandidates.filter((value) => value.length > 0);
+  for (const candidate of normalizedCandidates) {
+    if (CANONICAL_KAMEA_TEMPERAMENTS.has(candidate)) {
+      return { temperament: candidate };
+    }
+  }
+
+  const invalidCandidate = normalizedCandidates[0] ?? null;
+
+  const fallbackTargets = [];
+  if (typeof defaultTemperament === 'string') {
+    fallbackTargets.push({
+      value: defaultTemperament,
+      label: `default temperament "${defaultTemperament}"`,
+    });
+  }
+  if (typeof fallbackTemperament === 'string') {
+    fallbackTargets.push({ value: fallbackTemperament, label: `"${fallbackTemperament}"` });
+  }
+
+  for (const target of fallbackTargets) {
+    if (CANONICAL_KAMEA_TEMPERAMENTS.has(target.value)) {
+      if (invalidCandidate) {
+        console.warn(
+          `Unknown TFMS Kamea temperament "${invalidCandidate}". Falling back to ${target.label}.`,
+        );
+      }
+      return { temperament: target.value };
+    }
+  }
+
+  const canonicalIterator = CANONICAL_KAMEA_TEMPERAMENTS.values().next();
+  if (!canonicalIterator.done) {
+    if (invalidCandidate) {
+      const label =
+        typeof defaultTemperament === 'string'
+          ? `default temperament "${defaultTemperament}"`
+          : `"${canonicalIterator.value}"`;
+      console.warn(
+        `Unknown TFMS Kamea temperament "${invalidCandidate}". Falling back to ${label}.`,
+      );
+    }
+    return { temperament: canonicalIterator.value };
+  }
+
+  if (invalidCandidate) {
+    const label =
+      typeof defaultTemperament === 'string'
+        ? `default temperament "${defaultTemperament}"`
+        : fallbackTemperament
+          ? `"${fallbackTemperament}"`
+          : 'a safe default temperament';
+    console.warn(
+      `Unknown TFMS Kamea temperament "${invalidCandidate}". Falling back to ${label}.`,
+    );
+  }
+
+  return {
+    temperament: fallbackTemperament ?? defaultTemperament ?? null,
+  };
+}
+
+function getDefaultTerrainTemperament() {
+  const tfmsDefaults = defaultWorldOptions?.terrain?.tfms ?? {};
+  if (typeof tfmsDefaults.temperament === 'string') {
+    return tfmsDefaults.temperament;
+  }
+  if (typeof tfmsDefaults?.kamea?.temperament === 'string') {
+    return tfmsDefaults.kamea.temperament;
+  }
+  return null;
+}
+
 function normalizeTfmsConfiguration({ seed, terrainConfig, defaults }) {
   const fallback = createDefaultTfmsConfiguration({ seed, terrainConfig, defaults });
   const custom = terrainConfig.tfms ?? {};
@@ -361,17 +551,17 @@ function normalizeTfmsConfiguration({ seed, terrainConfig, defaults }) {
   const biomeBlendStrength = Number.isFinite(custom.biomeBlendStrength)
     ? custom.biomeBlendStrength
     : fallback.biomeBlendStrength;
-  let temperamentValue =
-    typeof fallback.temperament === 'string'
-      ? fallback.temperament
-      : fallback.kamea?.temperament;
-  if (typeof custom.temperament === 'string') {
-    temperamentValue = custom.temperament;
+  const temperamentSelection = resolveTemperamentSelection({
+    customConfig: custom,
+    fallbackConfig: fallback,
+  });
+  const temperamentValue = temperamentSelection.temperament ?? null;
+  const kameaOptions = { ...(fallback.kamea ?? {}) };
+  if (temperamentValue != null) {
+    kameaOptions.temperament = temperamentValue;
+  } else {
+    delete kameaOptions.temperament;
   }
-  if (typeof custom.kameaTemperament === 'string') {
-    temperamentValue = custom.kameaTemperament;
-  }
-  const kameaOptions = { ...fallback.kamea, temperament: temperamentValue };
   if (custom.kamea && typeof custom.kamea === 'object' && custom.kamea.ranges) {
     kameaOptions.ranges = {
       ...(kameaOptions.ranges ?? {}),
