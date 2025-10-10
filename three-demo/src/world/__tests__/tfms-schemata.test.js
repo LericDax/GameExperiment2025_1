@@ -85,9 +85,53 @@ const forestTerraceBiome = {
   },
 };
 
+const transferSettingsOverride = { contrast: 0.62, gain: 1.15 };
+
+const transferSettingsBiome = {
+  id: 'test_transfer_settings',
+  label: 'Transfer Settings Test',
+  tags: ['temperate', 'test'],
+  climate: { temperature: 0.2, moisture: 0.18, weight: 1 },
+  terrain: {
+    surfaceBlock: 'grass',
+    shoreBlock: 'sand',
+    subSurfaceBlock: 'dirt',
+    subSurfaceDepth: 3,
+    deepBlock: 'stone',
+    treeDensity: 0.04,
+    shrubChance: 0.02,
+    flowerChance: 0.01,
+    rockChance: 0.03,
+    fungiChance: 0.01,
+    waterPlantChance: 0,
+    structureChance: 0,
+    treeHeight: { min: 2, max: 4 },
+    heightOffset: 0,
+  },
+  palette: {
+    grass: '#529847',
+    dirt: '#745037',
+    stone: '#8893a1',
+    sand: '#d2c089',
+    leaf: '#5ca24c',
+    log: '#735033',
+    water: '#366fba',
+    cloud: '#f7f8fb',
+  },
+  shader: { fogColor: '#a9d6ff', tintColor: '#ffffff', tintStrength: 0 },
+  tfmsProfile: {
+    operators: {
+      'ridge-noise': {
+        transferSettings: { ...transferSettingsOverride },
+      },
+    },
+  },
+};
+
 globalThis.__BIOME_MODULE_MAP__ = {
   './biomes/test_canopy.json': forestCanopyBiome,
   './biomes/test_terrace.json': forestTerraceBiome,
+  './biomes/test_transfer_settings.json': transferSettingsBiome,
 };
 
 const { createTerrainEngine } = await import('../terrain-engine.js');
@@ -201,6 +245,87 @@ test('schema networks adjust modulation routing and attenuation envelopes', () =
     overrideResult.envelope,
     baseResult.envelope,
     'schema override should alter attenuation envelope',
+  );
+
+  engine.dispose();
+});
+
+test('transferSettings-only overrides retain original transfer function', () => {
+  const engine = createTerrainEngine({
+    THREE,
+    seed: 6131,
+    worldConfig: {
+      terrain: {
+        tfms: {
+          biomeBlendStrength: 1,
+        },
+      },
+    },
+  });
+
+  const transferCoord = findCoordinateForBiome(
+    engine,
+    'test_transfer_settings',
+  );
+
+  const overrideEntry = engine.getBiomeTfmsNetwork('test_transfer_settings');
+  assert.ok(overrideEntry?.network, 'expected transfer override network');
+
+  const ridgeIndex = overrideEntry.config.operators.findIndex(
+    (operator) => operator.id === 'ridge-noise',
+  );
+  assert.ok(ridgeIndex >= 0, 'ridge-noise operator should be present');
+
+  const mergedSettings =
+    overrideEntry.config.operators[ridgeIndex].transferSettings ?? {};
+  Object.entries(transferSettingsOverride).forEach(([key, value]) => {
+    assert.equal(
+      mergedSettings[key],
+      value,
+      `transfer setting ${key} should match override payload`,
+    );
+  });
+
+  const context = { terrain: engine.getTerrainConfig() };
+  let sampledOperator = null;
+  for (let x = transferCoord.x - 160; x <= transferCoord.x + 160; x += 32) {
+    for (let z = transferCoord.z - 160; z <= transferCoord.z + 160; z += 32) {
+      const evaluation = overrideEntry.network.evaluate({ x, z, context });
+      const candidate = evaluation.operators[ridgeIndex];
+      if (candidate && candidate.raw < -1e-4) {
+        sampledOperator = candidate;
+        break;
+      }
+    }
+    if (sampledOperator) {
+      break;
+    }
+  }
+
+  if (!sampledOperator) {
+    const evaluation = overrideEntry.network.evaluate({
+      x: transferCoord.x,
+      z: transferCoord.z,
+      context,
+    });
+    sampledOperator = evaluation.operators[ridgeIndex];
+  }
+
+  assert.ok(sampledOperator, 'expected ridge operator evaluation');
+  assert.ok(Number.isFinite(sampledOperator.raw));
+  assert.ok(Number.isFinite(sampledOperator.transferred));
+  assert.ok(
+    sampledOperator.raw < 0,
+    'expected sample to exercise non-trivial absolute transfer',
+  );
+  assert.ok(Number.isFinite(sampledOperator.amplitude));
+  const expectedTransfer = Math.abs(
+    sampledOperator.raw * sampledOperator.amplitude,
+  );
+  assert.ok(
+    Math.abs(sampledOperator.transferred - expectedTransfer) <
+      1e-6,
+    'transferSettings-only override should retain absolute transfer function',
   );
 
   engine.dispose();
