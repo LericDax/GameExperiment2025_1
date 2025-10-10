@@ -76,11 +76,11 @@ Temperament patches are assembled via `make_kamea_patch`, which calls helpers su
 | --- | --- | --- | --- | --- | --- | --- |
 | `terrain.tfms.operatorCount` | Active Operator Count | Number of TFMS operators evaluated from the preset’s ordered stack. | `number` | `6` | `1` – `6` | `1` |
 
-The terrain engine truncates the operator array and modulation matrix to this count, guaranteeing that overrides never reference missing slots.【F:three-demo/src/world/world-settings.js†L676-L716】【F:three-demo/src/world/terrain-engine.js†L232-L308】 Biome TFMS profiles rebuild their ID→index map whenever the count changes so invalid overrides are ignored automatically.【F:three-demo/src/world/biome-engine.js†L100-L188】【F:three-demo/src/world/biome-engine.js†L500-L548】
+Consult the [operator slot selection guide](three-demo/docs/tfms-system.md#operator-slot-selection-1-6-carriers) for recommended slot combinations and modulation caveats before trimming carriers. The terrain engine truncates the operator array and modulation matrix to this count, guaranteeing that overrides never reference missing slots.【F:three-demo/src/world/world-settings.js†L676-L716】【F:three-demo/src/world/terrain-engine.js†L232-L308】 Biome TFMS profiles rebuild their ID→index map whenever the count changes so invalid overrides are ignored automatically.【F:three-demo/src/world/biome-engine.js†L100-L188】【F:three-demo/src/world/biome-engine.js†L500-L548】
 
 #### `terrain.fm` Attenuation Matrix
 
-Legacy overrides refer to the modulation matrix as `terrain.fm`, exposing the attenuation fields listed below. Use the [TFMS operator catalogue](three-demo/docs/tfms-system.md#default-operator-catalogue) for carrier context, the [modulation matrix semantics section](three-demo/docs/tfms-system.md#modulation-matrix-semantics) for modulation depth, and the [biome override workflow guide](three-demo/docs/tfms-system.md#biome-override-workflow) for biome blending behaviour.
+Legacy overrides refer to the modulation matrix as `terrain.fm`, exposing the attenuation fields listed below. Pair these keys with the [TFMS operator catalogue](three-demo/docs/tfms-system.md#default-operator-catalogue) for carrier context, the [operator slot selection guide](three-demo/docs/tfms-system.md#operator-slot-selection-1-6-carriers) when pruning carriers, the [schema compendium atlas](three-demo/docs/tfms-system.md#schema-atlas-overview) for schema-provided modulation adjustments, and the [biome assignment workflow](three-demo/docs/tfms-system.md#assigning-schema-compendia-to-biomes) for override merge behaviour.
 
 | Path | Label | Description | Type | Default | Range | Step |
 | --- | --- | --- | --- | --- | --- | --- |

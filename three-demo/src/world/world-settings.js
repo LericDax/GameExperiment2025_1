@@ -365,6 +365,8 @@ function clampToRange(value, min, max) {
   return result
 }
 
+// Mirrors the slot trimming recommendations documented in
+// docs/tfms-system.md#operator-slot-selection-1-6-carriers.
 function normalizeTfmsOperatorCount(available, requested) {
   const normalizedAvailable = Math.max(
     0,

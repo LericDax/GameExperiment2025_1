@@ -13,6 +13,7 @@ import { defaultWorldOptions } from './world-settings.js';
 import { createTfmsNetwork } from './tfms/operators.js';
 
 const MIN_OPERATOR_COUNT = 1;
+// Keep in sync with docs/tfms-system.md#operator-slot-selection-1-6-carriers.
 const MAX_OPERATOR_COUNT = 6;
 
 /**
@@ -137,6 +138,9 @@ export function createTerrainEngine({
     return `${biomeKey}::${schemaKey}`;
   }
 
+  // Schema selection mirrors the flow documented in
+  // docs/tfms-system.md#assigning-schema-compendia-to-biomes so designers can
+  // follow the merge stages when authoring compendium entries.
   function normalizeSchemaSelection(schemaInfo) {
     if (!schemaInfo) {
       return null;

@@ -62,6 +62,7 @@ const NEUTRAL_BASE_PALETTE = {
   cloud: '#f7f8fb',
 };
 
+// Operator capacity mirrors docs/tfms-system.md#operator-slot-selection-1-6-carriers.
 const MAX_TERRAIN_OPERATORS = 6;
 
 const SCHEMA_PATCH_SIZE = 96;
@@ -537,6 +538,8 @@ function createSchemaPoolEntry(schema, weight = 1, blendOverride = undefined) {
   };
 }
 
+// See docs/tfms-system.md#assigning-schema-compendia-to-biomes for how schema
+// pools are declared and scored.
 function normalizeTfmsSchemaPool(definition) {
   if (!definition) {
     return null;
