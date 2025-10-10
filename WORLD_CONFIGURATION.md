@@ -1,6 +1,6 @@
 # World Configuration
 
-This reference aggregates every tunable world-generation option exposed by the voxel sandbox. Labels, descriptions, defaults, and ranges originate from `three-demo/src/world/world-option-descriptors.js`, which the runtime also uses to clamp override values. Use these details when experimenting with terrain, biome, and environmental parameters.
+This reference aggregates every tunable world-generation option exposed by the voxel sandbox, including the Terrain FM Synthesis (TFMS) configuration stack. Labels, descriptions, defaults, and ranges originate from `three-demo/src/world/world-option-descriptors.js`, which the runtime also uses to clamp override values. Keep the tables below synchronized with descriptor updates so TFMS, terrain, biome, and environmental parameters stay accurate during iteration.
 
 ## Mob AI Core integration
 
@@ -69,6 +69,24 @@ This reference aggregates every tunable world-generation option exposed by the v
 | `terrain.tfms.kamea.erosionPreset` | Erosion Preset | Selects conductance presets for anisotropic diffusion (`gentle`, `standard`, `aggressive`). | `string` | `"standard"` | _n/a_ | _n/a_ |
 
 Temperament patches are assembled via `make_kamea_patch`, which calls helpers such as `kamea_to_fm_matrix`, `kamea_to_warp`, `kamea_to_spectral`, and `kamea_to_phase` to project a planetary square into FM, warp, spectral, and phase domains before the TFMS network evaluates waveforms.【F:three-demo/docs/kamea-matrices.md†L43-L55】 Softmax gating blends FBM, ridged, Worley, warp, and diffusion operators using the patch’s logits so different planets emphasise distinct waveform families.
+
+#### `terrain.fm` Attenuation Matrix
+
+Legacy overrides refer to the modulation matrix as `terrain.fm`, exposing the attenuation fields listed below. Use the [TFMS operator catalogue](three-demo/docs/tfms-system.md#default-operator-catalogue) for carrier context, the [modulation matrix semantics section](three-demo/docs/tfms-system.md#modulation-matrix-semantics) for modulation depth, and the [biome override workflow guide](three-demo/docs/tfms-system.md#biome-override-workflow) for biome blending behaviour.
+
+| Path | Label | Description | Type | Default | Range | Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| `terrain.tfms.modulationMatrix.diffusion-primary` | Diffusion → Primary (Amplitude) | How strongly the diffusion mask modulates the primary FBM amplitude. | `number` | `0.4` | `-4` – `4` | `0.01` |
+| `terrain.tfms.modulationMatrix.diffusion-ridge` | Diffusion → Ridge (Amplitude) | Modulation gain from the diffusion mask into the ridge operator amplitude. | `number` | `0.3` | `-4` – `4` | `0.01` |
+| `terrain.tfms.modulationMatrix.diffusion-banding` | Diffusion → Banding (Amplitude) | Modulation gain from the diffusion mask into the anisotropic banding amplitude. | `number` | `0.25` | `-4` – `4` | `0.01` |
+| `terrain.tfms.modulationMatrix.domain-primary-x` | Domain Warp → Primary (X) | Domain warp strength routed into the primary FBM X-axis domain. | `number` | `0.7` | `-4` – `4` | `0.01` |
+| `terrain.tfms.modulationMatrix.domain-primary-z` | Domain Warp → Primary (Z) | Domain warp strength routed into the primary FBM Z-axis domain. | `number` | `0.7` | `-4` – `4` | `0.01` |
+| `terrain.tfms.modulationMatrix.domain-ridge-x` | Domain Warp → Ridge (X) | Domain warp gain routed into the ridge operator X-axis domain. | `number` | `0.5` | `-4` – `4` | `0.01` |
+| `terrain.tfms.modulationMatrix.domain-ridge-z` | Domain Warp → Ridge (Z) | Domain warp gain routed into the ridge operator Z-axis domain. | `number` | `0.5` | `-4` – `4` | `0.01` |
+| `terrain.tfms.modulationMatrix.tectonic-ridge` | Tectonic → Ridge (Amplitude) | Raw tectonic Worley value routed into the ridge operator amplitude. | `number` | `0.35` | `-4` – `4` | `0.01` |
+| `terrain.tfms.modulationMatrix.tectonic-banding` | Tectonic → Banding (Frequency) | Frequency modulation routed from the tectonic Worley carrier into the banding operator. | `number` | `0.2` | `-4` – `4` | `0.01` |
+| `terrain.tfms.modulationMatrix.ridge-domain` | Ridge → Domain Warp (Amplitude) | How strongly ridge output amplifies the domain warp envelope. | `number` | `0.35` | `-4` – `4` | `0.01` |
+| `terrain.tfms.modulationMatrix.tectonic-diffusion` | Tectonic → Diffusion (Amplitude) | Raw tectonic Worley contribution routed into the diffusion mask amplitude. | `number` | `0.45` | `-4` – `4` | `0.01` |
 
 ### Biomes
 | Path | Label | Description | Type | Default | Range | Step |
