@@ -1,4 +1,5 @@
 import { ValueNoise2D } from './noise.js';
+import { getTfmsSchemaById } from './tfms/schemata.js';
 import {
   defaultWorldOptions,
   biomeOptionMetadata,
@@ -62,6 +63,8 @@ const NEUTRAL_BASE_PALETTE = {
 };
 
 const MAX_TERRAIN_OPERATORS = 6;
+
+const SCHEMA_PATCH_SIZE = 96;
 
 const terrainOperatorCache = {
   signature: null,
@@ -509,6 +512,177 @@ function normalizeMatrixOverrides(definition) {
     .filter(Boolean);
 }
 
+function hashString(value) {
+  if (typeof value !== 'string') {
+    return 0;
+  }
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function pseudoRandomFromSeed(seed) {
+  const sine = Math.sin(seed) * 43758.5453123;
+  return sine - Math.floor(sine);
+}
+
+function createSchemaPoolEntry(schema, weight = 1, blendOverride = undefined) {
+  return {
+    schema,
+    weight: Math.max(0, Number.isFinite(weight) ? weight : 1),
+    blend: Number.isFinite(blendOverride) ? clamp01(blendOverride) : undefined,
+  };
+}
+
+function normalizeTfmsSchemaPool(definition) {
+  if (!definition) {
+    return null;
+  }
+  const source = Array.isArray(definition) ? definition : [definition];
+  const entries = source
+    .map((candidate) => {
+      if (!candidate) {
+        return null;
+      }
+      if (typeof candidate === 'string') {
+        const schema = getTfmsSchemaById(candidate);
+        return schema ? createSchemaPoolEntry(schema) : null;
+      }
+      if (typeof candidate !== 'object') {
+        return null;
+      }
+      const schemaId =
+        typeof candidate.id === 'string'
+          ? candidate.id
+          : typeof candidate.schemaId === 'string'
+            ? candidate.schemaId
+            : typeof candidate.schema === 'string'
+              ? candidate.schema
+              : typeof candidate.schema?.id === 'string'
+                ? candidate.schema.id
+                : null;
+      const schema = schemaId ? getTfmsSchemaById(schemaId) : null;
+      if (!schema) {
+        return null;
+      }
+      const weightValue = Number(candidate.weight);
+      const blendValue = Number(candidate.blend ?? candidate.schemaBlend);
+      return createSchemaPoolEntry(schema, weightValue, blendValue);
+    })
+    .filter(Boolean);
+  return entries.length > 0 ? entries : null;
+}
+
+function computeSchemaClimateAffinity(value, descriptor) {
+  if (!Number.isFinite(value) || !descriptor || typeof descriptor !== 'object') {
+    return 1;
+  }
+  const min = Number.isFinite(descriptor.min) ? descriptor.min : 0;
+  const max = Number.isFinite(descriptor.max) ? descriptor.max : 1;
+  const ideal =
+    Number.isFinite(descriptor.ideal) ? descriptor.ideal : (min + max) / 2;
+  if (max <= min) {
+    return 1;
+  }
+  if (value < min) {
+    const span = Math.max(1e-5, ideal - min);
+    return Math.max(0.05, 1 - (min - value) / (span || 1));
+  }
+  if (value > max) {
+    const span = Math.max(1e-5, max - ideal);
+    return Math.max(0.05, 1 - (value - max) / (span || 1));
+  }
+  const radius = Math.max(1e-5, (max - min) / 2);
+  const distance = Math.abs(value - ideal);
+  return 0.5 + 0.5 * Math.max(0, 1 - distance / radius);
+}
+
+function computeSchemaWeight(entry, climate, biome) {
+  if (!entry?.schema) {
+    return 0;
+  }
+  const baseWeight = Math.max(0, Number.isFinite(entry.weight) ? entry.weight : 1);
+  if (baseWeight === 0) {
+    return 0;
+  }
+  let weight = baseWeight;
+  const biomeTags = new Set(Array.isArray(biome?.tags) ? biome.tags : []);
+  const schema = entry.schema;
+  const schemaBiomes = schema.biomes ?? {};
+  const preferredIds = Array.isArray(schemaBiomes.ids) ? schemaBiomes.ids : [];
+  if (preferredIds.length > 0) {
+    weight *= preferredIds.includes(biome?.id) ? 1.35 : 0.85;
+  }
+  const preferredTags = Array.isArray(schemaBiomes.tags) ? schemaBiomes.tags : [];
+  if (preferredTags.length > 0) {
+    const matches = preferredTags.some((tag) => biomeTags.has(tag));
+    weight *= matches ? 1.25 : 0.9;
+  }
+  const adjacency = schema.adjacency ?? {};
+  const adjacencyPrefer = Array.isArray(adjacency.preferTags)
+    ? adjacency.preferTags
+    : [];
+  if (adjacencyPrefer.length > 0) {
+    if (adjacencyPrefer.some((tag) => biomeTags.has(tag))) {
+      weight *= 1.15;
+    }
+  }
+  const adjacencyAvoid = Array.isArray(adjacency.avoidTags)
+    ? adjacency.avoidTags
+    : [];
+  if (adjacencyAvoid.length > 0) {
+    if (adjacencyAvoid.some((tag) => biomeTags.has(tag))) {
+      weight *= 0.6;
+    }
+  }
+  const temperatureWeight = computeSchemaClimateAffinity(
+    climate?.temperature,
+    schema.climate?.temperature,
+  );
+  const moistureWeight = computeSchemaClimateAffinity(
+    climate?.moisture,
+    schema.climate?.moisture,
+  );
+  weight *= temperatureWeight * moistureWeight;
+  return weight;
+}
+
+function selectSchemaCandidate(pool, climate, biome, randomValue) {
+  if (!Array.isArray(pool) || pool.length === 0) {
+    return null;
+  }
+  const weighted = pool
+    .map((entry) => ({
+      entry,
+      weight: computeSchemaWeight(entry, climate, biome),
+    }))
+    .filter((candidate) => candidate.weight > 0);
+  if (weighted.length === 0) {
+    return pool.reduce((best, current) => {
+      if (!best) {
+        return current;
+      }
+      return (current.weight ?? 0) > (best.weight ?? 0) ? current : best;
+    }, null);
+  }
+  const total = weighted.reduce((sum, candidate) => sum + candidate.weight, 0);
+  if (total <= 0) {
+    return weighted[0].entry;
+  }
+  const target = Math.max(0, Math.min(1, randomValue ?? 0)) * total;
+  let accumulator = 0;
+  for (let index = 0; index < weighted.length; index += 1) {
+    accumulator += weighted[index].weight;
+    if (accumulator >= target) {
+      return weighted[index].entry;
+    }
+  }
+  return weighted[weighted.length - 1].entry;
+}
+
 /**
  * Normalise biome TFMS overrides and blend weights.
  *
@@ -572,13 +746,24 @@ function normalizeBiomeFmProfile(definition) {
     }
   }
 
-  if (Object.keys(overrides).length === 0) {
+  const hasOverrides = Object.keys(overrides).length > 0;
+
+  const schemaDefinition =
+    definition.schemaPool ??
+    definition.schema ??
+    definition.schemata ??
+    definition.schemas ??
+    null;
+  const schemaPool = normalizeTfmsSchemaPool(schemaDefinition);
+
+  if (!hasOverrides && !schemaPool) {
     return null;
   }
 
   return {
     blend,
-    overrides,
+    ...(hasOverrides ? { overrides } : {}),
+    ...(schemaPool ? { schemaPool } : {}),
   };
 }
 
@@ -695,6 +880,9 @@ export function createBiomeEngine({
   const moistureDetailNoise = new ValueNoise2D(seed * 2.03 + 311);
   const varianceNoise = new ValueNoise2D(seed * 1.73 + 443);
 
+  const schemaSelectionSeed = seed * 1.97 + 131;
+  const schemaCache = new Map();
+
   const climateScale = resolveBiomeOption('scale', biomeOptions?.scale);
   const detailMultiplier = resolveBiomeOption(
     'detailMultiplier',
@@ -732,6 +920,58 @@ export function createBiomeEngine({
       new THREE.Color(hex),
     ]),
   );
+
+  function getSchemaCacheKey(biomeId, x, z) {
+    if (!biomeId) {
+      return null;
+    }
+    const cellX = Math.floor(x / SCHEMA_PATCH_SIZE);
+    const cellZ = Math.floor(z / SCHEMA_PATCH_SIZE);
+    return `${biomeId}:${cellX}:${cellZ}`;
+  }
+
+  function resolveSchemaForSample(biome, climate, x, z) {
+    if (!biome?.tfmsProfile?.schemaPool?.length) {
+      return null;
+    }
+    const cacheKey = getSchemaCacheKey(biome.id, x, z);
+    if (cacheKey && schemaCache.has(cacheKey)) {
+      return schemaCache.get(cacheKey);
+    }
+    const cellX = Math.floor(x / SCHEMA_PATCH_SIZE);
+    const cellZ = Math.floor(z / SCHEMA_PATCH_SIZE);
+    const randomSeed =
+      schemaSelectionSeed +
+      cellX * 374761.21 +
+      cellZ * 668265.13 +
+      hashString(biome.id) * 0.137;
+    const randomValue = pseudoRandomFromSeed(randomSeed);
+    const selection = selectSchemaCandidate(
+      biome.tfmsProfile.schemaPool,
+      climate,
+      biome,
+      randomValue,
+    );
+    let resolved = null;
+    if (selection?.schema) {
+      resolved = {
+        id: selection.schema.id,
+        label: selection.schema.label,
+        tags: selection.schema.tags,
+        climate: selection.schema.climate,
+        adjacency: selection.schema.adjacency,
+        overrides: selection.schema.overrides,
+        blend:
+          selection.blend ??
+          selection.schema.blend ??
+          undefined,
+      };
+    }
+    if (cacheKey) {
+      schemaCache.set(cacheKey, resolved);
+    }
+    return resolved;
+  }
 
   if (rawBiomeDefinitions.length === 0) {
     throw new Error('No biome JSON definitions were discovered.');
@@ -871,10 +1111,12 @@ export function createBiomeEngine({
   function getBiomeAt(x, z) {
     const climate = sampleClimate(x, z);
     const selection = selectBiome(climate, x, z);
+    const schema = resolveSchemaForSample(selection.biome, climate, x, z);
     return {
       biome: selection.biome,
       climate,
       score: selection.score,
+      tfmsSchema: schema,
     };
   }
 
@@ -895,6 +1137,7 @@ export function createBiomeEngine({
     },
     dispose() {
       biomes.length = 0;
+      schemaCache.clear();
     },
   };
 }

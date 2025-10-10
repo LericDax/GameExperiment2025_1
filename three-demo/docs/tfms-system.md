@@ -51,6 +51,22 @@ Modulation entries route one operator’s output into another’s control parame
 
 Routing names map directly to TFMS evaluator switches, with `domainWarp` entries writing into axis-specific warp accumulators, and amplitude/frequency routings summing scalars. If a biome override introduces additional entries, they are merged onto the cloned matrix and will inherit this processing order when the override configuration is instantiated.【F:three-demo/src/world/world-settings.js†L1203-L1254】【F:three-demo/src/world/terrain-engine.js†L240-L356】
 
+## Schema Compendium
+
+TFMS schemata bundle named operator overrides with metadata about the climates, biome tags, and adjacency patterns they suit best. The catalogue lives in [`schemata.js`](../src/world/tfms/schemata.js) where each entry defines an `id`, human-friendly `label`, optional `biomes` hints, climate ranges, adjacency preferences, and an override payload composed of operator weight arrays, per-operator overrides, and modulation tweaks.【F:three-demo/src/world/tfms/schemata.js†L1-L168】 Because schemata share the same structure as biome overrides, they flow straight into the terrain cloning utilities without additional adapters.【F:three-demo/src/world/terrain-engine.js†L107-L203】
+
+### Authoring and tagging schemata
+
+When introducing a new schema, populate the `tags` array so designers can search the compendium, fill in `biomes.ids` or `biomes.tags` to nudge selection toward certain biome families, and describe acceptable climates with `{min, max, ideal}` envelopes for temperature and moisture. Adjacency metadata lets you boost or penalise rolls when neighbouring biome tags align with the schema’s strengths. Operator overrides work exactly like biome JSON overrides: list `operatorWeights` to remap slot weights, adjust individual operators (weights, bias, modulation, envelope), and patch modulation entries by `id`.【F:three-demo/src/world/tfms/schemata.js†L5-L123】
+
+### Assigning schemata in biome JSON
+
+Biomes attach schemata via a `tfmsProfile.schema` field. The value may be a single schema `id` string or a weighted array of objects containing `{id, weight}` (and optional `blend` overrides). `createBiomeEngine` normalises those declarations, resolving real schema definitions during load so the runtime works with frozen metadata instead of string lookups.【F:three-demo/src/world/biome-engine.js†L520-L632】 The shipped temperate forest biome, for example, mixes the “Temperate Canopy Weave” and “Temperate Terraced Shelves” schemata with a 3:1 weight bias while keeping its familiar blend strength.【F:three-demo/src/world/biomes/temperate.json†L33-L47】
+
+### Runtime selection and caching
+
+During sampling the biome engine evaluates climate at the requested coordinates, scores each candidate schema against the biome’s tags and the local climate, and deterministically rolls a winner using a hashed seed. Selections are cached per coarse grid cell so adjacent chunks stay coherent even when multiple schemata share a biome.【F:three-demo/src/world/biome-engine.js†L632-L760】 The terrain engine merges the chosen schema overrides with any per-biome overrides before instantiating a TFMS network, caching the result by biome and schema identifier so envelope evaluations and tests can inspect the resolved modulation matrix and operator stack.【F:three-demo/src/world/terrain-engine.js†L116-L210】【F:three-demo/src/world/terrain-engine.js†L210-L356】
+
 ## Kamea modulation and attenuation
 The preset carries base attenuation, clamp limits, and Kamea temperament controls. Base attenuation (`1` by default) uniformly scales the combined envelope before tectonic blending. Clamp limits (default `[-24, 24]`) cap TFMS contributions prior to biome and climate adjustments. Kamea options expose modulation (`≈baseAmplitude/16`), warp, phase, and spectral strengths with per-channel ranges so designers can dial spectral emphasis or erosion responses while staying within safe bounds.【F:three-demo/src/world/world-settings.js†L618-L676】【F:three-demo/src/world/world-settings.js†L1254-L1299】 Terrain normalisation keeps these ranges intact so overrides can replace values or swap the temperament string before evaluation.【F:three-demo/src/world/terrain-engine.js†L150-L223】
 

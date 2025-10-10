@@ -123,39 +123,108 @@ export function createTerrainEngine({
   });
 
   const biomeTfmsNetworks = new Map();
+  const biomeById = new Map(
+    Array.isArray(biomeEngine?.biomes)
+      ? biomeEngine.biomes.map((biome) => [biome.id, biome])
+      : [],
+  );
   const biomeBlendStrength = clamp01(tfmsConfig.biomeBlendStrength ?? 0);
-  if (biomeBlendStrength > 0 && Array.isArray(biomeEngine?.biomes)) {
-    biomeEngine.biomes.forEach((biome, index) => {
-      const profile = biome?.tfmsProfile;
-      if (!profile?.overrides) {
-        return;
+  const baseTfmsEntry = { network: tfmsNetwork, config: tfmsConfig };
+
+  function getBiomeNetworkKey(biomeId, schemaId) {
+    const biomeKey = typeof biomeId === 'string' ? biomeId : 'unknown';
+    const schemaKey = schemaId ? schemaId : 'default';
+    return `${biomeKey}::${schemaKey}`;
+  }
+
+  function normalizeSchemaSelection(schemaInfo) {
+    if (!schemaInfo) {
+      return null;
+    }
+    const schema = schemaInfo.schema ?? null;
+    const id =
+      typeof schemaInfo.id === 'string'
+        ? schemaInfo.id
+        : typeof schemaInfo.schemaId === 'string'
+          ? schemaInfo.schemaId
+          : typeof schema?.id === 'string'
+            ? schema.id
+            : null;
+    if (!id) {
+      return null;
+    }
+    const blendSource =
+      schemaInfo.blend ?? schemaInfo.schemaBlend ?? schema?.blend ?? undefined;
+    return {
+      id,
+      overrides: schemaInfo.overrides ?? schema?.overrides ?? null,
+      blend: Number.isFinite(blendSource) ? clamp01(blendSource) : undefined,
+    };
+  }
+
+  function ensureBiomeNetwork(biome, schemaInfo = null) {
+    if (!biome?.id) {
+      return null;
+    }
+    const selection = normalizeSchemaSelection(schemaInfo);
+    const key = getBiomeNetworkKey(biome.id, selection?.id ?? null);
+    if (biomeTfmsNetworks.has(key)) {
+      return biomeTfmsNetworks.get(key);
+    }
+    const profile = biome.tfmsProfile ?? {};
+    const combinedOverrides = mergeTfmsOverrides(
+      selection?.overrides ?? null,
+      profile.overrides ?? null,
+    );
+    if (!combinedOverrides) {
+      biomeTfmsNetworks.set(key, null);
+      return null;
+    }
+    const overrideConfig = createBiomeTfmsConfiguration(
+      tfmsConfig,
+      combinedOverrides,
+    );
+    if (!overrideConfig) {
+      biomeTfmsNetworks.set(key, null);
+      return null;
+    }
+    const seedKey = `${biome.id}:${selection?.id ?? 'default'}`;
+    const overrideSeed = seed * 1.91 + 73 + hashBiomeSeed(seedKey);
+    const overrideNetwork = createTfmsNetwork({
+      seed: overrideSeed,
+      operators: overrideConfig.operators,
+      modulationMatrix: overrideConfig.modulationMatrix,
+      transferFunctions: overrideConfig.transferFunctions,
+      tectonic: overrideConfig.tectonic,
+      temperament: overrideConfig.temperament,
+      kameaOptions: overrideConfig.kamea,
+    });
+    const entry = {
+      network: overrideNetwork,
+      blend: clamp01(selection?.blend ?? profile.blend ?? 1),
+      config: overrideConfig,
+    };
+    biomeTfmsNetworks.set(key, entry);
+    return entry;
+  }
+
+  if (Array.isArray(biomeEngine?.biomes) && biomeBlendStrength > 0) {
+    biomeEngine.biomes.forEach((biome) => {
+      if (biome?.tfmsProfile?.overrides) {
+        ensureBiomeNetwork(biome, null);
       }
-      const overrideConfig = createBiomeTfmsConfiguration(
-        tfmsConfig,
-        profile.overrides,
-      );
-      if (!overrideConfig) {
-        return;
+      if (Array.isArray(biome?.tfmsProfile?.schemaPool)) {
+        biome.tfmsProfile.schemaPool.forEach((entry) => {
+          const normalized = normalizeSchemaSelection(entry);
+          if (normalized) {
+            ensureBiomeNetwork(biome, normalized);
+          }
+        });
       }
-      const overrideSeed =
-        seed * 1.91 + 73 + hashBiomeSeed(biome?.id ?? `biome-${index}`);
-      const overrideNetwork = createTfmsNetwork({
-        seed: overrideSeed,
-        operators: overrideConfig.operators,
-        modulationMatrix: overrideConfig.modulationMatrix,
-        transferFunctions: overrideConfig.transferFunctions,
-        tectonic: overrideConfig.tectonic,
-        temperament: overrideConfig.temperament,
-        kameaOptions: overrideConfig.kamea,
-      });
-      biomeTfmsNetworks.set(biome.id, {
-        network: overrideNetwork,
-        blend: clamp01(profile.blend),
-      });
     });
   }
 
-  function evaluateTfmsEnvelope(x, z, biome = null) {
+  function evaluateTfmsEnvelope(x, z, biomeSample = null) {
     const baseResult = tfmsNetwork.evaluate({
       x,
       z,
@@ -163,8 +232,11 @@ export function createTerrainEngine({
     });
     let envelope = baseResult.envelope;
 
-    if (biome && biomeBlendStrength > 0) {
-      const profileEntry = biomeTfmsNetworks.get(biome.id);
+    if (biomeBlendStrength > 0 && biomeSample?.biome) {
+      const profileEntry = ensureBiomeNetwork(
+        biomeSample.biome,
+        biomeSample.tfmsSchema,
+      );
       if (profileEntry?.network) {
         const blendWeight = clamp01(
           (profileEntry.blend ?? 0) * biomeBlendStrength,
@@ -187,14 +259,14 @@ export function createTerrainEngine({
     return envelope;
   }
 
-  function computeElevation(x, z, biome = null) {
-    const envelope = evaluateTfmsEnvelope(x, z, biome);
+  function computeElevation(x, z, biomeSample = null) {
+    const envelope = evaluateTfmsEnvelope(x, z, biomeSample);
     return config.baseHeight + envelope;
   }
 
   function sampleColumn(x, z) {
     const biomeSample = biomeEngine.getBiomeAt(x, z);
-    let height = computeElevation(x, z, biomeSample.biome);
+    let height = computeElevation(x, z, biomeSample);
     const climateAdjustment =
       (biomeSample.climate.moisture - 0.5) * config.climateHeightInfluence;
     height += climateAdjustment;
@@ -225,6 +297,34 @@ export function createTerrainEngine({
     getBiomeAt: (x, z) => biomeEngine.getBiomeAt(x, z),
     getBlockColor: (biome, type) => biomeEngine.getBlockColor(biome, type),
     getDefaultBlockColor: () => biomeEngine.getDefaultBlockColor(),
+    getBaseTfmsNetwork() {
+      return baseTfmsEntry;
+    },
+    getBiomeTfmsNetwork(biomeId, schemaId = null) {
+      const biome = biomeById.get(biomeId);
+      if (!biome) {
+        return null;
+      }
+      let selection = null;
+      if (schemaId) {
+        if (Array.isArray(biome.tfmsProfile?.schemaPool)) {
+          const match = biome.tfmsProfile.schemaPool.find(
+            (entry) => entry?.schema?.id === schemaId || entry?.id === schemaId,
+          );
+          if (match) {
+            selection = normalizeSchemaSelection(match);
+          } else {
+            selection = normalizeSchemaSelection({ id: schemaId });
+          }
+        } else {
+          selection = normalizeSchemaSelection({ id: schemaId });
+        }
+      }
+      return ensureBiomeNetwork(biome, selection);
+    },
+    getTerrainConfig() {
+      return config;
+    },
     biomeEngine,
     dispose() {
       biomeEngine.dispose?.();
@@ -894,6 +994,15 @@ function createBiomeTfmsConfiguration(baseConfig, overrides) {
     }
   }
 
+  if (
+    Array.isArray(overrides.operatorWeights) &&
+    overrides.operatorWeights.length > 0
+  ) {
+    if (applyOperatorWeights(clone.operators, overrides.operatorWeights)) {
+      mutated = true;
+    }
+  }
+
   if (Array.isArray(overrides.operators) && overrides.operators.length > 0) {
     if (applyOperatorOverrides(clone.operators, overrides.operators)) {
       mutated = true;
@@ -1210,6 +1319,30 @@ function applyWaveformOverrides(target, overrides) {
   return mutated;
 }
 
+function applyOperatorWeights(target, weights) {
+  if (!Array.isArray(target) || !Array.isArray(weights)) {
+    return false;
+  }
+  let mutated = false;
+  weights.forEach((weight, index) => {
+    if (!Number.isFinite(weight)) {
+      return;
+    }
+    if (index < 0 || index >= target.length) {
+      return;
+    }
+    const operator = target[index];
+    if (!operator) {
+      return;
+    }
+    if (operator.weight !== weight) {
+      operator.weight = weight;
+      mutated = true;
+    }
+  });
+  return mutated;
+}
+
 function applyOperatorOverrides(target, overrides) {
   if (!Array.isArray(target)) {
     return false;
@@ -1374,6 +1507,92 @@ function applyMatrixOverrides(targetMatrix, overrides) {
     }
   });
   return mutated;
+}
+
+function mergeOperatorWeightArrays(weightSources) {
+  if (!Array.isArray(weightSources) || weightSources.length === 0) {
+    return null;
+  }
+  let length = 0;
+  weightSources.forEach((weights) => {
+    if (Array.isArray(weights) && weights.length > length) {
+      length = weights.length;
+    }
+  });
+  if (length === 0) {
+    return null;
+  }
+  const result = new Array(length).fill(undefined);
+  weightSources.forEach((weights) => {
+    if (!Array.isArray(weights)) {
+      return;
+    }
+    weights.forEach((value, index) => {
+      if (Number.isFinite(value)) {
+        result[index] = value;
+      }
+    });
+  });
+  return result;
+}
+
+function mergeTfmsOverrides(schemaOverrides, biomeOverrides) {
+  const sources = [];
+  if (schemaOverrides && typeof schemaOverrides === 'object') {
+    sources.push(schemaOverrides);
+  }
+  if (biomeOverrides && typeof biomeOverrides === 'object') {
+    sources.push(biomeOverrides);
+  }
+  if (sources.length === 0) {
+    return null;
+  }
+  const result = {};
+  let hasData = false;
+
+  const mergeArrayProperty = (key) => {
+    const combined = [];
+    sources.forEach((source) => {
+      if (Array.isArray(source[key])) {
+        source[key].forEach((entry) => {
+          combined.push({ ...entry });
+        });
+      }
+    });
+    if (combined.length > 0) {
+      result[key] = combined;
+      hasData = true;
+    }
+  };
+
+  mergeArrayProperty('waveforms');
+  mergeArrayProperty('operators');
+  mergeArrayProperty('modulationMatrix');
+
+  const mergedWeights = mergeOperatorWeightArrays(
+    sources
+      .map((source) =>
+        Array.isArray(source.operatorWeights) ? source.operatorWeights : null,
+      )
+      .filter(Boolean),
+  );
+  if (mergedWeights) {
+    result.operatorWeights = mergedWeights;
+    hasData = true;
+  }
+
+  const transferFunctions = sources.reduce((acc, source) => {
+    if (source.transferFunctions && typeof source.transferFunctions === 'object') {
+      return { ...acc, ...source.transferFunctions };
+    }
+    return acc;
+  }, {});
+  if (Object.keys(transferFunctions).length > 0) {
+    result.transferFunctions = transferFunctions;
+    hasData = true;
+  }
+
+  return hasData ? result : null;
 }
 
 function applyVectorOverrideProperty(target, property, override) {

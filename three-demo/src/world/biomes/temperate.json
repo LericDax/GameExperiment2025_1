@@ -40,6 +40,13 @@
     "tintColor": "#ffffff",
     "tintStrength": 0.0
   },
+  "tfmsProfile": {
+    "blend": 0.78,
+    "schema": [
+      { "id": "temperate-canopy", "weight": 3 },
+      { "id": "temperate-terraces", "weight": 1 }
+    ]
+  },
   "weather": {
     "candidates": [
       {
