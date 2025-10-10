@@ -1348,7 +1348,7 @@ function applyOperatorWeights(target, weights) {
 }
 
 function applyOperatorOverrides(target, overrides) {
-  if (!Array.isArray(target)) {
+  if (!Array.isArray(target) || !Array.isArray(overrides)) {
     return false;
   }
   const operatorById = new Map();
@@ -1408,10 +1408,52 @@ function applyOperatorOverrides(target, overrides) {
         operator.transfer = override.transfer;
         mutated = true;
       } else if (isPlainObject(override.transfer)) {
-        operator.transfer = {
-          ...operator.transfer,
-          ...override.transfer,
+        const existingTransferSource =
+          typeof operator.transfer === 'string'
+            ? { id: operator.transfer }
+            : isPlainObject(operator.transfer)
+              ? operator.transfer
+              : {};
+        const {
+          settings: existingTransferSettings,
+          ...existingTransfer
+        } = isPlainObject(existingTransferSource)
+          ? existingTransferSource
+          : {};
+        const {
+          settings: overrideTransferSettings,
+          ...transferPatch
+        } = override.transfer;
+        const nextTransfer = {
+          ...existingTransfer,
+          ...transferPatch,
         };
+        if (
+          typeof nextTransfer.id !== 'string' &&
+          typeof existingTransfer.id === 'string'
+        ) {
+          nextTransfer.id = existingTransfer.id;
+        }
+        if (
+          typeof nextTransfer.type !== 'string' &&
+          typeof existingTransfer.type === 'string'
+        ) {
+          nextTransfer.type = existingTransfer.type;
+        }
+        operator.transfer = nextTransfer;
+        const mergedTransferSettings = {};
+        if (isPlainObject(existingTransferSettings)) {
+          Object.assign(mergedTransferSettings, existingTransferSettings);
+        }
+        if (isPlainObject(overrideTransferSettings)) {
+          Object.assign(mergedTransferSettings, overrideTransferSettings);
+        }
+        if (Object.keys(mergedTransferSettings).length > 0) {
+          operator.transferSettings = {
+            ...operator.transferSettings,
+            ...mergedTransferSettings,
+          };
+        }
         mutated = true;
       }
     }
