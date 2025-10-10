@@ -433,12 +433,26 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
       return columnSampleCache.get(key);
     }
     const sample = engine.sampleColumn(x, z);
+    if (!sample || !Number.isFinite(sample.height)) {
+      console.error('[terrain] invalid height sample detected', {
+        chunkX,
+        chunkZ,
+        columnX: x,
+        columnZ: z,
+        height: sample?.height ?? null,
+      });
+      columnSampleCache.set(key, null);
+      return null;
+    }
     columnSampleCache.set(key, sample);
     return sample;
   };
 
   const getColumnHeight = (x, z) => {
     const sample = sampleColumnCached(x, z);
+    if (!sample || !Number.isFinite(sample.height)) {
+      return Number.NaN;
+    }
     const clampRange =
       worldOptions.terrain?.clamp ?? { min: 2, max: worldOptions.maxHeight };
     const minHeight = clampRange.min ?? 2;
@@ -1282,8 +1296,21 @@ export function generateChunk(blockMaterials, chunkX, chunkZ) {
     for (let lz = 0; lz < chunkSize; lz++) {
       const worldZ = minZ + lz;
       const columnSample = sampleColumnCached(worldX, worldZ);
-      const biome = columnSample.biome;
+      if (!columnSample || !Number.isFinite(columnSample.height)) {
+        continue;
+      }
       const height = getColumnHeight(worldX, worldZ);
+      if (!Number.isFinite(height)) {
+        console.error('[terrain] aborted column due to invalid height', {
+          chunkX,
+          chunkZ,
+          columnX: worldX,
+          columnZ: worldZ,
+          height: columnSample.height,
+        });
+        continue;
+      }
+      const biome = columnSample.biome;
       const slope = computeSlope(worldX, worldZ, height);
       const distanceToWater = computeWaterDistance(worldX, worldZ, height);
       const isUnderwater = height < waterLevel;

@@ -8,7 +8,10 @@ import {
   getWorldOptions,
   sampleBiomeAt,
 } from './world/generation.js'
-import { createChunkManager } from './world/chunk-manager.js'
+import {
+  createChunkManager,
+  ChunkManagerEvents,
+} from './world/chunk-manager.js'
 import { createPlayerControls } from './player/controls.js'
 import { createCommandConsole } from './ui/command-console.js'
 import { registerDeveloperCommands } from './player/dev-commands.js'
@@ -210,6 +213,8 @@ let weatherManager
 let entityManager
 let initializationError = null
 
+const RENDER_READY_MARKER = '[render-ready] FIRST_CHUNK_MESHED'
+
 try {
   blockMaterials = createBlockMaterials({ THREE })
 
@@ -220,6 +225,16 @@ try {
     retainDistance: 3,
     maxPreloadPerUpdate: 3,
   })
+
+  if (chunkManager?.events?.addEventListener) {
+    const removeListener = chunkManager.events.addEventListener(
+      ChunkManagerEvents.FIRST_CHUNK_MESHED,
+      (event) => {
+        console.info(RENDER_READY_MARKER, event?.detail ?? {})
+        removeListener?.()
+      },
+    )
+  }
 
   particleSystem = createParticleSystem({ THREE, scene })
 
