@@ -177,6 +177,7 @@ export function createChunkManager({
   viewDistance = 1,
   retainDistance: initialRetainDistance,
   maxPreloadPerUpdate = 2,
+  maxDisposalsPerUpdate = 1,
 }) {
   const loadedChunks = new Map();
   const solidBlocks = new Set();
@@ -185,8 +186,11 @@ export function createChunkManager({
   const decorationGroupsByKey = new Map();
   const decorationOwnersIndex = new Map();
   const prototypeRemovalGuards = new Set();
+  const chunkDisposalQueue = [];
+  const scheduledChunkDisposals = new Set();
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   const eventListeners = new Map();
+  const defaultDisposalBudget = resolveBudget(maxDisposalsPerUpdate, 1);
   const addEventListener = (type, listener) => {
     if (!type || typeof listener !== 'function') {
       return () => {};
@@ -1136,7 +1140,56 @@ export function createChunkManager({
     loadedChunks.set(key, chunk);
   }
 
+  function cancelChunkDisposal(key) {
+    if (!scheduledChunkDisposals.has(key)) {
+      return;
+    }
+    scheduledChunkDisposals.delete(key);
+    for (let i = chunkDisposalQueue.length - 1; i >= 0; i -= 1) {
+      if (chunkDisposalQueue[i] === key) {
+        chunkDisposalQueue.splice(i, 1);
+      }
+    }
+  }
+
+  function queueChunkForDisposal(key, { front = false } = {}) {
+    if (!key || scheduledChunkDisposals.has(key) || !loadedChunks.has(key)) {
+      return;
+    }
+    if (front) {
+      chunkDisposalQueue.unshift(key);
+    } else {
+      chunkDisposalQueue.push(key);
+    }
+    scheduledChunkDisposals.add(key);
+  }
+
+  function processChunkDisposalQueue(limit = Number.POSITIVE_INFINITY) {
+    if (chunkDisposalQueue.length === 0) {
+      return 0;
+    }
+
+    const unlimited = !Number.isFinite(limit);
+    let budget = unlimited
+      ? chunkDisposalQueue.length
+      : Math.max(0, Math.floor(limit));
+    let processed = 0;
+
+    while (chunkDisposalQueue.length > 0 && (unlimited || processed < budget)) {
+      const key = chunkDisposalQueue.shift();
+      scheduledChunkDisposals.delete(key);
+      if (!loadedChunks.has(key)) {
+        continue;
+      }
+      disposeChunk(key);
+      processed += 1;
+    }
+
+    return processed;
+  }
+
   function disposeChunk(key) {
+    cancelChunkDisposal(key);
     const chunk = loadedChunks.get(key);
     if (!chunk) {
       return;
@@ -1368,19 +1421,35 @@ export function createChunkManager({
       options.maxPreload,
       maxPreloadPerUpdate,
     );
+    const disposalBudget = resolveBudget(
+      options.maxDisposals,
+      defaultDisposalBudget,
+    );
     const force = Boolean(options.force);
 
     const centerChanged = centerKey !== lastCenterKey;
     const viewChanged = desiredViewDistance !== currentViewDistance;
     const retentionChanged = desiredRetention !== retentionDistance;
     const queueHasWork = preloadQueue.length > 0;
+    const disposalQueueHasWork = chunkDisposalQueue.length > 0;
+
+    const flushChunkDisposals = (overrideBudget = disposalBudget) => {
+      if (force && overrideBudget === 0) {
+        processChunkDisposalQueue(Number.POSITIVE_INFINITY);
+        return;
+      }
+      if (overrideBudget > 0) {
+        processChunkDisposalQueue(overrideBudget);
+      }
+    };
 
     if (
       !force &&
       !centerChanged &&
       !viewChanged &&
       !retentionChanged &&
-      !queueHasWork
+      !queueHasWork &&
+      !disposalQueueHasWork
     ) {
 
       if (shouldUpdateVisibility) {
@@ -1458,14 +1527,20 @@ export function createChunkManager({
       const distanceX = Math.abs(chunkX - centerChunkX);
       const distanceZ = Math.abs(chunkZ - centerChunkZ);
       if (distanceX > finiteRetention || distanceZ > finiteRetention) {
-        disposeChunk(key);
+        queueChunkForDisposal(key);
+      } else {
+        cancelChunkDisposal(key);
       }
     });
+
+    flushChunkDisposals();
 
     lastCenterKey = centerKey;
 
     if (preloadBudget === Number.POSITIVE_INFINITY) {
       processPreloadQueue(Number.POSITIVE_INFINITY);
+
+      flushChunkDisposals(Number.POSITIVE_INFINITY);
 
       if (shouldUpdateVisibility) {
         updateChunkVisibility(camera);
@@ -1478,6 +1553,8 @@ export function createChunkManager({
       // Ensure at least one chunk is processed when forcing an update.
       processPreloadQueue(maxPreloadPerUpdate);
 
+      flushChunkDisposals();
+
       if (shouldUpdateVisibility) {
         updateChunkVisibility(camera);
       }
@@ -1489,6 +1566,8 @@ export function createChunkManager({
       processPreloadQueue(preloadBudget);
     }
 
+    flushChunkDisposals();
+
 
     if (shouldUpdateVisibility) {
       updateChunkVisibility(camera);
@@ -1497,6 +1576,9 @@ export function createChunkManager({
   }
 
   function dispose() {
+    processChunkDisposalQueue(Number.POSITIVE_INFINITY);
+    chunkDisposalQueue.length = 0;
+    scheduledChunkDisposals.clear();
     Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
     preloadQueue.length = 0;
     pendingPreloadEntries.clear();
