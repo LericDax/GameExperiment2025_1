@@ -40,7 +40,7 @@ This reference aggregates every tunable world-generation option exposed by the v
 ### Terrain
 | Path | Label | Description | Type | Default | Range | Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| `terrain.baseHeight` | Base Height | Average terrain elevation before noise-based variation. | `number` | `6` | `0` – `512` | `1` |
+| `terrain.baseHeight` | Base Height | Average terrain elevation before noise-based variation. | `number` | `10` | `0` – `512` | `1` |
 | `terrain.maxHeight` | Maximum Height | Hard cap on how tall terrain columns may grow before clamping to a ceiling. | `number` | `20` | `1` – `1024` | `1` |
 | `terrain.clamp.min` | Clamp Minimum | Lower clamp bound applied after noise sampling to prevent deep pits. | `number` | `2` | `0` – `1024` | `1` |
 | `terrain.clamp.max` | Clamp Maximum | Upper clamp bound applied after noise sampling to prevent towering spikes. | `number` | `20` | `1` – `1024` | `1` |
@@ -54,7 +54,7 @@ This reference aggregates every tunable world-generation option exposed by the v
 | `terrain.ridgeStrength` | Ridge Strength | Strength multiplier for ridge contributions on top of base terrain. | `number` | `2.4` | `0` – `64` | `0.1` |
 | `terrain.ridgeOffset` | Ridge Offset | Phase offset for the ridge noise sampler. | `number` | `220` | `-10000` – `10000` | `1` |
 | `terrain.climateHeightInfluence` | Climate Height Influence | How strongly biome climate data affects the perceived terrain elevation. | `number` | `1.2` | `-10` – `10` | `0.05` |
-| `baseHeight` | Base Height (alias) | Legacy top-level alias mirroring the terrain base height for compatibility. | `number` | `6` | `0` – `512` | `1` |
+| `baseHeight` | Base Height (alias) | Legacy top-level alias mirroring the terrain base height for compatibility. | `number` | `10` | `0` – `512` | `1` |
 | `maxHeight` | Max Height (alias) | Legacy top-level alias mirroring the terrain max height for compatibility. | `number` | `20` | `1` – `1024` | `1` |
 
 #### TFMS Temperaments
