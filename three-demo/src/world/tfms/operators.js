@@ -521,6 +521,7 @@ export function createTfmsNetwork({
   }
 
   const loggedInvalidTransfers = new Set();
+  const loggedInvalidSamples = new Set();
 
   function evaluateOperator(index, x, z, time, context, currentState) {
     const operator = operatorInstances[index];
@@ -739,18 +740,43 @@ export function createTfmsNetwork({
       weightedValue = bias;
     }
 
+    const identifier = baseConfig.id ?? baseConfig.type ?? index;
+    const sanitizedValue = Number.isFinite(sample.value) ? sample.value : 0;
+    if (!Number.isFinite(sample.value)) {
+      const key = `value:${index}`;
+      if (!loggedInvalidSamples.has(key)) {
+        console.warn('[tfms] invalid sample value', { operator: identifier, index });
+        loggedInvalidSamples.add(key);
+      }
+    }
+
+    const sanitizedRaw = Number.isFinite(sample.raw) ? sample.raw : sanitizedValue;
+    if (!Number.isFinite(sample.raw)) {
+      const key = `raw:${index}`;
+      if (!loggedInvalidSamples.has(key)) {
+        console.warn('[tfms] invalid sample raw', { operator: identifier, index });
+        loggedInvalidSamples.add(key);
+      }
+    }
+
+    const sanitizedSample = {
+      ...sample,
+      value: sanitizedValue,
+      raw: sanitizedRaw,
+    };
+
     const state = {
       value: weightedValue,
       transferred,
-      raw: sample.raw ?? sample.value,
-      domain: sample.domain ?? { x: 0, z: 0 },
-      amplitude: sample.amplitude,
-      frequency: sample.frequency,
+      raw: sanitizedSample.raw,
+      domain: sanitizedSample.domain ?? { x: 0, z: 0 },
+      amplitude: sanitizedSample.amplitude,
+      frequency: sanitizedSample.frequency,
     };
     currentState[index] = state;
 
     return {
-      sample,
+      sample: sanitizedSample,
       transferred,
       weightedValue,
     };
@@ -774,8 +800,13 @@ export function createTfmsNetwork({
           currentState,
         );
         envelope += weightedValue;
+        const rawContribution = Number.isFinite(sample.raw)
+          ? sample.raw
+          : Number.isFinite(sample.value)
+            ? sample.value
+            : 0;
         tectonicAccumulator +=
-          (sample.config.tectonic?.weight ?? 0) * (sample.raw ?? sample.value);
+          (sample.config.tectonic?.weight ?? 0) * rawContribution;
         operatorOutputs.push({
           index,
           value: weightedValue,
