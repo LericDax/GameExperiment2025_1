@@ -186,7 +186,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.18,
-          envelope: { amplitude: 0.78 },
+          envelope: { amplitude: { multiplier: 0.78 } },
           modulation: { amplitude: 0.22 },
         },
         {
@@ -198,7 +198,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'domain-warp',
           modulation: { amplitude: 0.28 },
-          envelope: { amplitude: 0.52 },
+          envelope: { amplitude: { multiplier: 0.52 } },
         },
         {
           id: 'diffusion-mask',
@@ -254,7 +254,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.32,
-          envelope: { amplitude: 1.18 },
+          envelope: { amplitude: { multiplier: 1.18 } },
         },
         {
           id: 'ridge-noise',
@@ -399,12 +399,12 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: -0.08,
-          envelope: { amplitude: 0.62 },
+          envelope: { amplitude: { multiplier: 0.62 } },
         },
         {
           id: 'domain-warp',
           modulation: { amplitude: 0.56 },
-          envelope: { amplitude: 0.52 },
+          envelope: { amplitude: { multiplier: 0.52 } },
         },
         {
           id: 'diffusion-mask',
@@ -475,7 +475,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.26,
-          envelope: { amplitude: 1.22 },
+          envelope: { amplitude: { multiplier: 1.22 } },
         },
         {
           id: 'ridge-noise',
@@ -544,7 +544,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.12,
-          envelope: { amplitude: 0.94 },
+          envelope: { amplitude: { multiplier: 0.94 } },
           modulation: { amplitude: 0.24 },
         },
         {
@@ -616,7 +616,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.28,
-          envelope: { amplitude: 1.08 },
+          envelope: { amplitude: { multiplier: 1.08 } },
         },
         {
           id: 'ridge-noise',
@@ -684,7 +684,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.18,
-          envelope: { amplitude: 0.96 },
+          envelope: { amplitude: { multiplier: 0.96 } },
           modulation: { amplitude: 0.24 },
         },
         {
@@ -735,6 +735,41 @@ const RAW_TFMS_SCHEMATA = [
   },
 ];
 
+function freezeScalarRangeOverride(range) {
+  if (Number.isFinite(range)) {
+    return range;
+  }
+  if (!range || typeof range !== 'object') {
+    return undefined;
+  }
+  const clone = {};
+  if (Number.isFinite(range.value)) {
+    clone.value = range.value;
+  }
+  if (Number.isFinite(range.min)) {
+    clone.min = range.min;
+  }
+  if (Number.isFinite(range.max)) {
+    clone.max = range.max;
+  }
+  if (typeof range.baseKey === 'string') {
+    clone.baseKey = range.baseKey;
+  }
+  if (Number.isFinite(range.base)) {
+    clone.base = range.base;
+  }
+  if (Number.isFinite(range.multiplier)) {
+    clone.multiplier = range.multiplier;
+  }
+  if (Object.prototype.hasOwnProperty.call(range, 'axis')) {
+    clone.axis = range.axis;
+  }
+  if (typeof range.channel === 'string') {
+    clone.channel = range.channel;
+  }
+  return Object.keys(clone).length > 0 ? Object.freeze(clone) : undefined;
+}
+
 function freezeVector(vector) {
   if (!vector || typeof vector !== 'object') {
     return undefined;
@@ -771,11 +806,13 @@ function freezeOperatorOverride(override) {
   }
   if (override.envelope && typeof override.envelope === 'object') {
     const envelope = {};
-    if (Number.isFinite(override.envelope.amplitude)) {
-      envelope.amplitude = override.envelope.amplitude;
+    const amplitude = freezeScalarRangeOverride(override.envelope.amplitude);
+    if (amplitude !== undefined) {
+      envelope.amplitude = amplitude;
     }
-    if (Number.isFinite(override.envelope.frequency)) {
-      envelope.frequency = override.envelope.frequency;
+    const frequency = freezeScalarRangeOverride(override.envelope.frequency);
+    if (frequency !== undefined) {
+      envelope.frequency = frequency;
     }
     const warp = freezeVector(override.envelope.warp);
     if (warp) {
