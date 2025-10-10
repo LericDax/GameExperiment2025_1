@@ -7,15 +7,29 @@ import {
 } from './world-settings.js';
 
 function loadBiomeModules() {
-  if (typeof import.meta.glob === 'function') {
-    return import.meta.glob('./biomes/*.json', {
+  let modules;
+  let globError = null;
+  try {
+    modules = import.meta.glob('./biomes/*.json', {
       import: 'default',
       eager: true,
     });
+  } catch (error) {
+    globError = error;
   }
+
+  if (modules && typeof modules === 'object') {
+    return modules;
+  }
+
   if (globalThis.__BIOME_MODULE_MAP__) {
     return globalThis.__BIOME_MODULE_MAP__;
   }
+
+  if (globError) {
+    throw globError;
+  }
+
   throw new Error('Biome module map is not available in this environment.');
 }
 
