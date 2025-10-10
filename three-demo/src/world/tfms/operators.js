@@ -41,6 +41,25 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+const MAX_ABSOLUTE_AMPLITUDE = 1e6;
+const MAX_FREQUENCY = 1e6;
+const MIN_FREQUENCY = 1e-6;
+const MAX_ABSOLUTE_PHASE = 1e6;
+const MAX_ABSOLUTE_DOMAIN_WARP = 1e6;
+
+function sanitizeNumber(value, { fallback = 0, min = -Infinity, max = Infinity }) {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  if (value < min) {
+    return min;
+  }
+  if (value > max) {
+    return max;
+  }
+  return value;
+}
+
 function createScalarWaveformOperator(type) {
   return ({ seed, ...config }) => {
     const sampler = createNoiseSampler(type, { seed, ...config });
@@ -501,6 +520,8 @@ export function createTfmsNetwork({
     return dot * fmStrength;
   }
 
+  const loggedInvalidTransfers = new Set();
+
   function evaluateOperator(index, x, z, time, context, currentState) {
     const operator = operatorInstances[index];
     const modulationEntries = modulationByTarget[index];
@@ -518,10 +539,16 @@ export function createTfmsNetwork({
           : lastState[entry.source];
       const channel = entry.channel ?? 'value';
       const sourceValue = resolveSourceValue(sourceState, channel);
-      const gain = entry.gain ?? 1;
-      const bias = entry.bias ?? 0;
+      if (!Number.isFinite(sourceValue)) {
+        continue;
+      }
+      const gain = Number.isFinite(entry.gain) ? entry.gain : 1;
+      const bias = Number.isFinite(entry.bias) ? entry.bias : 0;
       const axis = entry.axis ?? 'both';
       const modValue = sourceValue * gain + bias;
+      if (!Number.isFinite(modValue)) {
+        continue;
+      }
 
       switch (entry.routing) {
         case 'amplitude':
@@ -543,23 +570,49 @@ export function createTfmsNetwork({
     }
 
     const baseConfig = operator.config;
-    const fmContribution = computeFmContribution(index, currentState);
-    let amplitude =
-      (baseConfig.amplitude ?? 1) * (1 + modulation.amplitude) + fmContribution;
-    let frequency =
-      (baseConfig.frequency ?? 1) * (1 + modulation.frequency) +
-      fmContribution * 0.05;
-    if (!Number.isFinite(frequency)) {
-      frequency = 0;
+    let fmContribution = computeFmContribution(index, currentState);
+    if (!Number.isFinite(fmContribution)) {
+      fmContribution = 0;
     }
-    frequency = Math.max(1e-6, frequency);
+    const baseAmplitude = Number.isFinite(baseConfig.amplitude)
+      ? baseConfig.amplitude
+      : 1;
+    const baseFrequency = Number.isFinite(baseConfig.frequency)
+      ? baseConfig.frequency
+      : 1;
+    const basePhaseX = Number.isFinite(baseConfig.phase?.x)
+      ? baseConfig.phase.x
+      : 0;
+    const basePhaseZ = Number.isFinite(baseConfig.phase?.z)
+      ? baseConfig.phase.z
+      : 0;
+    const baseDomainWarpX = Number.isFinite(baseConfig.domainWarp?.x)
+      ? baseConfig.domainWarp.x
+      : 0;
+    const baseDomainWarpZ = Number.isFinite(baseConfig.domainWarp?.z)
+      ? baseConfig.domainWarp.z
+      : 0;
+    let amplitude =
+      baseAmplitude * (1 + modulation.amplitude) + fmContribution;
+    amplitude = sanitizeNumber(amplitude, {
+      fallback: baseAmplitude,
+      min: -MAX_ABSOLUTE_AMPLITUDE,
+      max: MAX_ABSOLUTE_AMPLITUDE,
+    });
+    let frequency =
+      baseFrequency * (1 + modulation.frequency) + fmContribution * 0.05;
+    frequency = sanitizeNumber(frequency, {
+      fallback: baseFrequency,
+      min: MIN_FREQUENCY,
+      max: MAX_FREQUENCY,
+    });
     const phase = {
-      x: (baseConfig.phase?.x ?? 0) + modulation.phase.x,
-      z: (baseConfig.phase?.z ?? 0) + modulation.phase.z,
+      x: basePhaseX + modulation.phase.x,
+      z: basePhaseZ + modulation.phase.z,
     };
     const domainWarp = {
-      x: (baseConfig.domainWarp?.x ?? 0) + modulation.domainWarp.x,
-      z: (baseConfig.domainWarp?.z ?? 0) + modulation.domainWarp.z,
+      x: baseDomainWarpX + modulation.domainWarp.x,
+      z: baseDomainWarpZ + modulation.domainWarp.z,
     };
 
     if (warpPatch) {
@@ -586,12 +639,38 @@ export function createTfmsNetwork({
       }
     }
 
+    phase.x = sanitizeNumber(phase.x, {
+      fallback: basePhaseX,
+      min: -MAX_ABSOLUTE_PHASE,
+      max: MAX_ABSOLUTE_PHASE,
+    });
+    phase.z = sanitizeNumber(phase.z, {
+      fallback: basePhaseZ,
+      min: -MAX_ABSOLUTE_PHASE,
+      max: MAX_ABSOLUTE_PHASE,
+    });
+    domainWarp.x = sanitizeNumber(domainWarp.x, {
+      fallback: baseDomainWarpX,
+      min: -MAX_ABSOLUTE_DOMAIN_WARP,
+      max: MAX_ABSOLUTE_DOMAIN_WARP,
+    });
+    domainWarp.z = sanitizeNumber(domainWarp.z, {
+      fallback: baseDomainWarpZ,
+      min: -MAX_ABSOLUTE_DOMAIN_WARP,
+      max: MAX_ABSOLUTE_DOMAIN_WARP,
+    });
+
     const conductanceValue = spectralConductance[index];
     if (
       Number.isFinite(conductanceValue) &&
       isDiffusionOperatorType(baseConfig.type)
     ) {
       amplitude *= 1 + conductanceValue;
+      amplitude = sanitizeNumber(amplitude, {
+        fallback: baseAmplitude,
+        min: -MAX_ABSOLUTE_AMPLITUDE,
+        max: MAX_ABSOLUTE_AMPLITUDE,
+      });
     }
 
     let evaluation = operator.evaluate({
@@ -641,9 +720,24 @@ export function createTfmsNetwork({
       config: baseConfig,
     };
 
-    const transferred = operator.transfer(sample.value, sample, context);
-    const weightedValue =
-      transferred * (baseConfig.weight ?? 1) + (baseConfig.bias ?? 0);
+    let transferred = operator.transfer(sample.value, sample, context);
+    const weight = Number.isFinite(baseConfig.weight) ? baseConfig.weight : 1;
+    const bias = Number.isFinite(baseConfig.bias) ? baseConfig.bias : 0;
+    if (!Number.isFinite(transferred)) {
+      if (!loggedInvalidTransfers.has(index)) {
+        const identifier = baseConfig.id ?? baseConfig.type ?? index;
+        console.warn('[tfms] invalid transfer output', {
+          operator: identifier,
+          index,
+        });
+        loggedInvalidTransfers.add(index);
+      }
+      transferred = 0;
+    }
+    let weightedValue = transferred * weight + bias;
+    if (!Number.isFinite(weightedValue)) {
+      weightedValue = bias;
+    }
 
     const state = {
       value: weightedValue,
