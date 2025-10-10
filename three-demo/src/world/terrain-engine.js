@@ -233,7 +233,7 @@ export function createTerrainEngine({
       z,
       context: { terrain: config },
     });
-    let envelope = baseResult.envelope;
+    let envelope = transformTfmsEnvelope(baseResult.envelope, tfmsConfig);
 
     if (biomeBlendStrength > 0 && biomeSample?.biome) {
       const profileEntry = ensureBiomeNetwork(
@@ -250,10 +250,14 @@ export function createTerrainEngine({
             z,
             context: { terrain: config },
           });
-          envelope = mixValues(
-            baseResult.envelope,
+          const overrideEnvelope = transformTfmsEnvelope(
             overrideResult.envelope,
-            blendWeight,
+            profileEntry.config,
+            tfmsConfig,
+          );
+          envelope = clampTfmsEnvelope(
+            mixValues(envelope, overrideEnvelope, blendWeight),
+            tfmsConfig,
           );
         }
       }
@@ -1156,6 +1160,41 @@ function clamp01(value) {
   return value;
 }
 
+function transformTfmsEnvelope(value, primaryConfig, fallbackConfig = null) {
+  const attenuation = getTfmsBaseAttenuation(primaryConfig, fallbackConfig);
+  const scaledValue = Number.isFinite(value) ? value * attenuation : 0;
+  return clampTfmsEnvelope(scaledValue, primaryConfig, fallbackConfig);
+}
+
+function getTfmsBaseAttenuation(primaryConfig, fallbackConfig = null) {
+  if (Number.isFinite(primaryConfig?.baseAttenuation)) {
+    return primaryConfig.baseAttenuation;
+  }
+  if (Number.isFinite(fallbackConfig?.baseAttenuation)) {
+    return fallbackConfig.baseAttenuation;
+  }
+  return 1;
+}
+
+function clampTfmsEnvelope(value, primaryConfig, fallbackConfig = null) {
+  let result = Number.isFinite(value) ? value : 0;
+  const source =
+    primaryConfig?.clamp && typeof primaryConfig.clamp === 'object'
+      ? primaryConfig.clamp
+      : fallbackConfig?.clamp && typeof fallbackConfig.clamp === 'object'
+        ? fallbackConfig.clamp
+        : null;
+  if (source) {
+    if (Number.isFinite(source.min)) {
+      result = Math.max(source.min, result);
+    }
+    if (Number.isFinite(source.max)) {
+      result = Math.min(source.max, result);
+    }
+  }
+  return result;
+}
+
 function mixValues(a, b, weight) {
   return a * (1 - weight) + b * weight;
 }
@@ -1259,6 +1298,10 @@ function cloneTfmsConfig(config) {
         : {},
     temperament: config?.temperament ?? null,
     kamea: cloneKameaOptions(config?.kamea),
+    baseAttenuation: Number.isFinite(config?.baseAttenuation)
+      ? config.baseAttenuation
+      : 1,
+    clamp: cloneTfmsClamp(config?.clamp),
     operatorCount: normalizeOperatorCount(
       Array.isArray(config?.operators) ? config.operators.length : 0,
       Number.isFinite(config?.operatorCount)
@@ -1339,6 +1382,20 @@ function cloneVector(vector) {
     x: Number.isFinite(vector.x) ? vector.x : 0,
     z: Number.isFinite(vector.z) ? vector.z : 0,
   };
+}
+
+function cloneTfmsClamp(clamp) {
+  if (!clamp || typeof clamp !== 'object') {
+    return {};
+  }
+  const clone = {};
+  if (Number.isFinite(clamp.min)) {
+    clone.min = clamp.min;
+  }
+  if (Number.isFinite(clamp.max)) {
+    clone.max = clamp.max;
+  }
+  return clone;
 }
 
 function cloneBiomeModulation(modulation) {
