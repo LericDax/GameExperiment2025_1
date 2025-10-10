@@ -361,6 +361,17 @@ export function createPlayerControls({
     }
   }
 
+  function refreshChunksAtControlPosition() {
+    if (!chunkManager || typeof chunkManager.update !== 'function') {
+      return;
+    }
+    try {
+      chunkManager.update(controlObject.position, { camera, force: true });
+    } catch (error) {
+      console.error('Failed to refresh chunks after teleport:', error);
+    }
+  }
+
   function highestSolidAt(x, z) {
     if (!solidBlocks || typeof solidBlocks.has !== 'function') {
       return null;
@@ -844,12 +855,16 @@ export function createPlayerControls({
     controlObject.position.copy(manualPosition);
 
     if (!collidesAt(controlObject.position)) {
+      refreshChunksAtControlPosition();
       return true;
     }
 
     const resolved = attemptCollisionRescue('teleport');
     if (!resolved) {
       controlObject.position.copy(previousPosition);
+    }
+    if (resolved) {
+      refreshChunksAtControlPosition();
     }
     return resolved;
   }
