@@ -108,6 +108,12 @@ While the flight runs, an overlay appears in the top-right corner showing elapse
 
 To start a run automatically on page load, append `?perfFlight=auto` to the URL. The harness will fire once the world boots, displaying the same overlay and logging the summary to the console when complete. 【F:three-demo/src/main.js†L282-L304】
 
+## Headless TFMS QA marker
+
+During world bootstrap the chunk manager now emits a `first-chunk-meshed` event as soon as the initial chunk finishes meshing, which `main.js` surfaces with a console marker: `[render-ready] FIRST_CHUNK_MESHED { chunkX, chunkZ, chunkKey }`. 【F:three-demo/src/world/chunk-manager.js†L15-L26】【F:three-demo/src/main.js†L18-L36】【F:three-demo/src/world/chunk-manager.js†L1033-L1049】
+
+QA can tail this log in automated or headless runs when validating TFMS regressions—the marker guarantees the terrain pipeline completed at least one full mesh pass before subsequent diagnostics run. 【F:three-demo/src/main.js†L235-L247】
+
 ## Building for Production
 To create an optimized build via Vite:
 

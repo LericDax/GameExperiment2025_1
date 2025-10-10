@@ -14,6 +14,10 @@ import {
 } from './fluids/fluid-registry.js';
 import { buildFluidGeometry } from './fluids/fluid-geometry.js';
 
+export const ChunkManagerEvents = Object.freeze({
+  FIRST_CHUNK_MESHED: 'first-chunk-meshed',
+});
+
 const worldConfig = getWorldOptions();
 
 function chunkKey(x, z) {
@@ -182,6 +186,53 @@ export function createChunkManager({
   const decorationOwnersIndex = new Map();
   const prototypeRemovalGuards = new Set();
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
+  const eventListeners = new Map();
+  const addEventListener = (type, listener) => {
+    if (!type || typeof listener !== 'function') {
+      return () => {};
+    }
+    let listeners = eventListeners.get(type);
+    if (!listeners) {
+      listeners = new Set();
+      eventListeners.set(type, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      removeEventListener(type, listener);
+    };
+  };
+  const removeEventListener = (type, listener) => {
+    if (!type || typeof listener !== 'function') {
+      return;
+    }
+    const listeners = eventListeners.get(type);
+    if (!listeners) {
+      return;
+    }
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      eventListeners.delete(type);
+    }
+  };
+  const dispatchChunkEvent = (type, detail) => {
+    const listeners = eventListeners.get(type);
+    if (!listeners || listeners.size === 0) {
+      return;
+    }
+    listeners.forEach((listener) => {
+      try {
+        listener({ type, detail });
+      } catch (error) {
+        console.error('[chunk-manager] event listener error', error);
+      }
+    });
+    eventListeners.delete(type);
+  };
+  const events = {
+    addEventListener,
+    removeEventListener,
+  };
+  let hasEmittedFirstChunkMeshed = false;
   let lastCenterKey = null;
   let currentViewDistance = normalizeDistance(viewDistance, 1);
   let retentionDistance = Math.max(
@@ -985,6 +1036,14 @@ export function createChunkManager({
       surface.userData.chunkKey = key;
     });
     scene.add(chunk.group);
+    if (!hasEmittedFirstChunkMeshed) {
+      hasEmittedFirstChunkMeshed = true;
+      dispatchChunkEvent(ChunkManagerEvents.FIRST_CHUNK_MESHED, {
+        chunkX,
+        chunkZ,
+        chunkKey: key,
+      });
+    }
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.add(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
     const chunkWaterColumnSource =
@@ -2123,6 +2182,7 @@ export function createChunkManager({
     solidBlocks,
     softBlocks,
     waterColumns,
+    events,
     getBlockFromIntersection,
     removeBlockInstance,
     removeDecorationInstance,
