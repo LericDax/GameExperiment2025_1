@@ -1,10 +1,13 @@
 import { ValueNoise2D } from './noise.js';
 import { defaultWorldOptions, biomeOptionMetadata } from './world-settings.js';
 
-const biomeModuleMap = import.meta.glob('./biomes/*.json', {
-  import: 'default',
-  eager: true,
-});
+const biomeModuleMap =
+  typeof import.meta?.glob === 'function'
+    ? import.meta.glob('./biomes/*.json', {
+        import: 'default',
+        eager: true,
+      })
+    : globalThis.__THREE_DEMO_BIOME_DEFINITIONS__ ?? {};
 
 /*
  * Biome onboarding checklist:

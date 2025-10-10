@@ -6,6 +6,7 @@ export function createTerrainEngine({
   THREE,
   seed = defaultWorldOptions.seedHash,
   worldConfig = {},
+  tfmsFactory = createTfmsNetwork,
 } = {}) {
   if (!THREE) {
     throw new Error('createTerrainEngine requires a THREE instance');
@@ -78,7 +79,7 @@ export function createTerrainEngine({
   });
 
   const { temperament: tfmsTemperament, ...kameaOptions } = tfmsConfig.kamea ?? {};
-  const tfmsNetwork = createTfmsNetwork({
+  const tfmsNetwork = tfmsFactory({
     seed: seed * 1.91 + 73,
     operators: tfmsConfig.operators,
     modulationMatrix: tfmsConfig.modulationMatrix,
@@ -111,7 +112,7 @@ export function createTerrainEngine({
       }
       const overrideSeed =
         seed * 1.91 + 73 + hashBiomeSeed(biome?.id ?? `biome-${index}`);
-      const overrideNetwork = createTfmsNetwork({
+      const overrideNetwork = tfmsFactory({
         seed: overrideSeed,
         operators: overrideConfig.operators,
         modulationMatrix: overrideConfig.modulationMatrix,
