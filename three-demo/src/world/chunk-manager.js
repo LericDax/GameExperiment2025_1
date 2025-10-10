@@ -547,6 +547,48 @@ export function createChunkManager({
     return null;
   }
 
+  function releaseTintAttribute(attribute) {
+    if (!attribute || typeof attribute !== 'object') {
+      return;
+    }
+    if ('array' in attribute) {
+      attribute.array = null;
+    }
+    attribute.needsUpdate = false;
+  }
+
+  function disposeInstancedMesh(mesh) {
+    if (!mesh?.isInstancedMesh) {
+      return;
+    }
+
+    const geometry = mesh.geometry;
+    const tintAttribute =
+      mesh.userData?.biomeTintAttribute ??
+      (typeof geometry?.getAttribute === 'function'
+        ? geometry.getAttribute('biomeTint')
+        : geometry?.attributes?.biomeTint ?? null);
+
+    if (tintAttribute) {
+      releaseTintAttribute(tintAttribute);
+    }
+
+    if (geometry?.deleteAttribute) {
+      geometry.deleteAttribute('biomeTint');
+    } else if (geometry?.attributes && geometry.attributes.biomeTint) {
+      delete geometry.attributes.biomeTint;
+    }
+
+    geometry?.dispose?.();
+
+    if (mesh.userData) {
+      mesh.userData.biomeTintAttribute = null;
+      mesh.userData.chunkKey = null;
+    }
+
+    mesh.geometry = null;
+  }
+
   function getDecorationRecord(chunk, type) {
     if (!chunk || !type) {
       return null;
@@ -1195,7 +1237,44 @@ export function createChunkManager({
       return;
     }
 
+    const instancedMeshes = new Set();
+    if (chunk.group?.isObject3D) {
+      chunk.group.traverse((child) => {
+        if (child?.isInstancedMesh) {
+          instancedMeshes.add(child);
+        }
+      });
+    }
+
+    if (chunk.typeData instanceof Map) {
+      chunk.typeData.forEach((typeData) => {
+        if (typeData?.mesh?.isInstancedMesh) {
+          instancedMeshes.add(typeData.mesh);
+        }
+      });
+    }
+
+    const enqueueDecorationMesh = (record) => {
+      if (record?.mesh?.isInstancedMesh) {
+        instancedMeshes.add(record.mesh);
+      }
+    };
+
+    if (chunk.decorationData instanceof Map) {
+      chunk.decorationData.forEach(enqueueDecorationMesh);
+    } else if (chunk.decorationData && typeof chunk.decorationData === 'object') {
+      Object.values(chunk.decorationData).forEach(enqueueDecorationMesh);
+    }
+
+    instancedMeshes.forEach((mesh) => {
+      disposeInstancedMesh(mesh);
+      mesh.parent?.remove(mesh);
+    });
+
     scene.remove(chunk.group);
+    chunk.group?.clear?.();
+    chunk.group = null;
+
     (chunk.fluidSurfaces ?? []).forEach((surface) => {
       surface.geometry?.dispose?.();
       disposeFluidSurface(surface);
@@ -1212,6 +1291,72 @@ export function createChunkManager({
         unregisterDecorationGroup(group);
       });
     }
+    if (chunk.typeData instanceof Map) {
+      chunk.typeData.forEach((record) => {
+        if (!record) {
+          return;
+        }
+        if (Array.isArray(record.entries)) {
+          record.entries.forEach((entry) => {
+            if (!entry) {
+              return;
+            }
+            entry.mesh = null;
+            entry.tintAttribute = null;
+            entry.index = -1;
+          });
+          record.entries.length = 0;
+        }
+        releaseTintAttribute(record.tintAttribute);
+        record.mesh = null;
+        record.tintAttribute = null;
+      });
+      chunk.typeData.clear();
+    }
+    chunk.typeData = null;
+
+    const disposeDecorationRecord = (record) => {
+      if (!record) {
+        return;
+      }
+      if (Array.isArray(record.entries)) {
+        record.entries.forEach((entry) => {
+          if (!entry) {
+            return;
+          }
+          entry.mesh = null;
+          entry.tintAttribute = null;
+          if (entry.decorationGroup) {
+            entry.decorationGroup = null;
+          }
+        });
+        record.entries.length = 0;
+      }
+      releaseTintAttribute(record.tintAttribute);
+      record.mesh = null;
+      record.tintAttribute = null;
+    };
+
+    if (chunk.decorationData instanceof Map) {
+      chunk.decorationData.forEach(disposeDecorationRecord);
+      chunk.decorationData.clear();
+    } else if (chunk.decorationData && typeof chunk.decorationData === 'object') {
+      Object.values(chunk.decorationData).forEach(disposeDecorationRecord);
+    }
+    chunk.decorationData = null;
+
+    if (chunk.decorationGroups instanceof Map) {
+      chunk.decorationGroups.clear();
+    }
+    chunk.decorationGroups = null;
+    if (chunk.decorationTypeIndex instanceof Map) {
+      chunk.decorationTypeIndex.clear();
+    }
+    chunk.decorationTypeIndex = null;
+    if (chunk.decorationOwnerIndex instanceof Map) {
+      chunk.decorationOwnerIndex.clear();
+    }
+    chunk.decorationOwnerIndex = null;
     if (chunk.boundsBox) {
       chunk.boundsBox.makeEmpty?.();
     }
