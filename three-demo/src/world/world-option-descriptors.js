@@ -927,7 +927,7 @@ const terrainGroup = Object.freeze({
       min: 0,
       max: 512,
       step: 1,
-      default: 6,
+      default: 10,
       path: Object.freeze(['terrain', 'baseHeight']),
     }),
     Object.freeze({
@@ -1091,7 +1091,7 @@ const legacyBaseHeightDescriptor = Object.freeze({
   min: 0,
   max: 512,
   step: 1,
-  default: 6,
+  default: 10,
   path: Object.freeze(['baseHeight']),
 })
 
