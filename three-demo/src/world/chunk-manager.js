@@ -240,7 +240,7 @@ export function createChunkManager({
     normalizeDistance(initialRetainDistance, currentViewDistance + 1),
   );
   const preloadQueue = [];
-  const pendingPreloadKeys = new Set();
+  const pendingPreloadEntries = new Map();
   let queueDirty = false;
 
   const chunkCullFrustum = new THREE.Frustum();
@@ -1165,16 +1165,50 @@ export function createChunkManager({
     loadedChunks.delete(key);
   }
 
-  function schedulePreload(chunkX, chunkZ, centerChunkX, centerChunkZ) {
+  function schedulePreload(
+    chunkX,
+    chunkZ,
+    centerChunkX,
+    centerChunkZ,
+    options = {},
+  ) {
     const key = chunkKey(chunkX, chunkZ);
-    if (loadedChunks.has(key) || pendingPreloadKeys.has(key)) {
+    if (loadedChunks.has(key)) {
       return;
     }
+
+    const { urgent = false } = options;
     const dx = chunkX - centerChunkX;
     const dz = chunkZ - centerChunkZ;
     const priority = dx * dx + dz * dz;
-    pendingPreloadKeys.add(key);
-    preloadQueue.push({ key, chunkX, chunkZ, priority });
+
+    const existing = pendingPreloadEntries.get(key);
+    if (existing) {
+      let changed = false;
+      if (existing.priority !== priority) {
+        existing.priority = priority;
+        changed = true;
+      }
+      const nextUrgent = Boolean(urgent);
+      if (existing.urgent !== nextUrgent) {
+        existing.urgent = nextUrgent;
+        changed = true;
+      }
+      if (changed) {
+        queueDirty = true;
+      }
+      return;
+    }
+
+    const entry = {
+      key,
+      chunkX,
+      chunkZ,
+      priority,
+      urgent: Boolean(urgent),
+    };
+    pendingPreloadEntries.set(key, entry);
+    preloadQueue.push(entry);
     queueDirty = true;
   }
 
@@ -1189,7 +1223,7 @@ export function createChunkManager({
       const dz = Math.abs(entry.chunkZ - centerChunkZ);
       if (dx > maxDistance || dz > maxDistance) {
         preloadQueue.splice(i, 1);
-        pendingPreloadKeys.delete(entry.key);
+        pendingPreloadEntries.delete(entry.key);
         removedAny = true;
         continue;
       }
@@ -1210,30 +1244,97 @@ export function createChunkManager({
     }
 
     let budget = limit;
-    if (!Number.isFinite(budget)) {
+    const unlimited = !Number.isFinite(budget);
+    if (unlimited) {
       budget = preloadQueue.length;
     } else {
       budget = Math.max(0, Math.floor(budget));
     }
 
-    if (budget <= 0) {
-      return 0;
-    }
-
     if (queueDirty) {
-      preloadQueue.sort((a, b) => a.priority - b.priority);
+      preloadQueue.sort((a, b) => {
+        if (a.urgent !== b.urgent) {
+          return a.urgent ? -1 : 1;
+        }
+        return a.priority - b.priority;
+      });
       queueDirty = false;
     }
 
-    let processed = 0;
-    while (preloadQueue.length > 0 && processed < budget) {
-      const next = preloadQueue.shift();
-      pendingPreloadKeys.delete(next.key);
-      if (loadedChunks.has(next.key)) {
-        continue;
+    const countUrgent = () => {
+      let urgentCount = 0;
+      for (let i = 0; i < preloadQueue.length; i += 1) {
+        if (!preloadQueue[i].urgent) {
+          break;
+        }
+        urgentCount += 1;
       }
-      ensureChunk(next.chunkX, next.chunkZ);
-      processed += 1;
+      return urgentCount;
+    };
+
+    const urgentAvailable = countUrgent();
+
+    if (urgentAvailable === 0 && !unlimited && budget <= 0) {
+      return 0;
+    }
+
+    let processed = 0;
+
+    const processEntry = () => {
+      while (preloadQueue.length > 0) {
+        const next = preloadQueue.shift();
+        pendingPreloadEntries.delete(next.key);
+        if (loadedChunks.has(next.key)) {
+          continue;
+        }
+        ensureChunk(next.chunkX, next.chunkZ);
+        return true;
+      }
+      return false;
+    };
+
+    if (urgentAvailable > 0) {
+      let urgentBudget;
+      if (unlimited) {
+        urgentBudget = urgentAvailable;
+      } else if (budget > 0) {
+        urgentBudget = Math.min(urgentAvailable, budget);
+      } else {
+        urgentBudget = Math.min(urgentAvailable, 1);
+      }
+
+      let urgentProcessed = 0;
+      while (
+        preloadQueue.length > 0 &&
+        urgentProcessed < urgentBudget &&
+        preloadQueue[0]?.urgent
+      ) {
+        const didProcess = processEntry();
+        if (didProcess) {
+          urgentProcessed += 1;
+          processed += 1;
+        }
+      }
+
+      if (!unlimited) {
+        budget = Math.max(0, budget - urgentProcessed);
+      }
+    }
+
+    if (unlimited) {
+      while (processEntry()) {
+        processed += 1;
+      }
+      return processed;
+    }
+
+    let normalProcessed = 0;
+    while (preloadQueue.length > 0 && normalProcessed < budget) {
+      const didProcess = processEntry();
+      if (didProcess) {
+        normalProcessed += 1;
+        processed += 1;
+      }
     }
 
     return processed;
@@ -1301,10 +1402,29 @@ export function createChunkManager({
 
     prunePreloadQueue(centerChunkX, centerChunkZ, finiteRetention);
 
-    for (let dx = -finiteView; dx <= finiteView; dx += 1) {
-      for (let dz = -finiteView; dz <= finiteView; dz += 1) {
-        ensureChunk(centerChunkX + dx, centerChunkZ + dz);
+    const guaranteeRadius = Math.min(finiteView, 1);
 
+    for (let dx = -guaranteeRadius; dx <= guaranteeRadius; dx += 1) {
+      for (let dz = -guaranteeRadius; dz <= guaranteeRadius; dz += 1) {
+        ensureChunk(centerChunkX + dx, centerChunkZ + dz);
+      }
+    }
+
+    if (finiteView > guaranteeRadius) {
+      for (let dx = -finiteView; dx <= finiteView; dx += 1) {
+        for (let dz = -finiteView; dz <= finiteView; dz += 1) {
+          const maxDistance = Math.max(Math.abs(dx), Math.abs(dz));
+          if (maxDistance <= guaranteeRadius) {
+            continue;
+          }
+          schedulePreload(
+            centerChunkX + dx,
+            centerChunkZ + dz,
+            centerChunkX,
+            centerChunkZ,
+            { urgent: true },
+          );
+        }
       }
     }
 
@@ -1379,7 +1499,7 @@ export function createChunkManager({
   function dispose() {
     Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
     preloadQueue.length = 0;
-    pendingPreloadKeys.clear();
+    pendingPreloadEntries.clear();
     queueDirty = false;
     lastCenterKey = null;
   }
