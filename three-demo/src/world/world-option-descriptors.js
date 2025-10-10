@@ -763,6 +763,18 @@ const terrainTfmsGlobalGroup = Object.freeze({
   type: groupType,
   children: Object.freeze([
     Object.freeze({
+      id: 'terrain.tfms.operatorCount',
+      label: 'Active Operator Count',
+      description:
+        'Number of TFMS operators evaluated when generating terrain attenuation. Legacy presets use all six slots.',
+      type: numberType,
+      min: 1,
+      max: 6,
+      step: 1,
+      default: 6,
+      path: Object.freeze(['terrain', 'tfms', 'operatorCount']),
+    }),
+    Object.freeze({
       id: 'terrain.tfms.baseAttenuation',
       label: 'Base Attenuation',
       description:

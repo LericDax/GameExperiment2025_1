@@ -70,6 +70,14 @@ This reference aggregates every tunable world-generation option exposed by the v
 
 Temperament patches are assembled via `make_kamea_patch`, which calls helpers such as `kamea_to_fm_matrix`, `kamea_to_warp`, `kamea_to_spectral`, and `kamea_to_phase` to project a planetary square into FM, warp, spectral, and phase domains before the TFMS network evaluates waveforms.【F:three-demo/docs/kamea-matrices.md†L43-L55】 Softmax gating blends FBM, ridged, Worley, warp, and diffusion operators using the patch’s logits so different planets emphasise distinct waveform families.
 
+#### TFMS Operator Slots
+
+| Path | Label | Description | Type | Default | Range | Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| `terrain.tfms.operatorCount` | Active Operator Count | Number of TFMS operators evaluated from the preset’s ordered stack. | `number` | `6` | `1` – `6` | `1` |
+
+The terrain engine truncates the operator array and modulation matrix to this count, guaranteeing that overrides never reference missing slots.【F:three-demo/src/world/world-settings.js†L676-L716】【F:three-demo/src/world/terrain-engine.js†L232-L308】 Biome TFMS profiles rebuild their ID→index map whenever the count changes so invalid overrides are ignored automatically.【F:three-demo/src/world/biome-engine.js†L100-L188】【F:three-demo/src/world/biome-engine.js†L500-L548】
+
 #### `terrain.fm` Attenuation Matrix
 
 Legacy overrides refer to the modulation matrix as `terrain.fm`, exposing the attenuation fields listed below. Use the [TFMS operator catalogue](three-demo/docs/tfms-system.md#default-operator-catalogue) for carrier context, the [modulation matrix semantics section](three-demo/docs/tfms-system.md#modulation-matrix-semantics) for modulation depth, and the [biome override workflow guide](three-demo/docs/tfms-system.md#biome-override-workflow) for biome blending behaviour.

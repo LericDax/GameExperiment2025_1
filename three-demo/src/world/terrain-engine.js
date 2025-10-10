@@ -12,6 +12,9 @@ import { createBiomeEngine } from './biome-engine.js';
 import { defaultWorldOptions } from './world-settings.js';
 import { createTfmsNetwork } from './tfms/operators.js';
 
+const MIN_OPERATOR_COUNT = 1;
+const MAX_OPERATOR_COUNT = 6;
+
 /**
  * Build the base TFMS terrain graph and optional biome override networks.
  *
@@ -271,10 +274,28 @@ function normalizeTfmsConfiguration({ seed, terrainConfig, defaults }) {
       ...custom.kamea.ranges,
     };
   }
+  const availableOperators = Array.isArray(fallback.operators)
+    ? fallback.operators.length
+    : 0;
+  const operatorCount = normalizeOperatorCount(
+    availableOperators,
+    Number.isFinite(custom.operatorCount)
+      ? custom.operatorCount
+      : fallback.operatorCount,
+  );
+  const operators = fallback.operators.slice(0, operatorCount);
+  const modulationMatrix = fallback.modulationMatrix.filter(
+    (entry) =>
+      isFiniteNumber(entry?.source) &&
+      entry.source < operators.length &&
+      isFiniteNumber(entry?.target) &&
+      entry.target < operators.length,
+  );
+
   return {
     waveforms: fallback.waveforms,
-    operators: fallback.operators,
-    modulationMatrix: fallback.modulationMatrix,
+    operators,
+    modulationMatrix,
     tectonic,
     transferFunctions,
     kamea: kameaOptions,
@@ -282,16 +303,16 @@ function normalizeTfmsConfiguration({ seed, terrainConfig, defaults }) {
     clamp,
     biomeBlendStrength,
     temperament: temperamentValue,
+    operatorCount,
   };
 }
 
 function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
+  const presetDefaults = defaultWorldOptions.terrain.tfms ?? {};
   const templateSource =
     terrainConfig && typeof terrainConfig.tfms === 'object'
-      ? terrainConfig.tfms
-      : defaultWorldOptions.terrain.tfms;
-
-  const presetDefaults = defaultWorldOptions.terrain.tfms ?? {};
+      ? { ...presetDefaults, ...terrainConfig.tfms }
+      : presetDefaults;
   const baseAttenuation = Number.isFinite(templateSource?.baseAttenuation)
     ? templateSource.baseAttenuation
     : Number.isFinite(presetDefaults.baseAttenuation)
@@ -337,9 +358,20 @@ function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
       }))
     : [];
 
-  const operatorTemplates = Array.isArray(templateSource?.operators)
+  const operatorTemplatesSource = Array.isArray(templateSource?.operators)
     ? templateSource.operators
     : [];
+  const requestedOperatorCount = Number.isFinite(templateSource?.operatorCount)
+    ? templateSource.operatorCount
+    : operatorTemplatesSource.length || MAX_OPERATOR_COUNT;
+  const configuredOperatorCount = normalizeOperatorCount(
+    operatorTemplatesSource.length,
+    requestedOperatorCount,
+  );
+  const operatorTemplates = operatorTemplatesSource.slice(
+    0,
+    configuredOperatorCount,
+  );
 
   const operators = operatorTemplates.map((operatorTemplate, index) => {
     const envelope = operatorTemplate?.envelope ?? {};
@@ -636,6 +668,8 @@ function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
     );
   }
 
+  const operatorCount = operatorTemplates.length;
+
   return {
     waveforms,
     operators,
@@ -647,6 +681,7 @@ function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
     clamp,
     biomeBlendStrength,
     temperament,
+    operatorCount,
   };
 }
 
@@ -706,6 +741,29 @@ function clampWithinRange(value, min, max) {
     next = Math.min(max, next);
   }
   return next;
+}
+
+function clampOperatorCount(value) {
+  if (!Number.isFinite(value)) {
+    return MAX_OPERATOR_COUNT;
+  }
+  const normalized = Math.floor(value);
+  if (!Number.isFinite(normalized)) {
+    return MAX_OPERATOR_COUNT;
+  }
+  if (normalized <= 0) {
+    return MIN_OPERATOR_COUNT;
+  }
+  return Math.max(MIN_OPERATOR_COUNT, Math.min(MAX_OPERATOR_COUNT, normalized));
+}
+
+function normalizeOperatorCount(available, requested) {
+  if (!Number.isFinite(available) || available <= 0) {
+    return 0;
+  }
+  const fallback = Number.isFinite(requested) ? requested : available;
+  const normalized = clampOperatorCount(fallback);
+  return Math.min(normalized, available);
 }
 
 function resolveEnvelopeScalar(range, defaults, fallback) {
@@ -898,6 +956,14 @@ function cloneTfmsConfig(config) {
         : {},
     temperament: config?.temperament ?? null,
     kamea: cloneKameaOptions(config?.kamea),
+    operatorCount: normalizeOperatorCount(
+      Array.isArray(config?.operators) ? config.operators.length : 0,
+      Number.isFinite(config?.operatorCount)
+        ? config.operatorCount
+        : Array.isArray(config?.operators)
+          ? config.operators.length
+          : 0,
+    ),
   };
 }
 

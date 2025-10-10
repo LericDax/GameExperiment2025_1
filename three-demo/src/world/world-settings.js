@@ -199,6 +199,9 @@ const defaultTerrainTfmsKameaPhase = getDescriptorDefault([
   'value',
 ])
 
+const MIN_TFMS_OPERATOR_COUNT = 1
+const MAX_TFMS_OPERATOR_COUNT = 6
+
 const defaultTerrainTfmsKameaSpectral = getDescriptorDefault([
   'terrain',
   'tfms',
@@ -360,6 +363,34 @@ function clampToRange(value, min, max) {
     result = Math.min(max, result)
   }
   return result
+}
+
+function normalizeTfmsOperatorCount(available, requested) {
+  const normalizedAvailable = Math.max(
+    0,
+    Math.min(
+      MAX_TFMS_OPERATOR_COUNT,
+      Number.isFinite(available) ? Math.floor(available) : 0,
+    ),
+  )
+  if (normalizedAvailable === 0) {
+    return 0
+  }
+  const fallback = Number.isFinite(requested)
+    ? Math.floor(requested)
+    : normalizedAvailable
+  if (!Number.isFinite(fallback)) {
+    return normalizedAvailable
+  }
+  const clamped = Math.min(
+    Math.max(fallback, MIN_TFMS_OPERATOR_COUNT),
+    normalizedAvailable,
+  )
+  return clamped
+}
+
+function clampTfmsOperatorCount(value) {
+  return normalizeTfmsOperatorCount(MAX_TFMS_OPERATOR_COUNT, value)
 }
 
 function cloneTfmsRange(range) {
@@ -636,16 +667,28 @@ function cloneTfmsKamea(kamea) {
 
 function cloneTfmsPreset(preset = {}) {
   const clonedKamea = cloneTfmsKamea(preset.kamea)
+  const waveforms = Array.isArray(preset.waveforms)
+    ? preset.waveforms.map((waveform, index) => cloneTfmsWaveform(waveform, index))
+    : []
+  const operators = Array.isArray(preset.operators)
+    ? preset.operators.map((operator, index) => cloneTfmsOperator(operator, index))
+    : []
+  const operatorCount = normalizeTfmsOperatorCount(
+    operators.length,
+    Number.isFinite(preset.operatorCount)
+      ? preset.operatorCount
+      : operators.length || MAX_TFMS_OPERATOR_COUNT,
+  )
+  if (operators.length > operatorCount) {
+    operators.length = operatorCount
+  }
+  const modulationMatrix = Array.isArray(preset.modulationMatrix)
+    ? preset.modulationMatrix.map((entry, index) => cloneTfmsMatrixEntry(entry, index))
+    : []
   return {
-    waveforms: Array.isArray(preset.waveforms)
-      ? preset.waveforms.map((waveform, index) => cloneTfmsWaveform(waveform, index))
-      : [],
-    operators: Array.isArray(preset.operators)
-      ? preset.operators.map((operator, index) => cloneTfmsOperator(operator, index))
-      : [],
-    modulationMatrix: Array.isArray(preset.modulationMatrix)
-      ? preset.modulationMatrix.map((entry, index) => cloneTfmsMatrixEntry(entry, index))
-      : [],
+    waveforms,
+    operators,
+    modulationMatrix,
     transferFunctions:
       preset.transferFunctions && typeof preset.transferFunctions === 'object'
         ? { ...preset.transferFunctions }
@@ -670,6 +713,7 @@ function cloneTfmsPreset(preset = {}) {
       preset.defaults && typeof preset.defaults === 'object'
         ? { ...preset.defaults }
         : undefined,
+    operatorCount,
   }
 }
 
@@ -1209,6 +1253,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     baseAttenuation,
     clamp: Object.freeze({ min: clampMin, max: clampMax }),
     biomeBlendStrength,
+    operatorCount: operators.length,
     defaults: Object.freeze({
       baseAmplitude,
       baseFrequency,
@@ -1671,6 +1716,12 @@ function mapLegacyTfmsOverrides(overrides) {
   if (!mapped.kamea && isObject(overrides.fmKamea)) {
     mapped.kamea = overrides.fmKamea
   }
+  if (!mapped.hasOwnProperty('operatorCount')) {
+    const candidate = overrides.operatorCount ?? overrides.tfmsOperatorCount
+    if (Number.isFinite(candidate)) {
+      mapped.operatorCount = candidate
+    }
+  }
   return mapped
 }
 
@@ -1747,6 +1798,29 @@ function applyTfmsOverrides(target, overrides) {
   }
   if (target.kamea && typeof target.kamea.temperament === 'string') {
     target.temperament = target.kamea.temperament
+  }
+
+  const availableOperatorSlots = Array.isArray(target.operators)
+    ? target.operators.length
+    : 0
+  if (normalizedOverrides.hasOwnProperty('operatorCount')) {
+    const requested = normalizedOverrides.operatorCount
+    target.operatorCount = normalizeTfmsOperatorCount(
+      availableOperatorSlots,
+      Number.isFinite(requested) ? requested : target.operatorCount,
+    )
+  } else {
+    target.operatorCount = normalizeTfmsOperatorCount(
+      availableOperatorSlots,
+      target.operatorCount,
+    )
+  }
+  if (
+    Array.isArray(target.operators) &&
+    target.operatorCount > 0 &&
+    target.operators.length > target.operatorCount
+  ) {
+    target.operators.length = target.operatorCount
   }
 }
 

@@ -1,10 +1,24 @@
 import { ValueNoise2D } from './noise.js';
-import { defaultWorldOptions, biomeOptionMetadata } from './world-settings.js';
+import {
+  defaultWorldOptions,
+  biomeOptionMetadata,
+  getWorldOptions,
+} from './world-settings.js';
 
-const biomeModuleMap = import.meta.glob('./biomes/*.json', {
-  import: 'default',
-  eager: true,
-});
+function loadBiomeModules() {
+  if (typeof import.meta.glob === 'function') {
+    return import.meta.glob('./biomes/*.json', {
+      import: 'default',
+      eager: true,
+    });
+  }
+  if (globalThis.__BIOME_MODULE_MAP__) {
+    return globalThis.__BIOME_MODULE_MAP__;
+  }
+  throw new Error('Biome module map is not available in this environment.');
+}
+
+const biomeModuleMap = loadBiomeModules();
 
 /*
  * Biome onboarding checklist:
@@ -47,6 +61,66 @@ const NEUTRAL_BASE_PALETTE = {
   cloud: '#f7f8fb',
 };
 
+const MAX_TERRAIN_OPERATORS = 6;
+
+const terrainOperatorCache = {
+  signature: null,
+  map: new Map(),
+  count: 0,
+  ids: [],
+};
+
+function clampOperatorCount(value) {
+  if (!Number.isFinite(value)) {
+    return MAX_TERRAIN_OPERATORS;
+  }
+  const normalized = Math.floor(value);
+  if (!Number.isFinite(normalized)) {
+    return MAX_TERRAIN_OPERATORS;
+  }
+  if (normalized <= 0) {
+    return 0;
+  }
+  return Math.min(MAX_TERRAIN_OPERATORS, normalized);
+}
+
+function getTerrainOperatorLookup() {
+  const worldOptions = getWorldOptions();
+  const tfmsOptions = worldOptions?.terrain?.tfms ?? defaultWorldOptions.terrain.tfms;
+  const operators = Array.isArray(tfmsOptions?.operators) ? tfmsOptions.operators : [];
+  const available = operators.length;
+  const requested = Number.isFinite(tfmsOptions?.operatorCount)
+    ? tfmsOptions.operatorCount
+    : available;
+  const activeCount = Math.min(available, clampOperatorCount(requested));
+  const signature = JSON.stringify(
+    operators.slice(0, activeCount).map((operator) => [
+      typeof operator?.id === 'string' ? operator.id : null,
+      typeof operator?.waveformId === 'string' ? operator.waveformId : null,
+    ]),
+  );
+  if (signature !== terrainOperatorCache.signature) {
+    const map = new Map();
+    const ids = [];
+    operators.slice(0, activeCount).forEach((operator, index) => {
+      const id = typeof operator?.id === 'string' ? operator.id : null;
+      const waveformId = typeof operator?.waveformId === 'string' ? operator.waveformId : null;
+      ids.push(id);
+      if (id) {
+        map.set(id, index);
+      }
+      if (waveformId) {
+        map.set(waveformId, index);
+      }
+    });
+    terrainOperatorCache.signature = signature;
+    terrainOperatorCache.map = map;
+    terrainOperatorCache.count = activeCount;
+    terrainOperatorCache.ids = ids;
+  }
+  return terrainOperatorCache;
+}
+
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
 }
@@ -83,6 +157,50 @@ function normalizeVectorOverride(value) {
     result.z = z;
   }
   return result;
+}
+
+function normalizeFmOperatorWeights(definition, operatorLookup = getTerrainOperatorLookup()) {
+  const lookup = operatorLookup ?? getTerrainOperatorLookup();
+  const operatorCount = lookup?.count ?? 0;
+  if (!operatorCount) {
+    return null;
+  }
+  const weights = new Array(operatorCount).fill(undefined);
+
+  const assign = (index, value) => {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    if (index < 0 || index >= operatorCount) {
+      return;
+    }
+    weights[index] = value;
+  };
+
+  if (Array.isArray(definition)) {
+    definition.forEach((value, index) => {
+      assign(index, Number(value));
+    });
+  } else if (isPlainObject(definition)) {
+    Object.entries(definition).forEach(([key, value]) => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return;
+      }
+      if (lookup?.map?.has(key)) {
+        assign(lookup.map.get(key), numeric);
+        return;
+      }
+      const parsedIndex = Number.parseInt(key, 10);
+      if (Number.isInteger(parsedIndex)) {
+        assign(parsedIndex, numeric);
+      }
+    });
+  } else {
+    return null;
+  }
+
+  return weights.some((value) => value !== undefined) ? weights : null;
 }
 
 function normalizeOperatorModulationOverride(value) {
@@ -179,7 +297,7 @@ function normalizeWaveformOverrides(definition) {
     .filter(Boolean);
 }
 
-function normalizeOperatorOverrides(definition) {
+function normalizeOperatorOverrides(definition, operatorLookup) {
   let source = [];
   if (Array.isArray(definition)) {
     source = definition.filter(isPlainObject);
@@ -196,6 +314,8 @@ function normalizeOperatorOverrides(definition) {
       .filter(Boolean);
   }
 
+  const idMap = operatorLookup?.map ?? null;
+
   return source
     .map((candidate) => {
       const operatorId =
@@ -205,6 +325,9 @@ function normalizeOperatorOverrides(definition) {
             ? candidate.operatorId
             : null;
       if (!operatorId) {
+        return null;
+      }
+      if (idMap && !idMap.has(operatorId)) {
         return null;
       }
       const override = { id: operatorId };
@@ -408,15 +531,27 @@ function normalizeBiomeFmProfile(definition) {
   const blend = clamp01(Number.isFinite(blendSource) ? blendSource : 1);
 
   const overrides = {};
+  const operatorLookup = getTerrainOperatorLookup();
 
   const waveformOverrides = normalizeWaveformOverrides(definition.waveforms);
   if (waveformOverrides.length > 0) {
     overrides.waveforms = waveformOverrides;
   }
 
-  const operatorOverrides = normalizeOperatorOverrides(definition.operators);
+  const operatorOverrides = normalizeOperatorOverrides(
+    definition.operators,
+    operatorLookup,
+  );
   if (operatorOverrides.length > 0) {
     overrides.operators = operatorOverrides;
+  }
+
+  const operatorWeights = normalizeFmOperatorWeights(
+    definition.operatorWeights,
+    operatorLookup,
+  );
+  if (operatorWeights) {
+    overrides.operatorWeights = operatorWeights;
   }
 
   const matrixOverrides = normalizeMatrixOverrides(

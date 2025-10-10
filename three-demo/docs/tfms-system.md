@@ -25,6 +25,10 @@ The table below lists each default operator in the shipping preset, showing how 
 | `domain-warp` | `domainWarp` | `0 / 0` | `identity` | Amp: `primaryAmplitude ×0.32`, Freq: `primaryFrequency ×0.65`, Phase: `primaryOffset`, Warp: disabled | Supplies domain offsets for FBM and ridged layers; zero direct weight keeps it modulation-only.【F:three-demo/src/world/world-settings.js†L1116-L1154】 |
 | `diffusion-mask` | `diffusion` | `0.55 / 0` | `tanh` | Amp: `detailAmplitude ×0.35`, Freq: `detailFrequency ×1.2`, Phase: `detailOffset`, Warp: disabled | Acts as attenuation mask and FM source for core layers, smoothing small-scale noise.【F:three-demo/src/world/world-settings.js†L1154-L1203】 |
 
+### Operator slot count
+
+Designers can now specify how many operators are active in the terrain preset. The `terrain.tfms.operatorCount` descriptor accepts values from one to six and determines how many entries from the operator array are evaluated at runtime.【F:three-demo/src/world/world-option-descriptors.js†L626-L648】【F:three-demo/src/world/world-settings.js†L676-L704】 The terrain engine slices both the operator list and modulation matrix to that count so out-of-range routes are ignored automatically.【F:three-demo/src/world/terrain-engine.js†L232-L308】 Biome TFMS profiles consult the active operator map when normalising overrides, ensuring invalid IDs are skipped and per-slot weights only apply to existing carriers.【F:three-demo/src/world/biome-engine.js†L100-L188】【F:three-demo/src/world/biome-engine.js†L500-L548】
+
 ### Waveform and seed library
 Each operator references a waveform bank seeded deterministically from the world seed using multiplier/offset pairs. Adjusting waveform seed templates in the preset cascades through biome overrides because the terrain engine clones them when normalising TFMS configurations.【F:three-demo/src/world/world-settings.js†L648-L714】【F:three-demo/src/world/terrain-engine.js†L164-L304】
 
