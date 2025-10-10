@@ -386,6 +386,18 @@ function normalizeMatrixOverrides(definition) {
     .filter(Boolean);
 }
 
+/**
+ * Normalise biome TFMS overrides and blend weights.
+ *
+ * Profiles inherit the six-operator attenuation stack from
+ * docs/tfms-system.md#default-operator-catalogue and only replace the fields
+ * provided in biome JSON. The helper clamps the optional `blend` scalar to
+ * `[0,1]`, merges waveform/operator/matrix overrides, and leaves unspecified
+ * weights untouched so designers can align JSON payloads with the
+ * docs/tfms-system.md#biome-override-workflow guidance.
+ *
+ * @param {object} definition
+ */
 function normalizeBiomeFmProfile(definition) {
   if (!isPlainObject(definition)) {
     return null;

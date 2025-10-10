@@ -1,7 +1,32 @@
+/**
+ * Terrain FM Synthesis (TFMS) terrain engine utilities.
+ *
+ * The module assembles the six-operator attenuation graph described in the
+ * TFMS guide, wiring macro FBM, ridge, banding, tectonic Worley, domain warp,
+ * and diffusion mask operators into a modulation matrix before biome blending.
+ * See docs/tfms-system.md#default-operator-catalogue and
+ * docs/tfms-system.md#modulation-matrix-semantics for a schematic of how the
+ * presets map onto runtime evaluation.
+ */
 import { createBiomeEngine } from './biome-engine.js';
 import { defaultWorldOptions } from './world-settings.js';
 import { createTfmsNetwork } from './tfms/operators.js';
 
+/**
+ * Build the base TFMS terrain graph and optional biome override networks.
+ *
+ * This function merges world overrides with the six-operator default preset,
+ * resolves modulation links, and instantiates the networks documented in
+ * docs/tfms-system.md#tfms-concept-overview. The resulting base network is the
+ * one illustrated in docs/tfms-system.md#default-operator-catalogue; per-biome
+ * overrides clone that structure, patching operators or modulation entries
+ * before blending according to docs/tfms-system.md#biome-override-workflow.
+ *
+ * @param {object} options
+ * @param {typeof import('three')} options.THREE
+ * @param {number} [options.seed]
+ * @param {object} [options.worldConfig]
+ */
 export function createTerrainEngine({
   THREE,
   seed = defaultWorldOptions.seedHash,

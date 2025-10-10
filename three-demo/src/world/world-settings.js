@@ -6,6 +6,77 @@ import {
 
 export { worldOptionDescriptors } from './world-option-descriptors.js'
 
+/**
+ * Scalar or vector ranges that can be resolved against world descriptors or
+ * direct numeric overrides. See docs/tfms-system.md#tfms-concept-overview for
+ * how these values inform the attenuation graph.
+ *
+ * @typedef {Object} TfmsRange
+ * @property {number} [value]
+ * @property {number} [min]
+ * @property {number} [max]
+ * @property {string} [baseKey]
+ * @property {number} [base]
+ * @property {number} [multiplier]
+ * @property {('x'|'z')} [axis]
+ * @property {string} [channel]
+ */
+
+/**
+ * Vector wrapper used for phase/warp components.
+ *
+ * @typedef {Object} TfmsVectorRange
+ * @property {TfmsRange} [x]
+ * @property {TfmsRange} [z]
+ */
+
+/**
+ * Modulation payload describing how one operator can influence another. Refer
+ * to docs/tfms-system.md#modulation-matrix-semantics for routing behaviour.
+ *
+ * @typedef {Object} TfmsModulationLink
+ * @property {string} id
+ * @property {number} [source]
+ * @property {number} [target]
+ * @property {string} [sourceId]
+ * @property {string} [targetId]
+ * @property {string} [routing]
+ * @property {string} [channel]
+ * @property {string} [axis]
+ * @property {TfmsRange} [gain]
+ * @property {TfmsRange} [bias]
+ */
+
+/**
+ * Operator schema for the six-operator TFMS preset. Cross-reference
+ * docs/tfms-system.md#default-operator-catalogue when editing weights,
+ * transfers, or envelope bindings.
+ *
+ * @typedef {Object} TfmsOperatorPreset
+ * @property {string} id
+ * @property {string} waveformId
+ * @property {string} type
+ * @property {TfmsRange} [seedTemplate]
+ * @property {number} weight
+ * @property {number} bias
+ * @property {string|{id:string}} transfer
+ * @property {Object<string,*>} [transferSettings]
+ * @property {{weight?:number}} [tectonic]
+ * @property {Object<string,*>} [settings]
+ * @property {{
+ *   amplitude?: TfmsRange,
+ *   frequency?: TfmsRange,
+ *   phase?: TfmsVectorRange,
+ *   warp?: TfmsVectorRange
+ * }} [envelope]
+ * @property {{
+ *   amplitude?: TfmsRange,
+ *   frequency?: TfmsRange,
+ *   phase?: TfmsVectorRange,
+ *   warp?: TfmsVectorRange
+ * }} [modulation]
+ */
+
 const descriptorIndex = createWorldOptionDescriptorIndex(worldOptionDescriptors)
 
 export function getWorldOptionDescriptor(pathKey) {
@@ -150,6 +221,11 @@ const defaultTerrainTfmsKameaErosion = getDescriptorDefault([
   'erosionPreset',
 ])
 
+/**
+ * Default TFMS preset mirroring the six-operator attenuation stack outlined in
+ * docs/tfms-system.md#default-operator-catalogue. Update the guide alongside
+ * any structural changes so tooling and design docs stay aligned.
+ */
 const defaultTerrainTfmsPreset = createDefaultTerrainTfmsPreset(defaultTerrainCore)
 
 const defaultTerrainOptions = Object.freeze({
@@ -597,6 +673,22 @@ function cloneTfmsPreset(preset = {}) {
   }
 }
 
+/**
+ * Create the serialisable TFMS preset used by the terrain engine.
+ *
+ * @param {typeof defaultTerrainCore} terrainDefaults
+ * @returns {{
+ *   clamp: TfmsRange,
+ *   baseAttenuation: number,
+ *   biomeBlendStrength: number,
+ *   temperament: string,
+ *   kamea: *,
+ *   operators: TfmsOperatorPreset[],
+ *   modulationMatrix: TfmsModulationLink[],
+ *   transferFunctions: Object<string,string>,
+ *   tectonic: *
+ * }}
+ */
 function createDefaultTerrainTfmsPreset(terrainDefaults) {
   const baseAmplitude = terrainDefaults.primaryAmplitude
   const baseFrequency = terrainDefaults.primaryFrequency

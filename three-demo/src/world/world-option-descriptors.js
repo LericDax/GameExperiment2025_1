@@ -817,7 +817,7 @@ const terrainTfmsGroup = Object.freeze({
   id: 'terrain.tfms',
   label: 'Terrain FM Synthesis',
   description:
-    'Configure the Terrain FM Synthesis (TFMS) operators that sculpt heightfields before biome blending.',
+    'Configure the Terrain FM Synthesis (TFMS) operators that sculpt heightfields before biome blending. See docs/tfms-system.md for the annotated operator graph.',
   type: groupType,
   children: Object.freeze([
     terrainTfmsGlobalGroup,
