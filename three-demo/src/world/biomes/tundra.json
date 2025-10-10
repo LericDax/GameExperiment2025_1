@@ -39,6 +39,13 @@
     "tintColor": "#e9f1f6",
     "tintStrength": 0.4
   },
+  "tfmsProfile": {
+    "blend": 0.82,
+    "schemaPool": [
+      { "id": "tundra-drumlin-fields", "weight": 4 },
+      { "id": "glacial-aurora-spires", "weight": 1 }
+    ]
+  },
   "weather": {
     "candidates": [
       {

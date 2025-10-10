@@ -41,6 +41,13 @@
     "tintColor": "#d7c9ff",
     "tintStrength": 0.5
   },
+  "tfmsProfile": {
+    "blend": 0.83,
+    "schemaPool": [
+      { "id": "arcane-stepwells", "weight": 4 },
+      { "id": "temperate-terraces", "weight": 1 }
+    ]
+  },
   "weather": {
     "candidates": [
       {

@@ -63,6 +63,13 @@
       }
     }
   },
+  "tfmsProfile": {
+    "blend": 0.9,
+    "schemaPool": [
+      { "id": "glacial-aurora-spires", "weight": 5 },
+      { "id": "tundra-drumlin-fields", "weight": 2 }
+    ]
+  },
   "weather": {
     "candidates": [
       {

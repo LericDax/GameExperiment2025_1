@@ -41,6 +41,13 @@
     "tintColor": "#ffdff5",
     "tintStrength": 0.55
   },
+  "tfmsProfile": {
+    "blend": 0.8,
+    "schemaPool": [
+      { "id": "neon-resonant-terraces", "weight": 4 },
+      { "id": "temperate-terraces", "weight": 1 }
+    ]
+  },
   "weather": {
     "candidates": [
       {

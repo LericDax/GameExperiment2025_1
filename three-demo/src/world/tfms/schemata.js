@@ -163,6 +163,576 @@ const RAW_TFMS_SCHEMATA = [
       ],
     },
   },
+  {
+    id: 'desert-dune-sea',
+    label: 'Sunset Dune Sea',
+    tags: ['desert', 'arid', 'dune'],
+    biomes: {
+      ids: ['sunset_dunes'],
+      tags: ['arid', 'sandy'],
+    },
+    climate: {
+      temperature: { min: 0.75, max: 1, ideal: 0.9 },
+      moisture: { min: 0, max: 0.32, ideal: 0.16 },
+    },
+    adjacency: {
+      preferTags: ['wind-carved'],
+      avoidTags: ['wetland', 'fungal'],
+    },
+    blend: 0.68,
+    overrides: {
+      operatorWeights: [0.92, 0.58, 0.82, 0.44, 0.32, 0.46],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: 0.18,
+          envelope: { amplitude: 0.78 },
+          modulation: { amplitude: 0.22 },
+        },
+        {
+          id: 'anisotropic-banding',
+          weight: 0.94,
+          modulation: { frequency: 0.24, warp: { x: 18, z: -14 } },
+          envelope: { warp: { x: 36, z: -24 } },
+        },
+        {
+          id: 'domain-warp',
+          modulation: { amplitude: 0.28 },
+          envelope: { amplitude: 0.52 },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.52,
+          transfer: { id: 'smoothstep', smoothness: 0.48 },
+          modulation: { amplitude: 0.26 },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.22,
+        },
+        {
+          id: 'diffusion-mask->anisotropic-banding:amplitude',
+          gain: 0.48,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-x',
+          gain: 0.54,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-z',
+          gain: 0.5,
+        },
+        {
+          id: 'tectonic-worley->anisotropic-banding:frequency',
+          gain: 0.28,
+        },
+      ],
+    },
+  },
+  {
+    id: 'desert-oasis-mesas',
+    label: 'Butte Oasis Strata',
+    tags: ['desert', 'arid', 'mesa'],
+    biomes: {
+      ids: ['sunset_dunes'],
+      tags: ['arid'],
+    },
+    climate: {
+      temperature: { min: 0.68, max: 0.95, ideal: 0.78 },
+      moisture: { min: 0.1, max: 0.42, ideal: 0.24 },
+    },
+    adjacency: {
+      preferTags: ['wind-carved', 'structured'],
+      avoidTags: ['aquatic'],
+    },
+    blend: 0.74,
+    overrides: {
+      operatorWeights: [1.08, 0.72, 0.4, 0.58, 0.36, 0.38],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: 0.32,
+          envelope: { amplitude: 1.18 },
+        },
+        {
+          id: 'ridge-noise',
+          weight: 0.98,
+          modulation: { amplitude: 0.18 },
+          envelope: { warp: { x: 12, z: 16 } },
+        },
+        {
+          id: 'domain-warp',
+          modulation: { amplitude: 0.34 },
+        },
+        {
+          id: 'tectonic-worley',
+          weight: 0.62,
+          modulation: { amplitude: 0.24 },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.46,
+          transfer: { id: 'tanh' },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.18,
+        },
+        {
+          id: 'diffusion-mask->ridge-noise:amplitude',
+          gain: 0.36,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-x',
+          gain: 0.62,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-z',
+          gain: 0.58,
+        },
+        {
+          id: 'ridge-noise->domain-warp:amplitude',
+          gain: 0.28,
+        },
+      ],
+    },
+  },
+  {
+    id: 'fungal-noctilucent-basins',
+    label: 'Noctilucent Basin Weave',
+    tags: ['fungal', 'wetland', 'luminescent'],
+    biomes: {
+      ids: ['noctilucent_fungus_glade'],
+      tags: ['fungal', 'humid'],
+    },
+    climate: {
+      temperature: { min: 0.35, max: 0.62, ideal: 0.48 },
+      moisture: { min: 0.68, max: 0.98, ideal: 0.84 },
+    },
+    adjacency: {
+      preferTags: ['fungal', 'wetland'],
+      avoidTags: ['arid'],
+    },
+    blend: 0.88,
+    overrides: {
+      operatorWeights: [0.78, 0.46, 0.38, 0.42, 0.48, 0.74],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: -0.16,
+          modulation: { amplitude: 0.32 },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.86,
+          transfer: { id: 'sigmoid' },
+          modulation: { amplitude: 0.48 },
+        },
+        {
+          id: 'domain-warp',
+          modulation: { amplitude: 0.46 },
+        },
+        {
+          id: 'tectonic-worley',
+          weight: 0.38,
+          modulation: { amplitude: 0.22 },
+        },
+        {
+          id: 'anisotropic-banding',
+          weight: 0.42,
+          modulation: { frequency: -0.12 },
+          envelope: { warp: { x: 14, z: -10 } },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.58,
+        },
+        {
+          id: 'diffusion-mask->ridge-noise:amplitude',
+          gain: 0.44,
+        },
+        {
+          id: 'diffusion-mask->anisotropic-banding:amplitude',
+          gain: 0.36,
+        },
+        {
+          id: 'domain-warp->ridge-noise:domain-x',
+          gain: 0.52,
+        },
+        {
+          id: 'domain-warp->ridge-noise:domain-z',
+          gain: 0.48,
+        },
+        {
+          id: 'tectonic-worley->diffusion-mask:amplitude',
+          gain: 0.56,
+        },
+      ],
+    },
+  },
+  {
+    id: 'polar-reef-atolls',
+    label: 'Polar Reef Atolls',
+    tags: ['reef', 'aquatic', 'auroral'],
+    biomes: {
+      ids: ['auroral_glass_reef'],
+      tags: ['aquatic', 'luminous'],
+    },
+    climate: {
+      temperature: { min: 0.2, max: 0.5, ideal: 0.36 },
+      moisture: { min: 0.7, max: 1, ideal: 0.88 },
+    },
+    adjacency: {
+      preferTags: ['aquatic', 'luminous'],
+      avoidTags: ['arid'],
+    },
+    blend: 0.82,
+    overrides: {
+      operatorWeights: [0.68, 0.42, 0.34, 0.38, 0.72, 0.78],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: -0.08,
+          envelope: { amplitude: 0.62 },
+        },
+        {
+          id: 'domain-warp',
+          modulation: { amplitude: 0.56 },
+          envelope: { amplitude: 0.52 },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.74,
+          transfer: { id: 'tanh' },
+          modulation: { amplitude: 0.42 },
+        },
+        {
+          id: 'ridge-noise',
+          weight: 0.58,
+          modulation: { amplitude: 0.16 },
+        },
+        {
+          id: 'anisotropic-banding',
+          weight: 0.32,
+          modulation: { frequency: 0.08 },
+          envelope: { warp: { x: 12, z: 18 } },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.46,
+        },
+        {
+          id: 'diffusion-mask->ridge-noise:amplitude',
+          gain: 0.38,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-x',
+          gain: 0.72,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-z',
+          gain: 0.68,
+        },
+        {
+          id: 'domain-warp->ridge-noise:domain-x',
+          gain: 0.54,
+        },
+        {
+          id: 'domain-warp->ridge-noise:domain-z',
+          gain: 0.5,
+        },
+      ],
+    },
+  },
+  {
+    id: 'glacial-aurora-spires',
+    label: 'Glacial Aurora Spires',
+    tags: ['frozen', 'auroral', 'spires'],
+    biomes: {
+      ids: ['aurora_shard_expanse', 'ice_spire_tundra'],
+      tags: ['frozen', 'windswept'],
+    },
+    climate: {
+      temperature: { min: 0, max: 0.35, ideal: 0.18 },
+      moisture: { min: 0.18, max: 0.55, ideal: 0.34 },
+    },
+    adjacency: {
+      preferTags: ['aurora_channel', 'glacial'],
+      avoidTags: ['aquatic'],
+    },
+    blend: 0.86,
+    overrides: {
+      operatorWeights: [1.12, 0.82, 0.48, 0.66, 0.4, 0.44],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: 0.26,
+          envelope: { amplitude: 1.22 },
+        },
+        {
+          id: 'ridge-noise',
+          weight: 1.08,
+          modulation: { amplitude: 0.28 },
+        },
+        {
+          id: 'tectonic-worley',
+          weight: 0.72,
+          modulation: { amplitude: 0.32 },
+        },
+        {
+          id: 'domain-warp',
+          modulation: { amplitude: 0.22 },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.4,
+          transfer: { id: 'tanh' },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'tectonic-worley->ridge-noise:amplitude',
+          gain: 0.48,
+        },
+        {
+          id: 'tectonic-worley->diffusion-mask:amplitude',
+          gain: 0.42,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-x',
+          gain: 0.46,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-z',
+          gain: 0.44,
+        },
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.26,
+        },
+      ],
+    },
+  },
+  {
+    id: 'tundra-drumlin-fields',
+    label: 'Frostbound Drumlin Fields',
+    tags: ['tundra', 'cold', 'drumlin'],
+    biomes: {
+      ids: ['frostbound_steppe'],
+      tags: ['cold', 'windswept'],
+    },
+    climate: {
+      temperature: { min: 0.05, max: 0.32, ideal: 0.2 },
+      moisture: { min: 0.35, max: 0.7, ideal: 0.5 },
+    },
+    adjacency: {
+      preferTags: ['glacial'],
+      avoidTags: ['aquatic'],
+    },
+    blend: 0.8,
+    overrides: {
+      operatorWeights: [0.96, 0.68, 0.42, 0.52, 0.36, 0.46],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: 0.12,
+          envelope: { amplitude: 0.94 },
+          modulation: { amplitude: 0.24 },
+        },
+        {
+          id: 'ridge-noise',
+          weight: 0.82,
+          modulation: { amplitude: 0.22 },
+        },
+        {
+          id: 'anisotropic-banding',
+          weight: 0.46,
+          modulation: { frequency: -0.08 },
+          envelope: { warp: { x: 18, z: 12 } },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.5,
+          transfer: { id: 'smoothstep', smoothness: 0.36 },
+          modulation: { amplitude: 0.28 },
+        },
+        {
+          id: 'domain-warp',
+          modulation: { amplitude: 0.3 },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.32,
+        },
+        {
+          id: 'diffusion-mask->ridge-noise:amplitude',
+          gain: 0.3,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-x',
+          gain: 0.4,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-z',
+          gain: 0.42,
+        },
+        {
+          id: 'domain-warp->ridge-noise:domain-x',
+          gain: 0.36,
+        },
+      ],
+    },
+  },
+  {
+    id: 'arcane-stepwells',
+    label: 'Arcane Stepwell Terraces',
+    tags: ['arcane', 'structured', 'terraced'],
+    biomes: {
+      ids: ['pseudo_borgesian_librarium'],
+      tags: ['structured', 'dry'],
+    },
+    climate: {
+      temperature: { min: 0.3, max: 0.6, ideal: 0.45 },
+      moisture: { min: 0.18, max: 0.5, ideal: 0.32 },
+    },
+    adjacency: {
+      preferTags: ['structured', 'upland'],
+      avoidTags: ['aquatic'],
+    },
+    blend: 0.84,
+    overrides: {
+      operatorWeights: [0.98, 0.9, 0.42, 0.66, 0.34, 0.4],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: 0.28,
+          envelope: { amplitude: 1.08 },
+        },
+        {
+          id: 'ridge-noise',
+          weight: 1.02,
+          modulation: { amplitude: 0.26 },
+        },
+        {
+          id: 'anisotropic-banding',
+          weight: 0.48,
+          modulation: { frequency: 0.18 },
+          envelope: { warp: { x: 22, z: -22 } },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.58,
+          transfer: { id: 'tanh' },
+          modulation: { amplitude: 0.34 },
+        },
+        {
+          id: 'tectonic-worley',
+          weight: 0.52,
+          modulation: { amplitude: 0.28 },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.34,
+        },
+        {
+          id: 'diffusion-mask->ridge-noise:amplitude',
+          gain: 0.42,
+        },
+        {
+          id: 'ridge-noise->domain-warp:amplitude',
+          gain: 0.32,
+        },
+        {
+          id: 'tectonic-worley->anisotropic-banding:frequency',
+          gain: 0.3,
+        },
+      ],
+    },
+  },
+  {
+    id: 'neon-resonant-terraces',
+    label: 'Neon Resonant Terraces',
+    tags: ['dreamlike', 'neon', 'terraced'],
+    biomes: {
+      ids: ['fading_vaporwave_dimension'],
+      tags: ['dreamlike', 'warm'],
+    },
+    climate: {
+      temperature: { min: 0.55, max: 0.78, ideal: 0.68 },
+      moisture: { min: 0.35, max: 0.6, ideal: 0.48 },
+    },
+    adjacency: {
+      preferTags: ['warm', 'structured'],
+      avoidTags: ['arid'],
+    },
+    blend: 0.8,
+    overrides: {
+      operatorWeights: [0.88, 0.6, 0.56, 0.4, 0.46, 0.52],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: 0.18,
+          envelope: { amplitude: 0.96 },
+          modulation: { amplitude: 0.24 },
+        },
+        {
+          id: 'ridge-noise',
+          weight: 0.84,
+          modulation: { amplitude: 0.2 },
+        },
+        {
+          id: 'anisotropic-banding',
+          weight: 0.66,
+          modulation: { frequency: 0.22 },
+          envelope: { warp: { x: 28, z: 18 } },
+        },
+        {
+          id: 'domain-warp',
+          modulation: { amplitude: 0.38 },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.52,
+          transfer: { id: 'tanh' },
+          modulation: { amplitude: 0.3 },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.28,
+        },
+        {
+          id: 'diffusion-mask->anisotropic-banding:amplitude',
+          gain: 0.32,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-x',
+          gain: 0.48,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-z',
+          gain: 0.44,
+        },
+        {
+          id: 'ridge-noise->domain-warp:amplitude',
+          gain: 0.26,
+        },
+      ],
+    },
+  },
 ];
 
 function freezeVector(vector) {
