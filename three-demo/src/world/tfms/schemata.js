@@ -17,12 +17,12 @@ const RAW_TFMS_SCHEMATA = [
     },
     blend: 0.85,
     overrides: {
-      operatorWeights: [1.08, 0.68, 0.48],
+      operatorWeights: [1.12, 0.68, 0.48],
       operators: [
         {
           id: 'primary-fbm',
-          bias: 0.12,
-          modulation: { amplitude: 0.22 },
+          bias: 0.22,
+          modulation: { amplitude: 0.28 },
         },
         {
           id: 'diffusion-mask',
@@ -73,12 +73,12 @@ const RAW_TFMS_SCHEMATA = [
     },
     blend: 0.75,
     overrides: {
-      operatorWeights: [0.92, 0.85, 0.65],
+      operatorWeights: [0.98, 0.85, 0.65],
       operators: [
         {
           id: 'primary-fbm',
-          bias: -0.18,
-          envelope: { amplitude: 0.92 },
+          bias: 0.12,
+          envelope: { amplitude: 1.04 },
         },
         {
           id: 'ridge-noise',
@@ -124,17 +124,23 @@ const RAW_TFMS_SCHEMATA = [
     },
     blend: 0.9,
     overrides: {
-      operatorWeights: [0.75, 0.6, 0.4],
+      operatorWeights: [0.86, 0.72, 0.5, 0.44],
       operators: [
         {
+          id: 'primary-fbm',
+          bias: 0.14,
+          envelope: { amplitude: { multiplier: 0.68 } },
+          modulation: { amplitude: { multiplier: 0.28 } },
+        },
+        {
           id: 'diffusion-mask',
-          weight: 0.7,
+          weight: 0.72,
           transfer: { id: 'smoothstep' },
           modulation: { amplitude: 0.45 },
         },
         {
           id: 'anisotropic-banding',
-          weight: 0.35,
+          weight: 0.38,
           modulation: { frequency: -0.15 },
           envelope: { warp: { x: 16, z: -12 } },
         },
@@ -181,13 +187,13 @@ const RAW_TFMS_SCHEMATA = [
     },
     blend: 0.68,
     overrides: {
-      operatorWeights: [0.92, 0.58, 0.82, 0.44, 0.32, 0.46],
+      operatorWeights: [0.96, 0.58, 0.82, 0.44, 0.32, 0.46],
       operators: [
         {
           id: 'primary-fbm',
-          bias: 0.18,
-          envelope: { amplitude: { multiplier: 0.78 } },
-          modulation: { amplitude: { multiplier: 0.22 } },
+          bias: 0.3,
+          envelope: { amplitude: { multiplier: 0.88 } },
+          modulation: { amplitude: { multiplier: 0.28 } },
         },
         {
           id: 'anisotropic-banding',
@@ -197,8 +203,8 @@ const RAW_TFMS_SCHEMATA = [
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: { multiplier: 0.28 } },
-          envelope: { amplitude: { multiplier: 0.52 } },
+          modulation: { amplitude: { multiplier: 0.32 } },
+          envelope: { amplitude: { multiplier: 0.58 } },
         },
         {
           id: 'diffusion-mask',
@@ -249,12 +255,12 @@ const RAW_TFMS_SCHEMATA = [
     },
     blend: 0.74,
     overrides: {
-      operatorWeights: [1.08, 0.72, 0.4, 0.58, 0.36, 0.38],
+      operatorWeights: [1.14, 0.74, 0.4, 0.58, 0.36, 0.38],
       operators: [
         {
           id: 'primary-fbm',
-          bias: 0.32,
-          envelope: { amplitude: { multiplier: 1.18 } },
+          bias: 0.44,
+          envelope: { amplitude: { multiplier: 1.26 } },
         },
         {
           id: 'ridge-noise',
@@ -323,8 +329,8 @@ const RAW_TFMS_SCHEMATA = [
       operators: [
         {
           id: 'primary-fbm',
-          bias: -0.16,
-          modulation: { amplitude: { multiplier: 0.32 } },
+          bias: 0.1,
+          modulation: { amplitude: { multiplier: 0.38 } },
         },
         {
           id: 'diffusion-mask',
@@ -394,16 +400,16 @@ const RAW_TFMS_SCHEMATA = [
     },
     blend: 0.82,
     overrides: {
-      operatorWeights: [0.68, 0.42, 0.34, 0.38, 0.72, 0.78],
+      operatorWeights: [0.72, 0.42, 0.34, 0.38, 0.72, 0.78],
       operators: [
         {
           id: 'primary-fbm',
-          bias: -0.08,
-          envelope: { amplitude: { multiplier: 0.62 } },
+          bias: 0.12,
+          envelope: { amplitude: { multiplier: 0.7 } },
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: { multiplier: 0.56 } },
+          modulation: { amplitude: { multiplier: 0.6 } },
           envelope: { amplitude: { multiplier: 0.52 } },
         },
         {
@@ -470,17 +476,17 @@ const RAW_TFMS_SCHEMATA = [
     },
     blend: 0.86,
     overrides: {
-      operatorWeights: [1.12, 0.82, 0.48, 0.66, 0.4, 0.44],
+      operatorWeights: [1.18, 0.84, 0.5, 0.68, 0.4, 0.44],
       operators: [
         {
           id: 'primary-fbm',
-          bias: 0.26,
-          envelope: { amplitude: { multiplier: 1.22 } },
+          bias: 0.38,
+          envelope: { amplitude: { multiplier: 1.3 } },
         },
         {
           id: 'ridge-noise',
-          weight: 1.08,
-          modulation: { amplitude: { multiplier: 0.28 } },
+          weight: 1.12,
+          modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
           id: 'tectonic-worley',
@@ -489,11 +495,11 @@ const RAW_TFMS_SCHEMATA = [
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: { multiplier: 0.22 } },
+          modulation: { amplitude: { multiplier: 0.26 } },
         },
         {
           id: 'diffusion-mask',
-          weight: 0.4,
+          weight: 0.42,
           transfer: { id: 'tanh' },
         },
       ],
@@ -508,15 +514,15 @@ const RAW_TFMS_SCHEMATA = [
         },
         {
           id: 'domain-warp->primary-fbm:domain-x',
-          gain: 0.46,
+          gain: 0.5,
         },
         {
           id: 'domain-warp->primary-fbm:domain-z',
-          gain: 0.44,
+          gain: 0.48,
         },
         {
           id: 'diffusion-mask->primary-fbm:amplitude',
-          gain: 0.26,
+          gain: 0.3,
         },
       ],
     },
@@ -539,13 +545,13 @@ const RAW_TFMS_SCHEMATA = [
     },
     blend: 0.8,
     overrides: {
-      operatorWeights: [0.96, 0.68, 0.42, 0.52, 0.36, 0.46],
+      operatorWeights: [1.02, 0.7, 0.44, 0.52, 0.36, 0.46],
       operators: [
         {
           id: 'primary-fbm',
-          bias: 0.12,
-          envelope: { amplitude: { multiplier: 0.94 } },
-          modulation: { amplitude: { multiplier: 0.24 } },
+          bias: 0.26,
+          envelope: { amplitude: { multiplier: 1.06 } },
+          modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
           id: 'ridge-noise',
@@ -560,31 +566,31 @@ const RAW_TFMS_SCHEMATA = [
         },
         {
           id: 'diffusion-mask',
-          weight: 0.5,
+          weight: 0.52,
           transfer: { id: 'smoothstep', smoothness: 0.36 },
-          modulation: { amplitude: { multiplier: 0.28 } },
+          modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: { multiplier: 0.3 } },
+          modulation: { amplitude: { multiplier: 0.34 } },
         },
       ],
       modulationMatrix: [
         {
           id: 'diffusion-mask->primary-fbm:amplitude',
-          gain: 0.32,
+          gain: 0.34,
         },
         {
           id: 'diffusion-mask->ridge-noise:amplitude',
-          gain: 0.3,
+          gain: 0.32,
         },
         {
           id: 'domain-warp->primary-fbm:domain-x',
-          gain: 0.4,
+          gain: 0.44,
         },
         {
           id: 'domain-warp->primary-fbm:domain-z',
-          gain: 0.42,
+          gain: 0.46,
         },
         {
           id: 'domain-warp->ridge-noise:domain-x',
@@ -611,17 +617,17 @@ const RAW_TFMS_SCHEMATA = [
     },
     blend: 0.84,
     overrides: {
-      operatorWeights: [0.98, 0.9, 0.42, 0.66, 0.34, 0.4],
+      operatorWeights: [1.04, 0.94, 0.44, 0.66, 0.34, 0.4],
       operators: [
         {
           id: 'primary-fbm',
-          bias: 0.28,
-          envelope: { amplitude: { multiplier: 1.08 } },
+          bias: 0.4,
+          envelope: { amplitude: { multiplier: 1.14 } },
         },
         {
           id: 'ridge-noise',
-          weight: 1.02,
-          modulation: { amplitude: { multiplier: 0.26 } },
+          weight: 1.06,
+          modulation: { amplitude: { multiplier: 0.28 } },
         },
         {
           id: 'anisotropic-banding',
@@ -633,7 +639,7 @@ const RAW_TFMS_SCHEMATA = [
           id: 'diffusion-mask',
           weight: 0.58,
           transfer: { id: 'tanh' },
-          modulation: { amplitude: { multiplier: 0.34 } },
+          modulation: { amplitude: { multiplier: 0.36 } },
         },
         {
           id: 'tectonic-worley',
@@ -644,7 +650,7 @@ const RAW_TFMS_SCHEMATA = [
       modulationMatrix: [
         {
           id: 'diffusion-mask->primary-fbm:amplitude',
-          gain: 0.34,
+          gain: 0.36,
         },
         {
           id: 'diffusion-mask->ridge-noise:amplitude',
@@ -679,13 +685,13 @@ const RAW_TFMS_SCHEMATA = [
     },
     blend: 0.8,
     overrides: {
-      operatorWeights: [0.88, 0.6, 0.56, 0.4, 0.46, 0.52],
+      operatorWeights: [0.94, 0.6, 0.56, 0.4, 0.46, 0.52],
       operators: [
         {
           id: 'primary-fbm',
-          bias: 0.18,
-          envelope: { amplitude: { multiplier: 0.96 } },
-          modulation: { amplitude: { multiplier: 0.24 } },
+          bias: 0.32,
+          envelope: { amplitude: { multiplier: 1.04 } },
+          modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
           id: 'ridge-noise',
@@ -700,7 +706,7 @@ const RAW_TFMS_SCHEMATA = [
         },
         {
           id: 'domain-warp',
-          modulation: { amplitude: { multiplier: 0.38 } },
+          modulation: { amplitude: { multiplier: 0.42 } },
         },
         {
           id: 'diffusion-mask',
