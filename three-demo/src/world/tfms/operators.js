@@ -225,12 +225,41 @@ function resolveTransfer(transfer, overrides) {
   if (typeof transfer === 'function') {
     return transfer;
   }
-  if (transfer && overrides[transfer]) {
-    return overrides[transfer];
+
+  const visited = new Set();
+  let current = transfer;
+
+  while (typeof current === 'string') {
+    if (visited.has(current)) {
+      return DEFAULT_TRANSFER_FUNCTIONS.identity;
+    }
+    visited.add(current);
+
+    const overrideValue =
+      overrides && Object.prototype.hasOwnProperty.call(overrides, current)
+        ? overrides[current]
+        : undefined;
+
+    if (typeof overrideValue === 'function') {
+      return overrideValue;
+    }
+
+    if (typeof overrideValue === 'string') {
+      current = overrideValue;
+      continue;
+    }
+
+    if (DEFAULT_TRANSFER_FUNCTIONS[current]) {
+      return DEFAULT_TRANSFER_FUNCTIONS[current];
+    }
+
+    break;
   }
-  if (transfer && DEFAULT_TRANSFER_FUNCTIONS[transfer]) {
-    return DEFAULT_TRANSFER_FUNCTIONS[transfer];
+
+  if (typeof current === 'function') {
+    return current;
   }
+
   return DEFAULT_TRANSFER_FUNCTIONS.identity;
 }
 
