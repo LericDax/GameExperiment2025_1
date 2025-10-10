@@ -66,8 +66,16 @@
   "tfmsProfile": {
     "blend": 0.9,
     "schemaPool": [
-      { "id": "glacial-aurora-spires", "weight": 5 },
-      { "id": "tundra-drumlin-fields", "weight": 2 }
+      { "id": "glacial-aurora-spires", "weight": 3.8 },
+      { "id": "glacial-aurora-spires", "weight": 1.6, "blend": 0.74 },
+      { "id": "glacial-aurora-spires", "weight": 0.9, "blend": 0.6 },
+      { "id": "glacial-aurora-spires", "weight": 0.5, "blend": 0.48 },
+      { "id": "tundra-sastrugi-flow", "weight": 2.6 },
+      { "id": "tundra-sastrugi-flow", "weight": 1.2, "blend": 0.58 },
+      { "id": "tundra-sastrugi-flow", "weight": 0.7, "blend": 0.42 },
+      { "id": "polar-fissure-shelves", "weight": 1.4 },
+      { "id": "polar-fissure-shelves", "weight": 0.8, "blend": 0.55 },
+      { "id": "polar-fissure-shelves", "weight": 0.4, "blend": 0.4 }
     ]
   },
   "weather": {

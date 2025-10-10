@@ -44,8 +44,16 @@
   "tfmsProfile": {
     "blend": 0.8,
     "schemaPool": [
-      { "id": "neon-resonant-terraces", "weight": 4 },
-      { "id": "temperate-terraces", "weight": 1 }
+      { "id": "neon-resonant-terraces", "weight": 3.6 },
+      { "id": "cavern-ember-terraces", "weight": 2.2 },
+      { "id": "savanna-rolling-shelves", "weight": 1.6 },
+      { "id": "savanna-basalt-knolls", "weight": 1.2 },
+      { "id": "mountain-ember-ramparts", "weight": 0.8 },
+      { "id": "volcanic-tube-collapse", "weight": 1.0 },
+      { "id": "volcanic-caldera-rings", "weight": 0.9 },
+      { "id": "volcanic-spatter-cones", "weight": 0.7 },
+      { "id": "volcanic-basalt-flows", "weight": 0.6 },
+      { "id": "prairie-braided-swales", "weight": 0.6 }
     ]
   },
   "weather": {

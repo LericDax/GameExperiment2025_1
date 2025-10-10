@@ -43,8 +43,18 @@
   "tfmsProfile": {
     "blend": 0.78,
     "schema": [
-      { "id": "temperate-canopy", "weight": 3 },
-      { "id": "temperate-terraces", "weight": 1 }
+      { "id": "temperate-canopy", "weight": 3.4 },
+      { "id": "temperate-canopy", "weight": 1.2, "blend": 0.88 },
+      { "id": "temperate-riverbraid-terraces", "weight": 2.2 },
+      { "id": "temperate-terraces", "weight": 1.6 },
+      { "id": "temperate-shadow-ravines", "weight": 1.3 },
+      { "id": "temperate-bog", "weight": 1.5 },
+      { "id": "delta-bloom-shelves", "weight": 1.0 },
+      { "id": "wetland-meander-fans", "weight": 0.9 },
+      { "id": "wetland-cypress-mire", "weight": 0.8 },
+      { "id": "coastal-archipelago-chain", "weight": 0.7 },
+      { "id": "ocean-shelf-canyons", "weight": 0.5 },
+      { "id": "fungal-noctilucent-basins", "weight": 0.6 }
     ]
   },
   "weather": {
