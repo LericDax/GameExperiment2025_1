@@ -410,9 +410,14 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
   const waterColumnMetadata = new Map();
   const fluidColumnsByType = new Map();
   const fluidSurfaces = [];
-  const pendingEntries = new Map();
   const typeCapacities = new Map();
   const fluidBlockKeys = new Set();
+  const blockPlacements = [];
+  const placementIndexByCoordinate = new Map();
+  const typeIds = new Map();
+  let nextTypeId = 1;
+  let occupancyTypes = null;
+  let occupancyPlacements = null;
   let minBoundX = Number.POSITIVE_INFINITY;
   let minBoundY = Number.POSITIVE_INFINITY;
   let minBoundZ = Number.POSITIVE_INFINITY;
@@ -707,11 +712,17 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
   };
 
   const addBlock = (type, x, y, z, biome, options = {}) => {
-    const entry = createInstancedEntry(type, x, y, z, biome, options);
+    if (!type) {
+      return null;
+    }
 
-    const coordinateKey = entry.coordinateKey;
-    const key = entry.key;
-    const existingEntry = coordinateKey ? pendingEntries.get(coordinateKey) : null;
+    const normalizedOptions = { ...options };
+    delete normalizedOptions.replaceExisting;
+
+    const coordinateKey = makeBlockKey(x, y, z);
+    const key = normalizedOptions.key ?? coordinateKey;
+    normalizedOptions.key = key;
+
     const replaceExisting = options.replaceExisting === true;
 
     const isWater = type === 'water';
@@ -739,7 +750,6 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       collisionMode = 'soft';
       isSolid = false;
       isSoft = true;
-      entry.isOccluding = false;
     }
 
     if (!collisionMode) {
@@ -767,6 +777,8 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
 
     if (isFluid) {
       fluidBlockKeys.add(coordinateKey);
+      fluidKeysArray = null;
+      registerHeightBounds(Math.round(y));
       if (!fluidColumnsByType.has(type)) {
         fluidColumnsByType.set(type, new Map());
       }
@@ -817,17 +829,26 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
           });
         }
       }
-      return entry;
+      return {
+        type,
+        key,
+        coordinateKey,
+        collisionMode,
+        isWater,
+        isFluid,
+        destructible,
+        position: { x, y, z },
+      };
     }
 
     fluidBlockKeys.delete(coordinateKey);
+    fluidKeysArray = null;
 
-    entry.isSolid = isSolid;
-    entry.isSoft = isSoft;
-    entry.isWater = isWater;
-    entry.destructible = destructible;
-    entry.collisionMode = collisionMode;
-
+    const existingIndex = placementIndexByCoordinate.get(coordinateKey);
+    const existingEntry =
+      typeof existingIndex === 'number' && existingIndex >= 0
+        ? blockPlacements[existingIndex]
+        : null;
     const existingIsSolid =
       existingEntry?.isSolid === true || existingEntry?.collisionMode === 'solid';
     const shouldReplaceExisting =
@@ -839,40 +860,64 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       shouldReplaceExisting &&
       (replaceExisting || existingIsSolid || isSolid)
     ) {
-      if (existingEntry.key) {
-        blockLookup.delete(existingEntry.key);
+      if (existingEntry) {
+        existingEntry.removed = true;
+        existingEntry.isVisible = false;
+        existingEntry.mesh = null;
+        existingEntry.tintAttribute = null;
+        if (existingEntry.key) {
+          blockLookup.delete(existingEntry.key);
+        }
+        if (existingEntry.coordinateKey) {
+          blockLookup.delete(existingEntry.coordinateKey);
+          solidBlockKeys.delete(existingEntry.coordinateKey);
+          softBlockKeys.delete(existingEntry.coordinateKey);
+        }
       }
-      if (existingEntry.coordinateKey) {
-        blockLookup.delete(existingEntry.coordinateKey);
-        solidBlockKeys.delete(existingEntry.coordinateKey);
-        softBlockKeys.delete(existingEntry.coordinateKey);
-      }
-      pendingEntries.delete(existingEntry.coordinateKey);
-      if (existingEntry.type) {
-        const previous = typeCapacities.get(existingEntry.type) ?? 1;
-        typeCapacities.set(existingEntry.type, Math.max(0, previous - 1));
+      if (typeof existingIndex === 'number') {
+        blockPlacements[existingIndex] = null;
+        placementIndexByCoordinate.delete(coordinateKey);
       }
     } else if (existingEntry) {
       return existingEntry;
     }
 
-    pendingEntries.set(coordinateKey, entry);
-    typeCapacities.set(type, (typeCapacities.get(type) ?? 0) + 1);
+    const placement = {
+      type,
+      biome,
+      position: { x, y, z },
+      coordinateKey,
+      key,
+      collisionMode,
+      isSolid,
+      isSoft,
+      isWater: false,
+      isFluid: false,
+      destructible,
+      instancingOptions: normalizedOptions,
+      gridPosition: null,
+      gridIndex: -1,
+      index: -1,
+      mesh: null,
+      tintAttribute: null,
+      isVisible: false,
+      isOccluding: undefined,
+      removed: false,
+    };
 
-    blockLookup.set(key, entry);
-    if (key !== coordinateKey) {
-      blockLookup.set(coordinateKey, entry);
-    }
+    blockPlacements.push(placement);
+    placementIndexByCoordinate.set(coordinateKey, blockPlacements.length - 1);
+
     if (isSolid) {
       solidBlockKeys.add(coordinateKey);
     }
     if (isSoft) {
       softBlockKeys.add(coordinateKey);
     }
-    entry.index = -1;
-    entry.mesh = null;
-    entry.tintAttribute = null;
-    return entry;
+
+    registerHeightBounds(Math.round(y));
+
+    return placement;
   };
 
   const registerFluidPresence = ({ type, x, z, presence, biome }) => {
@@ -1407,14 +1452,12 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     });
   };
 
-  let pendingValues = null;
   let occupancyMinY = Number.POSITIVE_INFINITY;
   let occupancyMaxY = Number.NEGATIVE_INFINITY;
   let occupancyWidth = chunkSize;
   let occupancyDepth = chunkSize;
   let occupancyHeight = 0;
   let occupancyArea = 0;
-  let occupancyData = null;
   let fluidOccupancy = null;
 
   const toIndex = (lx, ly, lz) => ly * occupancyArea + lz * occupancyWidth + lx;
@@ -1444,14 +1487,18 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     occupancyMaxY = Math.max(occupancyMaxY, value);
   };
 
-  const assignLocalGridPosition = (entry) => {
-    if (!entry?.position) {
-      entry.gridPosition = null;
+  const assignLocalGridPosition = (placement) => {
+    const position = placement?.position;
+    if (!position) {
+      placement.gridPosition = null;
+      if (placement) {
+        placement.gridIndex = -1;
+      }
       return null;
     }
-    const lx = Math.round(entry.position.x - minX);
-    const lz = Math.round(entry.position.z - minZ);
-    const ly = Math.round(entry.position.y) - occupancyMinY;
+    const lx = Math.round(position.x - minX);
+    const lz = Math.round(position.z - minZ);
+    const ly = Math.round(position.y) - occupancyMinY;
     if (
       lx < 0 ||
       lx >= occupancyWidth ||
@@ -1460,12 +1507,23 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       ly < 0 ||
       ly >= occupancyHeight
     ) {
-      entry.gridPosition = null;
+      placement.gridPosition = null;
+      placement.gridIndex = -1;
       return null;
     }
     const local = { x: lx, y: ly, z: lz };
-    entry.gridPosition = local;
+    placement.gridPosition = local;
     return local;
+  };
+
+  const getTypeId = (type) => {
+    if (!type) {
+      return 0;
+    }
+    if (!typeIds.has(type)) {
+      typeIds.set(type, nextTypeId++);
+    }
+    return typeIds.get(type);
   };
 
   const neighborOffsets3D = [
@@ -1476,6 +1534,35 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     { dx: 0, dy: 0, dz: 1 },
     { dx: 0, dy: 0, dz: -1 },
   ];
+
+  const materializePlacement = (placement) => {
+    if (!placement || placement.removed) {
+      return null;
+    }
+    if (placement.materialized) {
+      return placement;
+    }
+    const options = placement.instancingOptions ?? {};
+    const entryData = createInstancedEntry(
+      placement.type,
+      placement.position.x,
+      placement.position.y,
+      placement.position.z,
+      placement.biome,
+      options,
+    );
+    Object.assign(placement, entryData);
+    placement.materialized = true;
+    placement.isSolid = placement.isSolid ?? placement.collisionMode === 'solid';
+    placement.isSoft = placement.isSoft ?? placement.collisionMode === 'soft';
+    placement.isWater = false;
+    placement.isFluid = false;
+    placement.destructible =
+      typeof placement.destructible === 'boolean'
+        ? placement.destructible
+        : entryData.destructible;
+    return placement;
+  };
 
   const isFluidColumnExposed = (column) => {
     if (!column) {
@@ -1550,11 +1637,15 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
         }
 
         const neighborIndex = toIndex(neighborX, neighborY, neighborZ);
-        const neighborEntry = occupancyData[neighborIndex];
-        if (!neighborEntry) {
+        const neighborPlacementIndex = occupancyPlacements[neighborIndex];
+        if (neighborPlacementIndex < 0) {
           if (fluidOccupancy[neighborIndex] === 1) {
             return true;
           }
+          return true;
+        }
+        const neighborEntry = blockPlacements[neighborPlacementIndex];
+        if (!neighborEntry) {
           return true;
         }
         const neighborOccluding =
@@ -1570,13 +1661,6 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     return false;
   };
 
-  const ensurePendingValues = () => {
-    if (!pendingValues) {
-      pendingValues = Array.from(pendingEntries.values());
-    }
-    return pendingValues;
-  };
-
   let fluidKeysArray = null;
   const ensureFluidKeysArray = () => {
     if (!fluidKeysArray) {
@@ -1588,9 +1672,6 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
   const stepState = {
     stage: 'columns',
     columnIndex: 0,
-    occlusionIndex: 0,
-    heightEntryIndex: 0,
-    fluidHeightIndex: 0,
     assignIndex: 0,
     fluidOccupancyIndex: 0,
     exposureIndex: 0,
@@ -1608,8 +1689,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       if (stepState.stage === 'columns') {
         const remainingColumns = totalColumns - stepState.columnIndex;
         if (remainingColumns <= 0) {
-          ensurePendingValues();
-          stepState.stage = 'occlusion';
+          stepState.stage = 'prepareOccupancy';
           continue;
         }
         const batch = Math.min(limit - processed, remainingColumns);
@@ -1619,71 +1699,8 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
         }
         processed += batch;
         if (stepState.columnIndex >= totalColumns) {
-          ensurePendingValues();
-          stepState.stage = 'occlusion';
-        }
-        continue;
-      }
-
-      if (stepState.stage === 'occlusion') {
-        const values = ensurePendingValues();
-        const remaining = values.length - stepState.occlusionIndex;
-        if (remaining <= 0) {
-          stepState.stage = 'heightEntries';
-          continue;
-        }
-        const batch = Math.min(limit - processed, remaining);
-        for (let i = 0; i < batch; i += 1) {
-          const entry = values[stepState.occlusionIndex++];
-          if (!entry) {
-            continue;
-          }
-          const occluding = isBlockOccluding(entry, blockMaterials);
-          entry.isOccluding = occluding;
-          if (!occluding && entry.coordinateKey) {
-            solidBlockKeys.delete(entry.coordinateKey);
-          }
-        }
-        processed += batch;
-        continue;
-      }
-
-      if (stepState.stage === 'heightEntries') {
-        const values = ensurePendingValues();
-        const remaining = values.length - stepState.heightEntryIndex;
-        if (remaining <= 0) {
-          stepState.stage = 'heightFluids';
-          continue;
-        }
-        const batch = Math.min(limit - processed, remaining);
-        for (let i = 0; i < batch; i += 1) {
-          const entry = values[stepState.heightEntryIndex++];
-          if (!entry?.position) {
-            continue;
-          }
-          registerHeightBounds(Math.round(entry.position.y));
-        }
-        processed += batch;
-        continue;
-      }
-
-      if (stepState.stage === 'heightFluids') {
-        const keys = ensureFluidKeysArray();
-        const remaining = keys.length - stepState.fluidHeightIndex;
-        if (remaining <= 0) {
           stepState.stage = 'prepareOccupancy';
-          continue;
         }
-        const batch = Math.min(limit - processed, remaining);
-        for (let i = 0; i < batch; i += 1) {
-          const key = keys[stepState.fluidHeightIndex++];
-          const coords = parseBlockKey(key);
-          if (!coords) {
-            continue;
-          }
-          registerHeightBounds(coords.y);
-        }
-        processed += batch;
         continue;
       }
 
@@ -1696,31 +1713,36 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
         occupancyDepth = chunkSize;
         occupancyHeight = Math.max(1, occupancyMaxY - occupancyMinY + 1);
         occupancyArea = occupancyWidth * occupancyDepth;
-        occupancyData = new Array(occupancyArea * occupancyHeight).fill(null);
-        fluidOccupancy = new Uint8Array(occupancyArea * occupancyHeight);
+        const volume = occupancyArea * occupancyHeight;
+        occupancyTypes = new Uint16Array(volume);
+        occupancyPlacements = new Int32Array(volume);
+        occupancyPlacements.fill(-1);
+        fluidOccupancy = new Uint8Array(volume);
         stepState.stage = 'assignLocalPositions';
         continue;
       }
 
       if (stepState.stage === 'assignLocalPositions') {
-        const values = ensurePendingValues();
-        const remaining = values.length - stepState.assignIndex;
+        const remaining = blockPlacements.length - stepState.assignIndex;
         if (remaining <= 0) {
           stepState.stage = 'markFluidOccupancy';
           continue;
         }
         const batch = Math.min(limit - processed, remaining);
         for (let i = 0; i < batch; i += 1) {
-          const entry = values[stepState.assignIndex++];
-          if (!entry) {
+          const placementIndex = stepState.assignIndex++;
+          const placement = blockPlacements[placementIndex];
+          if (!placement || placement.removed) {
             continue;
           }
-          const local = assignLocalGridPosition(entry);
+          const local = assignLocalGridPosition(placement);
           if (!local) {
             continue;
           }
           const index = toIndex(local.x, local.y, local.z);
-          occupancyData[index] = entry;
+          occupancyTypes[index] = getTypeId(placement.type);
+          occupancyPlacements[index] = placementIndex;
+          placement.gridIndex = index;
         }
         processed += batch;
         continue;
@@ -1761,8 +1783,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       }
 
       if (stepState.stage === 'exposure') {
-        const values = ensurePendingValues();
-        const remaining = values.length - stepState.exposureIndex;
+        const remaining = blockPlacements.length - stepState.exposureIndex;
         if (!stepState.exposureInitialized) {
           const meshingMode = getMeshingDebugMode();
           stepState.legacyMeshing = meshingMode === 'legacy';
@@ -1774,16 +1795,26 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
         }
         const batch = Math.min(limit - processed, remaining);
         for (let i = 0; i < batch; i += 1) {
-          const entry = values[stepState.exposureIndex++];
-          if (!entry) {
+          const placementIndex = stepState.exposureIndex++;
+          const placement = blockPlacements[placementIndex];
+          if (!placement || placement.removed) {
             continue;
           }
-          const local = entry.gridPosition;
+
+          const occluding =
+            typeof placement.isOccluding === 'boolean'
+              ? placement.isOccluding
+              : isBlockOccluding(placement, blockMaterials);
+          placement.isOccluding = occluding;
+          if (!occluding && placement.coordinateKey) {
+            solidBlockKeys.delete(placement.coordinateKey);
+          }
+
+          const local = placement.gridPosition;
           let exposed = stepState.legacyMeshing;
           if (!local) {
             exposed = true;
-          }
-          if (!exposed && local) {
+          } else if (!exposed) {
             for (let j = 0; j < neighborOffsets3D.length; j += 1) {
               const offset = neighborOffsets3D[j];
               const nx = local.x + offset.dx;
@@ -1801,8 +1832,8 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
                 break;
               }
               const neighborIndex = toIndex(nx, ny, nz);
-              const neighborEntry = occupancyData[neighborIndex];
-              if (!neighborEntry) {
+              const neighborPlacementIndex = occupancyPlacements[neighborIndex];
+              if (neighborPlacementIndex < 0) {
                 if (fluidOccupancy[neighborIndex] === 1) {
                   exposed = true;
                   break;
@@ -1810,13 +1841,14 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
                 exposed = true;
                 break;
               }
-              if (neighborEntry === entry) {
+              const neighborPlacement = blockPlacements[neighborPlacementIndex];
+              if (!neighborPlacement || neighborPlacement === placement) {
                 continue;
               }
               const neighborOccluding =
-                typeof neighborEntry.isOccluding === 'boolean'
-                  ? neighborEntry.isOccluding
-                  : isBlockOccluding(neighborEntry, blockMaterials);
+                typeof neighborPlacement.isOccluding === 'boolean'
+                  ? neighborPlacement.isOccluding
+                  : isBlockOccluding(neighborPlacement, blockMaterials);
               if (!neighborOccluding) {
                 exposed = true;
                 break;
@@ -1825,16 +1857,30 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
           }
 
           if (exposed) {
+            const entry = materializePlacement(placement);
+            if (!entry) {
+              continue;
+            }
             if (!instancedData.has(entry.type)) {
               instancedData.set(entry.type, []);
             }
-            instancedData.get(entry.type).push(entry);
+            const typeEntries = instancedData.get(entry.type);
+            typeEntries.push(entry);
+            const nextCount = typeEntries.length;
+            typeCapacities.set(
+              entry.type,
+              Math.max(typeCapacities.get(entry.type) ?? 0, nextCount),
+            );
+            blockLookup.set(entry.key, entry);
+            if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+              blockLookup.set(entry.coordinateKey, entry);
+            }
           } else {
-            entry.index = -1;
-            entry.mesh = null;
-            entry.tintAttribute = null;
+            placement.index = -1;
+            placement.mesh = null;
+            placement.tintAttribute = null;
           }
-          entry.isVisible = exposed;
+          placement.isVisible = exposed;
         }
         processed += batch;
         continue;
