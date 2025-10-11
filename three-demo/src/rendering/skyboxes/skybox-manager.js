@@ -34,6 +34,14 @@ const SKYBOX_SCENE_SETTINGS = new Map([
       fogFar: 140,
     }),
   ],
+  [
+    'skybox-1#invertY',
+    Object.freeze({
+      fogColor: 0xa9d6ff,
+      fogNear: 20,
+      fogFar: 140,
+    }),
+  ],
 ]);
 
 function normalizeSkyboxId(value) {
