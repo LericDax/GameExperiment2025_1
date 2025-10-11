@@ -77,17 +77,13 @@ Skybox IDs are sourced from `listSkyboxes()`, which enumerates the HDR and LDR p
 
 Temperament patches are assembled via `make_kamea_patch`, which calls helpers such as `kamea_to_fm_matrix`, `kamea_to_warp`, `kamea_to_spectral`, and `kamea_to_phase` to project a planetary square into FM, warp, spectral, and phase domains before the TFMS network evaluates waveforms.【F:three-demo/docs/kamea-matrices.md†L43-L55】 Softmax gating blends FBM, ridged, Worley, warp, and diffusion operators using the patch’s logits so different planets emphasise distinct waveform families.
 
-#### TFMS Global Controls
+#### TFMS Operator Slots
 
 | Path | Label | Description | Type | Default | Range | Step |
 | --- | --- | --- | --- | --- | --- | --- |
 | `terrain.tfms.operatorCount` | Active Operator Count | Number of TFMS operators evaluated from the preset’s ordered stack. | `number` | `6` | `1` – `6` | `1` |
-| `terrain.tfms.baseAttenuation` | Base Attenuation | Scalar applied to the combined TFMS envelope before adding the terrain base height. | `number` | `0.82` | `0` – `2` | `0.01` |
-| `terrain.tfms.clamp.min` | Envelope Clamp Minimum | Lower clamp enforced on the TFMS envelope prior to biome offsets. | `number` | `-24` | `-128` – `0` | `0.5` |
-| `terrain.tfms.clamp.max` | Envelope Clamp Maximum | Upper clamp enforced on the TFMS envelope prior to biome offsets. | `number` | `24` | `0` – `128` | `0.5` |
-| `terrain.tfms.biomeBlendStrength` | Biome Blend Strength | Global multiplier applied when blending biome-specific TFMS overrides with the base preset. | `number` | `0.45` | `0` – `1` | `0.01` |
 
-Consult the [operator slot selection guide](three-demo/docs/tfms-system.md#operator-slot-selection-1-6-carriers) before trimming carriers; the terrain engine truncates the operator array and modulation matrix to the configured count so overrides never reference missing slots.【F:three-demo/src/world/world-settings.js†L676-L716】【F:three-demo/src/world/terrain-engine.js†L232-L308】 Biome TFMS profiles rebuild their ID→index map whenever the count changes, ensuring invalid overrides are ignored automatically.【F:three-demo/src/world/biome-engine.js†L100-L188】【F:three-demo/src/world/biome-engine.js†L500-L548】 Base attenuation, clamps, and blend strength are normalised alongside operator count, so tuning these controls maintains deterministic sampling ranges for biome envelopes.【F:three-demo/src/world/world-settings.js†L618-L676】【F:three-demo/src/world/world-settings.js†L720-L828】
+Consult the [operator slot selection guide](three-demo/docs/tfms-system.md#operator-slot-selection-1-6-carriers) for recommended slot combinations and modulation caveats before trimming carriers. The terrain engine truncates the operator array and modulation matrix to this count, guaranteeing that overrides never reference missing slots.【F:three-demo/src/world/world-settings.js†L676-L716】【F:three-demo/src/world/terrain-engine.js†L232-L308】 Biome TFMS profiles rebuild their ID→index map whenever the count changes so invalid overrides are ignored automatically.【F:three-demo/src/world/biome-engine.js†L100-L188】【F:three-demo/src/world/biome-engine.js†L500-L548】
 
 #### `terrain.fm` Attenuation Matrix
 

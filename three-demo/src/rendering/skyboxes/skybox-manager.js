@@ -2,12 +2,7 @@ import { TextureLoader } from 'three';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { TextureEngine } from '../texture-engine.js';
 
-const importMetaGlob =
-  typeof import.meta?.glob === 'function'
-    ? import.meta.glob.bind(import.meta)
-    : () => ({});
-
-const SKYBOX_URLS = importMetaGlob(
+const SKYBOX_URLS = import.meta.glob(
   // The skyboxes live under `public/assets`, so we climb out of `src/` to reach them.
   '../../../public/assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}',
   {
