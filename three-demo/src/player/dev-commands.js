@@ -8,6 +8,14 @@ import {
   sampleBiomeCoverage,
 } from '../world/generation.js';
 import { resolveBiomeWeatherRotation } from '../world/weather/weather-manager.js';
+import {
+  applySkybox,
+  listSkyboxes,
+  FALLBACK_SKYBOX_ID,
+  getSkyboxSceneSettings,
+  normalizeSkyboxSelection,
+  setSkyboxRotation,
+} from '../rendering/skyboxes/skybox-manager.js';
 
 const worldConfig = getWorldOptions();
 
@@ -85,6 +93,47 @@ export function registerDeveloperCommands({
     lastSuppressedWeatherId: null,
   };
 
+  const existingSkyboxData = scene.userData?.skybox ?? {};
+  const defaultSkyboxSource =
+    existingSkyboxData.defaultId ??
+    existingSkyboxData.requestedId ??
+    existingSkyboxData.resolvedId ??
+    worldConfig?.environment?.skybox?.id ??
+    worldConfig?.environment?.skyboxId ??
+    worldConfig?.skyboxId ??
+    FALLBACK_SKYBOX_ID;
+
+  const defaultSkyboxSelection = normalizeSkyboxSelection(defaultSkyboxSource, existingSkyboxData.orientation);
+  const initialRequestedSelection = normalizeSkyboxSelection(
+    existingSkyboxData.requestedId ?? defaultSkyboxSelection.id,
+    existingSkyboxData.orientation,
+  );
+  const initialResolvedSelection = normalizeSkyboxSelection(
+    existingSkyboxData.resolvedId ?? initialRequestedSelection.id,
+    existingSkyboxData.orientation,
+  );
+  const initialRotation = Number.isFinite(existingSkyboxData.rotationDegrees)
+    ? THREE.MathUtils.clamp(existingSkyboxData.rotationDegrees, -180, 180)
+    : 0;
+
+  const skyboxControlState = {
+    defaultId: defaultSkyboxSelection.id,
+    requestedId: initialRequestedSelection.id,
+    resolvedId: initialResolvedSelection.id,
+    orientation: existingSkyboxData.orientation ?? initialResolvedSelection.orientation,
+    rotationDegrees: initialRotation,
+  };
+
+  scene.userData = scene.userData || {};
+  scene.userData.skybox = {
+    ...existingSkyboxData,
+    defaultId: skyboxControlState.defaultId,
+    requestedId: skyboxControlState.requestedId,
+    resolvedId: skyboxControlState.resolvedId,
+    orientation: skyboxControlState.orientation,
+    rotationDegrees: skyboxControlState.rotationDegrees,
+  };
+
   const collectAnimationVariantIds = (targetType) => {
     if (!targetType) {
       return [];
@@ -160,6 +209,20 @@ export function registerDeveloperCommands({
     }
     return 0;
   }
+
+  const applyFogSettingsToScene = (targetScene, fogSettings) => {
+    if (!targetScene || !fogSettings) {
+      return;
+    }
+    const { fogColor, fogNear, fogFar } = fogSettings;
+    if (!targetScene.fog) {
+      targetScene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
+      return;
+    }
+    targetScene.fog.color.set(fogColor);
+    targetScene.fog.near = fogNear;
+    targetScene.fog.far = fogFar;
+  };
 
   const ensureEntityManagerAvailable = () => {
     if (
@@ -1775,6 +1838,208 @@ export function registerDeveloperCommands({
         return;
       }
       throw new Error('Usage: /vfx overlay [on|off|toggle] | /vfx list.');
+    },
+  });
+
+  const skyboxCommandUsage =
+    '/skybox load <asset> [orientation] | /skybox unload | /skybox rotate <degrees> | /skybox status';
+
+  registerCommand({
+    name: 'skybox',
+    description: 'Inspect, rotate, or replace the active skybox environment.',
+    usage: skyboxCommandUsage,
+    aliases: ['skyboxes'],
+    handler: async ({ args, info, warn, success }) => {
+      const availableSkyboxes = () => listSkyboxes();
+      const describeOrientation = (value) => (value === 'invertY' ? 'invertY' : 'normal');
+      const printStatus = () => {
+        const metadata = scene.userData?.skybox ?? {};
+        const orientation = describeOrientation(metadata.orientation);
+        const rotation = Number.isFinite(metadata.rotationDegrees)
+          ? metadata.rotationDegrees
+          : 0;
+        info(
+          `[skybox] requested=${metadata.requestedId ?? 'n/a'}, resolved=${
+            metadata.resolvedId ?? 'n/a'
+          }, orientation=${orientation}, rotation=${rotation.toFixed(1)}°, default=${
+            skyboxControlState.defaultId
+          }.`,
+        );
+      };
+
+      if (args.length === 0) {
+        printStatus();
+        return;
+      }
+
+      const [subcommandRaw, ...rest] = args;
+      const subcommand = String(subcommandRaw ?? '').toLowerCase();
+
+      if (subcommand === 'status' || subcommand === 'info') {
+        printStatus();
+        return;
+      }
+
+      if (subcommand === 'list' || subcommand === 'ids') {
+        const ids = availableSkyboxes();
+        info(`[skybox] Available IDs (${ids.length}): ${ids.join(', ')}.`);
+        return;
+      }
+
+      if (subcommand === 'load') {
+        if (rest.length === 0) {
+          throw new Error('Usage: /skybox load <asset> [orientation].');
+        }
+        const selection = normalizeSkyboxSelection(rest[0], rest[1]);
+        const ids = availableSkyboxes();
+        if (!ids.includes(selection.id)) {
+          warn(`[skybox] Unknown skybox "${selection.id}". Valid IDs: ${ids.join(', ')}.`);
+          throw new Error('Unknown skybox identifier.');
+        }
+
+        let applied;
+        try {
+          applied = await applySkybox({ THREE, scene, id: selection.id });
+        } catch (error) {
+          console.error(`[skybox] Failed to load skybox "${selection.id}".`, error);
+          warn(`[skybox] Unable to load "${selection.id}". Valid IDs: ${ids.join(', ')}.`);
+          throw new Error('Skybox load failed.');
+        }
+
+        if (!applied) {
+          warn(`[skybox] Unable to load "${selection.id}". Valid IDs: ${ids.join(', ')}.`);
+          throw new Error('Skybox load failed.');
+        }
+
+        skyboxControlState.requestedId = selection.id;
+        skyboxControlState.resolvedId = applied.id;
+        const appliedOrientation = describeOrientation(applied.orientation ?? selection.orientation);
+        skyboxControlState.orientation = appliedOrientation;
+        scene.userData.skybox = {
+          ...scene.userData.skybox,
+          defaultId: skyboxControlState.defaultId,
+          requestedId: selection.id,
+          resolvedId: applied.id,
+          orientation: appliedOrientation,
+          rotationDegrees: skyboxControlState.rotationDegrees,
+        };
+
+        applyFogSettingsToScene(scene, getSkyboxSceneSettings(applied.id));
+
+        if (applied.id !== selection.id) {
+          info(`[skybox] Requested "${selection.id}" but loaded "${applied.id}" instead.`);
+        }
+
+        success(
+          `[skybox] Active skybox "${applied.id}" (orientation=${appliedOrientation}, rotation=${skyboxControlState.rotationDegrees.toFixed(
+            1,
+          )}°).`,
+        );
+        return;
+      }
+
+      if (subcommand === 'unload' || subcommand === 'reset') {
+        const ids = availableSkyboxes();
+        let targetSelection = normalizeSkyboxSelection(skyboxControlState.defaultId);
+        if (!ids.includes(targetSelection.id)) {
+          targetSelection = normalizeSkyboxSelection(FALLBACK_SKYBOX_ID);
+          skyboxControlState.defaultId = targetSelection.id;
+          scene.userData.skybox.defaultId = targetSelection.id;
+        }
+
+        const previousState = {
+          requestedId: skyboxControlState.requestedId,
+          resolvedId: skyboxControlState.resolvedId,
+          orientation: skyboxControlState.orientation,
+          rotationDegrees: skyboxControlState.rotationDegrees,
+        };
+        const previousUserSkybox = { ...scene.userData.skybox };
+
+        skyboxControlState.rotationDegrees = 0;
+        scene.userData.skybox = {
+          ...scene.userData.skybox,
+          defaultId: skyboxControlState.defaultId,
+          rotationDegrees: 0,
+        };
+
+        let applied;
+        try {
+          applied = await applySkybox({ THREE, scene, id: targetSelection.id });
+        } catch (error) {
+          console.error(`[skybox] Failed to restore skybox "${targetSelection.id}".`, error);
+          warn('[skybox] Unable to restore the default skybox.');
+          skyboxControlState.requestedId = previousState.requestedId;
+          skyboxControlState.resolvedId = previousState.resolvedId;
+          skyboxControlState.orientation = previousState.orientation;
+          skyboxControlState.rotationDegrees = previousState.rotationDegrees;
+          scene.userData.skybox = previousUserSkybox;
+          throw new Error('Skybox unload failed.');
+        }
+
+        if (!applied) {
+          warn('[skybox] Unable to restore the default skybox.');
+          skyboxControlState.requestedId = previousState.requestedId;
+          skyboxControlState.resolvedId = previousState.resolvedId;
+          skyboxControlState.orientation = previousState.orientation;
+          skyboxControlState.rotationDegrees = previousState.rotationDegrees;
+          scene.userData.skybox = previousUserSkybox;
+          throw new Error('Skybox unload failed.');
+        }
+
+        const appliedOrientation = describeOrientation(applied.orientation);
+        skyboxControlState.requestedId = targetSelection.id;
+        skyboxControlState.resolvedId = applied.id;
+        skyboxControlState.orientation = appliedOrientation;
+        scene.userData.skybox = {
+          ...scene.userData.skybox,
+          defaultId: skyboxControlState.defaultId,
+          requestedId: targetSelection.id,
+          resolvedId: applied.id,
+          orientation: appliedOrientation,
+          rotationDegrees: 0,
+        };
+
+        applyFogSettingsToScene(scene, getSkyboxSceneSettings(applied.id));
+
+        success(
+          `[skybox] Restored "${applied.id}" (orientation=${appliedOrientation}, rotation=0.0°).`,
+        );
+        return;
+      }
+
+      if (subcommand === 'rotate') {
+        if (rest.length === 0) {
+          throw new Error('Usage: /skybox rotate <degrees>.');
+        }
+        const requested = Number.parseFloat(rest[0]);
+        if (!Number.isFinite(requested)) {
+          throw new Error('Rotation expects a numeric degree value.');
+        }
+        const clamped = THREE.MathUtils.clamp(requested, -180, 180);
+        const previousRotation = skyboxControlState.rotationDegrees;
+        const previousUserSkybox = { ...scene.userData.skybox };
+        skyboxControlState.rotationDegrees = clamped;
+        scene.userData.skybox = {
+          ...scene.userData.skybox,
+          rotationDegrees: clamped,
+        };
+        try {
+          setSkyboxRotation({ scene, THREE, degrees: clamped });
+        } catch (error) {
+          console.error('[skybox] Failed to update skybox rotation.', error);
+          skyboxControlState.rotationDegrees = previousRotation;
+          scene.userData.skybox = previousUserSkybox;
+          throw new Error('Unable to update skybox rotation.');
+        }
+        success(
+          `[skybox] Rotation set to ${clamped.toFixed(1)}° (skybox="${
+            skyboxControlState.resolvedId
+          }", orientation=${describeOrientation(skyboxControlState.orientation)}).`,
+        );
+        return;
+      }
+
+      throw new Error(skyboxCommandUsage);
     },
   });
 
