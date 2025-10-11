@@ -56,10 +56,17 @@
   "tfmsProfile": {
     "blend": 0.84,
     "schemaPool": [
-      { "id": "abyssal-vent-fields", "weight": 3.6 },
-      { "id": "ocean-shelf-canyons", "weight": 2.8 },
-      { "id": "highland-stepwall-terraces", "weight": 2.1 },
-      { "id": "coastal-fjord-scars", "weight": 1.4, "blend": 0.6 }
+      { "id": "kelp-spiral-mounds", "weight": 3.4 },
+      { "id": "kelp-spiral-mounds", "weight": 1.4, "blend": 0.92 },
+      { "id": "monsoon-shoal-runnels", "weight": 2.2 },
+      { "id": "monsoon-shoal-runnels", "weight": 0.9, "blend": 0.48 },
+      { "id": "reef-plateau-bastions", "weight": 1.8 },
+      { "id": "reef-plateau-bastions", "weight": 0.8, "blend": 0.44 },
+      { "id": "abyssal-vent-fields", "weight": 1.3 },
+      { "id": "abyssal-vent-fields", "weight": 0.6, "blend": 0.58 },
+      { "id": "ocean-shelf-canyons", "weight": 1.5 },
+      { "id": "ocean-shelf-canyons", "weight": 0.7, "blend": 0.5 },
+      { "id": "highland-stepwall-terraces", "weight": 1.6, "blend": 0.68 }
     ]
   },
   "weather": {

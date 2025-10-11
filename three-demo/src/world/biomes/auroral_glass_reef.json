@@ -43,16 +43,20 @@
   "tfmsProfile": {
     "blend": 0.86,
     "schemaPool": [
-      { "id": "polar-reef-atolls", "weight": 4.8 },
-      { "id": "polar-reef-atolls", "weight": 2.4, "blend": 0.9 },
-      { "id": "polar-reef-atolls", "weight": 1.1, "blend": 0.65 },
-      { "id": "tundra-crystal-deltas", "weight": 1.7 },
-      { "id": "tundra-crystal-deltas", "weight": 0.7, "blend": 0.82 },
-      { "id": "tundra-crystal-deltas", "weight": 0.5, "blend": 0.58 },
-      { "id": "coastal-fjord-scars", "weight": 1.4 },
-      { "id": "coastal-fjord-scars", "weight": 0.6, "blend": 0.55 },
-      { "id": "abyssal-vent-fields", "weight": 0.8 },
-      { "id": "abyssal-vent-fields", "weight": 0.4, "blend": 0.6 }
+      { "id": "reef-plateau-bastions", "weight": 3.6 },
+      { "id": "reef-plateau-bastions", "weight": 1.6, "blend": 0.94 },
+      { "id": "reef-plateau-bastions", "weight": 0.7, "blend": 0.46 },
+      { "id": "reef-luminal-towers", "weight": 3.0 },
+      { "id": "reef-luminal-towers", "weight": 1.2, "blend": 0.9 },
+      { "id": "polar-reef-atolls", "weight": 2.4 },
+      { "id": "polar-reef-atolls", "weight": 1.1, "blend": 0.96 },
+      { "id": "polar-reef-atolls", "weight": 0.6, "blend": 0.44 },
+      { "id": "tundra-crystal-deltas", "weight": 1.4 },
+      { "id": "tundra-crystal-deltas", "weight": 0.6, "blend": 0.86 },
+      { "id": "tundra-crystal-deltas", "weight": 0.4, "blend": 0.42 },
+      { "id": "abyssal-vent-fields", "weight": 0.9 },
+      { "id": "abyssal-vent-fields", "weight": 0.4, "blend": 0.55 },
+      { "id": "coastal-fjord-scars", "weight": 0.6, "blend": 0.52 }
     ]
   },
   "weather": {

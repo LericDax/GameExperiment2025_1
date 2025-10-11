@@ -56,10 +56,16 @@
   "tfmsProfile": {
     "blend": 0.86,
     "schemaPool": [
-      { "id": "wetland-peat-flumes", "weight": 3.8 },
-      { "id": "prairie-braided-swales", "weight": 3.1 },
-      { "id": "temperate-riverbraid-terraces", "weight": 2.3 },
-      { "id": "ocean-shelf-canyons", "weight": 1.2, "blend": 0.62 }
+      { "id": "monsoon-shoal-runnels", "weight": 3.4 },
+      { "id": "monsoon-shoal-runnels", "weight": 1.3, "blend": 0.46 },
+      { "id": "kelp-spiral-mounds", "weight": 1.8 },
+      { "id": "kelp-spiral-mounds", "weight": 0.8, "blend": 0.88 },
+      { "id": "wetland-peat-flumes", "weight": 3.2 },
+      { "id": "wetland-peat-flumes", "weight": 1.4, "blend": 0.9 },
+      { "id": "prairie-braided-swales", "weight": 2.6 },
+      { "id": "prairie-braided-swales", "weight": 1.1, "blend": 0.78 },
+      { "id": "temperate-riverbraid-terraces", "weight": 1.8 },
+      { "id": "temperate-riverbraid-terraces", "weight": 0.7, "blend": 0.6 }
     ]
   },
   "weather": {

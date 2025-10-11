@@ -787,6 +787,8 @@ function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
     return baseConfig;
   });
 
+  retuneBasinAndShelfOperators({ operators, defaults });
+
   const operatorIndexById = new Map();
   operatorTemplates.forEach((operatorTemplate, index) => {
     if (typeof operatorTemplate?.id === 'string') {
@@ -851,6 +853,8 @@ function createDefaultTfmsConfiguration({ seed, terrainConfig, defaults }) {
       return result;
     })
     .filter(Boolean);
+
+  rebalanceBasinMatrix(modulationMatrix);
 
   const tectonicTemplate =
     templateSource?.tectonic && typeof templateSource.tectonic === 'object'
@@ -1039,6 +1043,198 @@ function clampWithinRange(value, min, max) {
     next = Math.min(max, next);
   }
   return next;
+}
+
+function retuneBasinAndShelfOperators({ operators, defaults }) {
+  if (!Array.isArray(operators)) {
+    return;
+  }
+  const primaryAmplitude = isFiniteNumber(defaults?.primaryAmplitude)
+    ? defaults.primaryAmplitude
+    : 1;
+  const detailAmplitude = isFiniteNumber(defaults?.detailAmplitude)
+    ? defaults.detailAmplitude
+    : primaryAmplitude * 0.6;
+  const primaryFrequency = isFiniteNumber(defaults?.primaryFrequency)
+    ? defaults.primaryFrequency
+    : 0.0008;
+  const detailFrequency = isFiniteNumber(defaults?.detailFrequency)
+    ? defaults.detailFrequency
+    : primaryFrequency * 2;
+  const warpRatio =
+    primaryFrequency > 0
+      ? clampWithinRange(detailFrequency / primaryFrequency, 0.5, 3)
+      : 1;
+
+  operators.forEach((operator) => {
+    if (!operator || typeof operator !== 'object') {
+      return;
+    }
+    if (operator.id === 'tectonic-worley') {
+      retuneTectonicOperator(operator, { detailAmplitude, warpRatio });
+    } else if (operator.id === 'domain-warp') {
+      retuneDomainWarpOperator(operator, {
+        primaryAmplitude,
+        warpRatio,
+      });
+    }
+  });
+}
+
+function retuneTectonicOperator(operator, { detailAmplitude, warpRatio }) {
+  const amplitude = operator?.envelope?.amplitude;
+  if (amplitude) {
+    const multiplier = isFiniteNumber(amplitude.multiplier)
+      ? amplitude.multiplier
+      : 0.45;
+    amplitude.multiplier = clampWithinRange(multiplier * 1.2, 0.3, 0.9);
+    raiseRangeMaximum(amplitude, detailAmplitude * 0.75);
+    if (!isFiniteNumber(amplitude.min) || amplitude.min < 0) {
+      amplitude.min = 0;
+    }
+  }
+  const frequency = operator?.envelope?.frequency;
+  if (frequency) {
+    const multiplier = isFiniteNumber(frequency.multiplier)
+      ? frequency.multiplier
+      : 0.45;
+    frequency.multiplier = clampWithinRange(multiplier * 0.85, 0.2, 0.6);
+  }
+  if (operator?.modulation?.amplitude) {
+    widenSymmetricRange(operator.modulation.amplitude, 1.35);
+  }
+  if (operator?.modulation?.warp) {
+    calibrateWarpRange(operator.modulation.warp.x, warpRatio * 0.42, 0.18);
+    calibrateWarpRange(operator.modulation.warp.z, warpRatio * 0.42, -0.18);
+  }
+  if (!operator.tectonic || typeof operator.tectonic !== 'object') {
+    operator.tectonic = {};
+  }
+  if (!isFiniteNumber(operator.tectonic.weight) || operator.tectonic.weight < 0.52) {
+    operator.tectonic.weight = 0.52;
+  }
+  operator.tectonic.bias = clampWithinRange(
+    (operator.tectonic.bias ?? 0) - 0.12,
+    -1,
+    1,
+  );
+}
+
+function retuneDomainWarpOperator(operator, { primaryAmplitude, warpRatio }) {
+  const amplitude = operator?.envelope?.amplitude;
+  if (amplitude) {
+    const multiplier = isFiniteNumber(amplitude.multiplier)
+      ? amplitude.multiplier
+      : 0.32;
+    amplitude.multiplier = clampWithinRange(multiplier * 1.25, 0.28, 0.72);
+    raiseRangeMaximum(amplitude, primaryAmplitude * 0.8);
+    if (!isFiniteNumber(amplitude.min) || amplitude.min < 0) {
+      amplitude.min = 0;
+    }
+  }
+  const frequency = operator?.envelope?.frequency;
+  if (frequency) {
+    const multiplier = isFiniteNumber(frequency.multiplier)
+      ? frequency.multiplier
+      : 0.65;
+    frequency.multiplier = clampWithinRange(multiplier * 0.95, 0.5, 0.85);
+  }
+  if (operator?.modulation?.warp) {
+    const warpStrength = clampWithinRange(warpRatio * 0.28, 0.18, 0.7);
+    calibrateWarpRange(
+      operator.modulation.warp.x,
+      warpStrength,
+      warpStrength * 0.55,
+    );
+    calibrateWarpRange(
+      operator.modulation.warp.z,
+      warpStrength * 0.9,
+      -warpStrength * 0.45,
+    );
+  }
+  if (operator?.modulation?.amplitude) {
+    widenSymmetricRange(operator.modulation.amplitude, 1.1);
+  }
+  if (operator?.modulation?.frequency) {
+    widenSymmetricRange(operator.modulation.frequency, 0.9);
+  }
+}
+
+function widenSymmetricRange(range, span) {
+  if (!range || !isFiniteNumber(span)) {
+    return;
+  }
+  const magnitude = Math.abs(span);
+  if (magnitude === 0) {
+    return;
+  }
+  if (!isFiniteNumber(range.min) || range.min > -magnitude) {
+    range.min = -magnitude;
+  }
+  if (!isFiniteNumber(range.max) || range.max < magnitude) {
+    range.max = magnitude;
+  }
+}
+
+function raiseRangeMaximum(range, candidateMax) {
+  if (!range || !isFiniteNumber(candidateMax)) {
+    return;
+  }
+  if (!isFiniteNumber(range.max) || range.max < candidateMax) {
+    range.max = candidateMax;
+  }
+}
+
+function calibrateWarpRange(range, magnitude, centerBias = 0) {
+  if (!range || !isFiniteNumber(magnitude)) {
+    return;
+  }
+  const span = Math.abs(magnitude);
+  if (span === 0) {
+    return;
+  }
+  if (!isFiniteNumber(range.min) || range.min > -span) {
+    range.min = -span;
+  }
+  if (!isFiniteNumber(range.max) || range.max < span) {
+    range.max = span;
+  }
+  if (isFiniteNumber(centerBias)) {
+    const value = clampWithinRange(centerBias, range.min, range.max);
+    range.value = value;
+  }
+}
+
+function rebalanceBasinMatrix(modulationMatrix) {
+  if (!Array.isArray(modulationMatrix)) {
+    return;
+  }
+  modulationMatrix.forEach((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+    if (entry.sourceId === 'domain-warp' && entry.targetId === 'primary-fbm') {
+      entry.gain = clampWithinRange(entry.gain * 1.08, -4, 4);
+      if (entry.axis === 'z') {
+        entry.bias = clampWithinRange((entry.bias ?? 0) - 0.05, -2, 2);
+      }
+    } else if (
+      entry.sourceId === 'domain-warp' &&
+      entry.targetId === 'ridge-noise'
+    ) {
+      entry.gain = clampWithinRange(entry.gain * 1.12, -4, 4);
+    } else if (
+      entry.sourceId === 'tectonic-worley' &&
+      entry.targetId === 'diffusion-mask'
+    ) {
+      entry.gain = clampWithinRange(entry.gain * 1.15, -4, 4);
+    } else if (
+      entry.sourceId === 'tectonic-worley' &&
+      entry.targetId === 'anisotropic-banding'
+    ) {
+      entry.gain = clampWithinRange(entry.gain * 1.08, -4, 4);
+    }
+  });
 }
 
 function clampOperatorCount(value) {
