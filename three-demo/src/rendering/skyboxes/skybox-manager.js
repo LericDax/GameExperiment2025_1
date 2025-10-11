@@ -128,7 +128,8 @@ function buildSkyboxRegistry() {
 
   const registry = {};
   for (const [id, { url, format }] of staged.entries()) {
-    registry[id] = Object.freeze({ url, format });
+    registry[id] = Object.freeze({ url, format, invertY: false });
+    registry[`${id}#invertY`] = Object.freeze({ url, format, invertY: true });
   }
   return registry;
 }
@@ -177,7 +178,7 @@ function getProceduralCache({ THREE }) {
   return proceduralTextureCache.get(THREE);
 }
 
-function configureEnvironmentTexture(texture, { THREE, id }) {
+function configureEnvironmentTexture(texture, { THREE, id, invertY = false }) {
   texture.name = `skybox:${id}`;
   texture.mapping = THREE.EquirectangularReflectionMapping;
   texture.needsUpdate = true;
@@ -195,7 +196,7 @@ function configureEnvironmentTexture(texture, { THREE, id }) {
   texture.generateMipmaps = false;
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.flipY = false;
+  texture.flipY = invertY;
   return texture;
 }
 
@@ -289,20 +290,60 @@ export async function applySkybox({ THREE, renderer: _renderer, scene, id, seed 
   const requestedId = id ?? FALLBACK_SKYBOX_ID;
   const entry = SKYBOX_REGISTRY[requestedId];
   const url = entry?.url;
+  const invertY = entry?.invertY === true;
   let texture;
   let resolvedId = requestedId;
 
   if (url) {
     const cache = getSkyboxCache({ THREE });
-    if (cache.has(url)) {
-      texture = cache.get(url);
-      configureEnvironmentTexture(texture, { THREE, id: requestedId });
-    } else {
-      const loader = getLoader({ THREE, format: entry?.format });
-      texture = await loader.loadAsync(url);
-      configureEnvironmentTexture(texture, { THREE, id: requestedId });
-      cache.set(url, texture);
+    let cacheEntry = cache.get(url);
+    if (cacheEntry && !cacheEntry.baseTexture) {
+      cacheEntry = {
+        baseTexture: cacheEntry,
+        variants: new Map([
+          ['normal', cacheEntry],
+        ]),
+      };
+      cache.set(url, cacheEntry);
     }
+    if (cacheEntry?.baseTexture) {
+      texture = invertY
+        ? cacheEntry.variants.get('invertY')
+        : cacheEntry.variants.get('normal') ?? cacheEntry.baseTexture;
+    }
+
+    if (!texture) {
+      let resource = cacheEntry;
+      if (!resource) {
+        const loader = getLoader({ THREE, format: entry?.format });
+        const baseTexture = await loader.loadAsync(url);
+        resource = {
+          baseTexture,
+          variants: new Map([
+            ['normal', baseTexture],
+          ]),
+        };
+        cache.set(url, resource);
+      }
+
+      if (invertY) {
+        texture = resource.variants.get('invertY');
+        if (!texture) {
+          texture = resource.baseTexture.clone();
+          texture.needsUpdate = true;
+          resource.variants.set('invertY', texture);
+        }
+      } else {
+        texture = resource.variants.get('normal');
+        if (!texture) {
+          texture = resource.baseTexture;
+          resource.variants.set('normal', texture);
+        }
+      }
+    }
+
+    texture.flipY = invertY;
+    configureEnvironmentTexture(texture, { THREE, id: requestedId, invertY });
   } else {
     resolvedId = FALLBACK_SKYBOX_ID;
     texture = createProceduralSkyBackdrop({ THREE, seed });
