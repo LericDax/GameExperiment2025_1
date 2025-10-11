@@ -15,3 +15,12 @@ This directory is reserved for equirectangular skyboxes used by the Three.js sce
 - Keep filenames lowercase and hyphenated to avoid platform-specific casing issues.
 
 After adding a new skybox file, restart the dev server or rebuild the project to ensure Vite picks up the updated assets.
+
+## Inverting skybox orientation
+
+- Each discovered asset automatically exposes two IDs to the renderer: the base filename (e.g. `skybox-1`) and an explicit
+  inverted variant that appends `#invertY` (e.g. `skybox-1#invertY`).
+- Level designers can reference the inverted ID in world configuration or URL overrides when a panorama is authored with a
+  flipped vertical axis.
+- The inverted variant keeps a dedicated texture clone in memory so the normal and flipped orientations can be swapped
+  without reloading the source image.
