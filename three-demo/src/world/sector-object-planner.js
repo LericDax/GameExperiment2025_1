@@ -102,6 +102,9 @@ function resolveThemeMetrics(sectorX, sectorZ) {
   const meadow = smoothRandom(sectorX, sectorZ, 0.09, 23);
   const riverNoise = smoothRandom(sectorX, sectorZ, 0.045, 29);
   const riverStrength = 1 - Math.abs(riverNoise * 2 - 1);
+  const oceanProvinceNoise = smoothRandom(sectorX, sectorZ, 0.035, 31);
+  const salinityNoise = smoothRandom(sectorX, sectorZ, 0.06, 37);
+  const currentSeedNoise = smoothRandom(sectorX, sectorZ, 0.045, 41);
 
   const neighbors = [];
   for (let dx = -1; dx <= 1; dx++) {
@@ -116,6 +119,9 @@ function resolveThemeMetrics(sectorX, sectorZ) {
         meadow: smoothRandom(sectorX + dx, sectorZ + dz, 0.09, 23),
         riverStrength:
           1 - Math.abs(smoothRandom(sectorX + dx, sectorZ + dz, 0.045, 29) * 2 - 1),
+        oceanProvince: smoothRandom(sectorX + dx, sectorZ + dz, 0.035, 31),
+        salinity: smoothRandom(sectorX + dx, sectorZ + dz, 0.06, 37),
+        currentSeed: smoothRandom(sectorX + dx, sectorZ + dz, 0.045, 41),
       });
     }
   }
@@ -127,9 +133,21 @@ function resolveThemeMetrics(sectorX, sectorZ) {
       acc.stone += entry.stone;
       acc.meadow += entry.meadow;
       acc.riverStrength += entry.riverStrength;
+      acc.oceanProvince += entry.oceanProvince;
+      acc.salinity += entry.salinity;
+      acc.currentSeed += entry.currentSeed;
       return acc;
     },
-    { canopy: 0, wetness: 0, stone: 0, meadow: 0, riverStrength: 0 },
+    {
+      canopy: 0,
+      wetness: 0,
+      stone: 0,
+      meadow: 0,
+      riverStrength: 0,
+      oceanProvince: 0,
+      salinity: 0,
+      currentSeed: 0,
+    },
   );
 
   const divisor = neighbors.length || 1;
@@ -138,6 +156,9 @@ function resolveThemeMetrics(sectorX, sectorZ) {
   neighborAverages.stone /= divisor;
   neighborAverages.meadow /= divisor;
   neighborAverages.riverStrength /= divisor;
+  neighborAverages.oceanProvince /= divisor;
+  neighborAverages.salinity /= divisor;
+  neighborAverages.currentSeed /= divisor;
 
   const propagatedCanopy = clamp01(canopy * 0.65 + neighborAverages.canopy * 0.35);
   const propagatedWetness = clamp01(wetness * 0.6 + neighborAverages.wetness * 0.4);
@@ -146,6 +167,20 @@ function resolveThemeMetrics(sectorX, sectorZ) {
   const propagatedRiver = clamp01(
     riverStrength * 0.7 + neighborAverages.riverStrength * 0.3,
   );
+  const propagatedOceanProvince = clamp01(
+    oceanProvinceNoise * 0.68 + neighborAverages.oceanProvince * 0.32,
+  );
+  const propagatedSalinity = clamp01(
+    salinityNoise * 0.7 + neighborAverages.salinity * 0.3,
+  );
+  const propagatedCurrentSeed = clamp01(
+    currentSeedNoise * 0.65 + neighborAverages.currentSeed * 0.35,
+  );
+  const shoreline = clamp01(1 - Math.abs(propagatedOceanProvince - 0.5) * 2);
+  const blendedSalinity = clamp01(
+    propagatedSalinity * 0.75 + propagatedOceanProvince * 0.25,
+  );
+  const currentStrength = clamp01(propagatedCurrentSeed * 1.1);
 
   return {
     canopy: propagatedCanopy,
@@ -153,6 +188,25 @@ function resolveThemeMetrics(sectorX, sectorZ) {
     stone: propagatedStone,
     meadow: propagatedMeadow,
     river: propagatedRiver,
+    ocean: {
+      province: propagatedOceanProvince,
+      salinity: blendedSalinity,
+      shoreline,
+      current: {
+        seed: propagatedCurrentSeed,
+        strength: currentStrength,
+      },
+      raw: {
+        province: oceanProvinceNoise,
+        salinity: salinityNoise,
+        currentSeed: currentSeedNoise,
+      },
+      neighborAverages: {
+        province: neighborAverages.oceanProvince,
+        salinity: neighborAverages.salinity,
+        currentSeed: neighborAverages.currentSeed,
+      },
+    },
     raw: { canopy, wetness, stone, meadow, river: riverStrength },
     neighborAverages,
   };
@@ -253,6 +307,22 @@ function resolveSectorContext(sectorX, sectorZ) {
   const riverDirection = sampleDirection(sectorX, sectorZ, 0.045, 29);
   const canopyDirection = sampleDirection(sectorX, sectorZ, 0.11, 13);
   const stoneDirection = sampleDirection(sectorX, sectorZ, 0.16, 19);
+  const currentDirection = sampleDirection(sectorX, sectorZ, 0.035, 43);
+  if (metrics.ocean) {
+    const strength = metrics.ocean.current?.strength ?? 0;
+    const vector =
+      typeof currentDirection === 'number'
+        ? {
+            x: Math.cos(currentDirection) * strength,
+            z: Math.sin(currentDirection) * strength,
+          }
+        : { x: 0, z: 0 };
+    metrics.ocean.current = {
+      ...metrics.ocean.current,
+      angle: currentDirection,
+      vector,
+    };
+  }
 
   return {
     theme,
@@ -263,6 +333,7 @@ function resolveSectorContext(sectorX, sectorZ) {
       river: riverDirection,
       canopy: canopyDirection,
       stone: stoneDirection,
+      current: currentDirection,
     },
   };
 }
@@ -1416,6 +1487,32 @@ function weightByWetness(schema, metrics) {
   return 1;
 }
 
+function weightByOcean(schema, metrics) {
+  const oceanMetrics = metrics.ocean;
+  if (!oceanMetrics) {
+    return 1;
+  }
+  let weight = 1;
+  const shoreline = clamp01(oceanMetrics.shoreline ?? 0);
+  const province = clamp01(oceanMetrics.province ?? 0.5);
+  const salinity = clamp01(oceanMetrics.salinity ?? 0.5);
+  const currentStrength = clamp01(oceanMetrics.current?.strength ?? 0);
+  if (schema.preferShore) {
+    weight *= clamp01(0.4 + shoreline * 1.6);
+  }
+  if (schema.requireUnderwater || schema.allowUnderwater) {
+    weight *= clamp01(0.3 + province * 1.4);
+    weight *= clamp01(0.4 + salinity * 1.2);
+  }
+  if (schema.preferCurrents) {
+    weight *= clamp01(0.6 + currentStrength * 1.2);
+  }
+  if (schema.preferCalmWater) {
+    weight *= clamp01(1.1 - currentStrength * 0.6);
+  }
+  return weight;
+}
+
 function resolveSchemaCandidates(context) {
   const { theme, metrics, blendTags } = context;
   const candidates = [];
@@ -1429,6 +1526,7 @@ function resolveSchemaCandidates(context) {
     }
     const densityMultiplier = weightByDensity(schema, metrics);
     const wetnessMultiplier = weightByWetness(schema, metrics);
+    const oceanMultiplier = weightByOcean(schema, metrics);
     let tagBonus = 1;
     if (blendTags?.length && schema.tags) {
       const total = blendTags.reduce((sum, tag) => {
@@ -1437,7 +1535,13 @@ function resolveSchemaCandidates(context) {
       }, 0);
       tagBonus += total;
     }
-    const finalWeight = baseWeight * themeMultiplier * densityMultiplier * wetnessMultiplier * tagBonus;
+    const finalWeight =
+      baseWeight *
+      themeMultiplier *
+      densityMultiplier *
+      wetnessMultiplier *
+      oceanMultiplier *
+      tagBonus;
     if (finalWeight > 0.0001) {
       candidates.push({ schema, weight: finalWeight });
     }

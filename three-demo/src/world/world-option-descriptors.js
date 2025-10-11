@@ -1136,6 +1136,18 @@ const terrainGroup = Object.freeze({
       default: 1.2,
       path: Object.freeze(['terrain', 'climateHeightInfluence']),
     }),
+    Object.freeze({
+      id: 'terrain.shoreSlopeBias',
+      label: 'Shore Slope Bias',
+      description:
+        'Adjusts how aggressively shoreline columns ease into ocean water levels. Positive values create wider beaches while negative values preserve steeper cliffs.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0,
+      path: Object.freeze(['terrain', 'shoreSlopeBias']),
+    }),
   ]),
 })
 
@@ -1252,6 +1264,30 @@ const biomesGroup = Object.freeze({
       step: 0.01,
       default: 1,
       path: Object.freeze(['biomes', 'weightExponent']),
+    }),
+    Object.freeze({
+      id: 'biomes.oceanProvinceScale',
+      label: 'Ocean Province Scale',
+      description:
+        'Base frequency for the ocean province mask that biases shoreline placement. Lower values create broader oceans with fewer land interruptions.',
+      type: numberType,
+      min: 0.0001,
+      max: 0.02,
+      step: 0.0001,
+      default: 0.0035,
+      path: Object.freeze(['biomes', 'oceanProvinceScale']),
+    }),
+    Object.freeze({
+      id: 'biomes.oceanWeightBias',
+      label: 'Ocean Weight Bias',
+      description:
+        'Bias applied when selecting biomes tagged as ocean or shore. Positive values expand ocean coverage while negative values pull the climate map toward continents.',
+      type: numberType,
+      min: -4,
+      max: 4,
+      step: 0.01,
+      default: 0,
+      path: Object.freeze(['biomes', 'oceanWeightBias']),
     }),
   ]),
 })

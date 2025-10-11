@@ -896,6 +896,8 @@ export function createBiomeEngine({
   const moistureNoise = new ValueNoise2D(seed * 1.51 + 157);
   const moistureDetailNoise = new ValueNoise2D(seed * 2.03 + 311);
   const varianceNoise = new ValueNoise2D(seed * 1.73 + 443);
+  const oceanProvinceNoise = new ValueNoise2D(seed * 2.17 + 593);
+  const oceanProvinceDetailNoise = new ValueNoise2D(seed * 2.43 + 811);
 
   const schemaSelectionSeed = seed * 1.97 + 131;
   const schemaCache = new Map();
@@ -924,6 +926,14 @@ export function createBiomeEngine({
     0,
     resolveBiomeOption('weightExponent', biomeOptions?.weightExponent),
   );
+  const oceanProvinceScale = Math.max(
+    0.0001,
+    resolveBiomeOption('oceanProvinceScale', biomeOptions?.oceanProvinceScale),
+  );
+  const oceanWeightBias = resolveBiomeOption(
+    'oceanWeightBias',
+    biomeOptions?.oceanWeightBias,
+  );
 
   const detailScale = climateScale * detailMultiplier;
   const varianceScale = climateScale * varianceMultiplier;
@@ -937,6 +947,19 @@ export function createBiomeEngine({
       new THREE.Color(hex),
     ]),
   );
+
+  function sampleOceanProvince(x, z) {
+    if (!Number.isFinite(oceanProvinceScale) || oceanProvinceScale <= 0) {
+      return 0.5;
+    }
+    const scale = oceanProvinceScale;
+    const base = oceanProvinceNoise.noise(x * scale, z * scale);
+    const detail = oceanProvinceDetailNoise.noise(
+      x * scale * 1.97 + 37.1,
+      z * scale * 2.13 + 61.7,
+    );
+    return clamp01(base * 0.78 + detail * 0.22);
+  }
 
   function getSchemaCacheKey(biomeId, x, z) {
     if (!biomeId) {
@@ -995,6 +1018,22 @@ export function createBiomeEngine({
   }
 
   const biomes = rawBiomeDefinitions.map((definition, index) => {
+    const rawTags = Array.isArray(definition.tags)
+      ? definition.tags.filter((tag) => typeof tag === 'string')
+      : [];
+    const normalizedTagSet = new Set(
+      rawTags
+        .map((tag) => (typeof tag === 'string' ? tag.trim().toLowerCase() : ''))
+        .filter((tag) => tag.length > 0),
+    );
+    const isOceanic =
+      normalizedTagSet.has('ocean') ||
+      normalizedTagSet.has('oceanic') ||
+      normalizedTagSet.has('aquatic');
+    const isShoreline =
+      normalizedTagSet.has('shore') ||
+      normalizedTagSet.has('tidal') ||
+      normalizedTagSet.has('coastal');
     const palette = { ...NEUTRAL_BASE_PALETTE, ...(definition.palette ?? {}) };
     const paletteColors = Object.fromEntries(
       Object.entries(palette).map(([type, hex]) => {
@@ -1025,9 +1064,10 @@ export function createBiomeEngine({
     return {
       id: definition.id ?? `biome_${index}`,
       label: definition.label ?? definition.id ?? `Biome ${index + 1}`,
-      tags: Array.isArray(definition.tags)
-        ? definition.tags.filter((tag) => typeof tag === 'string')
-        : [],
+      tags: rawTags,
+      tagSet: normalizedTagSet,
+      isOceanic,
+      isShoreline,
       climate: {
         temperature: clamp01(definition.climate?.temperature ?? 0.5),
         moisture: clamp01(definition.climate?.moisture ?? 0.5),
@@ -1097,6 +1137,12 @@ export function createBiomeEngine({
   }
 
   function selectBiome(climate, x, z) {
+    const oceanProvince = sampleOceanProvince(x, z);
+    const oceanDelta = 0.5 - oceanProvince;
+    const oceanDepth = clamp01(oceanDelta * 2);
+    const continentality = clamp01(-oceanDelta * 2);
+    const shorelineAffinity = clamp01(1 - Math.abs(oceanDelta) * 4);
+    const biasFactor = oceanWeightBias * 0.6;
     let selected = biomes[0];
     let bestScore = Number.POSITIVE_INFINITY;
 
@@ -1115,25 +1161,66 @@ export function createBiomeEngine({
       const climateScore = baseDistance * climateInfluence;
       const uniformScore = -variationNoiseSample * uniformityInfluence;
       const variationScore = -(variationNoiseSample - 0.5) * variationStrength;
-      const adjustedDistance = climateScore + uniformScore + variationScore;
+      let adjustedDistance = climateScore + uniformScore + variationScore;
+      if (biasFactor !== 0) {
+        if (biome.isOceanic) {
+          const oceanPull = oceanDepth * 0.85 + shorelineAffinity * 0.2;
+          adjustedDistance -= biasFactor * oceanPull;
+        } else if (biome.isShoreline) {
+          const shorePull =
+            shorelineAffinity * 0.9 +
+            (oceanDepth > 0 ? oceanDepth * 0.35 : continentality * 0.25);
+          adjustedDistance -= biasFactor * shorePull * 0.65;
+        } else {
+          const landPenalty = oceanDepth * 0.6 + shorelineAffinity * 0.2;
+          if (landPenalty !== 0) {
+            adjustedDistance += biasFactor * landPenalty;
+          }
+        }
+      }
       if (adjustedDistance < bestScore) {
         bestScore = adjustedDistance;
         selected = biome;
       }
     });
 
-    return { biome: selected, score: bestScore };
+    return {
+      biome: selected,
+      score: bestScore,
+      oceanProvince,
+      oceanDelta,
+      oceanDepth,
+      continentality,
+      shorelineAffinity,
+    };
   }
 
   function getBiomeAt(x, z) {
     const climate = sampleClimate(x, z);
     const selection = selectBiome(climate, x, z);
     const schema = resolveSchemaForSample(selection.biome, climate, x, z);
+    const oceanProvince = selection.oceanProvince ?? 0.5;
+    const oceanDelta = selection.oceanDelta ?? 0;
+    const oceanDepth = selection.oceanDepth ?? clamp01(oceanDelta * 2);
+    const continentality = selection.continentality ?? clamp01(-oceanDelta * 2);
+    const shorelineAffinity = selection.shorelineAffinity ?? clamp01(1 - Math.abs(oceanDelta) * 4);
     return {
       biome: selection.biome,
       climate,
       score: selection.score,
       tfmsSchema: schema,
+      ocean: {
+        province: oceanProvince,
+        delta: oceanDelta,
+        depth: oceanDepth,
+        continentality,
+        shoreline: shorelineAffinity,
+      },
+      oceanProvince,
+      oceanDelta,
+      oceanDepth,
+      continentality,
+      shorelineAffinity,
     };
   }
 
@@ -1147,6 +1234,7 @@ export function createBiomeEngine({
   return {
     biomes,
     sampleClimate,
+    sampleOceanProvince,
     getBiomeAt,
     getBlockColor,
     getDefaultBlockColor() {

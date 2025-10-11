@@ -1431,14 +1431,72 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     }
     const biome = columnSample.biome;
     const slope = computeSlope(worldX, worldZ, height);
+    const oceanSample = columnSample.ocean ?? null;
+    const oceanProvince = Number.isFinite(columnSample.oceanProvince)
+      ? columnSample.oceanProvince
+      : Number.isFinite(oceanSample?.province)
+      ? oceanSample.province
+      : 0.5;
+    const shorelineAffinity = clamp(
+      Number.isFinite(columnSample.shorelineAffinity)
+        ? columnSample.shorelineAffinity
+        : Number.isFinite(oceanSample?.shoreline)
+        ? oceanSample.shoreline
+        : 0,
+      0,
+      1,
+    );
+    const oceanDepthHint = clamp(
+      Number.isFinite(columnSample.oceanDepth)
+        ? columnSample.oceanDepth
+        : Number.isFinite(oceanSample?.depth)
+        ? oceanSample.depth
+        : Math.max(0, (0.5 - oceanProvince) * 2),
+      0,
+      1,
+    );
+    const shoreSlopeBias = Number.isFinite(worldOptions?.terrain?.shoreSlopeBias)
+      ? worldOptions.terrain.shoreSlopeBias
+      : 0;
+    columnSample.oceanDepth = oceanDepthHint;
+    columnSample.shorelineAffinity = shorelineAffinity;
+    const searchRadiusBase = 4 + shorelineAffinity * 2 + oceanDepthHint * 3;
+    const slopeBiasContribution =
+      shoreSlopeBias >= 0
+        ? shoreSlopeBias * (0.5 + oceanDepthHint * 0.5)
+        : shoreSlopeBias * (0.35 + shorelineAffinity * 0.4);
+    const searchRadius = Math.max(
+      3,
+      Math.round(searchRadiusBase + slopeBiasContribution),
+    );
     const isUnderwater = height < waterLevel;
-    const waterMetrics = computeWaterMetrics(worldX, worldZ, height);
-    const distanceToWater = waterMetrics.distanceToWater;
-    const distanceToLand = waterMetrics.distanceToLand;
+    const waterMetrics = computeWaterMetrics(worldX, worldZ, height, searchRadius);
+    const distanceToWater = Number.isFinite(waterMetrics.distanceToWater)
+      ? waterMetrics.distanceToWater
+      : searchRadius + 1;
+    const distanceToLand = Number.isFinite(waterMetrics.distanceToLand)
+      ? waterMetrics.distanceToLand
+      : searchRadius + 1;
     const columnWaterDepth = waterMetrics.waterDepth;
-    const shoreThreshold = 2;
-    const isShore = (!isUnderwater && distanceToWater <= shoreThreshold) ||
+    const slopeTerm =
+      shoreSlopeBias >= 0
+        ? shoreSlopeBias * (0.7 + oceanDepthHint * 0.6)
+        : shoreSlopeBias * (0.5 + shorelineAffinity * 0.4);
+    const shoreThreshold = clamp(
+      1.75 + shorelineAffinity * 1.5 + oceanDepthHint * 1.4 + slopeTerm,
+      0.75,
+      searchRadius,
+    );
+    let isShore = (!isUnderwater && distanceToWater <= shoreThreshold) ||
       (isUnderwater && distanceToLand <= shoreThreshold);
+    if (!isShore && shorelineAffinity > 0.35 && Number.isFinite(waterMetrics.distanceToWater)) {
+      const normalizedDistance = distanceToWater / Math.max(1, searchRadius);
+      const shorelineTolerance =
+        shorelineAffinity * 0.85 + oceanDepthHint * 0.3 + Math.max(0, shoreSlopeBias) * 0.15;
+      if (normalizedDistance <= shorelineTolerance) {
+        isShore = true;
+      }
+    }
 
     if (biome) {
       const stats = biomePresence.get(biome.id) ?? { biome, samples: 0 };

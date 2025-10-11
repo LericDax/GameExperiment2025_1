@@ -173,6 +173,7 @@ const defaultTerrainCore = Object.freeze({
     'terrain',
     'climateHeightInfluence',
   ]),
+  shoreSlopeBias: getDescriptorDefault(['terrain', 'shoreSlopeBias']),
 })
 
 const defaultTerrainTfmsClamp = Object.freeze({
@@ -270,6 +271,8 @@ const defaultBiomeTuning = Object.freeze({
   variationStrength: getDescriptorDefault(['biomes', 'variationStrength']),
   uniformity: getDescriptorDefault(['biomes', 'uniformity']),
   weightExponent: getDescriptorDefault(['biomes', 'weightExponent']),
+  oceanProvinceScale: getDescriptorDefault(['biomes', 'oceanProvinceScale']),
+  oceanWeightBias: getDescriptorDefault(['biomes', 'oceanWeightBias']),
 })
 
 const biomeDescriptorKeys = [
@@ -280,6 +283,8 @@ const biomeDescriptorKeys = [
   'variationStrength',
   'uniformity',
   'weightExponent',
+  'oceanProvinceScale',
+  'oceanWeightBias',
 ]
 
 export const biomeOptionMetadata = Object.freeze(
@@ -347,6 +352,7 @@ function createMutableWorldOptions() {
       ridgeStrength: defaultTerrainOptions.ridgeStrength,
       ridgeOffset: defaultTerrainOptions.ridgeOffset,
       climateHeightInfluence: defaultTerrainOptions.climateHeightInfluence,
+      shoreSlopeBias: defaultTerrainOptions.shoreSlopeBias,
       tfms: cloneTfmsPreset(defaultTerrainTfmsPreset),
     },
     biomes: { ...defaultWorldOptions.biomes },
@@ -2009,6 +2015,7 @@ export function applyWorldOptions(overrides = {}) {
     'ridgeStrength',
     'ridgeOffset',
     'climateHeightInfluence',
+    'shoreSlopeBias',
   ]
 
   terrainOptionKeys.forEach((key) => {
