@@ -36,6 +36,7 @@ function buildEnvironmentSkyboxOptions() {
   }
 
   pushId(FALLBACK_SKYBOX_ID)
+  pushId('skybox-1#invertY')
   pushId('skybox-1')
   listSkyboxes().forEach(pushId)
 
@@ -930,7 +931,7 @@ const environmentGroup = Object.freeze({
       description:
         'Select which bundled skybox or procedural backdrop surrounds the world.',
       type: enumType,
-      default: 'skybox-1',
+      default: 'skybox-1#invertY',
       options: environmentSkyboxOptions,
       path: Object.freeze(['environment', 'skyboxId']),
     }),
