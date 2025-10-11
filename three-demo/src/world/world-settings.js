@@ -129,6 +129,28 @@ function resolveSeed(value, fallbackValue, fallbackHash) {
 const DEFAULT_SEED_VALUE = getDescriptorDefault(['seed'])
 const DEFAULT_SEED_HASH = computeSeedHash(DEFAULT_SEED_VALUE)
 
+const environmentSkyboxDescriptor = getDescriptorForPath([
+  'environment',
+  'skyboxId',
+])
+const environmentSkyboxOptionValues = new Set(
+  Array.isArray(environmentSkyboxDescriptor?.options)
+    ? environmentSkyboxDescriptor.options
+        .map((option) =>
+          typeof option === 'string'
+            ? option
+            : option && typeof option.value === 'string'
+            ? option.value
+            : null,
+        )
+        .filter((value) => typeof value === 'string' && value.length > 0)
+    : [],
+)
+
+const defaultEnvironmentOptions = Object.freeze({
+  skyboxId: getDescriptorDefault(['environment', 'skyboxId']),
+})
+
 const defaultTerrainClamp = Object.freeze({
   min: getDescriptorDefault(['terrain', 'clamp', 'min']),
   max: getDescriptorDefault(['terrain', 'clamp', 'max']),
@@ -290,6 +312,7 @@ export const defaultWorldOptions = Object.freeze({
   water: Object.freeze({
     level: getDescriptorDefault(['water', 'level']),
   }),
+  environment: defaultEnvironmentOptions,
   terrain: defaultTerrainOptions,
   biomes: defaultBiomeTuning,
 })
@@ -309,6 +332,7 @@ function createMutableWorldOptions() {
     waterLevel: defaultWorldOptions.waterLevel,
     chunk: { size: defaultWorldOptions.chunk.size },
     water: { level: defaultWorldOptions.water.level },
+    environment: { skyboxId: defaultEnvironmentOptions.skyboxId },
     terrain: {
       baseHeight: defaultTerrainOptions.baseHeight,
       maxHeight: defaultTerrainOptions.maxHeight,
@@ -338,6 +362,26 @@ function normalizeNumber(value, fallback) {
     return fallback
   }
   return value
+}
+
+function normalizeEnvironmentSkyboxId(
+  value,
+  fallback = defaultEnvironmentOptions.skyboxId,
+) {
+  if (typeof value !== 'string') {
+    return fallback
+  }
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return fallback
+  }
+  if (
+    environmentSkyboxOptionValues.size > 0 &&
+    !environmentSkyboxOptionValues.has(trimmed)
+  ) {
+    return fallback
+  }
+  return trimmed
 }
 
 function normalizeWithDescriptor(value, fallback, path) {
@@ -1838,6 +1882,12 @@ export function applyWorldOptions(overrides = {}) {
     return worldOptions
   }
 
+  if (!worldOptions.environment) {
+    worldOptions.environment = { skyboxId: defaultEnvironmentOptions.skyboxId }
+  } else if (typeof worldOptions.environment.skyboxId !== 'string') {
+    worldOptions.environment.skyboxId = defaultEnvironmentOptions.skyboxId
+  }
+
   if ('seed' in overrides) {
     const seedInfo = resolveSeed(
       overrides.seed,
@@ -1867,6 +1917,29 @@ export function applyWorldOptions(overrides = {}) {
       worldOptions.chunkSize,
       ['chunkSize'],
     )
+  }
+
+  const environmentOverrides = isObject(overrides.environment)
+    ? overrides.environment
+    : null
+  const applySkyboxOverride = (candidate) => {
+    const fallbackSkyboxId = defaultEnvironmentOptions.skyboxId
+    if (candidate === null || candidate === undefined) {
+      worldOptions.environment.skyboxId = fallbackSkyboxId
+      return
+    }
+    worldOptions.environment.skyboxId = normalizeEnvironmentSkyboxId(
+      candidate,
+      fallbackSkyboxId,
+    )
+  }
+  if (
+    environmentOverrides &&
+    Object.prototype.hasOwnProperty.call(environmentOverrides, 'skyboxId')
+  ) {
+    applySkyboxOverride(environmentOverrides.skyboxId)
+  } else if (Object.prototype.hasOwnProperty.call(overrides, 'skyboxId')) {
+    applySkyboxOverride(overrides.skyboxId)
   }
 
   const terrainOverrides = isObject(overrides.terrain) ? overrides.terrain : null
@@ -2092,6 +2165,10 @@ export function resetWorldOptions() {
 
   Object.assign(worldOptions.chunk, fresh.chunk)
   Object.assign(worldOptions.water, fresh.water)
+  if (!worldOptions.environment) {
+    worldOptions.environment = {}
+  }
+  Object.assign(worldOptions.environment, fresh.environment)
   Object.assign(worldOptions.terrain, fresh.terrain)
   worldOptions.terrain.clamp.min = fresh.terrain.clamp.min
   worldOptions.terrain.clamp.max = fresh.terrain.clamp.max

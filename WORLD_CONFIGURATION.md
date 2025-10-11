@@ -37,6 +37,13 @@ This reference aggregates every tunable world-generation option exposed by the v
 | `water.level` | Water Level | Absolute voxel height for the ocean surface. | `number` | `9` | `-128` – `256` | `1` |
 | `waterLevel` | Water Level (alias) | Legacy top-level alias that mirrors the water level setting. | `number` | `9` | `-128` – `256` | `1` |
 
+### Environment
+| Path | Label | Description | Type | Default | Range | Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| `environment.skyboxId` | Skybox | Select which bundled skybox or procedural backdrop surrounds the world. | `enum` | `"procedural-default"` | _n/a_ | _n/a_ |
+
+Skybox IDs are sourced from `listSkyboxes()`, which enumerates the HDRIs discovered by Vite and prefixes the procedural fallback. Pass one of those identifiers—such as `procedural-default` or a bundled EXR stem—to point the renderer at a specific asset.【F:three-demo/src/world/world-option-descriptors.js†L26-L64】【F:three-demo/src/rendering/skyboxes/skybox-manager.js†L14-L180】
+
 ### Terrain
 | Path | Label | Description | Type | Default | Range | Step |
 | --- | --- | --- | --- | --- | --- | --- |
