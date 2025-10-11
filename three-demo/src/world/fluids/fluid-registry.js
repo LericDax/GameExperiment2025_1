@@ -29,6 +29,13 @@ const fluidSurfaceListeners = new Set();
 
 const DEFAULT_FLUID_SEED = 7331;
 
+const BRINE_POOL_BIOMES = new Set([
+  'auroral_glass_reef',
+  'luminous_tidebloom_marsh',
+]);
+
+const THERMAL_VENT_BIOMES = new Set(['auroral_glass_reef']);
+
 function pseudoRandom2D(x, z, seed = DEFAULT_FLUID_SEED) {
   const hash = Math.sin(x * 127.1 + z * 311.7 + seed * 0.001) * 43758.5453;
   return hash - Math.floor(hash);
@@ -301,6 +308,153 @@ function resolveAbyssalSerumPresence({
   };
 }
 
+function resolveBrinePoolPresence({
+  x,
+  z,
+  sampleColumnHeight,
+  worldConfig,
+  sampleBiomeAt,
+}) {
+  const groundHeight = sampleColumnHeight(x, z);
+  const baseSurface = groundHeight + 0.5;
+  const biomeSample =
+    sampleBiomeAt?.(x, z) ?? worldConfig?.biomeEngine?.getBiomeAt?.(x, z);
+  const biomeId = biomeSample?.biome?.id ?? biomeSample?.id ?? null;
+
+  if (!BRINE_POOL_BIOMES.has(biomeId)) {
+    return {
+      hasFluid: false,
+      surfaceY: baseSurface,
+      bottomY: baseSurface,
+    };
+  }
+
+  const seed = worldConfig?.seedHash ?? DEFAULT_FLUID_SEED;
+  const basin = pseudoRandom2D(x * 0.13 + 5.7, z * 0.13 - 9.1, seed * 0.52);
+  const rim = pseudoRandom2D(x * 0.27 - 11.4, z * 0.27 + 4.6, seed * 0.78);
+  const seep = pseudoRandom2D(x * 0.18 + 16.2, z * 0.18 - 7.3, seed * 1.12);
+  const spawnScore = basin * 0.55 + rim * 0.35 + seep * 0.2;
+
+  if (spawnScore < 0.58) {
+    return {
+      hasFluid: false,
+      surfaceY: baseSurface,
+      bottomY: baseSurface,
+    };
+  }
+
+  const sink = 0.26 + basin * 0.38 + rim * 0.22;
+  const depth = 0.9 + basin * 1.35;
+  const surfaceY = baseSurface - sink;
+  const bottomY = surfaceY - depth;
+
+  const foamAmount = clamp01(0.3 + rim * 0.45 + (spawnScore - 0.58) * 0.6);
+  const flowStrength = clamp01(0.18 + rim * 0.35);
+  const swirl =
+    (pseudoRandom2D(x * 0.23 - 3.1, z * 0.23 + 6.9, seed * 0.94) - 0.5) *
+    Math.PI *
+    2;
+  const colorHue = (0.58 + rim * 0.06 + basin * 0.04) % 1;
+  const colorSaturation = clamp01(0.55 + basin * 0.25);
+  const colorLightness = clamp01(0.32 + rim * 0.16 + seep * 0.05);
+  const colorHex = hslToHex(colorHue, colorSaturation, colorLightness);
+  const glowBias = clamp01(0.12 + seep * 0.25);
+
+  return {
+    hasFluid: true,
+    surfaceY,
+    bottomY,
+    metadata: {
+      lifecycleCues: ['brine_pool'],
+      colorHex,
+      glowBias,
+      depth,
+      foamAmount,
+      flowStrength,
+      flowDirection: { x: Math.cos(swirl), z: Math.sin(swirl) },
+    },
+  };
+}
+
+function resolveThermalVentPresence({
+  x,
+  z,
+  sampleColumnHeight,
+  worldConfig,
+  sampleBiomeAt,
+}) {
+  const groundHeight = sampleColumnHeight(x, z);
+  const baseSurface = groundHeight + 0.5;
+  const biomeSample =
+    sampleBiomeAt?.(x, z) ?? worldConfig?.biomeEngine?.getBiomeAt?.(x, z);
+  const biomeId = biomeSample?.biome?.id ?? biomeSample?.id ?? null;
+
+  if (!THERMAL_VENT_BIOMES.has(biomeId)) {
+    return {
+      hasFluid: false,
+      surfaceY: baseSurface,
+      bottomY: baseSurface,
+    };
+  }
+
+  const waterLevel = worldConfig?.waterLevel ?? groundHeight;
+  if (groundHeight > waterLevel - 1) {
+    return {
+      hasFluid: false,
+      surfaceY: baseSurface,
+      bottomY: baseSurface,
+    };
+  }
+
+  const seed = worldConfig?.seedHash ?? DEFAULT_FLUID_SEED;
+  const fracture = pseudoRandom2D(x * 0.19 - 8.4, z * 0.19 + 12.7, seed * 1.28);
+  const plume = pseudoRandom2D(x * 0.41 + 3.6, z * 0.41 - 5.8, seed * 0.86);
+  const surge = pseudoRandom2D(x * 0.33 - 15.2, z * 0.33 + 9.1, seed * 1.37);
+  const spawnScore = fracture * 0.5 + plume * 0.35 + surge * 0.28;
+
+  if (spawnScore < 0.7) {
+    return {
+      hasFluid: false,
+      surfaceY: baseSurface,
+      bottomY: baseSurface,
+    };
+  }
+
+  const lift = 0.28 + plume * 0.45;
+  const depth = 1.1 + fracture * 1.2;
+  const surfaceY = baseSurface + lift;
+  const bottomY = surfaceY - depth;
+
+  const turbulence = clamp01(0.55 + plume * 0.35 + surge * 0.2);
+  const foamAmount = clamp01(0.4 + fracture * 0.35 + surge * 0.25);
+  const flowStrength = clamp01(0.5 + plume * 0.4);
+  const swirl =
+    (pseudoRandom2D(x * 0.29 + 17.4, z * 0.29 - 2.5, seed * 1.61) - 0.5) *
+    Math.PI *
+    2;
+  const colorHue = (0.52 + plume * 0.08 + surge * 0.05) % 1;
+  const colorSaturation = clamp01(0.72 + plume * 0.2);
+  const colorLightness = clamp01(0.6 + surge * 0.25);
+  const colorHex = hslToHex(colorHue, colorSaturation, colorLightness);
+  const glowBias = clamp01(0.65 + turbulence * 0.3);
+
+  return {
+    hasFluid: true,
+    surfaceY,
+    bottomY,
+    metadata: {
+      lifecycleCues: ['hydrothermal_vent'],
+      colorHex,
+      glowBias,
+      pulseRate: 1.6 + turbulence * 1.3,
+      depth,
+      foamAmount,
+      flowStrength,
+      flowDirection: { x: Math.cos(swirl), z: Math.sin(swirl) },
+    },
+  };
+}
+
 function notifySurfaceCreated(context) {
   fluidSurfaceListeners.forEach((listener) => {
     try {
@@ -367,6 +521,42 @@ export function initializeFluidRegistry({ THREE }) {
     label: 'Abyssal Serum',
     createMaterial: (context) => createAbyssalSerumMaterial(context),
     presenceResolver: resolveAbyssalSerumPresence,
+  });
+
+  registerFluidType('brine_pool', {
+    label: 'Brine Pool',
+    waveProfile: { id: 'dense_basin', flowMultiplier: 0.4 },
+    createMaterial: ({ THREE, definition }) => {
+      const base = createHydraWaterMaterial({ THREE, definition });
+      base.material.color = new THREE.Color('#1e4a66');
+      base.material.roughness = 0.46;
+      base.material.opacity = 0.88;
+      base.material.clearcoat = 0.2;
+      base.material.emissive = new THREE.Color('#0b1f33');
+      base.material.emissiveIntensity = 0.12;
+      base.material.userData.fluidVariant = 'brine_pool';
+      base.material.needsUpdate = true;
+      return base;
+    },
+    presenceResolver: resolveBrinePoolPresence,
+  });
+
+  registerFluidType('thermal_vent', {
+    label: 'Thermal Vent Plume',
+    waveProfile: { id: 'vent_plume', flowMultiplier: 1.35 },
+    createMaterial: ({ THREE, definition }) => {
+      const base = createHydraWaterMaterial({ THREE, definition });
+      base.material.color = new THREE.Color('#33e0ff');
+      base.material.roughness = 0.3;
+      base.material.opacity = 0.76;
+      base.material.emissive = new THREE.Color('#41f6ff');
+      base.material.emissiveIntensity = 0.65;
+      base.material.clearcoat = 0.08;
+      base.material.userData.fluidVariant = 'thermal_vent';
+      base.material.needsUpdate = true;
+      return base;
+    },
+    presenceResolver: resolveThermalVentPresence,
   });
 }
 

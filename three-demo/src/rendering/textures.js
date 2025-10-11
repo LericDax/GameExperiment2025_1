@@ -89,6 +89,89 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
         return { ...shade, a: 1 };
       },
     }),
+    abyssal_clay: engine.createTexture('abyssal_clay', {
+      size: 128,
+      generator: ({ noise, worley, bands, color, mix, darken, lighten }) => {
+        const base = color('#1f2a3f');
+        const silt = darken(base, 0.45);
+        const mineral = color('#2f3f56');
+        const glow = lighten(color('#3a5d76'), 0.18);
+
+        const layers = bands({
+          frequency: 5.4,
+          angle: 9,
+          thickness: 3.6,
+          turbulence: 0.42,
+          variant: 'abyssal:layers',
+        });
+        const rills = worley({
+          scale: 7.8,
+          jitter: 0.74,
+          distancePower: 1.45,
+          variant: 'abyssal:rills',
+        });
+        const speckle = noise({
+          scale: 18,
+          octaves: 4,
+          persistence: 0.58,
+          variant: 'abyssal:speckle',
+        });
+        const glowBands = bands({
+          frequency: 9.6,
+          angle: -12,
+          thickness: 1.7,
+          turbulence: 0.4,
+          variant: 'abyssal:glow',
+        });
+
+        let shade = mix(base, silt, layers * 0.6 + speckle * 0.3);
+        shade = mix(shade, mineral, Math.pow(1 - rills, 1.9) * 0.35);
+        shade = mix(shade, glow, Math.pow(glowBands, 2.4) * 0.25);
+
+        return { ...shade, a: 1 };
+      },
+    }),
+    reefstone: engine.createTexture('reefstone', {
+      size: 128,
+      generator: ({ noise, worley, bands, color, mix, lighten, darken }) => {
+        const base = color('#2a4d5c');
+        const encrust = darken(base, 0.5);
+        const coral = lighten(color('#63e2cf'), 0.1);
+        const calcite = lighten(color('#a5f4ff'), 0.12);
+
+        const strata = bands({
+          frequency: 6.6,
+          angle: 26,
+          thickness: 3.2,
+          turbulence: 0.48,
+          variant: 'reef:strata',
+        });
+        const coralPatches = worley({
+          scale: 5.4,
+          jitter: 0.78,
+          distancePower: 1.6,
+          variant: 'reef:coral',
+        });
+        const fracture = worley({
+          scale: 11.4,
+          jitter: 0.65,
+          distancePower: 1.3,
+          variant: 'reef:fracture',
+        });
+        const sparkle = noise({
+          scale: 22,
+          octaves: 2,
+          persistence: 0.6,
+          variant: 'reef:sparkle',
+        });
+
+        let shade = mix(base, encrust, strata * 0.55 + Math.pow(fracture, 1.6) * 0.3);
+        shade = mix(shade, coral, Math.pow(1 - coralPatches, 2.4) * 0.45);
+        shade = mix(shade, calcite, Math.pow(sparkle, 2.1) * 0.25);
+
+        return { ...shade, a: 1 };
+      },
+    }),
     sand: engine.createTexture('sand', {
       size: 128,
       generator: ({ noise, bands, color, mix, darken, lighten }) => {
@@ -195,6 +278,43 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
         let shade = mix(base, barkShadow, barkNoise * 0.6 + verticalRidges * 0.2);
         shade = mix(shade, highlight, Math.pow(growth, 1.8) * 0.6);
         shade = mix(shade, highlight, heartwood * 0.2);
+
+        return { ...shade, a: 1 };
+      },
+    }),
+    mangrove_log: engine.createTexture('mangrove_log', {
+      size: 128,
+      generator: ({ noise, bands, rings, color, mix, darken, lighten, u }) => {
+        const base = color('#4a3424');
+        const tannin = lighten(color('#7f5c3a'), 0.15);
+        const wetShadow = darken(base, 0.55);
+        const moss = color('#3e6c4a');
+
+        const barkNoise = noise({
+          scale: 9,
+          octaves: 4,
+          persistence: 0.58,
+          variant: 'mangrove:grain',
+        });
+        const verticalRidges = bands({
+          frequency: 12,
+          angle: 90,
+          thickness: 2,
+          turbulence: 0.38,
+          variant: 'mangrove:ridges',
+        });
+        const tideStain = bands({
+          frequency: 4.4,
+          angle: 16,
+          thickness: 5.1,
+          turbulence: 0.5,
+          variant: 'mangrove:tide',
+        });
+        const heartwood = Math.exp(-Math.pow((u - 0.5) * 3.6, 2));
+
+        let shade = mix(base, wetShadow, barkNoise * 0.55 + verticalRidges * 0.25);
+        shade = mix(shade, tannin, Math.pow(verticalRidges, 1.7) * 0.4 + heartwood * 0.18);
+        shade = mix(shade, moss, Math.pow(tideStain, 1.4) * 0.22);
 
         return { ...shade, a: 1 };
       },
@@ -324,6 +444,48 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
 
 
         return { ...shade, a: 1 };
+      },
+    }),
+    pack_ice_sheet: engine.createTexture('pack_ice_sheet', {
+      size: 128,
+      generator: ({ noise, worley, bands, color, mix, lighten, darken }) => {
+        const base = color('#8fd6ff');
+        const shadow = darken(base, 0.42);
+        const highlight = lighten(color('#e5f9ff'), 0.18);
+
+        const fracture = worley({
+          scale: 7.4,
+          jitter: 0.7,
+          distancePower: 1.35,
+          variant: 'pack_ice:fracture',
+        });
+        const shear = bands({
+          frequency: 5.6,
+          angle: 32,
+          thickness: 3.4,
+          turbulence: 0.42,
+          variant: 'pack_ice:shear',
+        });
+        const frost = noise({
+          scale: 18,
+          octaves: 3,
+          persistence: 0.6,
+          variant: 'pack_ice:frost',
+        });
+        const bubbles = noise({
+          scale: 26,
+          octaves: 2,
+          persistence: 0.68,
+          variant: 'pack_ice:bubbles',
+        });
+
+        let shade = mix(base, shadow, Math.pow(fracture, 1.8) * 0.55 + frost * 0.3);
+        shade = mix(shade, highlight, Math.pow(1 - fracture, 2.4) * 0.45);
+        shade = mix(shade, highlight, Math.pow(shear, 1.6) * 0.28);
+        const bubbleTint = lighten(color('#c9f1ff'), 0.05);
+        shade = mix(shade, bubbleTint, Math.pow(bubbles, 2) * 0.18);
+
+        return { ...shade, a: 0.82 };
       },
     }),
     chromatic_sod: engine.createTexture('chromatic_sod', {
@@ -886,9 +1048,25 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
     stone: createStandardBlockMaterial(textures.stone, { roughness: 0.75 }, {
       name: 'StoneBiomeMaterial',
     }),
+    abyssal_clay: createStandardBlockMaterial(
+      textures.abyssal_clay,
+      { roughness: 0.88 },
+      {
+        tintStrength: 0.7,
+        name: 'AbyssalClayMaterial',
+      },
+    ),
     sand: createStandardBlockMaterial(textures.sand, { roughness: 0.8 }, {
       name: 'SandBiomeMaterial',
     }),
+    reefstone: createStandardBlockMaterial(
+      textures.reefstone,
+      { roughness: 0.78 },
+      {
+        tintStrength: 0.65,
+        name: 'ReefstoneMaterial',
+      },
+    ),
     water: createStandardBlockMaterial(
       textures.water,
       {
@@ -912,6 +1090,14 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
       tintStrength: 0.75,
       name: 'LogBiomeMaterial',
     }),
+    mangrove_log: createStandardBlockMaterial(
+      textures.mangrove_log,
+      { roughness: 0.68 },
+      {
+        tintStrength: 0.82,
+        name: 'MangroveLogMaterial',
+      },
+    ),
     cloud: createStandardBlockMaterial(
       textures.cloud,
       {
@@ -957,6 +1143,21 @@ export function createBlockMaterials({ THREE, seed = 1337 } = {}) {
       {
         tintStrength: 0.7,
         name: 'SnowBiomeMaterial',
+      },
+    ),
+    pack_ice_sheet: createStandardBlockMaterial(
+      textures.pack_ice_sheet,
+      {
+        flatShading: false,
+        transparent: true,
+        opacity: 0.92,
+        roughness: 0.38,
+        metalness: 0.08,
+        envMapIntensity: 0.45,
+      },
+      {
+        tintStrength: 0.45,
+        name: 'PackIceSheetMaterial',
       },
     ),
     chromatic_sod: createStandardBlockMaterial(
