@@ -1,0 +1,78 @@
+{
+  "id": "solar_chroma_steppe",
+  "label": "Solar Chroma Steppe",
+  "tags": ["steppe", "semi-arid", "luminous"],
+  "climate": {
+    "temperature": 0.78,
+    "moisture": 0.32,
+    "weight": 1.1
+  },
+  "terrain": {
+    "surfaceBlock": "grass",
+    "shoreBlock": "sand",
+    "subSurfaceBlock": "dirt",
+    "subSurfaceDepth": 4,
+    "deepBlock": "stone",
+    "treeDensity": 0.06,
+    "shrubChance": 0.18,
+    "flowerChance": 0.14,
+    "rockChance": 0.1,
+    "fungiChance": 0.05,
+    "waterPlantChance": 0.02,
+    "structureChance": 0.06,
+    "objectDensityMultiplier": 0.9,
+    "objectDensityMultipliers": {
+      "flowers": 1.35,
+      "shrubs": 1.1,
+      "fungi": 0.85
+    },
+    "treeHeight": {
+      "min": 2,
+      "max": 5
+    },
+    "heightOffset": 0
+  },
+  "palette": {
+    "grass": "#f0d96a",
+    "dirt": "#b0742c",
+    "stone": "#9a9280",
+    "sand": "#f5c25c",
+    "leaf": "#ffd65d",
+    "log": "#a85a24",
+    "water": "#4dd1ff",
+    "cloud": "#ffe1a3"
+  },
+  "shader": {
+    "fogColor": "#ffdf83",
+    "tintColor": "#ffd46a",
+    "tintStrength": 0.52
+  },
+  "tfmsProfile": {
+    "blend": 0.82,
+    "schemaPool": [
+      { "id": "temperate-lichen-steppe", "weight": 3.4 },
+      { "id": "steppe-loess-plates", "weight": 3.9 },
+      { "id": "prairie-braided-swales", "weight": 2.4 },
+      { "id": "desert-oasis-mesas", "weight": 1.2, "blend": 0.58 }
+    ]
+  },
+  "weather": {
+    "candidates": [
+      {
+        "id": "clear_skies",
+        "weight": 5.2,
+        "duration": { "min": 260, "max": 520 }
+      },
+      {
+        "id": "misty_rain",
+        "weight": 1.2,
+        "duration": { "min": 120, "max": 240 }
+      },
+      {
+        "id": "charged_storm",
+        "weight": 0.6,
+        "duration": { "min": 90, "max": 180 }
+      }
+    ]
+  }
+}
