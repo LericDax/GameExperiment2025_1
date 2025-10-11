@@ -82,16 +82,6 @@
         "duration": { "min": 160, "max": 320 }
       },
       {
-        "id": "tropical_squalls",
-        "weight": 1.2,
-        "duration": { "min": 120, "max": 220 }
-      },
-      {
-        "id": "upwelling_fog",
-        "weight": 0.9,
-        "duration": { "min": 170, "max": 320 }
-      },
-      {
         "id": "charged_storm",
         "weight": 0.9,
         "duration": { "min": 100, "max": 200 }

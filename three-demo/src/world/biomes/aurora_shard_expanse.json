@@ -119,14 +119,9 @@
         "duration": { "min": 180, "max": 360 }
       },
       {
-        "id": "upwelling_fog",
-        "weight": 0.9,
-        "duration": { "min": 200, "max": 360 }
-      },
-      {
         "id": "polar_blizzard",
-        "weight": 0.22,
-        "duration": { "min": 80, "max": 170 }
+        "weight": 0.18,
+        "duration": { "min": 90, "max": 190 }
       },
       {
         "id": "misty_rain",
