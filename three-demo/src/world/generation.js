@@ -22,6 +22,13 @@ import { resolveBiomeTintMultiplier } from './color-utils.js';
 import { worldOptions, applyWorldOptions } from './world-settings.js';
 import { configureSectorObjectPlanner } from './sector-object-planner.js';
 import { isBlockOccluding } from './block-occlusion.js';
+import {
+  sampleColumnWithCache,
+  getTerrainSampleCacheStats,
+  recordChunkSamplingProfile,
+  primeTerrainSample,
+  clearTerrainSampleCache,
+} from './terrain-sample-cache.js';
 export { worldOptions, getWorldOptions } from './world-settings.js';
 export { isBlockOccluding } from './block-occlusion.js';
 
@@ -233,6 +240,8 @@ export function initializeWorldGeneration({ THREE, worldOptions: overrides } = {
     applyWorldOptions(overrides);
   }
 
+  clearTerrainSampleCache();
+
   worldSeedHash = worldOptions.seedHash >>> 0;
 
   if (terrainEngine) {
@@ -423,28 +432,28 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
   const { chunkSize, waterLevel } = worldOptions;
 
-  const columnSampleCache = new Map();
+  const terrainSampler = (x, z) => engine.sampleColumn(x, z);
 
-  const cacheKey = (x, z) => `${x}|${z}`;
+  const initialCacheStats = (() => {
+    const stats = getTerrainSampleCacheStats();
+    return { hits: stats.hits, misses: stats.misses };
+  })();
 
   const sampleColumnCached = (x, z) => {
-    const key = cacheKey(x, z);
-    if (columnSampleCache.has(key)) {
-      return columnSampleCache.get(key);
-    }
-    const sample = engine.sampleColumn(x, z);
+    const sample = sampleColumnWithCache(x, z, terrainSampler);
     if (!sample || !Number.isFinite(sample.height)) {
-      console.error('[terrain] invalid height sample detected', {
-        chunkX,
-        chunkZ,
-        columnX: x,
-        columnZ: z,
-        height: sample?.height ?? null,
-      });
-      columnSampleCache.set(key, null);
+      if (sample !== null) {
+        console.error('[terrain] invalid height sample detected', {
+          chunkX,
+          chunkZ,
+          columnX: x,
+          columnZ: z,
+          height: sample?.height ?? null,
+        });
+        primeTerrainSample(x, z, null);
+      }
       return null;
     }
-    columnSampleCache.set(key, sample);
     return sample;
   };
 
@@ -2167,6 +2176,15 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     }));
     group.userData.biomes = biomes;
     stepState.stage = 'finalized';
+    const finalCacheStats = getTerrainSampleCacheStats();
+    recordChunkSamplingProfile({
+      chunkX,
+      chunkZ,
+      hitsBefore: initialCacheStats.hits,
+      missesBefore: initialCacheStats.misses,
+      hitsAfter: finalCacheStats.hits,
+      missesAfter: finalCacheStats.misses,
+    });
     return {
       chunkX,
       chunkZ,
