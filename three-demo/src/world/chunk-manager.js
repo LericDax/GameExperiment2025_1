@@ -13,6 +13,11 @@ import {
   applyFluidSurfaceMetadata,
 } from './fluids/fluid-registry.js';
 import { buildFluidGeometry } from './fluids/fluid-geometry.js';
+import {
+  invalidateTerrainSamplesForChunk,
+  pruneTerrainSampleCacheOutsideRadius,
+  clearTerrainSampleCache,
+} from './terrain-sample-cache.js';
 
 export const ChunkManagerEvents = Object.freeze({
   FIRST_CHUNK_MESHED: 'first-chunk-meshed',
@@ -1283,6 +1288,12 @@ export function createChunkManager({
       return;
     }
 
+    invalidateTerrainSamplesForChunk({
+      chunkX: chunk.chunkX,
+      chunkZ: chunk.chunkZ,
+      chunkSize: worldConfig.chunkSize,
+    });
+
     const instancedMeshes = new Set();
     if (chunk.group?.isObject3D) {
       chunk.group.traverse((child) => {
@@ -1611,6 +1622,8 @@ export function createChunkManager({
     const camera = options.camera ?? lastCamera;
     const shouldUpdateVisibility = Boolean(camera);
 
+    const previousRetentionDistance = retentionDistance;
+
     const desiredViewDistance = Math.max(
       0,
       normalizeDistance(options.viewDistance, currentViewDistance),
@@ -1670,6 +1683,20 @@ export function createChunkManager({
     const finiteRetention = Number.isFinite(retentionDistance)
       ? retentionDistance
       : finiteView;
+
+    if (
+      retentionChanged &&
+      Number.isFinite(previousRetentionDistance) &&
+      Number.isFinite(finiteRetention) &&
+      finiteRetention < previousRetentionDistance
+    ) {
+      pruneTerrainSampleCacheOutsideRadius({
+        centerChunkX,
+        centerChunkZ,
+        chunkRadius: finiteRetention,
+        chunkSize: worldConfig.chunkSize,
+      });
+    }
 
     prunePreloadQueue(centerChunkX, centerChunkZ, finiteRetention);
 
@@ -1774,6 +1801,7 @@ export function createChunkManager({
     pendingPreloadEntries.clear();
     queueDirty = false;
     lastCenterKey = null;
+    clearTerrainSampleCache();
   }
 
   function setViewDistance(distance) {

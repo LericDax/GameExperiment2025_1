@@ -3,6 +3,7 @@ import {
   worldOptionDescriptors,
   worldOptionPathToKey,
 } from './world-option-descriptors.js'
+import { clearTerrainSampleCache } from './terrain-sample-cache.js'
 
 export { worldOptionDescriptors } from './world-option-descriptors.js'
 
@@ -2074,6 +2075,8 @@ export function applyWorldOptions(overrides = {}) {
     })
   }
 
+  clearTerrainSampleCache()
+
   return worldOptions
 }
 
@@ -2097,6 +2100,8 @@ export function resetWorldOptions() {
     delete worldOptions.biomes[key]
   })
   Object.assign(worldOptions.biomes, fresh.biomes)
+
+  clearTerrainSampleCache()
 
   return worldOptions
 }
