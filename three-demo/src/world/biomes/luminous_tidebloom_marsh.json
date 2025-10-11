@@ -1,0 +1,84 @@
+{
+  "id": "luminous_tidebloom_marsh",
+  "label": "Luminous Tidebloom Marsh",
+  "tags": ["wetland", "tidal", "bioluminescent"],
+  "climate": {
+    "temperature": 0.58,
+    "moisture": 0.88,
+    "weight": 1.05
+  },
+  "terrain": {
+    "surfaceBlock": "grass",
+    "shoreBlock": "sand",
+    "subSurfaceBlock": "dirt",
+    "subSurfaceDepth": 5,
+    "deepBlock": "stone",
+    "treeDensity": 0.18,
+    "shrubChance": 0.32,
+    "flowerChance": 0.28,
+    "rockChance": 0.06,
+    "fungiChance": 0.22,
+    "waterPlantChance": 0.38,
+    "structureChance": 0.14,
+    "objectDensityMultiplier": 1.1,
+    "objectDensityMultipliers": {
+      "waterPlants": 1.4,
+      "fungi": 1.25,
+      "structures": 0.85
+    },
+    "treeHeight": {
+      "min": 3,
+      "max": 6
+    },
+    "heightOffset": -1
+  },
+  "palette": {
+    "grass": "#74f5c5",
+    "dirt": "#2f4f35",
+    "stone": "#466076",
+    "sand": "#74d2bf",
+    "leaf": "#9affee",
+    "log": "#3f6c5c",
+    "water": "#2ec1ff",
+    "cloud": "#b6f5ff"
+  },
+  "shader": {
+    "fogColor": "#5ad9f6",
+    "tintColor": "#6ef7d4",
+    "tintStrength": 0.6,
+    "effects": {
+      "bioluminescence": {
+        "intensity": 0.8,
+        "color": "#8affff"
+      }
+    }
+  },
+  "tfmsProfile": {
+    "blend": 0.86,
+    "schemaPool": [
+      { "id": "wetland-peat-flumes", "weight": 3.8 },
+      { "id": "prairie-braided-swales", "weight": 3.1 },
+      { "id": "temperate-riverbraid-terraces", "weight": 2.3 },
+      { "id": "ocean-shelf-canyons", "weight": 1.2, "blend": 0.62 }
+    ]
+  },
+  "weather": {
+    "candidates": [
+      {
+        "id": "misty_rain",
+        "weight": 3.4,
+        "duration": { "min": 180, "max": 360 }
+      },
+      {
+        "id": "clear_skies",
+        "weight": 2.2,
+        "duration": { "min": 200, "max": 420 }
+      },
+      {
+        "id": "charged_storm",
+        "weight": 0.8,
+        "duration": { "min": 110, "max": 210 }
+      }
+    ]
+  }
+}

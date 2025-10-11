@@ -41,6 +41,13 @@ After voxel content lands, update the runtime systems so the new biomes particip
 - **Spawn Rules:** adjust biome-aware placement in `three-demo/src/world/voxel-object-placement.js` and supporting planners in `three-demo/src/world/sector-object-planner.js` to honor the new structures/flora/fungi density targets.
 - **Shader Hooks:** add biome-specific hooks or uniforms within `three-demo/src/world/terrain-engine.js` (surface shading) and `three-demo/src/world/voxel-object-decoration-mesh.js` (nanovoxel rendering) for the light-reactive and geothermal effects described above.
 
+## Ocean Roadmap Overlay
+While advancing each layer, track the shoreline-to-shelf integration work that stitches coastal wetlands and open-ocean plateaus together:
+- **Bathymetry Harmonisation:** extend shoreline sampling so Solar Chroma Steppe and Luminous Tidebloom Marsh share a common tidal falloff into neighbouring ocean chunks.
+- **Ventway Corridors:** reserve navigation lanes that link Obsidian Mycelium Hollows fumaroles to Prismarine Vent Plateau geysers, allowing thermal gradients to influence offshore fluid colouration.
+- **Palette Sync:** align the ocean shader tables with the bioluminescent palettes so plankton bloom hues transition smoothly when the tidal marsh hands off to deep-water shelf cells.
+- **Fluid Materials:** queue follow-up tasks in the fluids registry for vent effluent refractive indices and marsh turbidity so water rendering reflects the roadmap milestones.
+
 ## Layer 3 – Validation & Sign-off
 Before merging feature branches that implement the above layers:
 - **Asset QA:** run targeted inspection passes to confirm voxel assets load without geometry warnings and respect naming conventions.

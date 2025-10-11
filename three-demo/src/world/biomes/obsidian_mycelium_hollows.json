@@ -1,0 +1,83 @@
+{
+  "id": "obsidian_mycelium_hollows",
+  "label": "Obsidian Mycelium Hollows",
+  "tags": ["subterranean", "fungal", "volcanic"],
+  "climate": {
+    "temperature": 0.62,
+    "moisture": 0.48,
+    "weight": 0.95
+  },
+  "terrain": {
+    "surfaceBlock": "stone",
+    "shoreBlock": "stone",
+    "subSurfaceBlock": "stone",
+    "subSurfaceDepth": 6,
+    "deepBlock": "stone",
+    "treeDensity": 0.0,
+    "shrubChance": 0.08,
+    "flowerChance": 0.02,
+    "rockChance": 0.18,
+    "fungiChance": 0.46,
+    "waterPlantChance": 0.12,
+    "structureChance": 0.22,
+    "objectDensityMultiplier": 0.85,
+    "objectDensityMultipliers": {
+      "fungi": 1.4,
+      "structures": 1.25,
+      "rocks": 1.1
+    },
+    "treeHeight": {
+      "min": 1,
+      "max": 2
+    },
+    "heightOffset": -4
+  },
+  "palette": {
+    "grass": "#2a1f36",
+    "dirt": "#3b273f",
+    "stone": "#24212d",
+    "sand": "#45354a",
+    "leaf": "#6d4d8a",
+    "log": "#59345f",
+    "water": "#3d4a7c",
+    "cloud": "#5f5c7a"
+  },
+  "shader": {
+    "fogColor": "#2d243a",
+    "tintColor": "#5c3a7a",
+    "tintStrength": 0.58,
+    "effects": {
+      "sporeGlow": {
+        "intensity": 0.72,
+        "color": "#b58bff"
+      }
+    }
+  },
+  "tfmsProfile": {
+    "blend": 0.88,
+    "schemaPool": [
+      { "id": "cavern-ember-terraces", "weight": 4.2 },
+      { "id": "abyssal-vent-fields", "weight": 1.6, "blend": 0.64 },
+      { "id": "steppe-loess-plates", "weight": 0.9, "blend": 0.5 }
+    ]
+  },
+  "weather": {
+    "candidates": [
+      {
+        "id": "clear_skies",
+        "weight": 2.2,
+        "duration": { "min": 200, "max": 420 }
+      },
+      {
+        "id": "misty_rain",
+        "weight": 1.6,
+        "duration": { "min": 150, "max": 300 }
+      },
+      {
+        "id": "charged_storm",
+        "weight": 0.4,
+        "duration": { "min": 80, "max": 160 }
+      }
+    ]
+  }
+}

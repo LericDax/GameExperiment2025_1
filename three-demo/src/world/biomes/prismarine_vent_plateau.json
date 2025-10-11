@@ -1,0 +1,84 @@
+{
+  "id": "prismarine_vent_plateau",
+  "label": "Prismarine Vent Plateau",
+  "tags": ["oceanic", "geothermal", "upland"],
+  "climate": {
+    "temperature": 0.54,
+    "moisture": 0.76,
+    "weight": 1.0
+  },
+  "terrain": {
+    "surfaceBlock": "stone",
+    "shoreBlock": "sand",
+    "subSurfaceBlock": "stone",
+    "subSurfaceDepth": 5,
+    "deepBlock": "stone",
+    "treeDensity": 0.04,
+    "shrubChance": 0.1,
+    "flowerChance": 0.06,
+    "rockChance": 0.22,
+    "fungiChance": 0.18,
+    "waterPlantChance": 0.28,
+    "structureChance": 0.18,
+    "objectDensityMultiplier": 0.95,
+    "objectDensityMultipliers": {
+      "rocks": 1.2,
+      "waterPlants": 1.35,
+      "structures": 1.15
+    },
+    "treeHeight": {
+      "min": 2,
+      "max": 4
+    },
+    "heightOffset": 2
+  },
+  "palette": {
+    "grass": "#6ad0c9",
+    "dirt": "#3c5d63",
+    "stone": "#4b6a7a",
+    "sand": "#8ce4d8",
+    "leaf": "#9ff7f0",
+    "log": "#406c72",
+    "water": "#3bc3ff",
+    "cloud": "#d6fbff"
+  },
+  "shader": {
+    "fogColor": "#73e4ff",
+    "tintColor": "#5cd1d9",
+    "tintStrength": 0.55,
+    "effects": {
+      "ventPlumes": {
+        "intensity": 0.7,
+        "color": "#9effff"
+      }
+    }
+  },
+  "tfmsProfile": {
+    "blend": 0.84,
+    "schemaPool": [
+      { "id": "abyssal-vent-fields", "weight": 3.6 },
+      { "id": "ocean-shelf-canyons", "weight": 2.8 },
+      { "id": "highland-stepwall-terraces", "weight": 2.1 },
+      { "id": "coastal-fjord-scars", "weight": 1.4, "blend": 0.6 }
+    ]
+  },
+  "weather": {
+    "candidates": [
+      {
+        "id": "clear_skies",
+        "weight": 3.6,
+        "duration": { "min": 240, "max": 480 }
+      },
+      {
+        "id": "misty_rain",
+        "weight": 2.1,
+        "duration": { "min": 160, "max": 320 }
+      },
+      {
+        "id": "charged_storm",
+        "weight": 0.9,
+        "duration": { "min": 100, "max": 200 }
+      }
+    ]
+  }
+}
