@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 import {
-  generateChunk,
+  createChunkBuildTask,
   getWorldOptions,
   buildInstancedBlockMesh,
   makeBlockKey,
@@ -1059,12 +1059,16 @@ export function createChunkManager({
   }
 
 
-  function ensureChunk(chunkX, chunkZ) {
+  function registerGeneratedChunk(chunk) {
+    if (!chunk) {
+      return;
+    }
+    const { chunkX, chunkZ } = chunk;
     const key = chunkKey(chunkX, chunkZ);
     if (loadedChunks.has(key)) {
       return;
     }
-    const chunk = generateChunk(blockMaterials, chunkX, chunkZ);
+
     chunk.group.frustumCulled = false;
     applyChunkBounds(chunk);
     chunk.group.children.forEach((child) => {
@@ -1097,9 +1101,8 @@ export function createChunkManager({
     const chunkWaterColumns = ensureWaterColumnMap(chunkWaterColumnSource);
     const normalizedWaterColumns = new Map();
     chunkWaterColumns.forEach((bounds, columnKey) => {
-      const normalized = bounds === null
-        ? null
-        : normalizeWaterColumnBounds(bounds);
+      const normalized =
+        bounds === null ? null : normalizeWaterColumnBounds(bounds);
       normalizedWaterColumns.set(columnKey, normalized);
       waterColumns.set(columnKey, normalized);
     });
@@ -1182,6 +1185,41 @@ export function createChunkManager({
     loadedChunks.set(key, chunk);
   }
 
+  function ensureChunk(chunkX, chunkZ) {
+    const key = chunkKey(chunkX, chunkZ);
+    if (loadedChunks.has(key)) {
+      return;
+    }
+    const pendingEntry = pendingPreloadEntries.get(key);
+    if (pendingEntry) {
+      const index = preloadQueue.indexOf(pendingEntry);
+      if (index >= 0) {
+        preloadQueue.splice(index, 1);
+      }
+      pendingPreloadEntries.delete(key);
+      let done = false;
+      while (!done) {
+        const result = pendingEntry.task.step(Number.POSITIVE_INFINITY);
+        done = Boolean(result?.done);
+      }
+      const chunk = pendingEntry.task.finalize();
+      registerGeneratedChunk(chunk);
+      return;
+    }
+    const task = createChunkBuildTask({
+      chunkX,
+      chunkZ,
+      blockMaterials,
+    });
+    let done = false;
+    while (!done) {
+      const result = task.step(Number.POSITIVE_INFINITY);
+      done = Boolean(result?.done);
+    }
+    const chunk = task.finalize();
+    registerGeneratedChunk(chunk);
+  }
+
   function cancelChunkDisposal(key) {
     if (!scheduledChunkDisposals.has(key)) {
       return;
@@ -1232,6 +1270,14 @@ export function createChunkManager({
 
   function disposeChunk(key) {
     cancelChunkDisposal(key);
+    const pendingEntry = pendingPreloadEntries.get(key);
+    if (pendingEntry) {
+      const index = preloadQueue.indexOf(pendingEntry);
+      if (index >= 0) {
+        preloadQueue.splice(index, 1);
+      }
+      pendingPreloadEntries.delete(key);
+    }
     const chunk = loadedChunks.get(key);
     if (!chunk) {
       return;
@@ -1404,6 +1450,11 @@ export function createChunkManager({
       chunkZ,
       priority,
       urgent: Boolean(urgent),
+      task: createChunkBuildTask({
+        chunkX,
+        chunkZ,
+        blockMaterials,
+      }),
     };
     pendingPreloadEntries.set(key, entry);
     preloadQueue.push(entry);
@@ -1441,13 +1492,10 @@ export function createChunkManager({
       return 0;
     }
 
-    let budget = limit;
-    const unlimited = !Number.isFinite(budget);
-    if (unlimited) {
-      budget = preloadQueue.length;
-    } else {
-      budget = Math.max(0, Math.floor(budget));
-    }
+    const unlimited = limit === Number.POSITIVE_INFINITY;
+    let remainingBudget = unlimited
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, Math.floor(Number(limit) || 0));
 
     if (queueDirty) {
       preloadQueue.sort((a, b) => {
@@ -1459,83 +1507,92 @@ export function createChunkManager({
       queueDirty = false;
     }
 
-    const countUrgent = () => {
-      let urgentCount = 0;
-      for (let i = 0; i < preloadQueue.length; i += 1) {
-        if (!preloadQueue[i].urgent) {
-          break;
-        }
-        urgentCount += 1;
+    const finalizeEntryAt = (index) => {
+      if (index < 0 || index >= preloadQueue.length) {
+        return 0;
       }
-      return urgentCount;
+      const [entry] = preloadQueue.splice(index, 1);
+      if (!entry) {
+        return 0;
+      }
+      pendingPreloadEntries.delete(entry.key);
+      if (loadedChunks.has(entry.key)) {
+        return 0;
+      }
+      let done = false;
+      while (!done) {
+        const result = entry.task.step(Number.POSITIVE_INFINITY);
+        done = Boolean(result?.done);
+      }
+      const chunk = entry.task.finalize();
+      registerGeneratedChunk(chunk);
+      return 1;
     };
-
-    const urgentAvailable = countUrgent();
-
-    if (urgentAvailable === 0 && !unlimited && budget <= 0) {
-      return 0;
-    }
-
-    let processed = 0;
-
-    const processEntry = () => {
-      while (preloadQueue.length > 0) {
-        const next = preloadQueue.shift();
-        pendingPreloadEntries.delete(next.key);
-        if (loadedChunks.has(next.key)) {
-          continue;
-        }
-        ensureChunk(next.chunkX, next.chunkZ);
-        return true;
-      }
-      return false;
-    };
-
-    if (urgentAvailable > 0) {
-      let urgentBudget;
-      if (unlimited) {
-        urgentBudget = urgentAvailable;
-      } else if (budget > 0) {
-        urgentBudget = Math.min(urgentAvailable, budget);
-      } else {
-        urgentBudget = Math.min(urgentAvailable, 1);
-      }
-
-      let urgentProcessed = 0;
-      while (
-        preloadQueue.length > 0 &&
-        urgentProcessed < urgentBudget &&
-        preloadQueue[0]?.urgent
-      ) {
-        const didProcess = processEntry();
-        if (didProcess) {
-          urgentProcessed += 1;
-          processed += 1;
-        }
-      }
-
-      if (!unlimited) {
-        budget = Math.max(0, budget - urgentProcessed);
-      }
-    }
 
     if (unlimited) {
-      while (processEntry()) {
-        processed += 1;
+      let processed = 0;
+      while (preloadQueue.length > 0) {
+        processed += finalizeEntryAt(0);
       }
       return processed;
     }
 
-    let normalProcessed = 0;
-    while (preloadQueue.length > 0 && normalProcessed < budget) {
-      const didProcess = processEntry();
-      if (didProcess) {
-        normalProcessed += 1;
-        processed += 1;
+    let processedChunks = 0;
+    let index = 0;
+    while (index < preloadQueue.length) {
+      const entry = preloadQueue[index];
+      if (!entry) {
+        index += 1;
+        continue;
       }
+      if (loadedChunks.has(entry.key)) {
+        preloadQueue.splice(index, 1);
+        pendingPreloadEntries.delete(entry.key);
+        continue;
+      }
+      const task = entry.task;
+      console.assert(task, 'expected preload entry to include a task');
+
+      let stepBudget;
+      if (remainingBudget > 0) {
+        const remainingEntries = preloadQueue.length - index;
+        stepBudget = Math.max(
+          1,
+          Math.floor(remainingBudget / Math.max(1, remainingEntries)) || 1,
+        );
+        stepBudget = Math.min(stepBudget, remainingBudget);
+      } else if (entry.urgent) {
+        stepBudget = 1;
+      } else {
+        break;
+      }
+
+      const { done, processed } = task.step(stepBudget);
+      if (processed > 0) {
+        remainingBudget = Math.max(0, remainingBudget - processed);
+      }
+
+      if (done) {
+        preloadQueue.splice(index, 1);
+        pendingPreloadEntries.delete(entry.key);
+        const chunk = task.finalize();
+        registerGeneratedChunk(chunk);
+        processedChunks += 1;
+        continue;
+      }
+
+      if (processed === 0 && remainingBudget === 0) {
+        break;
+      }
+
+      if (remainingBudget === 0 && !entry.urgent) {
+        break;
+      }
+
+      index += 1;
     }
 
-    return processed;
+    return processedChunks;
   }
 
   function update(position, options = {}) {
@@ -1682,23 +1739,10 @@ export function createChunkManager({
 
     lastCenterKey = centerKey;
 
-    if (preloadBudget === Number.POSITIVE_INFINITY) {
+    if (force || preloadBudget === Number.POSITIVE_INFINITY) {
       processPreloadQueue(Number.POSITIVE_INFINITY);
 
       flushChunkDisposals(Number.POSITIVE_INFINITY);
-
-      if (shouldUpdateVisibility) {
-        updateChunkVisibility(camera);
-      }
-
-      return;
-    }
-
-    if (force && preloadBudget === 0) {
-      // Ensure at least one chunk is processed when forcing an update.
-      processPreloadQueue(maxPreloadPerUpdate);
-
-      flushChunkDisposals();
 
       if (shouldUpdateVisibility) {
         updateChunkVisibility(camera);
@@ -1721,6 +1765,7 @@ export function createChunkManager({
   }
 
   function dispose() {
+    processPreloadQueue(Number.POSITIVE_INFINITY);
     processChunkDisposalQueue(Number.POSITIVE_INFINITY);
     chunkDisposalQueue.length = 0;
     scheduledChunkDisposals.clear();
