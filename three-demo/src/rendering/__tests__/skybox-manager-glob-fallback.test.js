@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import { readFile, unlink, writeFile } from 'node:fs/promises';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
 
 const originalGlobDescriptor = Object.getOwnPropertyDescriptor(import.meta, 'glob');
+const manifestFilePath = fileURLToPath(
+  new URL('../skyboxes/skybox-manifest.generated.json', import.meta.url),
+);
 
 function restoreGlob() {
   if (originalGlobDescriptor) {
@@ -19,6 +24,60 @@ async function importSkyboxModule() {
   moduleUrl.searchParams.set('fallbackTest', Math.random().toString(36).slice(2));
   return import(moduleUrl.href);
 }
+
+async function stubManifestFile(t, manifest) {
+  const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
+  let originalContent = null;
+  let hadOriginal = false;
+
+  try {
+    originalContent = await readFile(manifestFilePath, 'utf8');
+    hadOriginal = true;
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+
+  await writeFile(manifestFilePath, serialized, 'utf8');
+
+  t.after(async () => {
+    if (hadOriginal) {
+      await writeFile(manifestFilePath, originalContent, 'utf8');
+      return;
+    }
+
+    try {
+      await unlink(manifestFilePath);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+    }
+  });
+}
+
+test('skybox manager prefers the generated manifest when window is available', async (t) => {
+  await stubManifestFile(t, {
+    '../../../public/assets/skyboxes/skybox-1.jpg': '/assets/skyboxes/skybox-1.jpg',
+  });
+
+  t.after(() => {
+    delete globalThis.window;
+  });
+  globalThis.window = {};
+
+  const { listSkyboxes } = await importSkyboxModule();
+
+  assert.ok(
+    listSkyboxes().includes('skybox-1'),
+    'manifest entries should populate the skybox registry',
+  );
+  assert.ok(
+    listSkyboxes().includes('skybox-1#invertY'),
+    'manifest entries should still expose the invertY variant',
+  );
+});
 
 test('skybox manager falls back to Node fs scan when import.meta.glob is unavailable', async (t) => {
   t.after(restoreGlob);
@@ -69,7 +128,9 @@ test('skybox manager falls back to Node fs scan when import.meta.glob is unavail
 test(
   'skybox manager falls back to Node fs scan when import.meta.glob returns no usable entries',
   async (t) => {
-    t.after(restoreGlob);
+    t.after(() => {
+      restoreGlob();
+    });
     Object.defineProperty(import.meta, 'glob', {
       configurable: true,
       writable: true,

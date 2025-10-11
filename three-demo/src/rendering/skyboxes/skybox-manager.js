@@ -1,73 +1,40 @@
 import { TextureLoader } from 'three';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { TextureEngine } from '../texture-engine.js';
+import {
+  SKYBOX_EXTENSION_PATTERN,
+  scanSkyboxesWithNode,
+} from './scan-skyboxes.js';
 
-const SKYBOX_SEARCH_ROOT = '../../../public/assets/skyboxes';
-const SKYBOX_EXTENSION_PATTERN = /\.(?:exr|hdr|png|jpe?g)$/i;
+const hasImportMetaGlob = typeof import.meta?.glob === 'function';
+const hasWindow = typeof window !== 'undefined';
 
-async function scanSkyboxesWithNode() {
-  if (typeof process === 'undefined' || !process.versions?.node) {
-    return {};
+async function loadSkyboxManifest() {
+  if (!hasWindow) {
+    return null;
   }
 
   try {
-    const fsModule = await import(/* @vite-ignore */ 'node:fs');
-    const pathModule = await import(/* @vite-ignore */ 'node:path');
-    const urlModule = await import(/* @vite-ignore */ 'node:url');
-
-    const readdirSync = fsModule.readdirSync ?? fsModule.default?.readdirSync;
-    const statSync = fsModule.statSync ?? fsModule.default?.statSync;
-    if (typeof readdirSync !== 'function' || typeof statSync !== 'function') {
-      return {};
+    const manifestModule = await import('./skybox-manifest.generated.json', {
+      with: { type: 'json' },
+    });
+    const manifest = manifestModule?.default ?? manifestModule;
+    if (manifest && typeof manifest === 'object') {
+      return manifest;
     }
-
-    const path = pathModule.default ?? pathModule;
-    const { fileURLToPath } = urlModule;
-    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-    const skyboxRoot = path.resolve(moduleDir, SKYBOX_SEARCH_ROOT);
-
-    let stats;
-    try {
-      stats = statSync(skyboxRoot);
-    } catch {
-      return {};
-    }
-    if (!stats.isDirectory()) {
-      return {};
-    }
-
-    const result = {};
-    const stack = [skyboxRoot];
-
-    while (stack.length > 0) {
-      const currentDir = stack.pop();
-      const entries = readdirSync(currentDir, { withFileTypes: true });
-      for (const entry of entries) {
-        const entryPath = path.join(currentDir, entry.name);
-        if (entry.isDirectory()) {
-          stack.push(entryPath);
-          continue;
-        }
-        if (!SKYBOX_EXTENSION_PATTERN.test(entry.name)) {
-          continue;
-        }
-        const relativePath = path.relative(skyboxRoot, entryPath).split(path.sep).join('/');
-        const key = `${SKYBOX_SEARCH_ROOT}/${relativePath}`.replace(/\\/g, '/');
-        const url = `public/assets/skyboxes/${relativePath}`.replace(/\\/g, '/');
-        result[key] = url;
-      }
-    }
-
-    return result;
   } catch (error) {
-    console.warn('[skybox-manager] Failed to scan skyboxes via Node fallback.', error);
-    return {};
+    console.warn('[skybox-manager] Failed to load generated skybox manifest.', error);
   }
+
+  return null;
 }
 
-const hasImportMetaGlob = typeof import.meta?.glob === 'function';
-
 async function resolveSkyboxUrls() {
+  const manifest = await loadSkyboxManifest();
+  if (manifest && Object.keys(manifest).length > 0) {
+    return manifest;
+  }
+
   if (hasImportMetaGlob) {
     const globResult = import.meta.glob(
       '../../../public/assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}',
