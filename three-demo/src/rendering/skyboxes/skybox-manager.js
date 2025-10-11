@@ -13,6 +13,92 @@ const proceduralTextureCache = new WeakMap();
 
 export const FALLBACK_SKYBOX_ID = 'procedural-default';
 
+const DEFAULT_SCENE_SETTINGS = Object.freeze({
+  fogColor: 0xa9d6ff,
+  fogNear: 20,
+  fogFar: 140,
+});
+
+const SKYBOX_SCENE_SETTINGS = new Map([
+  [FALLBACK_SKYBOX_ID, DEFAULT_SCENE_SETTINGS],
+  [
+    'placeholder-skybox',
+    Object.freeze({
+      fogColor: 0xa9d6ff,
+      fogNear: 20,
+      fogFar: 140,
+    }),
+  ],
+]);
+
+function normalizeSkyboxId(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function resolveSkyboxFromQuery(search) {
+  if (typeof search !== 'string' || search.length === 0) {
+    return null;
+  }
+  try {
+    const params = new URLSearchParams(search.startsWith('?') ? search : `?${search}`);
+    if (!params.has('skybox')) {
+      return null;
+    }
+    return normalizeSkyboxId(params.get('skybox'));
+  } catch (error) {
+    console.warn('[skybox-manager] failed to parse URL parameters for skybox override', error);
+    return null;
+  }
+}
+
+function resolveSkyboxFromWorldOptions(options) {
+  if (!options || typeof options !== 'object') {
+    return null;
+  }
+  return (
+    normalizeSkyboxId(options?.environment?.skyboxId) ||
+    normalizeSkyboxId(options?.environment?.skybox?.id) ||
+    normalizeSkyboxId(options?.skyboxId) ||
+    null
+  );
+}
+
+function resolveSkyboxSeed(options, fallbackSeed = 1337) {
+  if (typeof options?.skyboxSeed === 'number' && Number.isFinite(options.skyboxSeed)) {
+    return Math.trunc(options.skyboxSeed);
+  }
+  if (typeof options?.seedHash === 'number' && Number.isFinite(options.seedHash)) {
+    return Math.trunc(options.seedHash);
+  }
+  if (typeof options?.seed === 'number' && Number.isFinite(options.seed)) {
+    return Math.trunc(options.seed);
+  }
+  return fallbackSeed;
+}
+
+export function getSkyboxSceneSettings(id) {
+  return SKYBOX_SCENE_SETTINGS.get(id) ?? DEFAULT_SCENE_SETTINGS;
+}
+
+export function resolveSkyboxRequest({
+  worldOptions,
+  search,
+  fallbackId = FALLBACK_SKYBOX_ID,
+} = {}) {
+  const fromQuery = resolveSkyboxFromQuery(search ?? (typeof window !== 'undefined' ? window.location.search : ''));
+  const fromWorld = fromQuery ? null : resolveSkyboxFromWorldOptions(worldOptions);
+  const id = normalizeSkyboxId(fromQuery ?? fromWorld) ?? fallbackId;
+  return {
+    id,
+    seed: resolveSkyboxSeed(worldOptions),
+    source: fromQuery ? 'query' : fromWorld ? 'world' : 'default',
+  };
+}
+
 function parseSkyboxKey(filePath) {
   const filename = filePath.split('/').pop();
   const nameWithoutExt = filename.replace(/\.[^.]+$/, '');
@@ -174,9 +260,10 @@ export async function applySkybox({ THREE, renderer: _renderer, scene, id, seed 
     throw new Error('applySkybox requires a THREE.Scene instance');
   }
 
-  const targetId = id ?? FALLBACK_SKYBOX_ID;
-  const url = SKYBOX_REGISTRY[targetId];
+  const requestedId = id ?? FALLBACK_SKYBOX_ID;
+  const url = SKYBOX_REGISTRY[requestedId];
   let texture;
+  let resolvedId = requestedId;
 
   if (url) {
     const cache = getSkyboxCache({ THREE });
@@ -185,15 +272,21 @@ export async function applySkybox({ THREE, renderer: _renderer, scene, id, seed 
     } else {
       const loader = getLoader({ THREE });
       texture = await loader.loadAsync(url);
-      configureEnvironmentTexture(texture, { THREE, id: targetId });
+      configureEnvironmentTexture(texture, { THREE, id: requestedId });
       cache.set(url, texture);
     }
   } else {
+    resolvedId = FALLBACK_SKYBOX_ID;
     texture = createProceduralSkyBackdrop({ THREE, seed });
   }
 
   scene.environment = texture;
   scene.background = texture;
-  return texture;
+  return {
+    id: resolvedId,
+    requestedId,
+    texture,
+    sceneSettings: getSkyboxSceneSettings(resolvedId),
+  };
 }
 
