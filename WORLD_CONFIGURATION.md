@@ -61,7 +61,6 @@ Skybox IDs are sourced from `listSkyboxes()`, which enumerates the HDR and LDR p
 | `terrain.ridgeStrength` | Ridge Strength | Strength multiplier for ridge contributions on top of base terrain. | `number` | `2.4` | `0` – `64` | `0.1` |
 | `terrain.ridgeOffset` | Ridge Offset | Phase offset for the ridge noise sampler. | `number` | `220` | `-10000` – `10000` | `1` |
 | `terrain.climateHeightInfluence` | Climate Height Influence | How strongly biome climate data affects the perceived terrain elevation. | `number` | `1.2` | `-10` – `10` | `0.05` |
-| `terrain.shoreSlopeBias` | Shore Slope Bias | Adjusts how aggressively shoreline columns ease into ocean water levels. Positive values create broader beaches while negative values preserve steeper cliffs. | `number` | `0` | `-4` – `4` | `0.01` |
 | `baseHeight` | Base Height (alias) | Legacy top-level alias mirroring the terrain base height for compatibility. | `number` | `10` | `0` – `512` | `1` |
 | `maxHeight` | Max Height (alias) | Legacy top-level alias mirroring the terrain max height for compatibility. | `number` | `20` | `1` – `1024` | `1` |
 
@@ -114,20 +113,8 @@ Legacy overrides refer to the modulation matrix as `terrain.fm`, exposing the at
 | `biomes.variationStrength` | Variation Strength | Strength of the random jitter applied when selecting the closest biome. | `number` | `0.18` | `0` – `1` | `0.01` |
 | `biomes.uniformity` | Uniformity | Blend factor between climate-driven selection (0) and a perfectly uniform distribution across all registered biomes (1). | `number` | `1` | `0` – `1` | `0.01` |
 | `biomes.weightExponent` | Weight Exponent | Exponent applied to per-biome climate weights before distance comparison. Lower values soften weight effects globally. | `number` | `1` | `0` – `4` | `0.01` |
-| `biomes.oceanProvinceScale` | Ocean Province Scale | Base frequency for the ocean province mask that biases shoreline placement. Lower values create broader oceans with fewer land interruptions. | `number` | `0.0035` | `0.0001` – `0.02` | `0.0001` |
-| `biomes.oceanWeightBias` | Ocean Weight Bias | Bias applied when selecting biomes tagged as ocean or shore. Positive values expand ocean coverage while negative values pull the climate map toward continents. | `number` | `0` | `-4` – `4` | `0.01` |
 
 With `biomes.uniformity` set to `1`, the default world boots into a maximally generalized test configuration where every registered biome is equally likely to spawn. Lowering the value gradually reintroduces climate-driven Voronoi weighting while keeping the same API levers for tuning variance and weight response.
-
-### Weather Presets
-
-| ID | Label | Category | Notes |
-| --- | --- | --- | --- |
-| `tropical_squalls` | Tropical Squalls | `storm` | Equatorial gust fronts that drive high-intensity rainbands into warm biomes such as the Luminous Tidebloom Marsh, Prismarine Vent Plateau, and the Fading Vaporwave Dimension. |
-| `polar_blizzard` | Polar Blizzard | `snow` | Katabatic bursts that now share tuned whiteout durations across the Tundra, Ice Spire Tundra, Aurora Shard Expanse, and Auroral Glass Reef rotations. |
-| `upwelling_fog` | Upwelling Fog | `fog` | Coastal sea-mist decks seeded into Luminous Tidebloom Marsh, Prismarine Vent Plateau, Noctilucent Fungus Glade, Obsidian Mycelium Hollows, and the auroral reef biomes to cover cold-current mornings. |
-
-Weather presets are authored in `three-demo/src/world/weather/weather-manager.js`; edit the preset objects there to adjust particle envelopes, overlay gains, or baseline intensity. Reference the biome JSON files under `three-demo/src/world/biomes/` to retune weather rotation weights for specific regions when new presets come online.
 
 ## Applying Overrides
 

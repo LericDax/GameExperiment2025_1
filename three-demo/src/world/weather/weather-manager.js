@@ -163,35 +163,6 @@ const DEFAULT_WEATHER_PRESETS = {
       },
     },
   },
-  tropical_squalls: {
-    id: 'tropical_squalls',
-    label: 'Tropical Squalls',
-    description:
-      'Equatorial updrafts condense into sudden downpours and cross-cutting gust fronts.',
-    intensity: 0.9,
-    category: 'storm',
-    moisture: 0.96,
-    temperature: 0.78,
-    effects: {
-      precipitation: {
-        type: 'rain',
-        intensity: 1.45,
-        radius: 16,
-        anchorHeight: 18,
-        updateInterval: 0.16,
-        minAnchorDistance: 4,
-        raindropOverlay: {
-          intensity: 2.1,
-          windSpeed: 1.35,
-          streakDensity: 1.68,
-          sparkleGain: 1.18,
-          rippleScale: 0.74,
-          dropSpeed: 1.08,
-          viscosity: 0.58,
-        },
-      },
-    },
-  },
   polar_blizzard: {
     id: 'polar_blizzard',
     label: 'Polar Blizzard',
@@ -224,36 +195,6 @@ const DEFAULT_WEATHER_PRESETS = {
       },
     },
   },
-  upwelling_fog: {
-    id: 'upwelling_fog',
-    label: 'Upwelling Fog',
-    description:
-      'Cold currents exhume ribbons of sea mist that roll inland before sunrise.',
-    intensity: 0.48,
-    category: 'fog',
-    moisture: 0.82,
-    temperature: 0.44,
-    effects: {
-      precipitation: {
-        type: 'rain',
-        intensity: 0.32,
-        radius: 11,
-        anchorHeight: 11,
-        updateInterval: 0.46,
-        minAnchorDistance: 6,
-        raindropOverlay: {
-          intensity: 0.72,
-          windSpeed: 0.28,
-          streakDensity: 0.44,
-          sparkleGain: 0.24,
-          rippleScale: 0.66,
-          dropSpeed: 0.26,
-          viscosity: 1.24,
-          puffDensity: 2.1,
-        },
-      },
-    },
-  },
 };
 
 const CATEGORY_DEFAULT_EFFECTS = {
@@ -281,9 +222,6 @@ const CATEGORY_DEFAULT_EFFECTS = {
       forwardOffset: 50,
       lateralOffset: 12,
     },
-  },
-  fog: {
-    precipitation: { type: 'rain', intensity: 0.3 },
   },
 };
 

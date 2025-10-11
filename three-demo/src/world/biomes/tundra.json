@@ -78,8 +78,8 @@
       },
       {
         "id": "polar_blizzard",
-        "weight": 0.16,
-        "duration": { "min": 75, "max": 160 }
+        "weight": 0.1,
+        "duration": { "min": 80, "max": 170 }
       },
       {
         "id": "polar_aurora",
