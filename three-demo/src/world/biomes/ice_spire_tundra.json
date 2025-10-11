@@ -67,15 +67,17 @@
     "blend": 0.9,
     "schemaPool": [
       { "id": "glacial-aurora-spires", "weight": 3.8 },
-      { "id": "glacial-aurora-spires", "weight": 1.6, "blend": 0.74 },
-      { "id": "glacial-aurora-spires", "weight": 0.9, "blend": 0.6 },
-      { "id": "glacial-aurora-spires", "weight": 0.5, "blend": 0.48 },
+      { "id": "glacial-aurora-spires", "weight": 1.6, "blend": 0.88 },
+      { "id": "glacial-aurora-spires", "weight": 0.9, "blend": 0.52 },
+      { "id": "glacial-aurora-spires", "weight": 0.5, "blend": 0.34 },
       { "id": "tundra-sastrugi-flow", "weight": 2.6 },
-      { "id": "tundra-sastrugi-flow", "weight": 1.2, "blend": 0.58 },
-      { "id": "tundra-sastrugi-flow", "weight": 0.7, "blend": 0.42 },
+      { "id": "tundra-sastrugi-flow", "weight": 1.2, "blend": 0.68 },
+      { "id": "tundra-sastrugi-flow", "weight": 0.7, "blend": 0.38 },
       { "id": "polar-fissure-shelves", "weight": 1.4 },
-      { "id": "polar-fissure-shelves", "weight": 0.8, "blend": 0.55 },
-      { "id": "polar-fissure-shelves", "weight": 0.4, "blend": 0.4 }
+      { "id": "polar-fissure-shelves", "weight": 0.8, "blend": 0.62 },
+      { "id": "polar-fissure-shelves", "weight": 0.4, "blend": 0.36 },
+      { "id": "glacial-calving-grounds", "weight": 1.5 },
+      { "id": "glacial-calving-grounds", "weight": 0.8, "blend": 0.47 }
     ]
   },
   "weather": {

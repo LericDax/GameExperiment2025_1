@@ -3118,6 +3118,98 @@ const RAW_TFMS_SCHEMATA = [
     },
   },
   {
+    id: 'glacial-calving-grounds',
+    label: 'Glacial Calving Grounds',
+    tags: ['glacial', 'calving', 'shelf'],
+    biomes: {
+      ids: ['ice_spire_tundra', 'aurora_shard_expanse'],
+      tags: ['glacial', 'coastal'],
+    },
+    climate: {
+      temperature: { min: 0.08, max: 0.46, ideal: 0.28 },
+      moisture: { min: 0.36, max: 0.78, ideal: 0.58 },
+    },
+    adjacency: {
+      preferTags: ['glacial', 'coastal'],
+      avoidTags: ['arid'],
+    },
+    blend: 0.86,
+    overrides: {
+      operatorWeights: [1.08, 0.78, 0.46, 0.72, 0.56, 0.6],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: 0.32,
+          envelope: { amplitude: { multiplier: 1.22 }, warp: { x: -14, z: 18 } },
+          modulation: { amplitude: { multiplier: 0.32 } },
+        },
+        {
+          id: 'ridge-noise',
+          weight: 0.94,
+          modulation: { amplitude: { multiplier: 0.24 } },
+          envelope: { warp: { x: 26, z: -20 } },
+        },
+        {
+          id: 'anisotropic-banding',
+          weight: 0.42,
+          modulation: { frequency: -0.24 },
+          envelope: { warp: { x: 28, z: -24 } },
+        },
+        {
+          id: 'tectonic-worley',
+          weight: 0.72,
+          modulation: { amplitude: { multiplier: 0.38 } },
+          envelope: { amplitude: { multiplier: 0.6 } },
+          tectonic: { weight: 0.68, bias: -0.14 },
+        },
+        {
+          id: 'domain-warp',
+          modulation: {
+            amplitude: { multiplier: 0.54 },
+            warp: { x: 0.26, z: -0.18 },
+          },
+          envelope: { amplitude: { multiplier: 0.52 } },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.64,
+          transfer: { id: 'smoothstep', smoothness: 0.42 },
+          modulation: { amplitude: { multiplier: 0.36 } },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.36,
+        },
+        {
+          id: 'diffusion-mask->ridge-noise:amplitude',
+          gain: 0.32,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-x',
+          gain: 0.62,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-z',
+          gain: 0.58,
+        },
+        {
+          id: 'domain-warp->ridge-noise:domain-x',
+          gain: 0.46,
+        },
+        {
+          id: 'tectonic-worley->diffusion-mask:amplitude',
+          gain: 0.52,
+        },
+        {
+          id: 'tectonic-worley->anisotropic-banding:frequency',
+          gain: 0.36,
+        },
+      ],
+    },
+  },
+  {
     id: 'reef-luminal-towers',
     label: 'Reef Luminal Towers',
     tags: ['reef', 'luminal', 'tower'],
@@ -3195,6 +3287,276 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'domain-warp->ridge-noise:domain-x',
           gain: 0.48,
+        },
+        {
+          id: 'ridge-noise->domain-warp:amplitude',
+          gain: 0.34,
+        },
+      ],
+    },
+  },
+  {
+    id: 'reef-plateau-bastions',
+    label: 'Reef Plateau Bastions',
+    tags: ['reef', 'shelf', 'plateau'],
+    biomes: {
+      ids: ['auroral_glass_reef', 'prismarine_vent_plateau'],
+      tags: ['reef', 'shelf'],
+    },
+    climate: {
+      temperature: { min: 0.4, max: 0.72, ideal: 0.58 },
+      moisture: { min: 0.66, max: 1, ideal: 0.9 },
+    },
+    adjacency: {
+      preferTags: ['reef', 'upland'],
+      avoidTags: ['arid'],
+    },
+    blend: 0.84,
+    overrides: {
+      operatorWeights: [0.96, 0.58, 0.36, 0.38, 0.62, 0.7],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: 0.2,
+          envelope: { amplitude: { multiplier: 1.08 } },
+          modulation: { amplitude: { multiplier: 0.26 } },
+        },
+        {
+          id: 'ridge-noise',
+          weight: 0.62,
+          modulation: { amplitude: { multiplier: 0.2 } },
+          envelope: { warp: { x: 14, z: 22 } },
+        },
+        {
+          id: 'anisotropic-banding',
+          weight: 0.34,
+          modulation: { frequency: 0.18 },
+          envelope: { warp: { x: 18, z: 32 } },
+        },
+        {
+          id: 'tectonic-worley',
+          weight: 0.38,
+          modulation: { amplitude: { multiplier: 0.26 } },
+          envelope: { amplitude: { multiplier: 0.48 } },
+        },
+        {
+          id: 'domain-warp',
+          modulation: {
+            amplitude: { multiplier: 0.6 },
+            warp: { x: 0.22, z: -0.16 },
+          },
+          envelope: { amplitude: { multiplier: 0.58 } },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.74,
+          transfer: { id: 'sigmoid' },
+          modulation: { amplitude: { multiplier: 0.4 } },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.44,
+        },
+        {
+          id: 'diffusion-mask->ridge-noise:amplitude',
+          gain: 0.36,
+        },
+        {
+          id: 'diffusion-mask->anisotropic-banding:amplitude',
+          gain: 0.28,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-x',
+          gain: 0.68,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-z',
+          gain: 0.64,
+        },
+        {
+          id: 'domain-warp->ridge-noise:domain-x',
+          gain: 0.48,
+        },
+        {
+          id: 'ridge-noise->domain-warp:amplitude',
+          gain: 0.34,
+        },
+      ],
+    },
+  },
+  {
+    id: 'kelp-spiral-mounds',
+    label: 'Kelp Spiral Mounds',
+    tags: ['kelp', 'reef', 'mound'],
+    biomes: {
+      ids: ['prismarine_vent_plateau', 'luminous_tidebloom_marsh'],
+      tags: ['kelp', 'tidal'],
+    },
+    climate: {
+      temperature: { min: 0.46, max: 0.78, ideal: 0.62 },
+      moisture: { min: 0.72, max: 1, ideal: 0.94 },
+    },
+    adjacency: {
+      preferTags: ['kelp', 'reef'],
+      avoidTags: ['arid'],
+    },
+    blend: 0.88,
+    overrides: {
+      operatorWeights: [0.92, 0.5, 0.42, 0.34, 0.68, 0.72],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: 0.16,
+          envelope: { amplitude: { multiplier: 1.04 } },
+          modulation: { amplitude: { multiplier: 0.22 } },
+        },
+        {
+          id: 'ridge-noise',
+          weight: 0.56,
+          modulation: { amplitude: { multiplier: 0.18 } },
+        },
+        {
+          id: 'anisotropic-banding',
+          weight: 0.38,
+          modulation: { frequency: 0.22 },
+          envelope: { warp: { x: 16, z: -26 } },
+        },
+        {
+          id: 'tectonic-worley',
+          weight: 0.32,
+          modulation: { amplitude: { multiplier: 0.24 } },
+          envelope: { amplitude: { multiplier: 0.44 } },
+        },
+        {
+          id: 'domain-warp',
+          modulation: {
+            amplitude: { multiplier: 0.66 },
+            warp: { x: 0.32, z: -0.28 },
+          },
+          envelope: { amplitude: { multiplier: 0.64 } },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.76,
+          transfer: { id: 'tanh' },
+          modulation: { amplitude: { multiplier: 0.42 } },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.4,
+        },
+        {
+          id: 'diffusion-mask->ridge-noise:amplitude',
+          gain: 0.34,
+        },
+        {
+          id: 'diffusion-mask->anisotropic-banding:amplitude',
+          gain: 0.3,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-x',
+          gain: 0.72,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-z',
+          gain: 0.68,
+        },
+        {
+          id: 'domain-warp->ridge-noise:domain-x',
+          gain: 0.5,
+        },
+        {
+          id: 'ridge-noise->domain-warp:amplitude',
+          gain: 0.36,
+        },
+      ],
+    },
+  },
+  {
+    id: 'monsoon-shoal-runnels',
+    label: 'Monsoon Shoal Runnels',
+    tags: ['shoal', 'monsoon', 'tidal'],
+    biomes: {
+      ids: ['luminous_tidebloom_marsh', 'prismarine_vent_plateau'],
+      tags: ['tidal', 'shoal'],
+    },
+    climate: {
+      temperature: { min: 0.5, max: 0.82, ideal: 0.68 },
+      moisture: { min: 0.78, max: 1, ideal: 0.96 },
+    },
+    adjacency: {
+      preferTags: ['tidal', 'wetland'],
+      avoidTags: ['arid'],
+    },
+    blend: 0.9,
+    overrides: {
+      operatorWeights: [0.9, 0.46, 0.4, 0.32, 0.6, 0.78],
+      operators: [
+        {
+          id: 'primary-fbm',
+          bias: 0.14,
+          envelope: { amplitude: { multiplier: 0.98 } },
+          modulation: { amplitude: { multiplier: 0.24 } },
+        },
+        {
+          id: 'ridge-noise',
+          weight: 0.52,
+          modulation: { amplitude: { multiplier: 0.16 } },
+        },
+        {
+          id: 'anisotropic-banding',
+          weight: 0.36,
+          modulation: { frequency: 0.12 },
+          envelope: { warp: { x: 12, z: -18 } },
+        },
+        {
+          id: 'tectonic-worley',
+          weight: 0.3,
+          modulation: { amplitude: { multiplier: 0.2 } },
+        },
+        {
+          id: 'domain-warp',
+          modulation: {
+            amplitude: { multiplier: 0.58 },
+            warp: { x: 0.26, z: -0.22 },
+          },
+          envelope: { amplitude: { multiplier: 0.56 } },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.82,
+          transfer: { id: 'smoothstep', smoothness: 0.48 },
+          modulation: { amplitude: { multiplier: 0.46 } },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.46,
+        },
+        {
+          id: 'diffusion-mask->ridge-noise:amplitude',
+          gain: 0.36,
+        },
+        {
+          id: 'diffusion-mask->anisotropic-banding:amplitude',
+          gain: 0.32,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-x',
+          gain: 0.66,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-z',
+          gain: 0.62,
+        },
+        {
+          id: 'domain-warp->ridge-noise:domain-x',
+          gain: 0.46,
         },
         {
           id: 'ridge-noise->domain-warp:amplitude',
