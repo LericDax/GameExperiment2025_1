@@ -1,0 +1,16 @@
+# Ignore real skybox assets by default
+*.hdr
+*.exr
+*.ktx2
+*.jpg
+*.jpeg
+*.png
+*.tga
+*.bmp
+*.dds
+*.heif
+*.heic
+
+# Allow placeholder and documentation to be tracked
+!placeholder-skybox.exr
+!README.md
