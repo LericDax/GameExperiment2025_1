@@ -113,17 +113,33 @@ function parseSkyboxKey(filePath) {
   return { baseName, variantSize };
 }
 
+function normalizeSkyboxUrl(url) {
+  if (typeof url !== 'string') {
+    return url;
+  }
+  let normalized = url.replace(/^\/?public\//, '/');
+  if (
+    normalized &&
+    !normalized.startsWith('/') &&
+    !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(normalized)
+  ) {
+    normalized = `/${normalized}`;
+  }
+  return normalized;
+}
+
 function buildSkyboxRegistry() {
   const staged = new Map();
   for (const [path, url] of Object.entries(SKYBOX_URLS)) {
     if (!url) continue;
+    const normalizedUrl = normalizeSkyboxUrl(url);
     const { baseName, variantSize } = parseSkyboxKey(path);
     const extension = path.split('.').pop()?.toLowerCase() ?? 'unknown';
     const existing = staged.get(baseName);
     if (existing && existing.variantSize >= variantSize) {
       continue;
     }
-    staged.set(baseName, { url, variantSize, format: extension });
+    staged.set(baseName, { url: normalizedUrl, variantSize, format: extension });
   }
 
   const registry = {};
@@ -289,14 +305,15 @@ export async function applySkybox({ THREE, renderer: _renderer, scene, id, seed 
 
   const requestedId = id ?? FALLBACK_SKYBOX_ID;
   const entry = SKYBOX_REGISTRY[requestedId];
-  const url = entry?.url;
+  const url = entry?.url ? normalizeSkyboxUrl(entry.url) : null;
   const invertY = entry?.invertY === true;
   let texture;
   let resolvedId = requestedId;
 
   if (url) {
     const cache = getSkyboxCache({ THREE });
-    let cacheEntry = cache.get(url);
+    const cacheKey = url;
+    let cacheEntry = cache.get(cacheKey);
     if (cacheEntry && !cacheEntry.baseTexture) {
       cacheEntry = {
         baseTexture: cacheEntry,
@@ -304,7 +321,7 @@ export async function applySkybox({ THREE, renderer: _renderer, scene, id, seed 
           ['normal', cacheEntry],
         ]),
       };
-      cache.set(url, cacheEntry);
+      cache.set(cacheKey, cacheEntry);
     }
     if (cacheEntry?.baseTexture) {
       texture = invertY
@@ -323,7 +340,7 @@ export async function applySkybox({ THREE, renderer: _renderer, scene, id, seed 
             ['normal', baseTexture],
           ]),
         };
-        cache.set(url, resource);
+        cache.set(cacheKey, resource);
       }
 
       if (invertY) {
