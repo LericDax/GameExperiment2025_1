@@ -3,6 +3,7 @@ import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { TextureEngine } from '../texture-engine.js';
 
 const SKYBOX_SEARCH_ROOT = '../../../public/assets/skyboxes';
+const SKYBOX_GLOB_PATTERN = `${SKYBOX_SEARCH_ROOT}/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}`;
 const SKYBOX_EXTENSION_PATTERN = /\.(?:exr|hdr|png|jpe?g)$/i;
 
 async function scanSkyboxesWithNode() {
@@ -68,7 +69,7 @@ async function scanSkyboxesWithNode() {
 const hasImportMetaGlob = typeof import.meta?.glob === 'function';
 
 const SKYBOX_URLS = hasImportMetaGlob
-  ? import.meta.glob('../../../public/assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}', {
+  ? import.meta.glob(SKYBOX_GLOB_PATTERN, {
       eager: true,
       import: 'default',
       query: '?url',
