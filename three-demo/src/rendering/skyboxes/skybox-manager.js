@@ -44,6 +44,32 @@ const SKYBOX_SCENE_SETTINGS = new Map([
   ],
 ]);
 
+const SKYBOX_ID_ALIASES = new Map([
+  ['default', FALLBACK_SKYBOX_ID],
+  ['fallback', FALLBACK_SKYBOX_ID],
+  ['procedural', FALLBACK_SKYBOX_ID],
+  ['none', FALLBACK_SKYBOX_ID],
+]);
+
+const SKYBOX_EXTENSION_PATTERN = /\.(?:exr|hdr|png|jpe?g)$/i;
+
+const SKYBOX_ORIENTATION_ALIASES = new Map([
+  ['normal', 'normal'],
+  ['n', 'normal'],
+  ['default', 'normal'],
+  ['standard', 'normal'],
+  ['upright', 'normal'],
+  ['invert', 'invertY'],
+  ['inverted', 'invertY'],
+  ['reverse', 'invertY'],
+  ['reversed', 'invertY'],
+  ['flipped', 'invertY'],
+  ['flip', 'invertY'],
+  ['invertY', 'invertY'],
+  ['i', 'invertY'],
+  ['r', 'invertY'],
+]);
+
 function normalizeSkyboxId(value) {
   if (typeof value !== 'string') {
     return null;
@@ -235,6 +261,68 @@ export function listSkyboxes() {
   return [FALLBACK_SKYBOX_ID, ...ids];
 }
 
+function normalizeSkyboxOrientation(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  return SKYBOX_ORIENTATION_ALIASES.get(normalized) ?? null;
+}
+
+export function normalizeSkyboxSelection(input, orientationHint) {
+  const raw = typeof input === 'string' ? input.trim() : '';
+  const segments = raw.split(/[\\/]/);
+  let baseCandidate = segments.length > 0 ? segments[segments.length - 1] : raw;
+  let embeddedOrientation = null;
+
+  if (baseCandidate.includes('#')) {
+    const [beforeHash, afterHash] = baseCandidate.split('#', 2);
+    const parsed = normalizeSkyboxOrientation(afterHash);
+    if (parsed) {
+      embeddedOrientation = parsed;
+      baseCandidate = beforeHash;
+    }
+  }
+
+  baseCandidate = baseCandidate.replace(SKYBOX_EXTENSION_PATTERN, '');
+
+  const aliasKey = baseCandidate.toLowerCase();
+  if (SKYBOX_ID_ALIASES.has(aliasKey)) {
+    baseCandidate = SKYBOX_ID_ALIASES.get(aliasKey);
+  }
+
+  if (baseCandidate.includes('#')) {
+    const [beforeHash, afterHash] = baseCandidate.split('#', 2);
+    const parsed = normalizeSkyboxOrientation(afterHash);
+    if (parsed) {
+      embeddedOrientation = embeddedOrientation ?? parsed;
+      baseCandidate = beforeHash;
+    }
+  }
+
+  const normalizedBase = normalizeSkyboxId(baseCandidate) ?? FALLBACK_SKYBOX_ID;
+  const orientation =
+    normalizeSkyboxOrientation(orientationHint) ?? embeddedOrientation ?? 'normal';
+  const finalOrientation = orientation === 'invertY' ? 'invertY' : 'normal';
+  const id =
+    finalOrientation === 'invertY' && !normalizedBase.endsWith('#invertY')
+      ? `${normalizedBase}#invertY`
+      : normalizedBase.endsWith('#invertY') && finalOrientation !== 'invertY'
+        ? normalizedBase.replace(/#invertY$/i, '')
+        : normalizedBase;
+
+  const baseId = id.endsWith('#invertY') ? id.replace(/#invertY$/i, '') : id;
+
+  return {
+    id,
+    baseId,
+    orientation: finalOrientation,
+  };
+}
+
 export function createProceduralSkyBackdrop({ THREE, seed = 1337 } = {}) {
   if (!THREE) {
     throw new Error('createProceduralSkyBackdrop requires a THREE instance');
@@ -307,6 +395,51 @@ export function createProceduralSkyBackdrop({ THREE, seed = 1337 } = {}) {
 
   cache.set(seed, texture);
   return texture;
+}
+
+export function setSkyboxRotation({ scene, THREE, degrees = 0 } = {}) {
+  if (!scene) {
+    throw new Error('setSkyboxRotation requires a THREE.Scene instance');
+  }
+  if (!THREE) {
+    throw new Error('setSkyboxRotation requires a THREE module reference');
+  }
+
+  const clampedDegrees = Number.isFinite(degrees) ? degrees : 0;
+  const radians = THREE.MathUtils.degToRad(clampedDegrees);
+
+  const applyRotationToTexture = (texture) => {
+    if (!texture || typeof texture !== 'object') {
+      return false;
+    }
+    if ('matrixAutoUpdate' in texture) {
+      texture.matrixAutoUpdate = false;
+    }
+    if (texture.center && typeof texture.center.set === 'function') {
+      texture.center.set(0.5, 0.5);
+    }
+    if ('wrapS' in texture) {
+      texture.wrapS = THREE.RepeatWrapping;
+    }
+    if ('rotation' in texture) {
+      texture.rotation = radians;
+    }
+    if (typeof texture.updateMatrix === 'function') {
+      texture.updateMatrix();
+    }
+    if ('needsUpdate' in texture) {
+      texture.needsUpdate = true;
+    }
+    return true;
+  };
+
+  const { background, environment } = scene;
+  let updated = false;
+  updated = applyRotationToTexture(background) || updated;
+  if (environment && environment !== background) {
+    updated = applyRotationToTexture(environment) || updated;
+  }
+  return { radians, degrees: clampedDegrees, updated };
 }
 
 export async function applySkybox({ THREE, renderer: _renderer, scene, id, seed } = {}) {
@@ -382,11 +515,22 @@ export async function applySkybox({ THREE, renderer: _renderer, scene, id, seed 
 
   scene.environment = texture;
   scene.background = texture;
+
+  const rotation = scene?.userData?.skybox?.rotationDegrees;
+  if (Number.isFinite(rotation)) {
+    try {
+      setSkyboxRotation({ scene, THREE, degrees: rotation });
+    } catch (error) {
+      console.warn('[skybox-manager] Failed to apply cached skybox rotation.', error);
+    }
+  }
+
   return {
     id: resolvedId,
     requestedId,
     texture,
     sceneSettings: getSkyboxSceneSettings(resolvedId),
+    orientation: invertY ? 'invertY' : 'normal',
   };
 }
 
