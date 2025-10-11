@@ -967,6 +967,12 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
         pulseRateSamples: 0,
         ridgeStrengthSum: 0,
         ridgeStrengthSamples: 0,
+        flowDirectionHint: null,
+        flowDirectionHintSamples: 0,
+        flowStrengthHintSum: 0,
+        flowStrengthHintSamples: 0,
+        foamHint: 0,
+        depth: Math.max(0.05, surfaceY - bottomY),
       };
       columns.set(columnKey, column);
     } else {
@@ -980,6 +986,8 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
           column.color = new THREE.Color(paletteHex);
         }
       }
+      const spanDepth = Math.max(0.05, surfaceY - bottomY);
+      column.depth = Math.max(column.depth ?? spanDepth, spanDepth);
     }
 
     const metadata = presence.metadata ?? {};
@@ -1016,6 +1024,32 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       column.orientationVector.x += Math.cos(angle);
       column.orientationVector.z += Math.sin(angle);
       column.orientationSamples += 1;
+    }
+    if (Number.isFinite(metadata.depth)) {
+      column.depth = Math.max(column.depth ?? metadata.depth, metadata.depth);
+    }
+    if (typeof metadata.foamAmount === 'number' && Number.isFinite(metadata.foamAmount)) {
+      const clampedFoam = Math.min(1, Math.max(0, metadata.foamAmount));
+      column.foamHint = Math.max(column.foamHint ?? 0, clampedFoam);
+    }
+    if (
+      metadata.flowDirection &&
+      Number.isFinite(metadata.flowDirection.x) &&
+      Number.isFinite(metadata.flowDirection.z)
+    ) {
+      const direction = metadata.flowDirection;
+      const hint = column.flowDirectionHint || { x: 0, z: 0 };
+      hint.x += direction.x;
+      hint.z += direction.z;
+      column.flowDirectionHint = hint;
+      column.flowDirectionHintSamples = (column.flowDirectionHintSamples ?? 0) + 1;
+    }
+    if (Number.isFinite(metadata.flowStrength)) {
+      const normalizedStrength = Math.min(1, Math.max(0, metadata.flowStrength));
+      column.flowStrengthHintSum =
+        (column.flowStrengthHintSum ?? 0) + normalizedStrength;
+      column.flowStrengthHintSamples =
+        (column.flowStrengthHintSamples ?? 0) + 1;
     }
   };
 
@@ -1925,7 +1959,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
           column.color = new THREE.Color('#3a79c5');
         }
         const baseDepth = Math.max(0.05, column.surfaceY - column.bottomY);
-        column.depth = baseDepth;
+        column.depth = Math.max(column.depth ?? baseDepth, baseDepth);
         column.isExposed = isFluidColumnExposed(column);
         if (!column.isExposed) {
           return;
@@ -2079,6 +2113,25 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
             ),
           );
         }
+        const directionHintSamples = column.flowDirectionHintSamples ?? 0;
+        if (column.flowDirectionHint && directionHintSamples > 0) {
+          const avgHintX = column.flowDirectionHint.x / directionHintSamples;
+          const avgHintZ = column.flowDirectionHint.z / directionHintSamples;
+          const hintMagnitude = Math.hypot(avgHintX, avgHintZ);
+          if (hintMagnitude > 0.001) {
+            const normalizedMagnitude = Math.min(1, hintMagnitude);
+            flowVector.set(avgHintX / hintMagnitude, avgHintZ / hintMagnitude);
+            flowStrength = Math.max(flowStrength, normalizedMagnitude);
+          }
+        }
+        const strengthHintSamples = column.flowStrengthHintSamples ?? 0;
+        if (strengthHintSamples > 0) {
+          const averagedStrength = Math.min(
+            1,
+            Math.max(0, column.flowStrengthHintSum / strengthHintSamples),
+          );
+          flowStrength = Math.max(flowStrength, averagedStrength);
+        }
         if (flowStrength > 0.001) {
           flowVector.normalize();
         } else {
@@ -2094,6 +2147,12 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
             ? foamExposure * 0.1 + flowStrength * 0.25
             : foamExposure * 0.18 + flowStrength * 0.4,
         );
+        if (Number.isFinite(column.foamHint)) {
+          column.foamAmount = Math.max(
+            column.foamAmount ?? 0,
+            Math.min(1, column.foamHint),
+          );
+        }
         const dropMax = Math.max(dropPx, dropNx, dropPz, dropNz);
         const neighborFluidCount = neighborOffsets.reduce((acc, offset) => {
           return acc + (neighbors[offset.key]?.hasFluid ? 1 : 0);
