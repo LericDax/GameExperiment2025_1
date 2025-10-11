@@ -40,9 +40,9 @@ This reference aggregates every tunable world-generation option exposed by the v
 ### Environment
 | Path | Label | Description | Type | Default | Range | Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| `environment.skyboxId` | Skybox | Select which bundled skybox or procedural backdrop surrounds the world. | `enum` | `"procedural-default"` | _n/a_ | _n/a_ |
+| `environment.skyboxId` | Skybox | Select which bundled skybox or procedural backdrop surrounds the world. | `enum` | `"skybox-1"` | _n/a_ | _n/a_ |
 
-Skybox IDs are sourced from `listSkyboxes()`, which enumerates the HDRIs discovered by Vite and prefixes the procedural fallback. Pass one of those identifiers—such as `procedural-default` or a bundled EXR stem—to point the renderer at a specific asset.【F:three-demo/src/world/world-option-descriptors.js†L26-L64】【F:three-demo/src/rendering/skyboxes/skybox-manager.js†L14-L180】
+Skybox IDs are sourced from `listSkyboxes()`, which enumerates the HDR and LDR panoramas discovered by Vite and prefixes the procedural fallback. The shipped configuration targets `skybox-1.jpg`; drop your replacement equirectangular panorama into `three-demo/public/assets/skyboxes/` with that filename to override the placeholder. Other IDs—such as `procedural-default` or bundled EXR stems—remain available for experimentation.【F:three-demo/src/world/world-option-descriptors.js†L26-L64】【F:three-demo/src/rendering/skyboxes/skybox-manager.js†L14-L180】
 
 ### Terrain
 | Path | Label | Description | Type | Default | Range | Step |
