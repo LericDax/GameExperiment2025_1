@@ -67,36 +67,13 @@ async function scanSkyboxesWithNode() {
 
 const hasImportMetaGlob = typeof import.meta?.glob === 'function';
 
-async function resolveSkyboxUrls() {
-  if (hasImportMetaGlob) {
-    const globResult = import.meta.glob(
-      '../../../public/assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}',
-      {
-        eager: true,
-        import: 'default',
-        query: '?url',
-      },
-    );
-
-    const usableEntries = Object.entries(globResult).filter(
-      ([, value]) => typeof value === 'string' && value.length > 0,
-    );
-    if (usableEntries.length > 0) {
-      return Object.fromEntries(usableEntries);
-    }
-
-    const nodeScanResult = await scanSkyboxesWithNode();
-    if (Object.keys(nodeScanResult).length > 0) {
-      return nodeScanResult;
-    }
-
-    return Object.fromEntries(usableEntries);
-  }
-
-  return await scanSkyboxesWithNode();
-}
-
-const SKYBOX_URLS = await resolveSkyboxUrls();
+const SKYBOX_URLS = hasImportMetaGlob
+  ? import.meta.glob('../../../public/assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}', {
+      eager: true,
+      import: 'default',
+      query: '?url',
+    })
+  : await scanSkyboxesWithNode();
 
 const loaderCache = new WeakMap();
 const skyboxTextureCache = new WeakMap();
