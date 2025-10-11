@@ -24,3 +24,9 @@ After adding a new skybox file, restart the dev server or rebuild the project to
   flipped vertical axis.
 - The inverted variant keeps a dedicated texture clone in memory so the normal and flipped orientations can be swapped
   without reloading the source image.
+
+## Previewing in-game
+
+- Launch the sandbox, press **Backquote** to open the developer console, and run `/skybox load <asset>` with the filename stem (`skybox-1`, `aurora-cove`, `procedural-default`, etc.) to swap panoramas without restarting the build. Add an optional orientation argument such as `normal`, `default`, `upright`, `invert`, `flip`, or `invertY` to flip lat-long content that was authored upside down. 【F:three-demo/src/player/dev-commands.js†L1846-L1936】【F:three-demo/src/rendering/skyboxes/skybox-manager.js†L16-L78】
+- Use `/skybox rotate <degrees>` to yaw the environment while validating horizon placement or seam cleanup; values are clamped to the `-180°`–`180°` range so you can quickly test quarter-turns and fine offsets without breaking the orientation tracker. 【F:three-demo/src/player/dev-commands.js†L2006-L2036】
+- When the inspection pass is complete, run `/skybox unload` (or `/skybox reset`) to restore the default configuration and zero the rotation metadata—ideal for comparing procedural fallback lighting against your authored HDRI. 【F:three-demo/src/player/dev-commands.js†L1940-L1999】
