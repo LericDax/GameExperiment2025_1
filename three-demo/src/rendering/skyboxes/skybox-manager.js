@@ -1,0 +1,199 @@
+import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
+import { TextureEngine } from '../texture-engine.js';
+
+const SKYBOX_URLS = import.meta.glob('../assets/skyboxes/**/*.{exr,EXR}', {
+  eager: true,
+  import: 'default',
+  query: '?url',
+});
+
+const loaderCache = new WeakMap();
+const skyboxTextureCache = new WeakMap();
+const proceduralTextureCache = new WeakMap();
+
+export const FALLBACK_SKYBOX_ID = 'procedural-default';
+
+function parseSkyboxKey(filePath) {
+  const filename = filePath.split('/').pop();
+  const nameWithoutExt = filename.replace(/\.[^.]+$/, '');
+  const match = nameWithoutExt.match(/^(.*?)(?:@(\d+))?$/);
+  const baseName = match ? match[1] : nameWithoutExt;
+  const variantSize = match && match[2] ? Number.parseInt(match[2], 10) : Number.MAX_SAFE_INTEGER;
+  return { baseName, variantSize };
+}
+
+function buildSkyboxRegistry() {
+  const staged = new Map();
+  for (const [path, url] of Object.entries(SKYBOX_URLS)) {
+    if (!url) continue;
+    const { baseName, variantSize } = parseSkyboxKey(path);
+    const existing = staged.get(baseName);
+    if (existing && existing.variantSize >= variantSize) {
+      continue;
+    }
+    staged.set(baseName, { url, variantSize });
+  }
+
+  const registry = {};
+  for (const [id, { url }] of staged.entries()) {
+    registry[id] = url;
+  }
+  return registry;
+}
+
+const SKYBOX_REGISTRY = buildSkyboxRegistry();
+
+function getLoader({ THREE }) {
+  if (!loaderCache.has(THREE)) {
+    const loader = new EXRLoader();
+    loaderCache.set(THREE, loader);
+  }
+  return loaderCache.get(THREE);
+}
+
+function getSkyboxCache({ THREE }) {
+  if (!skyboxTextureCache.has(THREE)) {
+    skyboxTextureCache.set(THREE, new Map());
+  }
+  return skyboxTextureCache.get(THREE);
+}
+
+function getProceduralCache({ THREE }) {
+  if (!proceduralTextureCache.has(THREE)) {
+    proceduralTextureCache.set(THREE, new Map());
+  }
+  return proceduralTextureCache.get(THREE);
+}
+
+function configureEnvironmentTexture(texture, { THREE, id }) {
+  texture.name = `skybox:${id}`;
+  texture.mapping = THREE.EquirectangularReflectionMapping;
+  texture.needsUpdate = true;
+  if ('colorSpace' in texture) {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  } else if ('encoding' in texture) {
+    texture.encoding = THREE.sRGBEncoding;
+  }
+  if ('minFilter' in texture) {
+    texture.minFilter = THREE.LinearFilter;
+  }
+  if ('magFilter' in texture) {
+    texture.magFilter = THREE.LinearFilter;
+  }
+  texture.generateMipmaps = false;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.flipY = false;
+  return texture;
+}
+
+export function listSkyboxes() {
+  const ids = Object.keys(SKYBOX_REGISTRY).sort();
+  return [FALLBACK_SKYBOX_ID, ...ids];
+}
+
+export function createProceduralSkyBackdrop({ THREE, seed = 1337 } = {}) {
+  if (!THREE) {
+    throw new Error('createProceduralSkyBackdrop requires a THREE instance');
+  }
+
+  const cache = getProceduralCache({ THREE });
+  if (cache.has(seed)) {
+    return cache.get(seed);
+  }
+
+  const engine = new TextureEngine({ THREE, seed });
+  const width = 512;
+  const height = 256;
+  const data = new Uint8Array(width * height * 4);
+
+  const zenith = engine.darken(engine.color('#0b1d3f'), 0.1);
+  const horizon = engine.lighten(engine.color('#1e3a8a'), 0.15);
+  const sunrise = engine.color('#f5d0a0');
+
+  const baseSeed = engine.seed;
+  const cloudSeed = baseSeed ^ 0x9e3779b1;
+
+  for (let y = 0; y < height; y++) {
+    const v = y / (height - 1);
+    const horizonBlend = Math.pow(v, 0.65);
+    for (let x = 0; x < width; x++) {
+      const u = x / (width - 1);
+      let color = engine.mix(horizon, zenith, horizonBlend);
+
+      const sunBand = Math.exp(-Math.pow((v - 0.45) * 6, 2));
+      const sunInfluence = sunBand * (0.4 + 0.6 * Math.pow(1 - Math.abs(u - 0.5) * 2, 4));
+      color = engine.mix(color, sunrise, sunInfluence);
+
+      const ridge = engine.sampleRidgeNoise(baseSeed, u * 2, v * 0.8, {
+        octaves: 3,
+        scale: 1.2,
+        persistence: 0.5,
+        lacunarity: 2.2,
+        variant: 'sky-ridge',
+      });
+      const clouds = engine.sampleFractalNoise(cloudSeed, u * 2.5, v * 0.9, {
+        octaves: 4,
+        scale: 1.1,
+        persistence: 0.55,
+        lacunarity: 2.4,
+        variant: 'sky-fractal',
+      });
+      const cloudAmount = Math.pow(clouds * ridge, 1.6) * 0.5;
+      const cloudColor = engine.lighten(color, 0.6);
+      color = engine.mix(color, cloudColor, cloudAmount);
+
+      const rgba = engine.ensureRgba({ ...color, a: 1 });
+      const index = (y * width + x) * 4;
+      data[index] = rgba.r;
+      data[index + 1] = rgba.g;
+      data[index + 2] = rgba.b;
+      data[index + 3] = rgba.a;
+    }
+  }
+
+  const texture = new THREE.DataTexture(
+    data,
+    width,
+    height,
+    THREE.RGBAFormat,
+    THREE.UnsignedByteType,
+  );
+  texture.anisotropy = 1;
+  configureEnvironmentTexture(texture, { THREE, id: FALLBACK_SKYBOX_ID });
+
+  cache.set(seed, texture);
+  return texture;
+}
+
+export async function applySkybox({ THREE, renderer: _renderer, scene, id, seed } = {}) {
+  if (!THREE) {
+    throw new Error('applySkybox requires a THREE instance');
+  }
+  if (!scene) {
+    throw new Error('applySkybox requires a THREE.Scene instance');
+  }
+
+  const targetId = id ?? FALLBACK_SKYBOX_ID;
+  const url = SKYBOX_REGISTRY[targetId];
+  let texture;
+
+  if (url) {
+    const cache = getSkyboxCache({ THREE });
+    if (cache.has(url)) {
+      texture = cache.get(url);
+    } else {
+      const loader = getLoader({ THREE });
+      texture = await loader.loadAsync(url);
+      configureEnvironmentTexture(texture, { THREE, id: targetId });
+      cache.set(url, texture);
+    }
+  } else {
+    texture = createProceduralSkyBackdrop({ THREE, seed });
+  }
+
+  scene.environment = texture;
+  scene.background = texture;
+  return texture;
+}
+
