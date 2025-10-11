@@ -408,6 +408,30 @@ export function setSkyboxRotation({ scene, THREE, degrees = 0 } = {}) {
   const clampedDegrees = Number.isFinite(degrees) ? degrees : 0;
   const radians = THREE.MathUtils.degToRad(clampedDegrees);
 
+  const applyRotationToEuler = (euler) => {
+    if (!euler || typeof euler !== 'object') {
+      return false;
+    }
+    if (typeof euler.set === 'function') {
+      euler.set(0, radians, 0);
+      return true;
+    }
+    let updated = false;
+    if ('x' in euler) {
+      euler.x = 0;
+      updated = true;
+    }
+    if ('y' in euler) {
+      euler.y = radians;
+      updated = true;
+    }
+    if ('z' in euler) {
+      euler.z = 0;
+      updated = true;
+    }
+    return updated;
+  };
+
   const applyRotationToTexture = (texture) => {
     if (!texture || typeof texture !== 'object') {
       return false;
@@ -435,6 +459,8 @@ export function setSkyboxRotation({ scene, THREE, degrees = 0 } = {}) {
 
   const { background, environment } = scene;
   let updated = false;
+  updated = applyRotationToEuler(scene.backgroundRotation) || updated;
+  updated = applyRotationToEuler(scene.environmentRotation) || updated;
   updated = applyRotationToTexture(background) || updated;
   if (environment && environment !== background) {
     updated = applyRotationToTexture(environment) || updated;
