@@ -13,4 +13,7 @@
 
 # Allow placeholder and documentation to be tracked
 !placeholder-skybox.exr
+!skybox-1.jpg
+# Keep additional promoted skyboxes tracked by adding more exceptions like:
+# !skybox-2.hdr or !skybox-aurora.ktx2
 !README.md
