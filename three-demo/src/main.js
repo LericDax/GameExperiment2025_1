@@ -30,6 +30,12 @@ import { createAuroraRibbonEmitter } from './rendering/particles/aurora-effects.
 import { createLumenBloomMotesEmitter } from './rendering/particles/lumen-bloom-effects.js'
 import { createWeatherManager } from './world/weather/weather-manager.js'
 import { createEntityManager, registerBuiltinEntities } from './entities/index.js'
+import {
+  applySkybox,
+  FALLBACK_SKYBOX_ID,
+  getSkyboxSceneSettings,
+  resolveSkyboxRequest,
+} from './rendering/skyboxes/skybox-manager.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -90,14 +96,30 @@ function setOverlayStatus(message, { isError = false, revealOverlay = true } = {
   }
 }
 
+function applyFogSettingsToScene(targetScene, fogSettings) {
+  if (!targetScene || !fogSettings) {
+    return
+  }
+  const { fogColor, fogNear, fogFar } = fogSettings
+  if (!targetScene.fog) {
+    targetScene.fog = new THREE.Fog(fogColor, fogNear, fogFar)
+    return
+  }
+  targetScene.fog.color.set(fogColor)
+  targetScene.fog.near = fogNear
+  targetScene.fog.far = fogFar
+}
+
 initializeWorldGeneration({ THREE })
 initializeFluidRegistry({ THREE })
 
 const worldConfig = getWorldOptions()
 
+const skyboxRequest = resolveSkyboxRequest({ worldOptions: worldConfig })
+const initialSkyboxSettings = getSkyboxSceneSettings(skyboxRequest.id)
+
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0xa9d6ff)
-scene.fog = new THREE.Fog(0xa9d6ff, 20, 140)
+applyFogSettingsToScene(scene, initialSkyboxSettings)
 
 const camera = new THREE.PerspectiveCamera(
   75,
@@ -116,6 +138,56 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.1
 document.body.appendChild(renderer.domElement)
+
+async function configureInitialSkybox(request) {
+  if (!request) {
+    return null
+  }
+
+  const attemptApply = async (targetId) => {
+    const result = await applySkybox({
+      THREE,
+      renderer,
+      scene,
+      id: targetId,
+      seed: request.seed,
+    })
+    if (result?.sceneSettings) {
+      applyFogSettingsToScene(scene, result.sceneSettings)
+    }
+    if (result && result.id !== result.requestedId) {
+      console.info(
+        `[rendering] Skybox '${result.requestedId}' unavailable, using '${result.id}' instead.`,
+      )
+    }
+    return result
+  }
+
+  try {
+    return await attemptApply(request.id)
+  } catch (error) {
+    console.error(`[rendering] Failed to load skybox "${request.id}".`, error)
+    if (request.id !== FALLBACK_SKYBOX_ID) {
+      console.warn(
+        `[rendering] Falling back to '${FALLBACK_SKYBOX_ID}' skybox after load failure.`,
+      )
+      try {
+        return await attemptApply(FALLBACK_SKYBOX_ID)
+      } catch (fallbackError) {
+        console.error(
+          `[rendering] Failed to load fallback skybox '${FALLBACK_SKYBOX_ID}'.`,
+          fallbackError,
+        )
+      }
+    }
+    applyFogSettingsToScene(scene, getSkyboxSceneSettings(FALLBACK_SKYBOX_ID))
+    return null
+  }
+}
+
+configureInitialSkybox(skyboxRequest).catch((error) => {
+  console.error('[rendering] Unexpected skybox configuration error.', error)
+})
 
 const clock = new THREE.Clock()
 const diagnosticOverlayCallbacks = new Set()
