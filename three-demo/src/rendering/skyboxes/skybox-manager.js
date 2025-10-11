@@ -3,7 +3,8 @@ import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { TextureEngine } from '../texture-engine.js';
 
 const SKYBOX_URLS = import.meta.glob(
-  '../assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}',
+  // The skyboxes live under `public/assets`, so we climb out of `src/` to reach them.
+  '../../../public/assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}',
   {
     eager: true,
     import: 'default',
