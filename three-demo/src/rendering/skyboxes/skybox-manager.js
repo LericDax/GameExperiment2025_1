@@ -117,7 +117,13 @@ function normalizeSkyboxUrl(url) {
   if (typeof url !== 'string') {
     return url;
   }
-  let normalized = url.replace(/^\/?public\//, '/');
+  let normalized = url;
+
+  if (normalized.startsWith('./') || normalized.startsWith('../')) {
+    normalized = normalized.replace(/^(?:\.\.\/|\.\/)+/, '');
+  }
+
+  normalized = normalized.replace(/^\/?public\//, '/');
   if (
     normalized &&
     !normalized.startsWith('/') &&
