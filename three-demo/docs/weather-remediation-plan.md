@@ -3,6 +3,8 @@
 
 > **Team note:** Keep this plan current after any further weather fixes or experiments—add new findings, tooling, and regressions here so the next investigator starts with the latest context.
 
+> **Related console workflows:** When weather QA needs to judge horizon contrast or background lighting, use the `/skybox load`, `/skybox rotate`, and `/skybox unload` guidance in the [Developer Console section](../../README.md#developer-console) and the [skybox preview checklist](../public/assets/skyboxes/README.md#previewing-in-game) to swap panoramas mid-session.
+
 ## Observed Gaps
 - The main render loop instantiates `createWeatherManager` and advances it every frame, yet nothing in gameplay ever schedules a preset beyond the default `clear_skies`, so weather state never changes during normal play.【F:src/main.js†L187-L214】【F:src/main.js†L433-L447】
 - Developer tooling keeps track of override suppression flags on the shared `scene.userData.weather` object, but those flags are only toggled through console commands, meaning gameplay has no awareness of when manual overrides should pause or resume automated rotation.【F:src/player/dev-commands.js†L76-L89】【F:src/player/dev-commands.js†L1653-L1714】

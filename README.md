@@ -84,6 +84,7 @@ Commands are grouped by the kind of developer workflow they support:
 - **Diagnostics** – `/scan` casts a ray to inspect the block you are looking at, `/scan column <x> <z>` audits a whole column, and `/scan watch …` keeps logging visibility as the scene evolves. 【F:three-demo/src/player/dev-commands.js†L717-L777】
 - **ASCII tooling** – `/asciimap` renders a top-down ASCII slice, `/asciioptions` saves default radii/offsets/watch cadence, and `/asciiwatch` keeps the map refreshing on demand. 【F:three-demo/src/player/dev-commands.js†L919-L1039】
 - **VFX inspection** – `/vfx overlay [on|off|toggle]` adds a particle debugging overlay, while `/vfx list` dumps live emitter and fluid surface stats to the console. 【F:three-demo/src/player/dev-commands.js†L780-L823】
+- **Skybox iteration** – `/skybox load <asset> [orientation]` hot-swaps bundled panoramas or the procedural fallback, with orientation aliases like `normal`, `upright`, `default`, `invert`, `flip`, or `invertY` resolving to the `normal`/`invertY` modes; `/skybox rotate <degrees>` clamps to the `-180°`–`180°` range so you can check horizon alignment; `/skybox unload` restores the default selection when you are done previewing art drops. 【F:three-demo/src/player/dev-commands.js†L1846-L2042】【F:three-demo/src/rendering/skyboxes/skybox-manager.js†L16-L78】【F:three-demo/src/rendering/skyboxes/skybox-manager.js†L240-L309】
 
 ### Weather presets
 
