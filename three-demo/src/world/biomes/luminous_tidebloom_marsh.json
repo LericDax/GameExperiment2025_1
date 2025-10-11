@@ -76,9 +76,19 @@
         "duration": { "min": 180, "max": 360 }
       },
       {
+        "id": "tropical_squalls",
+        "weight": 1.6,
+        "duration": { "min": 110, "max": 210 }
+      },
+      {
         "id": "clear_skies",
         "weight": 2.2,
         "duration": { "min": 200, "max": 420 }
+      },
+      {
+        "id": "upwelling_fog",
+        "weight": 1.1,
+        "duration": { "min": 160, "max": 300 }
       },
       {
         "id": "charged_storm",

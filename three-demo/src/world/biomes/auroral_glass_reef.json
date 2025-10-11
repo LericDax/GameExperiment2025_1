@@ -77,14 +77,19 @@
         "duration": { "min": 150, "max": 280 }
       },
       {
+        "id": "upwelling_fog",
+        "weight": 1.2,
+        "duration": { "min": 180, "max": 340 }
+      },
+      {
         "id": "soft_snowfall",
         "weight": 1.2,
         "duration": { "min": 150, "max": 280 }
       },
       {
         "id": "polar_blizzard",
-        "weight": 0.08,
-        "duration": { "min": 90, "max": 180 }
+        "weight": 0.12,
+        "duration": { "min": 80, "max": 170 }
       }
     ]
   }

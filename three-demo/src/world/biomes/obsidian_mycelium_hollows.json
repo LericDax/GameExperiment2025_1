@@ -74,6 +74,11 @@
         "duration": { "min": 150, "max": 300 }
       },
       {
+        "id": "upwelling_fog",
+        "weight": 1,
+        "duration": { "min": 180, "max": 320 }
+      },
+      {
         "id": "charged_storm",
         "weight": 0.4,
         "duration": { "min": 80, "max": 160 }

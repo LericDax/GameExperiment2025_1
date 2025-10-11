@@ -72,6 +72,11 @@
         "id": "misty_rain",
         "weight": 3,
         "duration": { "min": 150, "max": 280 }
+      },
+      {
+        "id": "upwelling_fog",
+        "weight": 1.4,
+        "duration": { "min": 190, "max": 340 }
       }
     ]
   }

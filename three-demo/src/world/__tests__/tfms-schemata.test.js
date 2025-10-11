@@ -192,6 +192,38 @@ test('schema selection is deterministic and cached across neighbouring samples',
   engine.dispose();
 });
 
+test('schema selection remains reproducible across engine instances', () => {
+  const createConfig = () => ({
+    THREE,
+    seed: 5179,
+    worldConfig: {
+      terrain: {
+        tfms: {
+          biomeBlendStrength: 1,
+        },
+      },
+    },
+  });
+
+  const engineA = createTerrainEngine(createConfig());
+  const canopyCoord = findCoordinateForBiome(engineA, 'test_canopy');
+  const terraceCoord = findCoordinateForBiome(engineA, 'test_terrace');
+  const canopySampleA = engineA.sampleColumn(canopyCoord.x, canopyCoord.z);
+  const terraceSampleA = engineA.sampleColumn(terraceCoord.x, terraceCoord.z);
+  engineA.dispose();
+
+  const engineB = createTerrainEngine(createConfig());
+  const canopySampleB = engineB.sampleColumn(canopyCoord.x, canopyCoord.z);
+  const terraceSampleB = engineB.sampleColumn(terraceCoord.x, terraceCoord.z);
+
+  assert.equal(canopySampleB.biome.id, 'test_canopy');
+  assert.equal(canopySampleB.tfmsSchema?.id, canopySampleA.tfmsSchema?.id);
+  assert.equal(terraceSampleB.biome.id, 'test_terrace');
+  assert.equal(terraceSampleB.tfmsSchema?.id, terraceSampleA.tfmsSchema?.id);
+
+  engineB.dispose();
+});
+
 test('schema networks adjust modulation routing and attenuation envelopes', () => {
   const engine = createTerrainEngine({
     THREE,
