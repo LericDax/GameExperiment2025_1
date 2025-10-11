@@ -1,0 +1,27 @@
+{
+  "id": "glowgrass_mat",
+  "label": "Glowgrass Mat",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Bioluminescent turf that blankets humid tidal flats.",
+  "collision": "soft",
+  "voxelScale": 0.26,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["luminous_tidebloom_marsh"],
+    "weight": 3.3,
+    "maxSlope": 0.5,
+    "minMoisture": 0.76,
+    "maxMoisture": 1.0,
+    "forbidUnderwater": true,
+    "jitterRadius": 1.0,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.4, 0.2, 1.4], "tint": "#6fffdc", "isSolid": false },
+    { "type": "leaf", "position": [0.6, 0, -0.4], "size": [0.9, 0.2, 0.9], "tint": "#8dffe9", "isSolid": false },
+    { "type": "leaf", "position": [-0.5, 0, 0.5], "size": [0.9, 0.2, 0.9], "tint": "#5effd3", "isSolid": false }
+  ]
+}

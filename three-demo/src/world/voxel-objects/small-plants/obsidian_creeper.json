@@ -1,0 +1,26 @@
+{
+  "id": "obsidian_creeper",
+  "label": "Obsidian Creeper",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Creeping vine that crusts over basalt shards.",
+  "collision": "soft",
+  "voxelScale": 0.26,
+  "attachment": {
+    "groundOffset": 0.08
+  },
+  "placement": {
+    "biomes": ["obsidian_mycelium_hollows"],
+    "weight": 3.0,
+    "maxSlope": 0.65,
+    "minMoisture": 0.32,
+    "maxMoisture": 0.6,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.8
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.3, 0.2, 1.3], "tint": "#503457", "isSolid": false },
+    { "type": "leaf", "position": [0.5, 0, -0.5], "size": [0.9, 0.2, 0.9], "tint": "#6a4272", "isSolid": false },
+    { "type": "leaf", "position": [-0.5, 0, 0.4], "size": [0.9, 0.2, 0.9], "tint": "#7d5390", "isSolid": false }
+  ]
+}

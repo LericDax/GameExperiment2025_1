@@ -269,6 +269,30 @@ function normalizeDefinition(path, raw) {
         : null,
     onlyOnShore: Boolean(definition?.placement?.onlyOnShore),
     forbidShore: Boolean(definition?.placement?.forbidShore),
+    minWaterDepth:
+      typeof definition?.placement?.minWaterDepth === 'number'
+        ? Math.max(0, definition.placement.minWaterDepth)
+        : null,
+    maxWaterDepth:
+      typeof definition?.placement?.maxWaterDepth === 'number'
+        ? Math.max(0, definition.placement.maxWaterDepth)
+        : null,
+    minDistanceToWater:
+      typeof definition?.placement?.minDistanceToWater === 'number'
+        ? Math.max(0, definition.placement.minDistanceToWater)
+        : null,
+    maxDistanceToWater:
+      typeof definition?.placement?.maxDistanceToWater === 'number'
+        ? Math.max(0, definition.placement.maxDistanceToWater)
+        : null,
+    minDistanceToLand:
+      typeof definition?.placement?.minDistanceToLand === 'number'
+        ? Math.max(0, definition.placement.minDistanceToLand)
+        : null,
+    maxDistanceToLand:
+      typeof definition?.placement?.maxDistanceToLand === 'number'
+        ? Math.max(0, definition.placement.maxDistanceToLand)
+        : null,
   };
 
 
@@ -327,6 +351,60 @@ Object.entries(voxelObjectModules).forEach(([path, module]) => {
 
 voxelObjectsByCategory.forEach((list) => list.sort((a, b) => a.id.localeCompare(b.id)));
 
+const biomeCategoryPools = new Map();
+const GLOBAL_POOL_KEY = '__global__';
+
+function addObjectToBiomePool(key, category, object) {
+  if (!key) {
+    return;
+  }
+  if (!biomeCategoryPools.has(key)) {
+    biomeCategoryPools.set(key, new Map());
+  }
+  const categoryMap = biomeCategoryPools.get(key);
+  if (!categoryMap.has(category)) {
+    categoryMap.set(category, []);
+  }
+  categoryMap.get(category).push(object);
+}
+
+voxelObjectLibrary.forEach((object) => {
+  const category = object.category;
+  const placement = object.placement ?? {};
+  const biomeIds = Array.isArray(placement.biomes) ? placement.biomes : [];
+  const tagIds = Array.isArray(placement.tags) ? placement.tags : [];
+
+  if (biomeIds.length === 0 && tagIds.length === 0) {
+    addObjectToBiomePool(GLOBAL_POOL_KEY, category, object);
+    return;
+  }
+
+  biomeIds.forEach((biomeId) => {
+    addObjectToBiomePool(`biome:${biomeId}`, category, object);
+  });
+
+  tagIds.forEach((tag) => {
+    addObjectToBiomePool(`tag:${tag}`, category, object);
+  });
+});
+
+function getBiomePoolKeys(biome) {
+  const keys = [];
+  if (biome?.id) {
+    keys.push(`biome:${biome.id}`);
+  }
+  const variantOf = biome?.variantOf ?? biome?.baseBiomeId ?? null;
+  if (typeof variantOf === 'string' && variantOf) {
+    keys.push(`biome:${variantOf}`);
+  }
+  const biomeTags = Array.isArray(biome?.tags) ? biome.tags : [];
+  biomeTags.forEach((tag) => {
+    keys.push(`tag:${tag}`);
+  });
+  keys.push(GLOBAL_POOL_KEY);
+  return keys;
+}
+
 export function getVoxelObjectById(id) {
   return voxelObjectLibrary.get(id) ?? null;
 }
@@ -364,15 +442,60 @@ export function isVoxelObjectAllowedInBiome(object, biome) {
 }
 
 export function getWeightedVoxelObject(category, biome, randomValue) {
-  const candidates = getVoxelObjectsByCategory(category).filter((object) =>
-    isVoxelObjectAllowedInBiome(object, biome),
-  );
+  const seen = new Set();
+  const candidates = [];
+
+  const poolKeys = getBiomePoolKeys(biome);
+  poolKeys.forEach((key) => {
+    const categoryMap = biomeCategoryPools.get(key);
+    if (!categoryMap) {
+      return;
+    }
+    const pool = categoryMap.get(category) ?? [];
+    pool.forEach((object) => {
+      if (seen.has(object)) {
+        return;
+      }
+      if (!isVoxelObjectAllowedInBiome(object, biome)) {
+        return;
+      }
+      candidates.push(object);
+      seen.add(object);
+    });
+  });
+
   if (candidates.length === 0) {
-    return null;
+    const fallback = getVoxelObjectsByCategory(category).filter((object) =>
+      isVoxelObjectAllowedInBiome(object, biome),
+    );
+    if (fallback.length === 0) {
+      return null;
+    }
+    if (fallback.length === 1) {
+      return fallback[0];
+    }
+    const totalFallback = fallback.reduce(
+      (sum, object) => sum + (object.placement.weight || 1),
+      0,
+    );
+    if (totalFallback <= 0) {
+      return fallback[0];
+    }
+    const clampedRandomFallback = Math.max(0, Math.min(1, randomValue));
+    let thresholdFallback = clampedRandomFallback * totalFallback;
+    for (const object of fallback) {
+      thresholdFallback -= object.placement.weight || 1;
+      if (thresholdFallback <= 0) {
+        return object;
+      }
+    }
+    return fallback[fallback.length - 1];
   }
+
   if (candidates.length === 1) {
     return candidates[0];
   }
+
   const totalWeight = candidates.reduce(
     (sum, object) => sum + (object.placement.weight || 1),
     0,

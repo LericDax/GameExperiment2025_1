@@ -1,0 +1,29 @@
+{
+  "id": "vapor_condensing_moss",
+  "label": "Vapor Condensing Moss",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Mossy pads that condense steam into mineral-rich dew.",
+  "collision": "soft",
+  "voxelScale": 0.22,
+  "attachment": {
+    "groundOffset": 0.08
+  },
+  "placement": {
+    "biomes": ["prismarine_vent_plateau"],
+    "weight": 3.1,
+    "maxSlope": 0.65,
+    "minMoisture": 0.6,
+    "maxMoisture": 0.9,
+    "forbidUnderwater": false,
+    "requiresWaterProximity": true,
+    "waterProximityRadius": 1.8,
+    "maxWaterDepth": 1.5,
+    "jitterRadius": 0.8
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.2, 0.2, 1.2], "tint": "#4bf2d6", "isSolid": false },
+    { "type": "leaf", "position": [0.5, 0, -0.4], "size": [0.8, 0.2, 0.8], "tint": "#67ffe8", "isSolid": false },
+    { "type": "leaf", "position": [-0.4, 0, 0.4], "size": [0.8, 0.2, 0.8], "tint": "#52e4cb", "isSolid": false }
+  ]
+}

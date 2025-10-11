@@ -1,0 +1,30 @@
+{
+  "id": "tidebloom_lily_cluster",
+  "label": "Tidebloom Lily Cluster",
+  "category": "water-plants",
+  "author": "system",
+  "description": "Rafts of bioluminescent lilies that crest with the marsh tides.",
+  "collision": "soft",
+  "voxelScale": 0.32,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["luminous_tidebloom_marsh"],
+    "weight": 3.6,
+    "maxSlope": 0.6,
+    "requiresUnderwater": true,
+    "minWaterDepth": 0.5,
+    "maxWaterDepth": 2.2,
+    "minDistanceToLand": 0.0,
+    "maxDistanceToLand": 3.4,
+    "jitterRadius": 0.8,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.4, 0.2, 1.4], "tint": "#6bffe0", "isSolid": false },
+    { "type": "leaf", "position": [0.6, 0, -0.4], "size": [1.1, 0.2, 1.1], "tint": "#94fff2", "isSolid": false },
+    { "type": "leaf", "position": [-0.6, 0, 0.4], "size": [1.1, 0.2, 1.1], "tint": "#84ffe8", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.1, 0], "size": [0.6, 0.3, 0.6], "tint": "#c8ffff", "isSolid": false }
+  ]
+}

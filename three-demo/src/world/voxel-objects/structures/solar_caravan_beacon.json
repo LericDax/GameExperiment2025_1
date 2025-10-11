@@ -1,0 +1,31 @@
+{
+  "id": "solar_caravan_beacon",
+  "label": "Mirrored Caravan Beacon",
+  "category": "structures",
+  "author": "system",
+  "description": "Reflective signal mast guiding caravans across chroma dunes.",
+  "collision": "soft",
+  "voxelScale": 0.36,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["solar_chroma_steppe"],
+    "weight": 0.9,
+    "maxSlope": 0.45,
+    "minHeight": 3,
+    "maxHeight": 24,
+    "minMoisture": 0.16,
+    "maxMoisture": 0.48,
+    "minTemperature": 0.52,
+    "forbidUnderwater": true,
+    "jitterRadius": 1.1
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [1.0, 0.6, 1.0], "tint": "#f5b86b" },
+    { "type": "stone", "position": [0, 0.6, 0], "size": [0.8, 1.6, 0.8], "tint": "#f0d17a" },
+    { "type": "leaf", "position": [0.8, 2.2, 0], "size": [1.4, 0.3, 0.4], "tint": "#ffe8a1", "isSolid": false },
+    { "type": "leaf", "position": [-0.8, 2.2, 0], "size": [1.4, 0.3, 0.4], "tint": "#fff5c7", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.8, 0], "size": [1.6, 0.4, 1.6], "tint": "#fff7d6", "isSolid": false }
+  ]
+}

@@ -188,6 +188,8 @@ export function populateColumnWithVoxelObjects({
   isShore = false,
   waterLevel = 0,
   distanceToWater = Infinity,
+  distanceToLand = Infinity,
+  waterDepth = null,
 }) {
   if (!biome) {
     return;
@@ -226,6 +228,10 @@ export function populateColumnWithVoxelObjects({
   };
   const densityNoise = objectDensityField.noise(worldX * 0.11, worldZ * 0.11);
   const densityScale = 0.28 + densityNoise * 0.32;
+
+  const columnWaterDepth = Number.isFinite(waterDepth)
+    ? Math.max(0, waterDepth)
+    : Math.max(0, waterLevel - groundHeight);
 
   const canPlaceObject = (object) => {
     if (!object) {
@@ -291,9 +297,46 @@ export function populateColumnWithVoxelObjects({
         typeof placement.waterProximityRadius === 'number'
           ? placement.waterProximityRadius
           : 1;
-      if (distanceToWater > radius) {
+      const distanceMetric = isUnderwater ? distanceToLand : distanceToWater;
+      if (distanceMetric > radius) {
         return false;
       }
+    }
+    if (
+      typeof placement.minWaterDepth === 'number' &&
+      columnWaterDepth < placement.minWaterDepth
+    ) {
+      return false;
+    }
+    if (
+      typeof placement.maxWaterDepth === 'number' &&
+      columnWaterDepth > placement.maxWaterDepth
+    ) {
+      return false;
+    }
+    if (
+      typeof placement.minDistanceToWater === 'number' &&
+      distanceToWater < placement.minDistanceToWater
+    ) {
+      return false;
+    }
+    if (
+      typeof placement.maxDistanceToWater === 'number' &&
+      distanceToWater > placement.maxDistanceToWater
+    ) {
+      return false;
+    }
+    if (
+      typeof placement.minDistanceToLand === 'number' &&
+      distanceToLand < placement.minDistanceToLand
+    ) {
+      return false;
+    }
+    if (
+      typeof placement.maxDistanceToLand === 'number' &&
+      distanceToLand > placement.maxDistanceToLand
+    ) {
+      return false;
     }
     return true;
   };
@@ -316,7 +359,7 @@ export function populateColumnWithVoxelObjects({
         markPlacementCompleted(placement);
         return;
       }
-      if (placement.preferShore && distanceToWater > 3) {
+      if (placement.preferShore && distanceToWater > 3 && distanceToLand > 3) {
         markPlacementCompleted(placement);
         return;
       }

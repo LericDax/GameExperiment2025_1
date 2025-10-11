@@ -1,0 +1,33 @@
+{
+  "id": "iceberg_arch",
+  "label": "Iceberg Arch",
+  "category": "structures",
+  "author": "system",
+  "description": "Wind-carved iceberg arch that frames auroral surf.",
+  "collision": "solid",
+  "voxelScale": 0.48,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["aurora_shard_expanse", "ice_spire_tundra", "auroral_glass_reef"],
+    "weight": 1.1,
+    "maxSlope": 0.7,
+    "minTemperature": 0.0,
+    "maxTemperature": 0.42,
+    "forbidUnderwater": false,
+    "requiresWaterProximity": true,
+    "waterProximityRadius": 3.2,
+    "minDistanceToWater": 0.0,
+    "maxDistanceToWater": 3.2,
+    "maxWaterDepth": 4.2,
+    "jitterRadius": 1.4
+  },
+  "voxels": [
+    { "type": "stone", "position": [-1.2, 0, 0], "size": [0.8, 2.4, 1.4], "tint": "#d0f1ff" },
+    { "type": "stone", "position": [1.2, 0, 0], "size": [0.8, 2.6, 1.4], "tint": "#c0e8ff" },
+    { "type": "stone", "position": [0, 1.6, 0], "size": [2.6, 0.6, 1.4], "tint": "#e2f7ff" },
+    { "type": "leaf", "position": [0, 2.2, 0], "size": [2.0, 0.4, 1.2], "tint": "#f2fcff", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.6, 0], "size": [1.4, 0.3, 1.0], "tint": "#dff2ff", "isSolid": false }
+  ]
+}

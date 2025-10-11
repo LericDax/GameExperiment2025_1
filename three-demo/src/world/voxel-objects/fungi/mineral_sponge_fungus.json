@@ -1,0 +1,29 @@
+{
+  "id": "mineral_sponge_fungus",
+  "label": "Mineral Sponge Fungus",
+  "category": "fungi",
+  "author": "system",
+  "description": "Porous underwater fungus that filters vent effluent.",
+  "collision": "soft",
+  "voxelScale": 0.28,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["prismarine_vent_plateau"],
+    "weight": 1.9,
+    "maxSlope": 0.6,
+    "requiresUnderwater": true,
+    "minWaterDepth": 1.0,
+    "maxWaterDepth": 4.0,
+    "minDistanceToLand": 0.0,
+    "maxDistanceToLand": 5.0,
+    "jitterRadius": 0.8,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.2, 0.8, 1.2], "tint": "#5df2e2", "isSolid": false },
+    { "type": "leaf", "position": [0.5, 0.3, -0.4], "size": [0.8, 0.7, 0.8], "tint": "#7efef2", "isSolid": false },
+    { "type": "leaf", "position": [-0.5, 0.3, 0.4], "size": [0.8, 0.7, 0.8], "tint": "#8ffef7", "isSolid": false }
+  ]
+}

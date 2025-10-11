@@ -1,0 +1,27 @@
+{
+  "id": "prismarine_fern",
+  "label": "Prismarine Fern",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Iridescent fern fronds acclimated to mineral mists.",
+  "collision": "soft",
+  "voxelScale": 0.28,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["prismarine_vent_plateau"],
+    "weight": 3.4,
+    "maxSlope": 0.6,
+    "minMoisture": 0.58,
+    "maxMoisture": 0.86,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.9,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.4, 0.3, 1.4], "tint": "#5df7ea", "isSolid": false },
+    { "type": "leaf", "position": [0.5, 0, -0.4], "size": [0.9, 0.3, 0.9], "tint": "#79fff3", "isSolid": false },
+    { "type": "leaf", "position": [-0.5, 0, 0.5], "size": [0.9, 0.3, 0.9], "tint": "#4df0de", "isSolid": false }
+  ]
+}

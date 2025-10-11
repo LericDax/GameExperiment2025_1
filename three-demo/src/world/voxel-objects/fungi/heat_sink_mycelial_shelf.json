@@ -1,0 +1,28 @@
+{
+  "id": "heat_sink_mycelial_shelf",
+  "label": "Heat-sink Mycelial Shelf",
+  "category": "fungi",
+  "author": "system",
+  "description": "Layered shelf fungus that wicks geothermal heat.",
+  "collision": "soft",
+  "voxelScale": 0.3,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["obsidian_mycelium_hollows"],
+    "weight": 2.0,
+    "maxSlope": 0.5,
+    "minMoisture": 0.38,
+    "maxMoisture": 0.66,
+    "minTemperature": 0.48,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.7
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.4, 0.3, 1.4], "tint": "#6a4c86", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.3, 0], "size": [1.0, 0.3, 1.0], "tint": "#7b5da0", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.6, 0], "size": [0.7, 0.3, 0.7], "tint": "#9b7cc6", "isSolid": false },
+    { "type": "log", "position": [0, -0.1, 0], "size": [0.5, 0.3, 0.5], "tint": "#3b293f" }
+  ]
+}

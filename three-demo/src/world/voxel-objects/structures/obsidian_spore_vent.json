@@ -1,0 +1,32 @@
+{
+  "id": "obsidian_spore_vent",
+  "label": "Basalt Spore Vent",
+  "category": "structures",
+  "author": "system",
+  "description": "Geothermal vent crusted in obsidian spore chimneys.",
+  "collision": "solid",
+  "voxelScale": 0.5,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["obsidian_mycelium_hollows"],
+    "weight": 1.5,
+    "maxSlope": 0.65,
+    "minHeight": 0,
+    "maxHeight": 12,
+    "minMoisture": 0.3,
+    "maxMoisture": 0.62,
+    "minTemperature": 0.4,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.9
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [1.8, 0.6, 1.8], "tint": "#312736" },
+    { "type": "stone", "position": [0, 0.6, 0], "size": [1.2, 0.8, 1.2], "tint": "#403346" },
+    { "type": "stone", "position": [0, 1.2, 0], "size": [0.9, 1.0, 0.9], "tint": "#4a3957" },
+    { "type": "leaf", "position": [0.6, 1.6, 0], "size": [0.6, 0.6, 0.6], "tint": "#7c4fc2", "isSolid": false },
+    { "type": "leaf", "position": [-0.6, 1.6, 0.2], "size": [0.6, 0.6, 0.6], "tint": "#a06cf0", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.0, 0], "size": [0.8, 0.7, 0.8], "tint": "#b98bff", "isSolid": false }
+  ]
+}

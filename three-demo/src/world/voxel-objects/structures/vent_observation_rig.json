@@ -1,0 +1,30 @@
+{
+  "id": "vent_observation_rig",
+  "label": "Vent Observation Rig",
+  "category": "structures",
+  "author": "system",
+  "description": "Survey rig that monitors geothermal vent columns.",
+  "collision": "solid",
+  "voxelScale": 0.5,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["prismarine_vent_plateau"],
+    "weight": 0.8,
+    "maxSlope": 0.55,
+    "minHeight": 6,
+    "maxHeight": 30,
+    "minMoisture": 0.6,
+    "maxMoisture": 0.88,
+    "forbidUnderwater": true,
+    "jitterRadius": 1.2
+  },
+  "voxels": [
+    { "type": "stone", "position": [0.6, 0, 0], "size": [0.6, 2.2, 0.6], "tint": "#426b78" },
+    { "type": "stone", "position": [-0.6, 0, 0], "size": [0.6, 2.2, 0.6], "tint": "#3a5f6d" },
+    { "type": "leaf", "position": [0, 2.2, 0], "size": [1.8, 0.3, 1.8], "tint": "#6cfff2", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.6, 0], "size": [1.4, 0.3, 1.4], "tint": "#94fff7", "isSolid": false },
+    { "type": "leaf", "position": [0, 3.0, 0], "size": [1.0, 0.3, 1.0], "tint": "#c9ffff", "isSolid": false }
+  ]
+}

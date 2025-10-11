@@ -1,0 +1,31 @@
+{
+  "id": "tide_lock_pontoon",
+  "label": "Tide-lock Research Pontoon",
+  "category": "structures",
+  "author": "system",
+  "description": "Floating platform stabilised for tidal research arrays.",
+  "collision": "soft",
+  "voxelScale": 0.42,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["luminous_tidebloom_marsh"],
+    "weight": 1.1,
+    "maxSlope": 0.45,
+    "requiresUnderwater": true,
+    "minWaterDepth": 0.6,
+    "maxWaterDepth": 2.6,
+    "minDistanceToLand": 0.0,
+    "maxDistanceToLand": 3.2,
+    "requiresWaterProximity": true,
+    "waterProximityRadius": 3.2,
+    "jitterRadius": 0.9
+  },
+  "voxels": [
+    { "type": "log", "position": [0, -0.2, 0], "size": [2.6, 0.4, 2.6], "tint": "#3f6c5c" },
+    { "type": "log", "position": [0, 0.2, 0], "size": [2.0, 0.3, 2.0], "tint": "#4b7a67" },
+    { "type": "leaf", "position": [0, 0.5, 0], "size": [1.6, 0.3, 1.6], "tint": "#7effe2", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.9, 0], "size": [1.2, 0.2, 1.2], "tint": "#a4fff0", "isSolid": false }
+  ]
+}
