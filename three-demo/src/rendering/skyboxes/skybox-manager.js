@@ -1,11 +1,15 @@
+import { TextureLoader } from 'three';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { TextureEngine } from '../texture-engine.js';
 
-const SKYBOX_URLS = import.meta.glob('../assets/skyboxes/**/*.{exr,EXR}', {
-  eager: true,
-  import: 'default',
-  query: '?url',
-});
+const SKYBOX_URLS = import.meta.glob(
+  '../assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}',
+  {
+    eager: true,
+    import: 'default',
+    query: '?url',
+  },
+);
 
 const loaderCache = new WeakMap();
 const skyboxTextureCache = new WeakMap();
@@ -22,7 +26,7 @@ const DEFAULT_SCENE_SETTINGS = Object.freeze({
 const SKYBOX_SCENE_SETTINGS = new Map([
   [FALLBACK_SKYBOX_ID, DEFAULT_SCENE_SETTINGS],
   [
-    'placeholder-skybox',
+    'skybox-1',
     Object.freeze({
       fogColor: 0xa9d6ff,
       fogNear: 20,
@@ -113,28 +117,49 @@ function buildSkyboxRegistry() {
   for (const [path, url] of Object.entries(SKYBOX_URLS)) {
     if (!url) continue;
     const { baseName, variantSize } = parseSkyboxKey(path);
+    const extension = path.split('.').pop()?.toLowerCase() ?? 'unknown';
     const existing = staged.get(baseName);
     if (existing && existing.variantSize >= variantSize) {
       continue;
     }
-    staged.set(baseName, { url, variantSize });
+    staged.set(baseName, { url, variantSize, format: extension });
   }
 
   const registry = {};
-  for (const [id, { url }] of staged.entries()) {
-    registry[id] = url;
+  for (const [id, { url, format }] of staged.entries()) {
+    registry[id] = Object.freeze({ url, format });
   }
   return registry;
 }
 
 const SKYBOX_REGISTRY = buildSkyboxRegistry();
 
-function getLoader({ THREE }) {
-  if (!loaderCache.has(THREE)) {
-    const loader = new EXRLoader();
-    loaderCache.set(THREE, loader);
+function getLoader({ THREE, format }) {
+  let cache = loaderCache.get(THREE);
+  if (!cache) {
+    cache = new Map();
+    loaderCache.set(THREE, cache);
   }
-  return loaderCache.get(THREE);
+
+  const normalizedFormat = typeof format === 'string' ? format.toLowerCase() : '';
+  const loaderKey = normalizedFormat === 'exr' ? 'exr' : 'ldr';
+
+  if (cache.has(loaderKey)) {
+    return cache.get(loaderKey);
+  }
+
+  let loader;
+  if (loaderKey === 'exr') {
+    loader = new EXRLoader();
+  } else {
+    loader = new TextureLoader();
+    if (typeof loader.setDataType === 'function') {
+      loader.setDataType(THREE.UnsignedByteType);
+    }
+  }
+
+  cache.set(loaderKey, loader);
+  return loader;
 }
 
 function getSkyboxCache({ THREE }) {
@@ -261,7 +286,8 @@ export async function applySkybox({ THREE, renderer: _renderer, scene, id, seed 
   }
 
   const requestedId = id ?? FALLBACK_SKYBOX_ID;
-  const url = SKYBOX_REGISTRY[requestedId];
+  const entry = SKYBOX_REGISTRY[requestedId];
+  const url = entry?.url;
   let texture;
   let resolvedId = requestedId;
 
@@ -269,8 +295,9 @@ export async function applySkybox({ THREE, renderer: _renderer, scene, id, seed 
     const cache = getSkyboxCache({ THREE });
     if (cache.has(url)) {
       texture = cache.get(url);
+      configureEnvironmentTexture(texture, { THREE, id: requestedId });
     } else {
-      const loader = getLoader({ THREE });
+      const loader = getLoader({ THREE, format: entry?.format });
       texture = await loader.loadAsync(url);
       configureEnvironmentTexture(texture, { THREE, id: requestedId });
       cache.set(url, texture);
