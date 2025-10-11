@@ -10,10 +10,45 @@
 //
 // Group descriptors only include `children` and serve for logical grouping.
 
+import {
+  FALLBACK_SKYBOX_ID,
+  listSkyboxes,
+} from '../rendering/skyboxes/skybox-manager.js'
+
 const numberType = 'number'
 const stringType = 'string'
 const enumType = 'enum'
 const groupType = 'group'
+
+function buildEnvironmentSkyboxOptions() {
+  const seen = new Set()
+  const ids = []
+  const pushId = (value) => {
+    if (typeof value !== 'string') {
+      return
+    }
+    const trimmed = value.trim()
+    if (!trimmed || seen.has(trimmed)) {
+      return
+    }
+    seen.add(trimmed)
+    ids.push(trimmed)
+  }
+
+  pushId(FALLBACK_SKYBOX_ID)
+  listSkyboxes().forEach(pushId)
+
+  return Object.freeze(
+    ids.map((id) =>
+      Object.freeze({
+        value: id,
+        label: id,
+      }),
+    ),
+  )
+}
+
+const environmentSkyboxOptions = buildEnvironmentSkyboxOptions()
 
 const tfmsWaveformOptions = Object.freeze([
   Object.freeze({
@@ -881,6 +916,26 @@ const legacyChunkSizeDescriptor = Object.freeze({
   path: Object.freeze(['chunkSize']),
 })
 
+const environmentGroup = Object.freeze({
+  id: 'environment',
+  label: 'Environment',
+  description:
+    'Lighting and skybox configuration applied to the scene background.',
+  type: groupType,
+  children: Object.freeze([
+    Object.freeze({
+      id: 'environment.skyboxId',
+      label: 'Skybox',
+      description:
+        'Select which bundled skybox or procedural backdrop surrounds the world.',
+      type: enumType,
+      default: FALLBACK_SKYBOX_ID,
+      options: environmentSkyboxOptions,
+      path: Object.freeze(['environment', 'skyboxId']),
+    }),
+  ]),
+})
+
 const waterGroup = Object.freeze({
   id: 'water',
   label: 'Water',
@@ -1202,6 +1257,7 @@ const biomesGroup = Object.freeze({
 export const worldOptionDescriptors = Object.freeze([
   seedDescriptor,
   chunkGroup,
+  environmentGroup,
   legacyChunkSizeDescriptor,
   waterGroup,
   legacyWaterLevelDescriptor,
