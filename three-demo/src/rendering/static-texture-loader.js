@@ -1,7 +1,11 @@
-const STATIC_TEXTURE_URLS = import.meta.glob(
-  '../textures/nonprocedural/**/*.{png,PNG,jpg,JPG,jpeg,JPEG,webp,WEBP,avif,AVIF,gif,GIF}',
-  { eager: true, import: 'default', query: '?url' }
-);
+const hasImportMetaGlob = typeof import.meta?.glob === 'function';
+
+const STATIC_TEXTURE_URLS = hasImportMetaGlob
+  ? import.meta.glob(
+      '../textures/nonprocedural/**/*.{png,PNG,jpg,JPG,jpeg,JPEG,webp,WEBP,avif,AVIF,gif,GIF}',
+      { eager: true, import: 'default', query: '?url' },
+    )
+  : {};
 
 const textureCache = new WeakMap();
 
