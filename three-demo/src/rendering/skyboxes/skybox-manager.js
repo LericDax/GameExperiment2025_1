@@ -2,79 +2,20 @@ import { TextureLoader } from 'three';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { TextureEngine } from '../texture-engine.js';
 
-const SKYBOX_SEARCH_ROOT = '../../../public/assets/skyboxes';
-const SKYBOX_GLOB_PATTERN = `${SKYBOX_SEARCH_ROOT}/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}`;
-const SKYBOX_EXTENSION_PATTERN = /\.(?:exr|hdr|png|jpe?g)$/i;
+const importMetaGlob =
+  typeof import.meta?.glob === 'function'
+    ? import.meta.glob.bind(import.meta)
+    : () => ({});
 
-async function scanSkyboxesWithNode() {
-  if (typeof process === 'undefined' || !process.versions?.node) {
-    return {};
-  }
-
-  try {
-    const fsModule = await import(/* @vite-ignore */ 'node:fs');
-    const pathModule = await import(/* @vite-ignore */ 'node:path');
-    const urlModule = await import(/* @vite-ignore */ 'node:url');
-
-    const readdirSync = fsModule.readdirSync ?? fsModule.default?.readdirSync;
-    const statSync = fsModule.statSync ?? fsModule.default?.statSync;
-    if (typeof readdirSync !== 'function' || typeof statSync !== 'function') {
-      return {};
-    }
-
-    const path = pathModule.default ?? pathModule;
-    const { fileURLToPath } = urlModule;
-    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-    const skyboxRoot = path.resolve(moduleDir, SKYBOX_SEARCH_ROOT);
-
-    let stats;
-    try {
-      stats = statSync(skyboxRoot);
-    } catch {
-      return {};
-    }
-    if (!stats.isDirectory()) {
-      return {};
-    }
-
-    const result = {};
-    const stack = [skyboxRoot];
-
-    while (stack.length > 0) {
-      const currentDir = stack.pop();
-      const entries = readdirSync(currentDir, { withFileTypes: true });
-      for (const entry of entries) {
-        const entryPath = path.join(currentDir, entry.name);
-        if (entry.isDirectory()) {
-          stack.push(entryPath);
-          continue;
-        }
-        if (!SKYBOX_EXTENSION_PATTERN.test(entry.name)) {
-          continue;
-        }
-        const relativePath = path.relative(skyboxRoot, entryPath).split(path.sep).join('/');
-        const key = `${SKYBOX_SEARCH_ROOT}/${relativePath}`.replace(/\\/g, '/');
-        const url = `public/assets/skyboxes/${relativePath}`.replace(/\\/g, '/');
-        result[key] = url;
-      }
-    }
-
-    return result;
-  } catch (error) {
-    console.warn('[skybox-manager] Failed to scan skyboxes via Node fallback.', error);
-    return {};
-  }
-}
-
-const hasImportMetaGlob = typeof import.meta?.glob === 'function';
-
-const SKYBOX_URLS = hasImportMetaGlob
-  ? import.meta.glob(SKYBOX_GLOB_PATTERN, {
-      eager: true,
-      import: 'default',
-      query: '?url',
-    })
-  : await scanSkyboxesWithNode();
+const SKYBOX_URLS = importMetaGlob(
+  // The skyboxes live under `public/assets`, so we climb out of `src/` to reach them.
+  '../../../public/assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}',
+  {
+    eager: true,
+    import: 'default',
+    query: '?url',
+  },
+);
 
 const loaderCache = new WeakMap();
 const skyboxTextureCache = new WeakMap();
@@ -114,6 +55,8 @@ const SKYBOX_ID_ALIASES = new Map([
   ['procedural', FALLBACK_SKYBOX_ID],
   ['none', FALLBACK_SKYBOX_ID],
 ]);
+
+const SKYBOX_EXTENSION_PATTERN = /\.(?:exr|hdr|png|jpe?g)$/i;
 
 const SKYBOX_ORIENTATION_ALIASES = new Map([
   ['normal', 'normal'],
