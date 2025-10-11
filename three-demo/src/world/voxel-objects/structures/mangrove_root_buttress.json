@@ -1,0 +1,35 @@
+{
+  "id": "mangrove_root_buttress",
+  "label": "Mangrove Root Buttress",
+  "category": "structures",
+  "author": "system",
+  "description": "Entangled mangrove root network stabilising tidal banks.",
+  "collision": "soft",
+  "voxelScale": 0.4,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["luminous_tidebloom_marsh"],
+    "weight": 1.4,
+    "maxSlope": 0.6,
+    "minMoisture": 0.78,
+    "maxMoisture": 1.0,
+    "onlyOnShore": true,
+    "forbidUnderwater": false,
+    "minDistanceToWater": 0.0,
+    "maxDistanceToWater": 2.6,
+    "maxWaterDepth": 2.6,
+    "requiresWaterProximity": true,
+    "waterProximityRadius": 2.8,
+    "jitterRadius": 1.0
+  },
+  "voxels": [
+    { "type": "log", "position": [0.6, 0, 0.2], "size": [0.6, 1.3, 0.6], "tint": "#3a5c4c" },
+    { "type": "log", "position": [-0.6, 0, -0.2], "size": [0.6, 1.3, 0.6], "tint": "#2f4f3b" },
+    { "type": "log", "position": [0, 0, 0.6], "size": [0.5, 1.1, 0.5], "tint": "#456d58" },
+    { "type": "log", "position": [0, 0, -0.6], "size": [0.5, 1.1, 0.5], "tint": "#3f604d" },
+    { "type": "leaf", "position": [0, 1.2, 0], "size": [2.2, 0.4, 2.2], "tint": "#8dffd8", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.5, 0], "size": [1.6, 0.3, 1.6], "tint": "#b4ffec", "isSolid": false }
+  ]
+}

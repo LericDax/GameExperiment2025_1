@@ -1,0 +1,29 @@
+{
+  "id": "ember_truffle_cluster",
+  "label": "Ember Truffle Cluster",
+  "category": "fungi",
+  "author": "system",
+  "description": "Glowing truffle cluster thriving on volcanic humus.",
+  "collision": "soft",
+  "voxelScale": 0.24,
+  "attachment": {
+    "groundOffset": 0.08
+  },
+  "placement": {
+    "biomes": ["obsidian_mycelium_hollows"],
+    "weight": 2.6,
+    "maxSlope": 0.55,
+    "minMoisture": 0.32,
+    "maxMoisture": 0.6,
+    "minTemperature": 0.42,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.9,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [0.8, 0.4, 0.8], "tint": "#7b4a7a", "isSolid": false },
+    { "type": "leaf", "position": [0.5, 0, -0.3], "size": [0.6, 0.4, 0.6], "tint": "#9d5aa0", "isSolid": false },
+    { "type": "leaf", "position": [-0.4, 0, 0.4], "size": [0.6, 0.4, 0.6], "tint": "#c070c3", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.3, 0], "size": [0.5, 0.3, 0.5], "tint": "#ff94f0", "isSolid": false }
+  ]
+}

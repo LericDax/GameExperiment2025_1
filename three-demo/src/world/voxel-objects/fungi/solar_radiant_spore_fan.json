@@ -1,0 +1,28 @@
+{
+  "id": "solar_radiant_spore_fan",
+  "label": "Radiant Spore Fan",
+  "category": "fungi",
+  "author": "system",
+  "description": "Biolytic fan that releases dusk-glowing spores across the steppe.",
+  "collision": "soft",
+  "voxelScale": 0.28,
+  "attachment": {
+    "groundOffset": 0.12
+  },
+  "placement": {
+    "biomes": ["solar_chroma_steppe"],
+    "weight": 1.8,
+    "maxSlope": 0.5,
+    "minMoisture": 0.28,
+    "maxMoisture": 0.6,
+    "minTemperature": 0.5,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.7
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "size": [0.4, 0.8, 0.4], "tint": "#cc8d5c" },
+    { "type": "leaf", "position": [0, 0.9, 0], "size": [1.5, 0.3, 0.9], "tint": "#ffe1a0", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.1, 0], "size": [1.2, 0.3, 0.8], "tint": "#ffd27e", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.3, 0], "size": [0.9, 0.3, 0.6], "tint": "#fff2c6", "isSolid": false }
+  ]
+}

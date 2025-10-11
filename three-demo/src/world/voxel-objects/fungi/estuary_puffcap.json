@@ -1,0 +1,30 @@
+{
+  "id": "estuary_puffcap",
+  "label": "Estuary Puffcap",
+  "category": "fungi",
+  "author": "system",
+  "description": "Tidal puffcaps that pulse with phosphorescent spores at dusk.",
+  "collision": "soft",
+  "voxelScale": 0.24,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["luminous_tidebloom_marsh"],
+    "weight": 2.4,
+    "maxSlope": 0.55,
+    "minMoisture": 0.72,
+    "maxMoisture": 0.95,
+    "minDistanceToWater": 0.0,
+    "maxDistanceToWater": 3.0,
+    "maxWaterDepth": 1.6,
+    "forbidUnderwater": false,
+    "jitterRadius": 0.9,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "size": [0.4, 0.6, 0.4], "tint": "#3c5a4a" },
+    { "type": "leaf", "position": [0, 0.6, 0], "size": [1.1, 0.4, 1.1], "tint": "#7affea", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.9, 0], "size": [0.8, 0.3, 0.8], "tint": "#a7fff7", "isSolid": false }
+  ]
+}

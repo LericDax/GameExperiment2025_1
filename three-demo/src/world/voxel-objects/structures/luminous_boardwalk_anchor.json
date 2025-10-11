@@ -1,0 +1,34 @@
+{
+  "id": "luminous_boardwalk_anchor",
+  "label": "Luminescent Boardwalk Anchor",
+  "category": "structures",
+  "author": "system",
+  "description": "Tidal anchor piles that pin glowing boardwalk segments to the shore.",
+  "collision": "solid",
+  "voxelScale": 0.35,
+  "attachment": {
+    "groundOffset": 0.15
+  },
+  "placement": {
+    "biomes": ["luminous_tidebloom_marsh"],
+    "weight": 0.9,
+    "maxSlope": 0.55,
+    "minMoisture": 0.72,
+    "maxMoisture": 0.95,
+    "onlyOnShore": true,
+    "forbidUnderwater": false,
+    "minDistanceToWater": 0.0,
+    "maxDistanceToWater": 2.2,
+    "maxWaterDepth": 2.2,
+    "requiresWaterProximity": true,
+    "waterProximityRadius": 2.5,
+    "jitterRadius": 0.8
+  },
+  "voxels": [
+    { "type": "log", "position": [0.4, 0, 0], "size": [0.5, 1.6, 0.5], "tint": "#3f6c5c" },
+    { "type": "log", "position": [-0.4, 0, 0], "size": [0.5, 1.6, 0.5], "tint": "#457b68" },
+    { "type": "log", "position": [0, 0, 0.4], "size": [0.5, 1.4, 0.5], "tint": "#386257" },
+    { "type": "leaf", "position": [0, 1.4, 0], "size": [1.6, 0.3, 1.6], "tint": "#7dffe6", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.7, 0], "size": [1.2, 0.2, 1.2], "tint": "#b0fff7", "isSolid": false }
+  ]
+}

@@ -496,22 +496,50 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     return clamp(maxDifference / 6, 0, 1);
   };
 
-  const computeWaterDistance = (x, z, baseHeight, searchRadius = 4) => {
-    if (baseHeight < waterLevel) {
-      return 0;
+  const computeWaterMetrics = (x, z, baseHeight, searchRadius = 6) => {
+    const result = {
+      distanceToWater: baseHeight < waterLevel ? 0 : Infinity,
+      distanceToLand: baseHeight >= waterLevel ? 0 : Infinity,
+      waterDepth: Math.max(0, waterLevel - baseHeight),
+    };
+
+    if (searchRadius <= 0) {
+      return result;
     }
+
+    let nearestWater = result.distanceToWater;
+    let nearestLand = result.distanceToLand;
+    const needsWater = baseHeight >= waterLevel;
+    const needsLand = baseHeight < waterLevel;
+
     for (let radius = 1; radius <= searchRadius; radius++) {
       for (let dx = -radius; dx <= radius; dx++) {
         const dzRange = radius - Math.abs(dx);
         for (let dz = -dzRange; dz <= dzRange; dz++) {
           const neighborHeight = getColumnHeight(x + dx, z + dz);
           if (neighborHeight < waterLevel) {
-            return radius;
+            if (radius < nearestWater) {
+              nearestWater = radius;
+            }
+          } else {
+            if (radius < nearestLand) {
+              nearestLand = radius;
+            }
           }
         }
       }
+
+      const waterSatisfied = !needsWater || nearestWater !== Infinity;
+      const landSatisfied = !needsLand || nearestLand !== Infinity;
+
+      if (waterSatisfied && landSatisfied) {
+        break;
+      }
     }
-    return searchRadius + 1;
+
+    result.distanceToWater = nearestWater;
+    result.distanceToLand = nearestLand;
+    return result;
   };
 
   const resolveScaleVector = (scaleOption) => {
@@ -1403,9 +1431,14 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     }
     const biome = columnSample.biome;
     const slope = computeSlope(worldX, worldZ, height);
-    const distanceToWater = computeWaterDistance(worldX, worldZ, height);
     const isUnderwater = height < waterLevel;
-    const isShore = !isUnderwater && distanceToWater <= 1;
+    const waterMetrics = computeWaterMetrics(worldX, worldZ, height);
+    const distanceToWater = waterMetrics.distanceToWater;
+    const distanceToLand = waterMetrics.distanceToLand;
+    const columnWaterDepth = waterMetrics.waterDepth;
+    const shoreThreshold = 2;
+    const isShore = (!isUnderwater && distanceToWater <= shoreThreshold) ||
+      (isUnderwater && distanceToLand <= shoreThreshold);
 
     if (biome) {
       const stats = biomePresence.get(biome.id) ?? { biome, samples: 0 };
@@ -1482,6 +1515,8 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       isShore,
       waterLevel,
       distanceToWater,
+      distanceToLand,
+      waterDepth: columnWaterDepth,
       randomSource: (offset) => randomAt(worldX, worldZ, offset),
     });
   };

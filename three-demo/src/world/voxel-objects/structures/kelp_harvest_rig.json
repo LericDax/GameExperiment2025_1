@@ -1,0 +1,33 @@
+{
+  "id": "kelp_harvest_rig",
+  "label": "Kelp Harvest Rig",
+  "category": "structures",
+  "author": "system",
+  "description": "Submerged rig that scaffolds kelp cultivation lines.",
+  "collision": "soft",
+  "voxelScale": 0.42,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["prismarine_vent_plateau", "luminous_tidebloom_marsh"],
+    "weight": 1.0,
+    "maxSlope": 0.5,
+    "requiresUnderwater": true,
+    "minWaterDepth": 2.0,
+    "maxWaterDepth": 6.0,
+    "minDistanceToLand": 0.0,
+    "maxDistanceToLand": 4.5,
+    "requiresWaterProximity": true,
+    "waterProximityRadius": 4.0,
+    "jitterRadius": 1.2
+  },
+  "voxels": [
+    { "type": "log", "position": [0, -0.4, 0], "size": [2.2, 0.4, 2.2], "tint": "#2e5c63" },
+    { "type": "log", "position": [0, 0.0, 0], "size": [1.8, 0.3, 1.8], "tint": "#3d6f78" },
+    { "type": "leaf", "position": [0.9, 0.2, 0], "size": [0.4, 1.8, 0.4], "tint": "#66fff0", "isSolid": false },
+    { "type": "leaf", "position": [-0.9, 0.2, 0], "size": [0.4, 1.8, 0.4], "tint": "#89fff9", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.2, 0.9], "size": [0.4, 1.6, 0.4], "tint": "#5affde", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.2, -0.9], "size": [0.4, 1.6, 0.4], "tint": "#8dfff9", "isSolid": false }
+  ]
+}

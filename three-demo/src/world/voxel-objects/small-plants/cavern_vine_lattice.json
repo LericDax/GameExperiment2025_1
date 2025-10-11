@@ -1,0 +1,28 @@
+{
+  "id": "cavern_vine_lattice",
+  "label": "Cavern Vine Lattice",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Hanging vine lattice that catches bioluminescent spores.",
+  "collision": "soft",
+  "voxelScale": 0.32,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["obsidian_mycelium_hollows"],
+    "weight": 2.6,
+    "maxSlope": 0.7,
+    "minMoisture": 0.34,
+    "maxMoisture": 0.68,
+    "minTemperature": 0.34,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.9
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0.4, 0], "size": [1.6, 0.2, 1.6], "tint": "#5f3f73", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.1, 0], "size": [1.2, 0.2, 1.2], "tint": "#6d4f89", "isSolid": false },
+    { "type": "leaf", "position": [0, -0.2, 0], "size": [0.8, 0.2, 0.8], "tint": "#8a66b1", "isSolid": false },
+    { "type": "leaf", "position": [0, -0.4, 0], "size": [0.5, 0.2, 0.5], "tint": "#a57dd0", "isSolid": false }
+  ]
+}

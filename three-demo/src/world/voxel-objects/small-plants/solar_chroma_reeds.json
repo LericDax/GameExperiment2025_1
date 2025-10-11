@@ -1,0 +1,32 @@
+{
+  "id": "solar_chroma_reeds",
+  "label": "Chroma Reed Cluster",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Iridescent reeds that root along steppe irrigation channels.",
+  "collision": "soft",
+  "voxelScale": 0.3,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["solar_chroma_steppe"],
+    "weight": 3.2,
+    "maxSlope": 0.6,
+    "minMoisture": 0.24,
+    "maxMoisture": 0.56,
+    "minTemperature": 0.55,
+    "requiresWaterProximity": true,
+    "waterProximityRadius": 2.4,
+    "maxWaterDepth": 1.4,
+    "forbidUnderwater": false,
+    "jitterRadius": 0.9,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [0.4, 1.6, 0.4], "tint": "#ffe07d", "isSolid": false },
+    { "type": "leaf", "position": [0.4, 0, -0.3], "size": [0.3, 1.4, 0.3], "tint": "#ffc864", "isSolid": false },
+    { "type": "leaf", "position": [-0.4, 0, 0.2], "size": [0.3, 1.5, 0.3], "tint": "#ffef9d", "isSolid": false },
+    { "type": "leaf", "position": [0, 0, 0.5], "size": [0.3, 1.2, 0.3], "tint": "#ffd67d", "isSolid": false }
+  ]
+}

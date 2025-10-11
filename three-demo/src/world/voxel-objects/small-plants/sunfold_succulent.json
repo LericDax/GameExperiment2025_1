@@ -1,0 +1,29 @@
+{
+  "id": "sunfold_succulent",
+  "label": "Sunfold Succulent",
+  "category": "small-plants",
+  "author": "system",
+  "description": "Layered succulent that unfurls reflective petals during peak sun.",
+  "collision": "soft",
+  "voxelScale": 0.28,
+  "attachment": {
+    "groundOffset": 0.12
+  },
+  "placement": {
+    "biomes": ["solar_chroma_steppe"],
+    "weight": 3.6,
+    "maxSlope": 0.52,
+    "minMoisture": 0.16,
+    "maxMoisture": 0.46,
+    "minTemperature": 0.5,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.8,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "leaf", "position": [0, 0, 0], "size": [1.2, 0.2, 1.2], "tint": "#ffdf8c", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.2, 0], "size": [0.9, 0.2, 0.9], "tint": "#ffc66f", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.4, 0], "size": [0.6, 0.3, 0.6], "tint": "#ffeab0", "isSolid": false },
+    { "type": "log", "position": [0, -0.1, 0], "size": [0.4, 0.3, 0.4], "tint": "#c28543" }
+  ]
+}

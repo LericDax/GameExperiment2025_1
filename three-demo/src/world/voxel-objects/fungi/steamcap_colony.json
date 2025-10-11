@@ -1,0 +1,29 @@
+{
+  "id": "steamcap_colony",
+  "label": "Steamcap Colony",
+  "category": "fungi",
+  "author": "system",
+  "description": "Vent-loving fungus that crowns itself with steam-trapping caps.",
+  "collision": "soft",
+  "voxelScale": 0.32,
+  "attachment": {
+    "groundOffset": 0.1
+  },
+  "placement": {
+    "biomes": ["prismarine_vent_plateau"],
+    "weight": 2.7,
+    "maxSlope": 0.55,
+    "minMoisture": 0.6,
+    "maxMoisture": 0.88,
+    "minTemperature": 0.45,
+    "forbidUnderwater": false,
+    "maxWaterDepth": 2.2,
+    "jitterRadius": 0.9
+  },
+  "voxels": [
+    { "type": "log", "position": [0, 0, 0], "size": [0.4, 0.9, 0.4], "tint": "#355a63" },
+    { "type": "leaf", "position": [0, 0.9, 0], "size": [1.2, 0.4, 1.2], "tint": "#66fff4", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.2, 0], "size": [0.9, 0.4, 0.9], "tint": "#8cfff9", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.5, 0], "size": [0.6, 0.4, 0.6], "tint": "#c0ffff", "isSolid": false }
+  ]
+}

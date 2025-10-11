@@ -1,0 +1,31 @@
+{
+  "id": "solar_energy_pylon",
+  "label": "Solar Energy Pylon",
+  "category": "structures",
+  "author": "system",
+  "description": "Photonic capture tower channeling chroma steppe sunlight into the grid.",
+  "collision": "solid",
+  "voxelScale": 0.48,
+  "attachment": {
+    "groundOffset": 0.2
+  },
+  "placement": {
+    "biomes": ["solar_chroma_steppe"],
+    "weight": 1.4,
+    "maxSlope": 0.55,
+    "minHeight": 4,
+    "maxHeight": 28,
+    "minMoisture": 0.18,
+    "maxMoisture": 0.5,
+    "minTemperature": 0.55,
+    "forbidUnderwater": true,
+    "jitterRadius": 0.8
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [1.2, 0.6, 1.2], "tint": "#f4c152" },
+    { "type": "stone", "position": [0, 0.6, 0], "size": [0.9, 1.6, 0.9], "tint": "#f2aa46" },
+    { "type": "stone", "position": [0, 2.2, 0], "size": [0.7, 1.6, 0.7], "tint": "#f9d468" },
+    { "type": "leaf", "position": [0, 3.6, 0], "size": [1.6, 0.6, 1.6], "tint": "#ffe07b", "isSolid": false },
+    { "type": "leaf", "position": [0, 4.2, 0], "size": [1.2, 0.4, 1.2], "tint": "#fff3b0", "isSolid": false }
+  ]
+}

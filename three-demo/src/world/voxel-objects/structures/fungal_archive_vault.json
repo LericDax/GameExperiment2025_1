@@ -1,0 +1,32 @@
+{
+  "id": "fungal_archive_vault",
+  "label": "Fungal Archive Vault",
+  "category": "structures",
+  "author": "system",
+  "description": "Subterranean vault storing mycelial codices in basalt alcoves.",
+  "collision": "solid",
+  "voxelScale": 0.46,
+  "attachment": {
+    "groundOffset": 0.18
+  },
+  "placement": {
+    "biomes": ["obsidian_mycelium_hollows"],
+    "weight": 0.9,
+    "maxSlope": 0.5,
+    "minHeight": 0,
+    "maxHeight": 14,
+    "minMoisture": 0.34,
+    "maxMoisture": 0.64,
+    "minTemperature": 0.38,
+    "forbidUnderwater": true,
+    "jitterRadius": 1.1
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [2.4, 0.8, 2.4], "tint": "#2d2534" },
+    { "type": "stone", "position": [0, 0.8, 0], "size": [2.0, 1.0, 2.0], "tint": "#3b2e42" },
+    { "type": "stone", "position": [0, 1.8, 0], "size": [1.4, 0.8, 1.4], "tint": "#4c3a59" },
+    { "type": "leaf", "position": [0.9, 1.2, 0], "size": [0.5, 0.7, 0.5], "tint": "#8b5ad1", "isSolid": false },
+    { "type": "leaf", "position": [-0.9, 1.2, 0], "size": [0.5, 0.7, 0.5], "tint": "#a472ef", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.3, 0], "size": [1.2, 0.5, 1.2], "tint": "#c19bff", "isSolid": false }
+  ]
+}
