@@ -1158,9 +1158,11 @@ export function createBiomeEngine({
         x * varianceScale + index * 17.13,
         z * varianceScale + index * 31.17,
       );
+      const uniformDistance = 1 - variationNoiseSample;
       const climateScore = baseDistance * climateInfluence;
-      const uniformScore = -variationNoiseSample * uniformityInfluence;
-      const variationScore = -(variationNoiseSample - 0.5) * variationStrength;
+      const uniformScore = uniformDistance * uniformityInfluence;
+      const variationCenter = variationNoiseSample - 0.5;
+      const variationScore = variationCenter * variationStrength;
       let adjustedDistance = climateScore + uniformScore + variationScore;
       if (biasFactor !== 0) {
         if (biome.isOceanic) {
