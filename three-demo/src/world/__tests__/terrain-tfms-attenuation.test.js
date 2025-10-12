@@ -177,11 +177,11 @@ test('terrain engine clamps scaled TFMS envelopes to configured bounds', () => {
   clampedEngine.dispose();
 });
 
-test('default terrain slope percentile stays within the expected envelope', () => {
+test('default terrain adjacent-column slope percentile stays within the expected envelope', () => {
   const engine = createTerrainEngine({ THREE });
   try {
-    const gridRadius = 16;
-    const sampleSpacing = 6;
+    const gridRadius = 24;
+    const sampleSpacing = 1;
     const gridSize = gridRadius * 2 + 1;
     const heights = [];
 
@@ -210,7 +210,7 @@ test('default terrain slope percentile stays within the expected envelope', () =
     }
 
     const slope95 = computePercentile(slopes, 0.95);
-    const slopeThreshold = 1.4;
+    const slopeThreshold = 1.25;
 
     assert.ok(
       slope95 < slopeThreshold,
