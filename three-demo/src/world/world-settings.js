@@ -921,6 +921,31 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     return next
   }
 
+  const safeMaxHeight = Math.max(
+    Number.isFinite(terrainDefaults?.maxHeight)
+      ? terrainDefaults.maxHeight
+      : defaultTerrainEnvelope.maxHeight,
+    1,
+  )
+  const baseAmplitudeRatio = baseAmplitude / safeMaxHeight
+  const detailAmplitudeRatio = detailAmplitude / safeMaxHeight
+
+  const baselineMaxHeight = Math.max(
+    Number.isFinite(defaultTerrainCore?.maxHeight)
+      ? defaultTerrainCore.maxHeight
+      : defaultTerrainEnvelope.maxHeight,
+    1,
+  )
+  const baselinePrimaryRatio =
+    defaultTerrainCore.primaryAmplitude / baselineMaxHeight
+  const baselineDetailRatio =
+    defaultTerrainCore.detailAmplitude / baselineMaxHeight
+
+  const amplitudeRatioNormalizedRaw =
+    baselinePrimaryRatio > 0 ? baseAmplitudeRatio / baselinePrimaryRatio : 1
+  const detailRatioNormalizedRaw =
+    baselineDetailRatio > 0 ? detailAmplitudeRatio / baselineDetailRatio : 1
+
   const baseAttenuation = Number.isFinite(defaultTerrainTfmsBaseAttenuation)
     ? defaultTerrainTfmsBaseAttenuation
     : 1
@@ -938,10 +963,102 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     ? defaultTerrainTfmsBiomeBlendStrength
     : 0.45
 
-  const derivedModulation = clampValue(baseAmplitude / 16, 0.3, 1)
-  const derivedWarp = clampValue(derivedModulation * 0.75, 0, 1)
-  const derivedPhase = clampValue(derivedModulation * 0.45, 0, 1)
-  const derivedSpectral = clampValue(detailAmplitude / 6, 0.2, 1)
+  const baselineDerivedModulation = clampValue(
+    defaultTerrainCore.primaryAmplitude / 16,
+    0.3,
+    1,
+  )
+  const baselineDerivedWarp = clampValue(baselineDerivedModulation * 0.75, 0, 1)
+  const baselineDerivedPhase = clampValue(
+    baselineDerivedModulation * 0.45,
+    0,
+    1,
+  )
+  const baselineDerivedSpectral = clampValue(
+    defaultTerrainCore.detailAmplitude / 6,
+    0.2,
+    1,
+  )
+
+  let derivedModulation = clampValue(baseAmplitude / 16, 0.3, 1)
+  let derivedWarp = clampValue(derivedModulation * 0.75, 0, 1)
+  let derivedPhase = clampValue(derivedModulation * 0.45, 0, 1)
+  let derivedSpectral = clampValue(detailAmplitude / 6, 0.2, 1)
+
+  const chunkSizeCandidate = Number.isFinite(terrainDefaults?.chunkSize)
+    ? terrainDefaults.chunkSize
+    : Number.isFinite(terrainDefaults?.chunk?.size)
+    ? terrainDefaults.chunk.size
+    : DEFAULT_CHUNK_SIZE
+  const normalizedChunkSize = normalizeChunkSizeForEnvelope(chunkSizeCandidate)
+  let domainWarpAmplitudeMultiplier = 0.32
+  let domainWarpAmplitudeMax = 256
+  let domainWarpFrequencyMultiplier = 0.65
+  let domainWarpPrimaryGainValue = 0.7
+  let domainWarpRidgeGainValue = 0.5
+  let domainWarpGainLimit = 4
+
+  if (amplitudeRatioNormalizedRaw > 1) {
+    const amplitudeScale = Math.min(amplitudeRatioNormalizedRaw, 4)
+
+    const modulationRatioTarget = baselineDerivedModulation * amplitudeScale
+    derivedModulation = clampValue(
+      Math.min(derivedModulation, modulationRatioTarget) * 0.99,
+      0.3,
+      0.99,
+    )
+    derivedWarp = clampValue(
+      Math.min(derivedWarp, baselineDerivedWarp * amplitudeScale) * 0.98,
+      0,
+      0.8,
+    )
+    derivedPhase = clampValue(
+      Math.min(derivedPhase, baselineDerivedPhase * amplitudeScale) * 0.98,
+      0,
+      0.75,
+    )
+
+    const warpLimit = Math.max(4, normalizedChunkSize * 0.28 * amplitudeScale)
+    domainWarpAmplitudeMultiplier = clampValue(
+      domainWarpAmplitudeMultiplier * amplitudeScale,
+      0,
+      warpLimit / Math.max(baseAmplitude, 1),
+    )
+    domainWarpAmplitudeMax = Math.min(256, warpLimit)
+    domainWarpFrequencyMultiplier = clampValue(
+      domainWarpFrequencyMultiplier * amplitudeScale,
+      0.2,
+      1,
+    )
+
+    const warpCarrierAmplitude =
+      baseAmplitude * Math.max(domainWarpAmplitudeMultiplier, 0)
+    domainWarpGainLimit = Math.min(
+      4,
+      warpCarrierAmplitude > 0
+        ? warpLimit / Math.max(warpCarrierAmplitude, 1)
+        : 4,
+    )
+    domainWarpPrimaryGainValue = clampValue(
+      domainWarpPrimaryGainValue * amplitudeScale,
+      0,
+      domainWarpGainLimit,
+    )
+    domainWarpRidgeGainValue = clampValue(
+      domainWarpRidgeGainValue * amplitudeScale,
+      0,
+      domainWarpGainLimit,
+    )
+  }
+
+  if (detailRatioNormalizedRaw > 1) {
+    const detailScale = Math.min(detailRatioNormalizedRaw, 4)
+    derivedSpectral = clampValue(
+      Math.min(derivedSpectral, baselineDerivedSpectral * detailScale) * 0.98,
+      0.2,
+      0.98,
+    )
+  }
 
   const modulationStrength = Number.isFinite(defaultTerrainTfmsKameaModulation)
     ? defaultTerrainTfmsKameaModulation
@@ -1014,6 +1131,29 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   const zeroWarpRange = Object.freeze({ value: 0, min: -128, max: 128 })
   const defaultModulation = Object.freeze({ value: 0, min: -1, max: 1 })
   const defaultPhaseRange = Object.freeze({ value: 0, min: -Math.PI, max: Math.PI })
+
+  const domainWarpAmplitudeRange = Object.freeze({
+    baseKey: 'primaryAmplitude',
+    multiplier: domainWarpAmplitudeMultiplier,
+    min: 0,
+    max: domainWarpAmplitudeMax,
+  })
+  const domainWarpFrequencyRange = Object.freeze({
+    baseKey: 'primaryFrequency',
+    multiplier: domainWarpFrequencyMultiplier,
+    min: 0.0001,
+    max: 1,
+  })
+  const domainWarpPrimaryGainRange = Object.freeze({
+    value: domainWarpPrimaryGainValue,
+    min: -domainWarpGainLimit,
+    max: domainWarpGainLimit,
+  })
+  const domainWarpRidgeGainRange = Object.freeze({
+    value: domainWarpRidgeGainValue,
+    min: -domainWarpGainLimit,
+    max: domainWarpGainLimit,
+  })
 
   const operators = [
     Object.freeze({
@@ -1212,18 +1352,8 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
       tectonic: undefined,
       settings: waveforms[4].settings,
       envelope: Object.freeze({
-        amplitude: Object.freeze({
-          baseKey: 'primaryAmplitude',
-          multiplier: 0.32,
-          min: 0,
-          max: 256,
-        }),
-        frequency: Object.freeze({
-          baseKey: 'primaryFrequency',
-          multiplier: 0.65,
-          min: 0.0001,
-          max: 1,
-        }),
+        amplitude: domainWarpAmplitudeRange,
+        frequency: domainWarpFrequencyRange,
         phase: Object.freeze({
           x: Object.freeze({
             baseKey: 'primaryOffset',
@@ -1329,7 +1459,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
       routing: 'domainWarp',
       channel: 'domainX',
       axis: 'x',
-      gain: Object.freeze({ value: 0.7, min: -4, max: 4 }),
+      gain: domainWarpPrimaryGainRange,
     }),
     Object.freeze({
       id: 'domain-warp->primary-fbm:domain-z',
@@ -1338,7 +1468,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
       routing: 'domainWarp',
       channel: 'domainZ',
       axis: 'z',
-      gain: Object.freeze({ value: 0.7, min: -4, max: 4 }),
+      gain: domainWarpPrimaryGainRange,
     }),
     Object.freeze({
       id: 'domain-warp->ridge-noise:domain-x',
@@ -1347,7 +1477,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
       routing: 'domainWarp',
       channel: 'domainX',
       axis: 'x',
-      gain: Object.freeze({ value: 0.5, min: -4, max: 4 }),
+      gain: domainWarpRidgeGainRange,
     }),
     Object.freeze({
       id: 'domain-warp->ridge-noise:domain-z',
@@ -1356,7 +1486,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
       routing: 'domainWarp',
       channel: 'domainZ',
       axis: 'z',
-      gain: Object.freeze({ value: 0.5, min: -4, max: 4 }),
+      gain: domainWarpRidgeGainRange,
     }),
     Object.freeze({
       id: 'tectonic-worley->ridge-noise:amplitude',
