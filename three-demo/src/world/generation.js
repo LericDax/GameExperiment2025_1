@@ -19,7 +19,11 @@ import {
   createDecorationMeshBatches,
 } from './voxel-object-decoration-mesh.js';
 import { resolveBiomeTintMultiplier } from './color-utils.js';
-import { worldOptions, applyWorldOptions } from './world-settings.js';
+import {
+  worldOptions,
+  applyWorldOptions,
+  computeTerrainVerticalEnvelope,
+} from './world-settings.js';
 import { configureSectorObjectPlanner } from './sector-object-planner.js';
 import { isBlockOccluding } from './block-occlusion.js';
 import {
@@ -203,6 +207,24 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+function resolveTerrainClampBounds() {
+  const envelope = computeTerrainVerticalEnvelope(worldOptions.chunk?.size);
+  const clampRange = worldOptions.terrain?.clamp ?? null;
+  const minHeight = Number.isFinite(clampRange?.min)
+    ? clampRange.min
+    : envelope.clampMin;
+  const aliasMax = Number.isFinite(worldOptions.maxHeight)
+    ? worldOptions.maxHeight
+    : envelope.maxHeight;
+  const clampMaxCandidate = Number.isFinite(clampRange?.max)
+    ? clampRange.max
+    : Math.max(aliasMax, envelope.clampMax);
+  return {
+    min: minHeight,
+    max: Math.max(minHeight, clampMaxCandidate),
+  };
+}
+
 let THREERef = null;
 let terrainEngine = null;
 let worldSeedHash = worldOptions.seedHash >>> 0;
@@ -261,11 +283,8 @@ export function initializeWorldGeneration({ THREE, worldOptions: overrides } = {
 export function terrainHeight(x, z) {
   const engine = ensureTerrainEngine();
   const sample = engine.sampleColumn(x, z);
-  const clampRange =
-    worldOptions.terrain?.clamp ?? { min: 2, max: worldOptions.maxHeight };
-  const minHeight = clampRange.min ?? 2;
-  const maxHeight = clampRange.max ?? worldOptions.maxHeight;
-  return Math.floor(clamp(sample.height, minHeight, maxHeight));
+  const bounds = resolveTerrainClampBounds();
+  return Math.floor(clamp(sample.height, bounds.min, bounds.max));
 }
 
 export function sampleBiomeAt(x, z) {
@@ -467,11 +486,8 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     if (!sample || !Number.isFinite(sample.height)) {
       return Number.NaN;
     }
-    const clampRange =
-      worldOptions.terrain?.clamp ?? { min: 2, max: worldOptions.maxHeight };
-    const minHeight = clampRange.min ?? 2;
-    const maxHeight = clampRange.max ?? worldOptions.maxHeight;
-    return Math.floor(clamp(sample.height, minHeight, maxHeight));
+    const bounds = resolveTerrainClampBounds();
+    return Math.floor(clamp(sample.height, bounds.min, bounds.max));
   };
 
   const computeSlope = (x, z, baseHeight) => {
