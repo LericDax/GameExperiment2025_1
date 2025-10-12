@@ -1446,9 +1446,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       });
       return;
     }
-    const columnTop = Math.floor(height);
     const biome = columnSample.biome;
-    const slope = computeSlope(worldX, worldZ, columnTop);
     const oceanSample = columnSample.ocean ?? null;
     const oceanProvince = Number.isFinite(columnSample.oceanProvince)
       ? columnSample.oceanProvince
@@ -1502,7 +1500,10 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       height = height + (clampedTarget - height) * depthInfluence;
       height = clamp(height, terrainFloorBound, maxSeabedHeight);
       columnSample.adjustedHeight = height;
+      columnSample.height = height;
     }
+    const columnTop = Math.floor(height);
+    const slope = computeSlope(worldX, worldZ, columnTop);
     const searchRadiusBase = 4 + shorelineAffinity * 2 + oceanDepthHint * 3;
     const slopeBiasContribution =
       shoreSlopeBias >= 0
