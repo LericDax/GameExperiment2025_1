@@ -1241,7 +1241,7 @@ const biomesGroup = Object.freeze({
       min: 0.0005,
       max: 0.02,
       step: 0.0001,
-      default: 0.012,
+      default: 0.0045,
       path: Object.freeze(['biomes', 'scale']),
     }),
     Object.freeze({
@@ -1253,7 +1253,7 @@ const biomesGroup = Object.freeze({
       min: 0.1,
       max: 10,
       step: 0.01,
-      default: 2.15,
+      default: 1.45,
       path: Object.freeze(['biomes', 'detailMultiplier']),
     }),
     Object.freeze({
@@ -1265,7 +1265,7 @@ const biomesGroup = Object.freeze({
       min: 0.1,
       max: 4,
       step: 0.01,
-      default: 1.18,
+      default: 0.82,
       path: Object.freeze(['biomes', 'moistureDetailMultiplier']),
     }),
     Object.freeze({
@@ -1276,7 +1276,7 @@ const biomesGroup = Object.freeze({
       min: 0,
       max: 2,
       step: 0.01,
-      default: 0.45,
+      default: 0.28,
       path: Object.freeze(['biomes', 'varianceMultiplier']),
     }),
     Object.freeze({

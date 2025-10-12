@@ -1168,7 +1168,21 @@ export function createBiomeEngine({
       const weightedDistance = baseDistance * variationFactor;
       const climateScore = weightedDistance * climateInfluence;
       const uniformJitter =
-        (0.5 - variationNoiseSample) * weightedDistance * uniformityInfluence * 2;
+        uniformityInfluence > 0
+          ? (() => {
+              const jitterHigh = varianceNoise.noise(
+                x * varianceScale * 0.62 + index * 23.71,
+                z * varianceScale * 0.59 + index * 37.11,
+              );
+              const jitterLow = varianceNoise.noise(
+                x * varianceScale * 0.18 + index * 5.17,
+                z * varianceScale * 0.21 + index * 7.91,
+              );
+              const jitterSample = mixValues(jitterHigh, jitterLow, 0.4);
+              const jitterEnvelope = climateScore * climateScore;
+              return (0.5 - jitterSample) * jitterEnvelope * uniformityInfluence * 2;
+            })()
+          : 0;
       let adjustedDistance = climateScore + uniformJitter;
       if (biasFactor !== 0) {
         if (biome.isOceanic) {
