@@ -10,7 +10,10 @@
  */
 import { createBiomeEngine } from './biome-engine.js';
 import { listCanonicalKameaNames } from './kamea.js';
-import { defaultWorldOptions } from './world-settings.js';
+import {
+  defaultWorldOptions,
+  LEGACY_TFMS_PRIMARY_AMPLITUDE,
+} from './world-settings.js';
 import { createTfmsNetwork } from './tfms/operators.js';
 
 const MIN_OPERATOR_COUNT = 1;
@@ -1139,12 +1142,26 @@ function retuneTectonicOperator(operator, { detailAmplitude, warpRatio }) {
 }
 
 function retuneDomainWarpOperator(operator, { primaryAmplitude, warpRatio }) {
+  const normalizationGain =
+    primaryAmplitude > 0
+      ? clampWithinRange(
+          LEGACY_TFMS_PRIMARY_AMPLITUDE / primaryAmplitude,
+          0.01,
+          16,
+        )
+      : 1;
   const amplitude = operator?.envelope?.amplitude;
   if (amplitude) {
     const multiplier = isFiniteNumber(amplitude.multiplier)
       ? amplitude.multiplier
-      : 0.32;
-    amplitude.multiplier = clampWithinRange(multiplier * 1.25, 0.28, 0.72);
+      : 0.32 * normalizationGain;
+    const scaledMin = 0.28 * normalizationGain;
+    const scaledMax = 0.72 * normalizationGain;
+    amplitude.multiplier = clampWithinRange(
+      multiplier * 1.25,
+      scaledMin,
+      scaledMax,
+    );
     raiseRangeMaximum(amplitude, primaryAmplitude * 0.8);
     if (!isFiniteNumber(amplitude.min) || amplitude.min < 0) {
       amplitude.min = 0;
@@ -1154,8 +1171,14 @@ function retuneDomainWarpOperator(operator, { primaryAmplitude, warpRatio }) {
   if (frequency) {
     const multiplier = isFiniteNumber(frequency.multiplier)
       ? frequency.multiplier
-      : 0.65;
-    frequency.multiplier = clampWithinRange(multiplier * 0.95, 0.5, 0.85);
+      : 0.65 * normalizationGain;
+    const scaledMin = 0.5 * normalizationGain;
+    const scaledMax = 0.85 * normalizationGain;
+    frequency.multiplier = clampWithinRange(
+      multiplier * 0.95,
+      scaledMin,
+      scaledMax,
+    );
   }
   if (operator?.modulation?.warp) {
     const warpStrength = clampWithinRange(warpRatio * 0.28, 0.18, 0.7);

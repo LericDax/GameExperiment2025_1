@@ -494,7 +494,7 @@ const defaultTerrainTfmsKameaErosion = getDescriptorDefault([
   'erosionPreset',
 ])
 
-const LEGACY_TFMS_PRIMARY_AMPLITUDE = 8
+export const LEGACY_TFMS_PRIMARY_AMPLITUDE = 8
 
 /**
  * Default TFMS preset mirroring the six-operator attenuation stack outlined in
@@ -1197,11 +1197,15 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     ? terrainDefaults.chunk.size
     : DEFAULT_CHUNK_SIZE
   const normalizedChunkSize = normalizeChunkSizeForEnvelope(chunkSizeCandidate)
-  let domainWarpAmplitudeMultiplier = 0.32
+  const domainWarpNormalizationGain =
+    Number.isFinite(normalizationGain) && normalizationGain > 0
+      ? normalizationGain
+      : 1
+  let domainWarpAmplitudeMultiplier = 0.32 * domainWarpNormalizationGain
   let domainWarpAmplitudeMax = 256
-  let domainWarpFrequencyMultiplier = 0.65
-  let domainWarpPrimaryGainValue = 0.7
-  let domainWarpRidgeGainValue = 0.5
+  let domainWarpFrequencyMultiplier = 0.65 * domainWarpNormalizationGain
+  let domainWarpPrimaryGainValue = 0.7 * domainWarpNormalizationGain
+  let domainWarpRidgeGainValue = 0.5 * domainWarpNormalizationGain
   let domainWarpGainLimit = 4
 
   if (amplitudeRatioNormalizedRaw > 1) {

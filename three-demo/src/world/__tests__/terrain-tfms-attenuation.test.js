@@ -344,3 +344,61 @@ test('high-amplitude terrain keeps neighbour slopes within the budget', () => {
     engine.dispose();
   }
 });
+
+test('default domain warp displacement stays within the calibrated budget', () => {
+  const engine = createTerrainEngine({ THREE });
+  try {
+    const baseNetworkEntry = engine.getBaseTfmsNetwork();
+    assert.ok(baseNetworkEntry?.network, 'expected base TFMS network');
+    const { network } = baseNetworkEntry;
+    const terrainConfig = engine.getTerrainConfig();
+
+    const gridRadius = 64;
+    const sampleSpacing = 4;
+    let maxWarpMagnitude = 0;
+    let maxWarpAxis = 0;
+
+    for (let zi = -gridRadius; zi <= gridRadius; zi += sampleSpacing) {
+      for (let xi = -gridRadius; xi <= gridRadius; xi += sampleSpacing) {
+        const result = network.evaluate({
+          x: xi,
+          z: zi,
+          context: { terrain: terrainConfig },
+        });
+        const primaryOperator = result.operators.find(
+          (entry) => entry.config.id === 'primary-fbm',
+        );
+        if (!primaryOperator) {
+          continue;
+        }
+        const warp = primaryOperator.domainWarp ?? { x: 0, z: 0 };
+        const axisMagnitude = Math.max(
+          Math.abs(warp.x ?? 0),
+          Math.abs(warp.z ?? 0),
+        );
+        const vectorMagnitude = Math.hypot(warp.x ?? 0, warp.z ?? 0);
+        if (axisMagnitude > maxWarpAxis) {
+          maxWarpAxis = axisMagnitude;
+        }
+        if (vectorMagnitude > maxWarpMagnitude) {
+          maxWarpMagnitude = vectorMagnitude;
+        }
+      }
+    }
+
+    assert.ok(Number.isFinite(maxWarpAxis), 'domain warp sampling failed');
+    const displacementBudget = 3;
+    assert.ok(
+      maxWarpAxis <= displacementBudget,
+      `expected domain warp to stay within ${displacementBudget} voxels, received max axis displacement ${maxWarpAxis.toFixed(
+        2,
+      )} (vector magnitude ${maxWarpMagnitude.toFixed(2)})`,
+    );
+    assert.ok(
+      maxWarpMagnitude <= displacementBudget,
+      `expected domain warp vector magnitude <= ${displacementBudget}, received ${maxWarpMagnitude.toFixed(2)}`,
+    );
+  } finally {
+    engine.dispose();
+  }
+});
