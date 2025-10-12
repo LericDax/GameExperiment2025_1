@@ -1275,12 +1275,12 @@ const biomesGroup = Object.freeze({
       id: 'biomes.uniformity',
       label: 'Uniformity',
       description:
-        'Blend factor between climate-driven selection (0) and a uniform distribution across all registered biomes (1).',
+        'Blend factor between climate-driven selection (0) and a uniform distribution across all registered biomes (1). Lower defaults retain climate influence while softening extreme hotspots.',
       type: numberType,
       min: 0,
       max: 1,
       step: 0.01,
-      default: 1,
+      default: 0.35,
       path: Object.freeze(['biomes', 'uniformity']),
     }),
     Object.freeze({
