@@ -67,3 +67,55 @@ test('applyWorldOptions clamps biome overrides to descriptor ranges', () => {
   assert(varianceDescriptor)
   assert.equal(options.biomes.varianceMultiplier, varianceDescriptor.min)
 })
+
+test('default TFMS derived strengths remain below saturation', () => {
+  resetWorldOptions()
+  const options = getWorldOptions()
+  const derived = options.terrain.tfms.kamea.derivedStrengths
+  assert(derived, 'expected derived TFMS strengths to be defined')
+  assert.ok(
+    derived.modulation < 0.95,
+    `expected modulation derived strength below saturation, received ${derived.modulation}`,
+  )
+  assert.ok(
+    derived.warp < 0.95,
+    `expected warp derived strength below saturation, received ${derived.warp}`,
+  )
+  assert.ok(
+    derived.phase < 0.95,
+    `expected phase derived strength below saturation, received ${derived.phase}`,
+  )
+  assert.ok(
+    derived.spectral < 0.95,
+    `expected spectral derived strength below saturation, received ${derived.spectral}`,
+  )
+})
+
+test('increasing TFMS warp strength slider is required for all-warp output', () => {
+  resetWorldOptions()
+  const options = getWorldOptions()
+  const defaultWarp = options.terrain.tfms.kamea.warpStrength.value
+  const derivedWarp = options.terrain.tfms.kamea.derivedStrengths.warp
+  assert(defaultWarp < 1, 'default warp slider should retain headroom')
+  assert(derivedWarp < 1, 'derived warp strength should not saturate by default')
+
+  applyWorldOptions({
+    terrain: {
+      tfms: {
+        kamea: {
+          warpStrength: { value: 1 },
+        },
+      },
+    },
+  })
+
+  const updated = getWorldOptions()
+  assert.equal(updated.terrain.tfms.kamea.warpStrength.value, 1)
+  assert(
+    updated.terrain.tfms.kamea.warpStrength.value >
+      updated.terrain.tfms.kamea.derivedStrengths.warp,
+    'increasing the slider should exceed the derived warp baseline',
+  )
+
+  resetWorldOptions()
+})

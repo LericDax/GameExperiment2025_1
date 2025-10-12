@@ -494,6 +494,8 @@ const defaultTerrainTfmsKameaErosion = getDescriptorDefault([
   'erosionPreset',
 ])
 
+const LEGACY_TFMS_PRIMARY_AMPLITUDE = 8
+
 /**
  * Default TFMS preset mirroring the six-operator attenuation stack outlined in
  * docs/tfms-system.md#default-operator-catalogue. Update the guide alongside
@@ -886,6 +888,26 @@ function cloneTfmsClamp(clamp) {
   return result
 }
 
+function cloneTfmsDerivedStrengths(strengths) {
+  if (!strengths || typeof strengths !== 'object') {
+    return undefined
+  }
+  const cloned = {}
+  if (Number.isFinite(strengths.modulation)) {
+    cloned.modulation = strengths.modulation
+  }
+  if (Number.isFinite(strengths.warp)) {
+    cloned.warp = strengths.warp
+  }
+  if (Number.isFinite(strengths.phase)) {
+    cloned.phase = strengths.phase
+  }
+  if (Number.isFinite(strengths.spectral)) {
+    cloned.spectral = strengths.spectral
+  }
+  return Object.keys(cloned).length > 0 ? cloned : undefined
+}
+
 function cloneTfmsKamea(kamea) {
   if (!kamea || typeof kamea !== 'object') {
     return {
@@ -967,6 +989,7 @@ function cloneTfmsKamea(kamea) {
       typeof kamea.erosionPreset === 'string'
         ? kamea.erosionPreset
         : defaultTerrainTfmsKameaErosion,
+    derivedStrengths: cloneTfmsDerivedStrengths(kamea.derivedStrengths),
     ranges,
   }
 }
@@ -1070,6 +1093,13 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   const baseAmplitudeRatio = baseAmplitude / safeMaxHeight
   const detailAmplitudeRatio = detailAmplitude / safeMaxHeight
 
+  const normalizedBaseAmplitude =
+    Number.isFinite(baseAmplitude) && baseAmplitude > 0 ? baseAmplitude : 0
+  const normalizedDetailAmplitude =
+    Number.isFinite(detailAmplitude) && detailAmplitude > 0
+      ? detailAmplitude
+      : 0
+
   const baselineMaxHeight = Math.max(
     Number.isFinite(defaultTerrainCore?.maxHeight)
       ? defaultTerrainCore.maxHeight
@@ -1080,6 +1110,30 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     defaultTerrainCore.primaryAmplitude / baselineMaxHeight
   const baselineDetailRatio =
     defaultTerrainCore.detailAmplitude / baselineMaxHeight
+
+  const normalizationFactor =
+    normalizedBaseAmplitude > 0
+      ? normalizedBaseAmplitude / LEGACY_TFMS_PRIMARY_AMPLITUDE
+      : 1
+  const normalizationGain =
+    normalizationFactor > 0 ? 1 / normalizationFactor : 1
+
+  const baselinePrimaryAmplitude =
+    Number.isFinite(defaultTerrainCore?.primaryAmplitude) &&
+    defaultTerrainCore.primaryAmplitude > 0
+      ? defaultTerrainCore.primaryAmplitude
+      : normalizedBaseAmplitude
+  const baselineDetailAmplitude =
+    Number.isFinite(defaultTerrainCore?.detailAmplitude) &&
+    defaultTerrainCore.detailAmplitude > 0
+      ? defaultTerrainCore.detailAmplitude
+      : normalizedDetailAmplitude
+  const baselineNormalizationFactor =
+    baselinePrimaryAmplitude > 0
+      ? baselinePrimaryAmplitude / LEGACY_TFMS_PRIMARY_AMPLITUDE
+      : 1
+  const baselineNormalizationGain =
+    baselineNormalizationFactor > 0 ? 1 / baselineNormalizationFactor : 1
 
   const amplitudeRatioNormalizedRaw =
     baselinePrimaryRatio > 0 ? baseAmplitudeRatio / baselinePrimaryRatio : 1
@@ -1103,27 +1157,39 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     ? defaultTerrainTfmsBiomeBlendStrength
     : 0.45
 
+  const baselineModulationNormalizedRaw =
+    (baselinePrimaryAmplitude / 16) * baselineNormalizationGain
   const baselineDerivedModulation = clampValue(
-    defaultTerrainCore.primaryAmplitude / 16,
+    baselineModulationNormalizedRaw,
     0.3,
     1,
   )
-  const baselineDerivedWarp = clampValue(baselineDerivedModulation * 0.75, 0, 1)
-  const baselineDerivedPhase = clampValue(
-    baselineDerivedModulation * 0.45,
+  const baselineDerivedWarp = clampValue(
+    baselineModulationNormalizedRaw * 0.75,
     0,
     1,
   )
+  const baselineDerivedPhase = clampValue(
+    baselineModulationNormalizedRaw * 0.45,
+    0,
+    1,
+  )
+  const baselineSpectralNormalizedRaw =
+    (baselineDetailAmplitude / 6) * baselineNormalizationGain
   const baselineDerivedSpectral = clampValue(
-    defaultTerrainCore.detailAmplitude / 6,
+    baselineSpectralNormalizedRaw,
     0.2,
     1,
   )
 
-  let derivedModulation = clampValue(baseAmplitude / 16, 0.3, 1)
-  let derivedWarp = clampValue(derivedModulation * 0.75, 0, 1)
-  let derivedPhase = clampValue(derivedModulation * 0.45, 0, 1)
-  let derivedSpectral = clampValue(detailAmplitude / 6, 0.2, 1)
+  const derivedModulationNormalizedRaw =
+    (normalizedBaseAmplitude / 16) * normalizationGain
+  let derivedModulation = clampValue(derivedModulationNormalizedRaw, 0.3, 1)
+  let derivedWarp = clampValue(derivedModulationNormalizedRaw * 0.75, 0, 1)
+  let derivedPhase = clampValue(derivedModulationNormalizedRaw * 0.45, 0, 1)
+  const derivedSpectralNormalizedRaw =
+    (normalizedDetailAmplitude / 6) * normalizationGain
+  let derivedSpectral = clampValue(derivedSpectralNormalizedRaw, 0.2, 1)
 
   const chunkSizeCandidate = Number.isFinite(terrainDefaults?.chunkSize)
     ? terrainDefaults.chunkSize
@@ -1162,7 +1228,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     domainWarpAmplitudeMultiplier = clampValue(
       domainWarpAmplitudeMultiplier * amplitudeScale,
       0,
-      warpLimit / Math.max(baseAmplitude, 1),
+      warpLimit / Math.max(normalizedBaseAmplitude, 1),
     )
     domainWarpAmplitudeMax = Math.min(256, warpLimit)
     domainWarpFrequencyMultiplier = clampValue(
@@ -1172,7 +1238,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     )
 
     const warpCarrierAmplitude =
-      baseAmplitude * Math.max(domainWarpAmplitudeMultiplier, 0)
+      normalizedBaseAmplitude * Math.max(domainWarpAmplitudeMultiplier, 0)
     domainWarpGainLimit = Math.min(
       4,
       warpCarrierAmplitude > 0
@@ -1200,18 +1266,42 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     )
   }
 
-  const modulationStrength = Number.isFinite(defaultTerrainTfmsKameaModulation)
-    ? defaultTerrainTfmsKameaModulation
-    : derivedModulation
-  const warpStrength = Number.isFinite(defaultTerrainTfmsKameaWarp)
-    ? defaultTerrainTfmsKameaWarp
-    : derivedWarp
-  const phaseStrength = Number.isFinite(defaultTerrainTfmsKameaPhase)
-    ? defaultTerrainTfmsKameaPhase
-    : derivedPhase
-  const spectralStrength = Number.isFinite(defaultTerrainTfmsKameaSpectral)
-    ? defaultTerrainTfmsKameaSpectral
-    : derivedSpectral
+  const derivedModulationStrength = derivedModulation
+  const derivedWarpStrength = derivedWarp
+  const derivedPhaseStrength = derivedPhase
+  const derivedSpectralStrength = derivedSpectral
+
+  const resolveStrength = (overrideValue, baselineValue, fallbackValue) => {
+    if (!Number.isFinite(overrideValue)) {
+      return fallbackValue
+    }
+    if (!Number.isFinite(baselineValue) || baselineValue <= 0) {
+      return clampValue(overrideValue, 0, 1)
+    }
+    const scaled = fallbackValue * (overrideValue / baselineValue)
+    return clampValue(scaled, 0, 1)
+  }
+
+  const modulationStrength = resolveStrength(
+    defaultTerrainTfmsKameaModulation,
+    baselineDerivedModulation,
+    derivedModulationStrength,
+  )
+  const warpStrength = resolveStrength(
+    defaultTerrainTfmsKameaWarp,
+    baselineDerivedWarp,
+    derivedWarpStrength,
+  )
+  const phaseStrength = resolveStrength(
+    defaultTerrainTfmsKameaPhase,
+    baselineDerivedPhase,
+    derivedPhaseStrength,
+  )
+  const spectralStrength = resolveStrength(
+    defaultTerrainTfmsKameaSpectral,
+    baselineDerivedSpectral,
+    derivedSpectralStrength,
+  )
   const temperament =
     typeof defaultTerrainTfmsTemperament === 'string'
       ? defaultTerrainTfmsTemperament
@@ -1671,6 +1761,13 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     spectralStrength: Object.freeze({ min: 0, max: 1 }),
   })
 
+  const kameaDerivedStrengths = Object.freeze({
+    modulation: derivedModulationStrength,
+    warp: derivedWarpStrength,
+    phase: derivedPhaseStrength,
+    spectral: derivedSpectralStrength,
+  })
+
   const kamea = Object.freeze({
     temperament,
     modulationStrength: Object.freeze({ value: modulationStrength, min: 0, max: 1 }),
@@ -1679,6 +1776,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     spectralProfile,
     spectralStrength: Object.freeze({ value: spectralStrength, min: 0, max: 1 }),
     erosionPreset,
+    derivedStrengths: kameaDerivedStrengths,
     ranges: kameaRanges,
   })
 
