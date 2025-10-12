@@ -3582,18 +3582,87 @@ const RAW_TFMS_SCHEMATA = [
     },
     blend: 0.76,
     overrides: {
-      operatorWeights: [0.9, 0.48],
+      operatorWeights: [0.96, 0.68, 0.52, 0.46, 0.64, 0.76],
       operators: [
         {
           id: 'primary-fbm',
-          bias: 0.24,
-          envelope: { amplitude: { multiplier: 1.02 } },
-          modulation: { amplitude: { multiplier: 0.3 } },
+          bias: 0.26,
+          envelope: { amplitude: { multiplier: 1.12 } },
+          modulation: { amplitude: { multiplier: 0.34 } },
         },
         {
           id: 'ridge-noise',
-          weight: 0.58,
-          modulation: { amplitude: { multiplier: 0.18 } },
+          weight: 0.64,
+          envelope: { amplitude: { multiplier: 0.88 } },
+          modulation: { amplitude: { multiplier: 0.26 } },
+        },
+        {
+          id: 'tectonic-worley',
+          weight: 0.52,
+          envelope: { amplitude: { multiplier: 0.5 } },
+          modulation: { amplitude: { multiplier: 0.3 } },
+        },
+        {
+          id: 'anisotropic-banding',
+          weight: 0.46,
+          modulation: { frequency: 0.2 },
+          envelope: { warp: { x: 24, z: -18 } },
+        },
+        {
+          id: 'domain-warp',
+          modulation: {
+            amplitude: { multiplier: 0.68 },
+            warp: { x: 0.36, z: -0.28 },
+          },
+          envelope: { amplitude: { multiplier: 0.62 } },
+        },
+        {
+          id: 'diffusion-mask',
+          weight: 0.78,
+          transfer: { id: 'smoothstep', smoothness: 0.42 },
+          modulation: { amplitude: { multiplier: 0.44 } },
+        },
+      ],
+      modulationMatrix: [
+        {
+          id: 'diffusion-mask->primary-fbm:amplitude',
+          gain: 0.48,
+        },
+        {
+          id: 'diffusion-mask->ridge-noise:amplitude',
+          gain: 0.42,
+        },
+        {
+          id: 'diffusion-mask->anisotropic-banding:amplitude',
+          gain: 0.34,
+        },
+        {
+          id: 'tectonic-worley->anisotropic-banding:frequency',
+          gain: 0.4,
+        },
+        {
+          id: 'tectonic-worley->diffusion-mask:amplitude',
+          gain: 0.32,
+        },
+        {
+          id: 'tectonic-worley->domain-warp:amplitude',
+          gain: 0.36,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-x',
+          gain: 0.78,
+        },
+        {
+          id: 'domain-warp->primary-fbm:domain-z',
+          gain: 0.72,
+        },
+        {
+          id: 'domain-warp->ridge-noise:domain-x',
+          gain: 0.56,
+        },
+        {
+          id: 'ridge-noise->domain-warp:amplitude',
+          gain: 0.36,
         },
       ],
     },
