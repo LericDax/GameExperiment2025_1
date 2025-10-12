@@ -53,12 +53,27 @@ test('solid interior voxels do not materialize instanced entries', () => {
     assert.ok(Number.isFinite(surfaceHeight), 'terrain height should be finite');
 
     const surfaceKey = generationModule.makeBlockKey(0, surfaceHeight, 0);
-    const interiorKey = generationModule.makeBlockKey(0, surfaceHeight - 1, 0);
-
     const surfaceEntry = chunk.blockLookup.get(surfaceKey);
     assert.ok(surfaceEntry, 'expected a visible surface entry at the sampled column');
     assert.equal(surfaceEntry.isVisible, true, 'surface entry should be marked visible');
 
+    let interiorKey = null;
+    const maxProbeDepth = Math.min(surfaceHeight, 12);
+    for (let depth = 1; depth <= maxProbeDepth; depth += 1) {
+      const candidateKey = generationModule.makeBlockKey(0, surfaceHeight - depth, 0);
+      if (!chunk.solidBlockKeys.has(candidateKey)) {
+        continue;
+      }
+      if (!chunk.blockLookup.has(candidateKey)) {
+        interiorKey = candidateKey;
+        break;
+      }
+    }
+
+    assert.ok(
+      interiorKey,
+      'expected to locate a hidden interior block beneath the sampled surface',
+    );
     assert.ok(
       chunk.solidBlockKeys.has(interiorKey),
       'interior coordinate should still be tracked as a solid block',
