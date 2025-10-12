@@ -1423,7 +1423,8 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     targetGroup.add(mesh);
   };
 
-    const totalColumns = chunkSize * chunkSize;
+  const terrainClampBounds = resolveTerrainClampBounds();
+  const totalColumns = chunkSize * chunkSize;
 
   const processColumnAtIndex = (columnIndex) => {
     const lx = Math.floor(columnIndex / chunkSize);
@@ -1445,8 +1446,13 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       });
       return;
     }
+    const columnTop = Math.floor(height);
+    const terrainClampMin = Number.isFinite(terrainClampBounds?.min)
+      ? terrainClampBounds.min
+      : columnTop;
+    const columnBottom = Math.min(columnTop, Math.ceil(terrainClampMin));
     const biome = columnSample.biome;
-    const slope = computeSlope(worldX, worldZ, height);
+    const slope = computeSlope(worldX, worldZ, columnTop);
     const oceanSample = columnSample.ocean ?? null;
     const oceanProvince = Number.isFinite(columnSample.oceanProvince)
       ? columnSample.oceanProvince
@@ -1485,8 +1491,13 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       3,
       Math.round(searchRadiusBase + slopeBiasContribution),
     );
-    const isUnderwater = height < waterLevel;
-    const waterMetrics = computeWaterMetrics(worldX, worldZ, height, searchRadius);
+    const isUnderwater = columnTop < waterLevel;
+    const waterMetrics = computeWaterMetrics(
+      worldX,
+      worldZ,
+      columnTop,
+      searchRadius,
+    );
     const distanceToWater = Number.isFinite(waterMetrics.distanceToWater)
       ? waterMetrics.distanceToWater
       : searchRadius + 1;
@@ -1531,18 +1542,18 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     const deepBlock = biome?.terrain?.deepBlock ?? 'stone';
     const subSurfaceDepth = Math.max(1, biome?.terrain?.subSurfaceDepth ?? 4);
 
-    for (let y = 0; y <= height; y++) {
-      if (y === height) {
+    for (let y = columnBottom; y <= columnTop; y += 1) {
+      if (y === columnTop) {
         addBlock(surfaceBlock, worldX, y, worldZ, biome);
-      } else if (y >= height - subSurfaceDepth) {
+      } else if (columnTop - y < subSurfaceDepth) {
         addBlock(subSurfaceBlock, worldX, y, worldZ, biome);
       } else {
         addBlock(deepBlock, worldX, y, worldZ, biome);
       }
     }
 
-    if (height < waterLevel) {
-      for (let y = height + 1; y <= waterLevel; y++) {
+    if (columnTop < waterLevel) {
+      for (let y = columnTop + 1; y <= waterLevel; y += 1) {
         addBlock('water', worldX, y, worldZ, biome);
       }
     }
@@ -1561,7 +1572,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     const hasAuroraRibbonCue = Boolean(
       lumenCues && lumenCues.includes('aurora_ribbon'),
     );
-    const columnWasFlooded = height < waterLevel;
+    const columnWasFlooded = columnTop < waterLevel;
     const shouldSkipLumenSurface =
       columnWasFlooded || isUnderwater || isShore;
     if (hasAuroraRibbonCue && !shouldSkipLumenSurface) {
@@ -1581,7 +1592,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       addDecorationMesh: addDecorationMeshFromTemplate,
       biome,
       columnSample,
-      groundHeight: height,
+      groundHeight: columnTop,
       slope,
       worldX,
       worldZ,
