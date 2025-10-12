@@ -98,6 +98,33 @@ const DEFAULT_TERRAIN_RIDGE_FREQUENCY = getDescriptorDefault([
   'terrain',
   'ridgeFrequency',
 ])
+const DEFAULT_TERRAIN_PRIMARY_AMPLITUDE = getDescriptorDefault([
+  'terrain',
+  'primaryAmplitude',
+])
+const DEFAULT_TERRAIN_DETAIL_AMPLITUDE = getDescriptorDefault([
+  'terrain',
+  'detailAmplitude',
+])
+const DEFAULT_TERRAIN_RIDGE_STRENGTH = getDescriptorDefault([
+  'terrain',
+  'ridgeStrength',
+])
+
+const DEFAULT_TERRAIN_VERTICAL_EXTENT =
+  DEFAULT_CHUNK_SIZE * TERRAIN_VERTICAL_SPAN_MULTIPLIER
+const PRIMARY_AMPLITUDE_RATIO =
+  DEFAULT_TERRAIN_VERTICAL_EXTENT > 0
+    ? DEFAULT_TERRAIN_PRIMARY_AMPLITUDE / DEFAULT_TERRAIN_VERTICAL_EXTENT
+    : 0
+const DETAIL_AMPLITUDE_RATIO =
+  DEFAULT_TERRAIN_VERTICAL_EXTENT > 0
+    ? DEFAULT_TERRAIN_DETAIL_AMPLITUDE / DEFAULT_TERRAIN_VERTICAL_EXTENT
+    : 0
+const RIDGE_STRENGTH_RATIO =
+  DEFAULT_TERRAIN_VERTICAL_EXTENT > 0
+    ? DEFAULT_TERRAIN_RIDGE_STRENGTH / DEFAULT_TERRAIN_VERTICAL_EXTENT
+    : 0
 
 function normalizeChunkSizeForEnvelope(chunkSize) {
   if (Number.isFinite(chunkSize)) {
@@ -114,6 +141,88 @@ export function computeTerrainVerticalEnvelope(chunkSize = DEFAULT_CHUNK_SIZE) {
     maxHeight: verticalExtent,
     clampMin: -verticalExtent,
     clampMax: verticalExtent,
+  }
+}
+
+function computeTerrainWaveDefaults({
+  chunkSize = DEFAULT_CHUNK_SIZE,
+  baseHeight = DEFAULT_TERRAIN_BASE_HEIGHT,
+} = {}) {
+  const normalizedSize = normalizeChunkSizeForEnvelope(chunkSize)
+  const verticalExtent = normalizedSize * TERRAIN_VERTICAL_SPAN_MULTIPLIER
+  const safeBaseHeight = Number.isFinite(baseHeight) ? baseHeight : 0
+  const amplitudeBudget = Math.max(0, verticalExtent - safeBaseHeight)
+
+  const primaryAmplitudeCandidate = Math.max(
+    0,
+    Math.min(
+      Math.round(verticalExtent * PRIMARY_AMPLITUDE_RATIO),
+      amplitudeBudget,
+    ),
+  )
+  const primaryAmplitude = normalizeWithDescriptor(
+    primaryAmplitudeCandidate,
+    DEFAULT_TERRAIN_PRIMARY_AMPLITUDE,
+    ['terrain', 'primaryAmplitude'],
+  )
+
+  const remainingAfterPrimary = Math.max(0, amplitudeBudget - primaryAmplitude)
+  const detailAmplitudeCandidate = Math.max(
+    0,
+    Math.min(
+      Math.round(verticalExtent * DETAIL_AMPLITUDE_RATIO),
+      remainingAfterPrimary,
+    ),
+  )
+  const detailAmplitude = normalizeWithDescriptor(
+    detailAmplitudeCandidate,
+    DEFAULT_TERRAIN_DETAIL_AMPLITUDE,
+    ['terrain', 'detailAmplitude'],
+  )
+
+  const remainingAfterDetail = Math.max(
+    0,
+    remainingAfterPrimary - detailAmplitude,
+  )
+  const ridgeStrengthCandidate = Math.max(
+    0,
+    Math.min(
+      Math.round(verticalExtent * RIDGE_STRENGTH_RATIO),
+      remainingAfterDetail,
+    ),
+  )
+  const ridgeStrength = normalizeWithDescriptor(
+    ridgeStrengthCandidate,
+    DEFAULT_TERRAIN_RIDGE_STRENGTH,
+    ['terrain', 'ridgeStrength'],
+  )
+
+  const frequencyScale =
+    normalizedSize > 0 ? DEFAULT_CHUNK_SIZE / normalizedSize : 1
+
+  const primaryFrequency = normalizeWithDescriptor(
+    DEFAULT_TERRAIN_PRIMARY_FREQUENCY * frequencyScale,
+    DEFAULT_TERRAIN_PRIMARY_FREQUENCY,
+    ['terrain', 'primaryFrequency'],
+  )
+  const detailFrequency = normalizeWithDescriptor(
+    DEFAULT_TERRAIN_DETAIL_FREQUENCY * frequencyScale,
+    DEFAULT_TERRAIN_DETAIL_FREQUENCY,
+    ['terrain', 'detailFrequency'],
+  )
+  const ridgeFrequency = normalizeWithDescriptor(
+    DEFAULT_TERRAIN_RIDGE_FREQUENCY * frequencyScale,
+    DEFAULT_TERRAIN_RIDGE_FREQUENCY,
+    ['terrain', 'ridgeFrequency'],
+  )
+
+  return {
+    primaryAmplitude,
+    detailAmplitude,
+    ridgeStrength,
+    primaryFrequency,
+    detailFrequency,
+    ridgeFrequency,
   }
 }
 
@@ -255,6 +364,11 @@ const defaultEnvironmentOptions = Object.freeze({
   skyboxId: getDescriptorDefault(['environment', 'skyboxId']),
 })
 
+const defaultTerrainWaveDefaults = computeTerrainWaveDefaults({
+  chunkSize: DEFAULT_CHUNK_SIZE,
+  baseHeight: DEFAULT_TERRAIN_BASE_HEIGHT,
+})
+
 const defaultTerrainEnvelope = computeTerrainVerticalEnvelope(DEFAULT_CHUNK_SIZE)
 
 const defaultTerrainClamp = Object.freeze({
@@ -266,14 +380,14 @@ const defaultTerrainCore = Object.freeze({
   baseHeight: DEFAULT_TERRAIN_BASE_HEIGHT,
   maxHeight: defaultTerrainEnvelope.maxHeight,
   clamp: defaultTerrainClamp,
-  primaryFrequency: DEFAULT_TERRAIN_PRIMARY_FREQUENCY,
-  primaryAmplitude: getDescriptorDefault(['terrain', 'primaryAmplitude']),
+  primaryFrequency: defaultTerrainWaveDefaults.primaryFrequency,
+  primaryAmplitude: defaultTerrainWaveDefaults.primaryAmplitude,
   primaryOffset: getDescriptorDefault(['terrain', 'primaryOffset']),
-  detailFrequency: DEFAULT_TERRAIN_DETAIL_FREQUENCY,
-  detailAmplitude: getDescriptorDefault(['terrain', 'detailAmplitude']),
+  detailFrequency: defaultTerrainWaveDefaults.detailFrequency,
+  detailAmplitude: defaultTerrainWaveDefaults.detailAmplitude,
   detailOffset: getDescriptorDefault(['terrain', 'detailOffset']),
-  ridgeFrequency: DEFAULT_TERRAIN_RIDGE_FREQUENCY,
-  ridgeStrength: getDescriptorDefault(['terrain', 'ridgeStrength']),
+  ridgeFrequency: defaultTerrainWaveDefaults.ridgeFrequency,
+  ridgeStrength: defaultTerrainWaveDefaults.ridgeStrength,
   ridgeOffset: getDescriptorDefault(['terrain', 'ridgeOffset']),
   climateHeightInfluence: getDescriptorDefault([
     'terrain',
@@ -448,13 +562,13 @@ function createMutableWorldOptions() {
       baseHeight: defaultTerrainOptions.baseHeight,
       maxHeight: defaultTerrainOptions.maxHeight,
       clamp: { ...defaultTerrainOptions.clamp },
-      primaryFrequency: DEFAULT_TERRAIN_PRIMARY_FREQUENCY,
+      primaryFrequency: defaultTerrainOptions.primaryFrequency,
       primaryAmplitude: defaultTerrainOptions.primaryAmplitude,
       primaryOffset: defaultTerrainOptions.primaryOffset,
-      detailFrequency: DEFAULT_TERRAIN_DETAIL_FREQUENCY,
+      detailFrequency: defaultTerrainOptions.detailFrequency,
       detailAmplitude: defaultTerrainOptions.detailAmplitude,
       detailOffset: defaultTerrainOptions.detailOffset,
-      ridgeFrequency: DEFAULT_TERRAIN_RIDGE_FREQUENCY,
+      ridgeFrequency: defaultTerrainOptions.ridgeFrequency,
       ridgeStrength: defaultTerrainOptions.ridgeStrength,
       ridgeOffset: defaultTerrainOptions.ridgeOffset,
       climateHeightInfluence: defaultTerrainOptions.climateHeightInfluence,
@@ -2279,6 +2393,16 @@ export function applyWorldOptions(overrides = {}) {
     'shoreSlopeBias',
   ]
 
+  const hasTerrainOverride = (key) =>
+    terrainOverrides && Object.prototype.hasOwnProperty.call(terrainOverrides, key)
+
+  const primaryFrequencyOverrideProvided = hasTerrainOverride('primaryFrequency')
+  const detailFrequencyOverrideProvided = hasTerrainOverride('detailFrequency')
+  const ridgeFrequencyOverrideProvided = hasTerrainOverride('ridgeFrequency')
+  const primaryAmplitudeOverrideProvided = hasTerrainOverride('primaryAmplitude')
+  const detailAmplitudeOverrideProvided = hasTerrainOverride('detailAmplitude')
+  const ridgeStrengthOverrideProvided = hasTerrainOverride('ridgeStrength')
+
   terrainOptionKeys.forEach((key) => {
     if (key in (terrainOverrides ?? {})) {
       worldOptions.terrain[key] = normalizeWithDescriptor(
@@ -2288,6 +2412,32 @@ export function applyWorldOptions(overrides = {}) {
       )
     }
   })
+
+  if (chunkSizeChanged) {
+    const waveDefaults = computeTerrainWaveDefaults({
+      chunkSize: worldOptions.chunk.size,
+      baseHeight: worldOptions.terrain.baseHeight,
+    })
+
+    if (!primaryFrequencyOverrideProvided) {
+      worldOptions.terrain.primaryFrequency = waveDefaults.primaryFrequency
+    }
+    if (!detailFrequencyOverrideProvided) {
+      worldOptions.terrain.detailFrequency = waveDefaults.detailFrequency
+    }
+    if (!ridgeFrequencyOverrideProvided) {
+      worldOptions.terrain.ridgeFrequency = waveDefaults.ridgeFrequency
+    }
+    if (!primaryAmplitudeOverrideProvided) {
+      worldOptions.terrain.primaryAmplitude = waveDefaults.primaryAmplitude
+    }
+    if (!detailAmplitudeOverrideProvided) {
+      worldOptions.terrain.detailAmplitude = waveDefaults.detailAmplitude
+    }
+    if (!ridgeStrengthOverrideProvided) {
+      worldOptions.terrain.ridgeStrength = waveDefaults.ridgeStrength
+    }
+  }
 
   let tfmsClampOverrideProvided = false
   const topLevelTfmsOverrides = isObject(overrides.tfms)

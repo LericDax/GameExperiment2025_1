@@ -221,6 +221,50 @@ test('default terrain slope percentile stays within the expected envelope', () =
   }
 });
 
+test('default terrain median slope remains within the gentle slope target', () => {
+  const engine = createTerrainEngine({ THREE });
+  try {
+    const gridRadius = 16;
+    const sampleSpacing = 6;
+    const gridSize = gridRadius * 2 + 1;
+    const heights = [];
+
+    for (let zi = -gridRadius; zi <= gridRadius; zi += 1) {
+      const row = [];
+      for (let xi = -gridRadius; xi <= gridRadius; xi += 1) {
+        const { height } = engine.sampleColumn(xi * sampleSpacing, zi * sampleSpacing);
+        row.push(height);
+      }
+      heights.push(row);
+    }
+
+    const slopes = [];
+    for (let rowIndex = 0; rowIndex < gridSize; rowIndex += 1) {
+      for (let columnIndex = 0; columnIndex < gridSize; columnIndex += 1) {
+        const current = heights[rowIndex][columnIndex];
+        if (columnIndex + 1 < gridSize) {
+          const east = heights[rowIndex][columnIndex + 1];
+          slopes.push(Math.abs(east - current) / sampleSpacing);
+        }
+        if (rowIndex + 1 < gridSize) {
+          const south = heights[rowIndex + 1][columnIndex];
+          slopes.push(Math.abs(south - current) / sampleSpacing);
+        }
+      }
+    }
+
+    const medianSlope = computePercentile(slopes, 0.5);
+    const medianThreshold = 0.55;
+
+    assert.ok(
+      medianSlope < medianThreshold,
+      `expected median slope < ${medianThreshold}, received ${medianSlope}`,
+    );
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('high-amplitude terrain keeps neighbour slopes within the budget', () => {
   const defaultTerrain = defaultWorldOptions.terrain;
   const maxHeight = defaultTerrain.maxHeight;
