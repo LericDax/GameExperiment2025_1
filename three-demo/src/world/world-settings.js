@@ -110,6 +110,12 @@ const DEFAULT_TERRAIN_RIDGE_STRENGTH = getDescriptorDefault([
   'terrain',
   'ridgeStrength',
 ])
+const DEFAULT_TERRAIN_PRIMARY_SLOPE_BUDGET =
+  DEFAULT_TERRAIN_PRIMARY_AMPLITUDE * DEFAULT_TERRAIN_PRIMARY_FREQUENCY
+const DEFAULT_TERRAIN_DETAIL_SLOPE_BUDGET =
+  DEFAULT_TERRAIN_DETAIL_AMPLITUDE * DEFAULT_TERRAIN_DETAIL_FREQUENCY
+const DEFAULT_TERRAIN_RIDGE_SLOPE_BUDGET =
+  DEFAULT_TERRAIN_RIDGE_STRENGTH * DEFAULT_TERRAIN_RIDGE_FREQUENCY
 
 const DEFAULT_TERRAIN_VERTICAL_EXTENT =
   DEFAULT_CHUNK_SIZE * TERRAIN_VERTICAL_SPAN_MULTIPLIER
@@ -200,18 +206,38 @@ function computeTerrainWaveDefaults({
   const frequencyScale =
     normalizedSize > 0 ? DEFAULT_CHUNK_SIZE / normalizedSize : 1
 
+  const scaledPrimarySlopeBudget =
+    DEFAULT_TERRAIN_PRIMARY_SLOPE_BUDGET * frequencyScale
+  const primaryFrequencyCandidate =
+    primaryAmplitude > 0
+      ? scaledPrimarySlopeBudget / primaryAmplitude
+      : DEFAULT_TERRAIN_PRIMARY_FREQUENCY * frequencyScale
   const primaryFrequency = normalizeWithDescriptor(
-    DEFAULT_TERRAIN_PRIMARY_FREQUENCY * frequencyScale,
+    primaryFrequencyCandidate,
     DEFAULT_TERRAIN_PRIMARY_FREQUENCY,
     ['terrain', 'primaryFrequency'],
   )
+
+  const scaledDetailSlopeBudget =
+    DEFAULT_TERRAIN_DETAIL_SLOPE_BUDGET * frequencyScale
+  const detailFrequencyCandidate =
+    detailAmplitude > 0
+      ? scaledDetailSlopeBudget / detailAmplitude
+      : DEFAULT_TERRAIN_DETAIL_FREQUENCY * frequencyScale
   const detailFrequency = normalizeWithDescriptor(
-    DEFAULT_TERRAIN_DETAIL_FREQUENCY * frequencyScale,
+    detailFrequencyCandidate,
     DEFAULT_TERRAIN_DETAIL_FREQUENCY,
     ['terrain', 'detailFrequency'],
   )
+
+  const scaledRidgeSlopeBudget =
+    DEFAULT_TERRAIN_RIDGE_SLOPE_BUDGET * frequencyScale
+  const ridgeFrequencyCandidate =
+    ridgeStrength > 0
+      ? scaledRidgeSlopeBudget / ridgeStrength
+      : DEFAULT_TERRAIN_RIDGE_FREQUENCY * frequencyScale
   const ridgeFrequency = normalizeWithDescriptor(
-    DEFAULT_TERRAIN_RIDGE_FREQUENCY * frequencyScale,
+    ridgeFrequencyCandidate,
     DEFAULT_TERRAIN_RIDGE_FREQUENCY,
     ['terrain', 'ridgeFrequency'],
   )
