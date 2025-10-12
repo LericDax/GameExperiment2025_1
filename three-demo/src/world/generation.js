@@ -1447,11 +1447,6 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       return;
     }
     const columnTop = Math.floor(height);
-    const clampMin = Number.isFinite(terrainClampBounds?.min)
-      ? Math.ceil(terrainClampBounds.min)
-      : columnTop;
-    const desiredBottom = columnTop >= 0 ? 0 : columnTop;
-    const columnBottom = Math.min(columnTop, Math.max(clampMin, desiredBottom));
     const biome = columnSample.biome;
     const slope = computeSlope(worldX, worldZ, columnTop);
     const oceanSample = columnSample.ocean ?? null;
@@ -1542,6 +1537,15 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       : biome?.terrain?.subSurfaceBlock ?? 'dirt';
     const deepBlock = biome?.terrain?.deepBlock ?? 'stone';
     const subSurfaceDepth = Math.max(1, biome?.terrain?.subSurfaceDepth ?? 4);
+    const terrainFloor = Number.isFinite(terrainClampBounds?.min)
+      ? Math.ceil(terrainClampBounds.min)
+      : columnTop;
+    const surfaceBase =
+      columnTop >= 0 ? 0 : columnTop - (subSurfaceDepth - 1);
+    const columnBottom = Math.max(
+      terrainFloor,
+      Math.min(surfaceBase, columnTop),
+    );
 
     for (let y = columnBottom; y <= columnTop; y += 1) {
       if (y === columnTop) {
