@@ -86,6 +86,18 @@ const DEFAULT_TERRAIN_BASE_HEIGHT = getDescriptorDefault([
   'terrain',
   'baseHeight',
 ])
+const DEFAULT_TERRAIN_PRIMARY_FREQUENCY = getDescriptorDefault([
+  'terrain',
+  'primaryFrequency',
+])
+const DEFAULT_TERRAIN_DETAIL_FREQUENCY = getDescriptorDefault([
+  'terrain',
+  'detailFrequency',
+])
+const DEFAULT_TERRAIN_RIDGE_FREQUENCY = getDescriptorDefault([
+  'terrain',
+  'ridgeFrequency',
+])
 
 function normalizeChunkSizeForEnvelope(chunkSize) {
   if (Number.isFinite(chunkSize)) {
@@ -254,13 +266,13 @@ const defaultTerrainCore = Object.freeze({
   baseHeight: DEFAULT_TERRAIN_BASE_HEIGHT,
   maxHeight: defaultTerrainEnvelope.maxHeight,
   clamp: defaultTerrainClamp,
-  primaryFrequency: getDescriptorDefault(['terrain', 'primaryFrequency']),
+  primaryFrequency: DEFAULT_TERRAIN_PRIMARY_FREQUENCY,
   primaryAmplitude: getDescriptorDefault(['terrain', 'primaryAmplitude']),
   primaryOffset: getDescriptorDefault(['terrain', 'primaryOffset']),
-  detailFrequency: getDescriptorDefault(['terrain', 'detailFrequency']),
+  detailFrequency: DEFAULT_TERRAIN_DETAIL_FREQUENCY,
   detailAmplitude: getDescriptorDefault(['terrain', 'detailAmplitude']),
   detailOffset: getDescriptorDefault(['terrain', 'detailOffset']),
-  ridgeFrequency: getDescriptorDefault(['terrain', 'ridgeFrequency']),
+  ridgeFrequency: DEFAULT_TERRAIN_RIDGE_FREQUENCY,
   ridgeStrength: getDescriptorDefault(['terrain', 'ridgeStrength']),
   ridgeOffset: getDescriptorDefault(['terrain', 'ridgeOffset']),
   climateHeightInfluence: getDescriptorDefault([
@@ -436,13 +448,13 @@ function createMutableWorldOptions() {
       baseHeight: defaultTerrainOptions.baseHeight,
       maxHeight: defaultTerrainOptions.maxHeight,
       clamp: { ...defaultTerrainOptions.clamp },
-      primaryFrequency: defaultTerrainOptions.primaryFrequency,
+      primaryFrequency: DEFAULT_TERRAIN_PRIMARY_FREQUENCY,
       primaryAmplitude: defaultTerrainOptions.primaryAmplitude,
       primaryOffset: defaultTerrainOptions.primaryOffset,
-      detailFrequency: defaultTerrainOptions.detailFrequency,
+      detailFrequency: DEFAULT_TERRAIN_DETAIL_FREQUENCY,
       detailAmplitude: defaultTerrainOptions.detailAmplitude,
       detailOffset: defaultTerrainOptions.detailOffset,
-      ridgeFrequency: defaultTerrainOptions.ridgeFrequency,
+      ridgeFrequency: DEFAULT_TERRAIN_RIDGE_FREQUENCY,
       ridgeStrength: defaultTerrainOptions.ridgeStrength,
       ridgeOffset: defaultTerrainOptions.ridgeOffset,
       climateHeightInfluence: defaultTerrainOptions.climateHeightInfluence,

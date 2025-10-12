@@ -56,6 +56,12 @@ const defaultChunkSize = 48
 const terrainVerticalSpanMultiplier = 3
 const defaultTerrainBaseHeight = 10
 const defaultTerrainVerticalExtent = defaultChunkSize * terrainVerticalSpanMultiplier
+const legacyTerrainVerticalExtent = 48
+const frequencyNormalizationFactor =
+  legacyTerrainVerticalExtent / defaultTerrainVerticalExtent
+const defaultPrimaryFrequency = 0.06 * frequencyNormalizationFactor
+const defaultDetailFrequency = 0.08 * frequencyNormalizationFactor
+const defaultRidgeFrequency = 0.02 * frequencyNormalizationFactor
 const defaultTerrainClampMin = -defaultTerrainVerticalExtent
 const defaultTerrainClampMax = defaultTerrainVerticalExtent
 const primaryAmplitudeRatio = 0.58
@@ -1075,7 +1081,7 @@ const terrainGroup = Object.freeze({
       min: 0.0001,
       max: 1,
       step: 0.0001,
-      default: 0.06,
+      default: defaultPrimaryFrequency,
       path: Object.freeze(['terrain', 'primaryFrequency']),
     }),
     Object.freeze({
@@ -1109,7 +1115,7 @@ const terrainGroup = Object.freeze({
       min: 0.0001,
       max: 2,
       step: 0.0001,
-      default: 0.08,
+      default: defaultDetailFrequency,
       path: Object.freeze(['terrain', 'detailFrequency']),
     }),
     Object.freeze({
@@ -1142,7 +1148,7 @@ const terrainGroup = Object.freeze({
       min: 0.0001,
       max: 1,
       step: 0.0001,
-      default: 0.02,
+      default: defaultRidgeFrequency,
       path: Object.freeze(['terrain', 'ridgeFrequency']),
     }),
     Object.freeze({
