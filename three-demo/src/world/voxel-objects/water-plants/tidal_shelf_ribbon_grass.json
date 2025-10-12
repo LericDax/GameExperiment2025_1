@@ -1,0 +1,30 @@
+{
+  "id": "tidal_shelf_ribbon_grass",
+  "label": "Tidal Ribbon Grass",
+  "category": "water-plants",
+  "author": "system",
+  "description": "Wide-bladed grasses that cling to shifting tidal shelves.",
+  "collision": "soft",
+  "voxelScale": 0.3,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["temperate_tidal_shelf"],
+    "weight": 3.1,
+    "requiresUnderwater": true,
+    "minWaterDepth": 0.6,
+    "maxWaterDepth": 3.4,
+    "maxSlope": 0.55,
+    "jitterRadius": 0.8,
+    "maxInstancesPerColumn": 3
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [0.9, 0.3, 0.9], "tint": "#4a6a55" },
+    { "type": "leaf", "position": [0.2, 0.3, 0], "size": [0.5, 1.6, 0.3], "tint": "#2ea678", "isSolid": false },
+    { "type": "leaf", "position": [-0.2, 0.3, 0], "size": [0.5, 1.8, 0.3], "tint": "#33b884", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.3, 0.2], "size": [0.3, 1.5, 0.5], "tint": "#40c997", "isSolid": false },
+    { "type": "leaf", "position": [0, 0.3, -0.2], "size": [0.3, 1.4, 0.5], "tint": "#52d9a7", "isSolid": false },
+    { "type": "leaf", "position": [0, 1.8, 0], "size": [0.6, 0.6, 0.6], "tint": "#83f5c3", "isSolid": false }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "id": "midnight_gyre_siphonophore",
+  "label": "Midnight Gyre Siphonophore",
+  "category": "water-plants",
+  "author": "system",
+  "description": "A drifting colony of bioluminescent bulbs tethered to a darkwater anchor.",
+  "collision": "soft",
+  "voxelScale": 0.26,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["tropical_midnight_gyre"],
+    "weight": 2.9,
+    "requiresUnderwater": true,
+    "minWaterDepth": 2.5,
+    "maxWaterDepth": 9.0,
+    "maxSlope": 0.52,
+    "jitterRadius": 0.7,
+    "maxInstancesPerColumn": 2
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [0.7, 0.4, 0.7], "tint": "#1f2d4c" },
+    { "type": "leaf", "position": [0, 0.4, 0], "size": [0.4, 2.2, 0.4], "tint": "#2f3f7a", "isSolid": false },
+    { "type": "leaf", "position": [0.3, 1.4, 0], "size": [0.5, 1.4, 0.5], "tint": "#3e5cae", "isSolid": false },
+    { "type": "leaf", "position": [-0.3, 1.9, 0], "size": [0.5, 1.2, 0.5], "tint": "#4c6dd1", "isSolid": false },
+    { "type": "leaf", "position": [0, 2.6, 0.3], "size": [0.6, 1.0, 0.6], "tint": "#5d7ff0", "isSolid": false },
+    { "type": "leaf", "position": [0, 3.2, -0.3], "size": [0.6, 0.9, 0.6], "tint": "#7b98ff", "isSolid": false },
+    { "type": "leaf", "position": [0, 3.8, 0], "size": [0.7, 0.7, 0.7], "tint": "#9fb8ff", "isSolid": false }
+  ]
+}
