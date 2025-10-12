@@ -78,7 +78,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.12,
-          envelope: { amplitude: 1.04 },
+          envelope: { amplitude: { multiplier: 1.04 } },
         },
         {
           id: 'ridge-noise',
