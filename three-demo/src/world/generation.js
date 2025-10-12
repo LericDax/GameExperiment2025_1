@@ -1472,7 +1472,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       1,
     );
     const depthTier =
-      oceanDepthHint < 0.33 ? 0.25 : oceanDepthHint < 0.67 ? 0.75 : 1.25;
+      oceanDepthHint < 0.33 ? 1.05 : oceanDepthHint < 0.67 ? 2.05 : 3.05;
     const shoreSlopeBias = Number.isFinite(worldOptions?.terrain?.shoreSlopeBias)
       ? worldOptions.terrain.shoreSlopeBias
       : 0;
