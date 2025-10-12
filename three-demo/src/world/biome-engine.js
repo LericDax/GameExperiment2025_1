@@ -937,8 +937,10 @@ export function createBiomeEngine({
 
   const detailScale = climateScale * detailMultiplier;
   const varianceScale = climateScale * varianceMultiplier;
-  const climateInfluence = 1 - uniformity;
-  const uniformityInfluence = uniformity;
+  const uniformityWeight = uniformity * uniformity;
+  const weightDenominator = 1 + uniformityWeight;
+  const climateInfluence = weightDenominator > 0 ? 1 / weightDenominator : 1;
+  const uniformityInfluence = weightDenominator > 0 ? uniformityWeight / weightDenominator : 0;
 
   const defaultColor = new THREE.Color(0xffffff);
   const basePaletteColors = Object.fromEntries(
@@ -1158,12 +1160,14 @@ export function createBiomeEngine({
         x * varianceScale + index * 17.13,
         z * varianceScale + index * 31.17,
       );
-      const uniformDistance = 1 - variationNoiseSample;
-      const climateScore = baseDistance * climateInfluence;
-      const uniformScore = uniformDistance * uniformityInfluence;
       const variationCenter = variationNoiseSample - 0.5;
-      const variationScore = variationCenter * variationStrength;
-      let adjustedDistance = climateScore + uniformScore + variationScore;
+      const variationFactor = Math.max(
+        0,
+        1 + variationCenter * variationStrength * climateInfluence,
+      );
+      const climateScore = baseDistance * variationFactor * climateInfluence;
+      const uniformJitter = (0.5 - variationNoiseSample) * uniformityInfluence;
+      let adjustedDistance = climateScore + uniformJitter;
       if (biasFactor !== 0) {
         if (biome.isOceanic) {
           const oceanPull = oceanDepth * 0.85 + shorelineAffinity * 0.2;
