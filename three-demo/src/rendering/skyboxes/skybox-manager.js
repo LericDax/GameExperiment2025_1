@@ -2,15 +2,26 @@ import { TextureLoader } from 'three';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { TextureEngine } from '../texture-engine.js';
 
-const SKYBOX_URLS = import.meta.glob(
-  // The skyboxes live under `public/assets`, so we climb out of `src/` to reach them.
-  '../../../public/assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}',
-  {
-    eager: true,
-    import: 'default',
-    query: '?url',
-  },
-);
+function loadSkyboxUrlMap() {
+  if (typeof import.meta?.glob === 'function') {
+    return import.meta.glob(
+      // The skyboxes live under `public/assets`, so we climb out of `src/` to reach them.
+      '../../../public/assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}',
+      {
+        eager: true,
+        import: 'default',
+        query: '?url',
+      },
+    );
+  }
+  const fallback = globalThis.__SKYBOX_URL_MAP__;
+  if (fallback && typeof fallback === 'object') {
+    return fallback;
+  }
+  return {};
+}
+
+const SKYBOX_URLS = loadSkyboxUrlMap();
 
 const loaderCache = new WeakMap();
 const skyboxTextureCache = new WeakMap();

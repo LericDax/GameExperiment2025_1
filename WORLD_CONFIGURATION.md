@@ -113,8 +113,12 @@ Legacy overrides refer to the modulation matrix as `terrain.fm`, exposing the at
 | `biomes.variationStrength` | Variation Strength | Strength of the random jitter applied when selecting the closest biome. | `number` | `0.18` | `0` – `1` | `0.01` |
 | `biomes.uniformity` | Uniformity | Blend factor between climate-driven selection (0) and a perfectly uniform distribution across all registered biomes (1). | `number` | `1` | `0` – `1` | `0.01` |
 | `biomes.weightExponent` | Weight Exponent | Exponent applied to per-biome climate weights before distance comparison. Lower values soften weight effects globally. | `number` | `1` | `0` – `4` | `0.01` |
+| `biomes.oceanProvinceScale` | Ocean Province Scale | Base frequency for the province mask that nudges shoreline placement. Lower values form broad oceans with sparse land interruptions. | `number` | `0.0035` | `0.0001` – `0.02` | `0.0001` |
+| `biomes.oceanWeightBias` | Ocean Weight Bias | Bias multiplier applied to oceanic and shoreline biome candidates after distance scoring. Positive values expand marine coverage; negative values amplify continental picks. | `number` | `0.9` | `-4` – `4` | `0.01` |
 
 With `biomes.uniformity` set to `1`, the default world boots into a maximally generalized test configuration where every registered biome is equally likely to spawn. Lowering the value gradually reintroduces climate-driven Voronoi weighting while keeping the same API levers for tuning variance and weight response.
+
+The `oceanWeightBias` default of `0.9` now gently tips selection toward oceanic and shoreline biomes wherever the province mask reports low ocean coverage. Raise the bias toward `1.5–2.0` for archipelago-style layouts with dominant seas, or taper it back toward zero when you want continents to occupy more of the map. Negative values intentionally reverse the effect, aggressively carving out landmasses at the expense of marine biomes.
 
 ## Applying Overrides
 
