@@ -1286,7 +1286,7 @@ const biomesGroup = Object.freeze({
       min: -4,
       max: 4,
       step: 0.01,
-      default: 0,
+      default: 0.9,
       path: Object.freeze(['biomes', 'oceanWeightBias']),
     }),
   ]),
