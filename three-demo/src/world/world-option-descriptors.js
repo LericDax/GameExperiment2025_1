@@ -58,28 +58,41 @@ const defaultTerrainBaseHeight = 10
 const defaultTerrainVerticalExtent = defaultChunkSize * terrainVerticalSpanMultiplier
 const defaultTerrainClampMin = -defaultTerrainVerticalExtent
 const defaultTerrainClampMax = defaultTerrainVerticalExtent
-const defaultPrimaryAmplitudeWeight = 8
-const defaultDetailAmplitudeWeight = 3
-const defaultRidgeAmplitudeWeight = 2.4
-const defaultAmplitudeWeightTotal =
-  defaultPrimaryAmplitudeWeight +
-  defaultDetailAmplitudeWeight +
-  defaultRidgeAmplitudeWeight
+const primaryAmplitudeRatio = 0.58
+const detailAmplitudeRatio = 0.09
+const ridgeStrengthRatio = 0.07
 const defaultAmplitudeBudget = Math.max(
   0,
   defaultTerrainVerticalExtent - defaultTerrainBaseHeight,
 )
-const defaultPrimaryAmplitude = Math.round(
-  (defaultAmplitudeBudget * defaultPrimaryAmplitudeWeight) /
-    defaultAmplitudeWeightTotal,
+const defaultPrimaryAmplitude = Math.max(
+  0,
+  Math.min(
+    Math.round(defaultTerrainVerticalExtent * primaryAmplitudeRatio),
+    defaultAmplitudeBudget,
+  ),
 )
-const defaultDetailAmplitude = Math.round(
-  (defaultAmplitudeBudget * defaultDetailAmplitudeWeight) /
-    defaultAmplitudeWeightTotal,
+const remainingAfterPrimary = Math.max(
+  0,
+  defaultAmplitudeBudget - defaultPrimaryAmplitude,
+)
+const defaultDetailAmplitude = Math.max(
+  0,
+  Math.min(
+    Math.round(defaultTerrainVerticalExtent * detailAmplitudeRatio),
+    remainingAfterPrimary,
+  ),
+)
+const remainingAfterDetail = Math.max(
+  0,
+  remainingAfterPrimary - defaultDetailAmplitude,
 )
 const defaultRidgeStrength = Math.max(
   0,
-  defaultAmplitudeBudget - defaultPrimaryAmplitude - defaultDetailAmplitude,
+  Math.min(
+    Math.round(defaultTerrainVerticalExtent * ridgeStrengthRatio),
+    remainingAfterDetail,
+  ),
 )
 
 const tfmsWaveformOptions = Object.freeze([
@@ -1096,7 +1109,7 @@ const terrainGroup = Object.freeze({
       min: 0.0001,
       max: 2,
       step: 0.0001,
-      default: 0.12,
+      default: 0.08,
       path: Object.freeze(['terrain', 'detailFrequency']),
     }),
     Object.freeze({
