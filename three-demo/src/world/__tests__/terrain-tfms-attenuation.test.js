@@ -21,6 +21,7 @@ const biomeModuleMap = Object.fromEntries(
 globalThis.__BIOME_MODULE_MAP__ = biomeModuleMap;
 
 const { createTerrainEngine } = await import('../terrain-engine.js');
+const { defaultWorldOptions } = await import('../world-settings.js');
 
 function getEnvelopeFromSample(sample, terrainConfig) {
   const climateAdjustment =
@@ -214,6 +215,86 @@ test('default terrain slope percentile stays within the expected envelope', () =
     assert.ok(
       slope95 < slopeThreshold,
       `expected 95th percentile slope < ${slopeThreshold}, received ${slope95}`,
+    );
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('high-amplitude terrain keeps neighbour slopes within the budget', () => {
+  const defaultTerrain = defaultWorldOptions.terrain;
+  const maxHeight = defaultTerrain.maxHeight;
+  const primaryAmplitude = Math.max(defaultTerrain.primaryAmplitude, maxHeight * 0.8);
+  const detailAmplitude = Math.max(defaultTerrain.detailAmplitude, maxHeight * 0.35);
+
+  const engine = createTerrainEngine({
+    THREE,
+    worldConfig: {
+      baseHeight: 0,
+      terrain: {
+        baseHeight: 0,
+        maxHeight,
+        clamp: { min: -maxHeight, max: maxHeight },
+        primaryAmplitude,
+        detailAmplitude,
+        climateHeightInfluence: 0,
+        tfms: {
+          baseAttenuation: 1,
+          biomeBlendStrength: 0,
+          clamp: { min: -maxHeight, max: maxHeight },
+        },
+      },
+    },
+  });
+
+  try {
+    const gridRadius = 18;
+    const sampleSpacing = 4;
+    const gridSize = gridRadius * 2 + 1;
+    const heights = [];
+
+    for (let zi = -gridRadius; zi <= gridRadius; zi += 1) {
+      const row = [];
+      for (let xi = -gridRadius; xi <= gridRadius; xi += 1) {
+        const { height } = engine.sampleColumn(xi * sampleSpacing, zi * sampleSpacing);
+        row.push(height);
+      }
+      heights.push(row);
+    }
+
+    const slopes = [];
+    for (let rowIndex = 0; rowIndex < gridSize; rowIndex += 1) {
+      for (let columnIndex = 0; columnIndex < gridSize; columnIndex += 1) {
+        const current = heights[rowIndex][columnIndex];
+        if (columnIndex + 1 < gridSize) {
+          const east = heights[rowIndex][columnIndex + 1];
+          slopes.push(Math.abs(east - current) / sampleSpacing);
+        }
+        if (rowIndex + 1 < gridSize) {
+          const south = heights[rowIndex + 1][columnIndex];
+          slopes.push(Math.abs(south - current) / sampleSpacing);
+        }
+      }
+    }
+
+    const displacements = slopes.map((slope) => slope * sampleSpacing);
+    const chunkSize =
+      defaultWorldOptions.chunk?.size ?? defaultWorldOptions.chunkSize ?? 64;
+    const displacementBudget = Math.min(maxHeight * 0.35, chunkSize * 0.85);
+    const percentileDisplacement = computePercentile(displacements, 0.98);
+    assert.ok(
+      percentileDisplacement < displacementBudget,
+      `expected 98th percentile displacement < ${displacementBudget}, received ${percentileDisplacement}`,
+    );
+
+    const maxDisplacement = displacements.reduce(
+      (highest, value) => Math.max(highest, value),
+      0,
+    );
+    const hardCap = Math.min(maxHeight * 0.5, chunkSize * 1);
+    assert.ok(
+      maxDisplacement < hardCap,
+      `expected maximum displacement < ${hardCap}, received ${maxDisplacement}`,
     );
   } finally {
     engine.dispose();
