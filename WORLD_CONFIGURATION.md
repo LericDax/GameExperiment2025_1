@@ -52,19 +52,19 @@ Skybox IDs are sourced from `listSkyboxes()`, which enumerates the HDR and LDR p
 | `terrain.clamp.min` | Clamp Minimum | Lower clamp bound applied after noise sampling to prevent deep pits. | `number` | `-144` | `-144` – `1024` | `1` |
 | `terrain.clamp.max` | Clamp Maximum | Upper clamp bound applied after noise sampling to prevent towering spikes. | `number` | `144` | `1` – `1024` | `1` |
 | `terrain.primaryFrequency` | Primary Frequency | Base frequency for macro terrain variation. Lower values create large landforms. | `number` | `0.06` | `0.0001` – `1` | `0.0001` |
-| `terrain.primaryAmplitude` | Primary Amplitude | Strength of the macro terrain wave. Higher values exaggerate hills and valleys. | `number` | `80` | `0` – `256` | `0.1` |
+| `terrain.primaryAmplitude` | Primary Amplitude | Strength of the macro terrain wave. Higher values exaggerate hills and valleys. | `number` | `84` | `0` – `256` | `0.1` |
 | `terrain.primaryOffset` | Primary Offset | Phase offset applied to the macro terrain noise field. | `number` | `0` | `-10000` – `10000` | `1` |
-| `terrain.detailFrequency` | Detail Frequency | Frequency of secondary detail used to break up flat areas. | `number` | `0.12` | `0.0001` – `2` | `0.0001` |
-| `terrain.detailAmplitude` | Detail Amplitude | Strength of the secondary detail contribution. | `number` | `30` | `0` – `128` | `0.1` |
+| `terrain.detailFrequency` | Detail Frequency | Frequency of secondary detail used to break up flat areas. | `number` | `0.08` | `0.0001` – `2` | `0.0001` |
+| `terrain.detailAmplitude` | Detail Amplitude | Strength of the secondary detail contribution. | `number` | `13` | `0` – `128` | `0.1` |
 | `terrain.detailOffset` | Detail Offset | Phase offset for the detail terrain noise. | `number` | `100` | `-10000` – `10000` | `1` |
 | `terrain.ridgeFrequency` | Ridge Frequency | Frequency controlling how often sharp ridgelines occur. | `number` | `0.02` | `0.0001` – `1` | `0.0001` |
-| `terrain.ridgeStrength` | Ridge Strength | Strength multiplier for ridge contributions on top of base terrain. | `number` | `24` | `0` – `64` | `0.1` |
+| `terrain.ridgeStrength` | Ridge Strength | Strength multiplier for ridge contributions on top of base terrain. | `number` | `10` | `0` – `64` | `0.1` |
 | `terrain.ridgeOffset` | Ridge Offset | Phase offset for the ridge noise sampler. | `number` | `220` | `-10000` – `10000` | `1` |
 | `terrain.climateHeightInfluence` | Climate Height Influence | How strongly biome climate data affects the perceived terrain elevation. | `number` | `1.2` | `-10` – `10` | `0.05` |
 | `baseHeight` | Base Height (alias) | Legacy top-level alias mirroring the terrain base height for compatibility. | `number` | `10` | `0` – `512` | `1` |
 | `maxHeight` | Max Height (alias) | Legacy top-level alias mirroring the terrain max height for compatibility. | `number` | `144` | `1` – `1024` | `1` |
 
-The descriptor now derives these clamp values from a three-chunk vertical span: with 48-voxel chunks, the ±144 bounds wrap a base plane parked at 10 voxels, leaving ample headroom for taller formations. The macro/detail/ridge amplitudes (80/30/24) divide the resulting 134-voxel budget according to the weight ratios encoded alongside the descriptor defaults, keeping the operators balanced inside the expanded envelope.【F:three-demo/src/world/world-option-descriptors.js†L55-L83】
+The descriptor now derives these clamp values from a three-chunk vertical span: with 48-voxel chunks, the ±144 bounds wrap a base plane parked at 10 voxels, leaving ample headroom for taller formations. The macro/detail/ridge amplitudes (≈84/13/10) apportion the 134-voxel budget toward broad landforms while keeping high-frequency detail restrained, preventing the pillar forests that appeared when the detail operator consumed the expanded headroom.【F:three-demo/src/world/world-option-descriptors.js†L55-L86】
 
 #### TFMS Temperaments
 | Path | Label | Description | Type | Default | Range | Step |
