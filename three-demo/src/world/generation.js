@@ -2437,12 +2437,27 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       bounds: (() => {
         if (!hasBoundData) {
           const halfSize = chunkSize / 2;
+          const safetyMargin = 2;
+          const fallbackMinYBase = (() => {
+            const clampMin = worldOptions?.terrain?.clamp?.min;
+            if (Number.isFinite(clampMin)) {
+              return clampMin;
+            }
+            let configuredChunkSize = worldOptions?.chunk?.size;
+            if (!Number.isFinite(configuredChunkSize)) {
+              configuredChunkSize = worldOptions?.chunkSize;
+            }
+            if (!Number.isFinite(configuredChunkSize)) {
+              configuredChunkSize = 32;
+            }
+            return -Math.abs(configuredChunkSize) * 3;
+          })();
           return {
             minX: chunkX * chunkSize - halfSize - 0.5,
             maxX: chunkX * chunkSize + halfSize + 0.5,
             minZ: chunkZ * chunkSize - halfSize - 0.5,
             maxZ: chunkZ * chunkSize + halfSize + 0.5,
-            minY: -32,
+            minY: fallbackMinYBase - safetyMargin,
             maxY: worldOptions.maxHeight + 32,
           };
         }

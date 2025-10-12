@@ -24,6 +24,7 @@ export const ChunkManagerEvents = Object.freeze({
 });
 
 const worldConfig = getWorldOptions();
+const chunkBoundSafetyMargin = 2;
 
 function chunkKey(x, z) {
   return `${x}|${z}`;
@@ -456,7 +457,23 @@ export function createChunkManager({
     const maxX = Number.isFinite(bounds.maxX) ? bounds.maxX : fallbackMaxX;
     const minZ = Number.isFinite(bounds.minZ) ? bounds.minZ : fallbackMinZ;
     const maxZ = Number.isFinite(bounds.maxZ) ? bounds.maxZ : fallbackMaxZ;
-    const minY = Number.isFinite(bounds.minY) ? bounds.minY : -32;
+    const fallbackMinYBase = (() => {
+      const clampMin = worldConfig?.terrain?.clamp?.min;
+      if (Number.isFinite(clampMin)) {
+        return clampMin;
+      }
+      let configuredChunkSize = worldConfig?.chunk?.size;
+      if (!Number.isFinite(configuredChunkSize)) {
+        configuredChunkSize = worldConfig?.chunkSize;
+      }
+      if (!Number.isFinite(configuredChunkSize)) {
+        configuredChunkSize = 32;
+      }
+      return -Math.abs(configuredChunkSize) * 3;
+    })();
+    const minY = Number.isFinite(bounds.minY)
+      ? bounds.minY
+      : fallbackMinYBase - chunkBoundSafetyMargin;
     const maxY = Number.isFinite(bounds.maxY)
       ? bounds.maxY
       : maxHeight + 32;
