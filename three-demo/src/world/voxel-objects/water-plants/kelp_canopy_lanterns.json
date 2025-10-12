@@ -1,0 +1,31 @@
+{
+  "id": "kelp_canopy_lanterns",
+  "label": "Lantern Kelp Canopy",
+  "category": "water-plants",
+  "author": "system",
+  "description": "Buoyant kelp strands with lantern fronds that glow in dim temperate waters.",
+  "collision": "soft",
+  "voxelScale": 0.3,
+  "attachment": {
+    "groundOffset": 0.0
+  },
+  "placement": {
+    "biomes": ["temperate_kelp_forest"],
+    "weight": 3.4,
+    "requiresUnderwater": true,
+    "minWaterDepth": 1.4,
+    "maxWaterDepth": 6.0,
+    "maxSlope": 0.58,
+    "jitterRadius": 0.6,
+    "maxInstancesPerColumn": 3
+  },
+  "voxels": [
+    { "type": "stone", "position": [0, 0, 0], "size": [0.8, 0.4, 0.8], "tint": "#3b574b" },
+    { "type": "leaf", "position": [0, 0.4, 0], "size": [0.5, 2.6, 0.5], "tint": "#3cc287", "isSolid": false },
+    { "type": "leaf", "position": [0.4, 2.2, 0], "size": [0.4, 1.6, 0.8], "tint": "#56d79f", "isSolid": false },
+    { "type": "leaf", "position": [-0.4, 1.8, 0], "size": [0.4, 1.8, 0.8], "tint": "#4ccb95", "isSolid": false },
+    { "type": "leaf", "position": [0, 3.2, 0.4], "size": [0.6, 1.2, 0.6], "tint": "#7cf0be", "isSolid": false },
+    { "type": "leaf", "position": [0, 3.2, -0.4], "size": [0.6, 1.2, 0.6], "tint": "#6ae6b4", "isSolid": false },
+    { "type": "leaf", "position": [0, 4.1, 0], "size": [0.8, 0.8, 0.8], "tint": "#9fffd3", "isSolid": false }
+  ]
+}
