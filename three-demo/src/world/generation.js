@@ -1435,7 +1435,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     if (!columnSample || !Number.isFinite(columnSample.height)) {
       return;
     }
-    const height = getColumnHeight(worldX, worldZ);
+    let height = getColumnHeight(worldX, worldZ);
     if (!Number.isFinite(height)) {
       console.error('[terrain] aborted column due to invalid height', {
         chunkX,
@@ -1473,11 +1473,36 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       0,
       1,
     );
+    const depthTier =
+      oceanDepthHint < 0.33 ? 0.25 : oceanDepthHint < 0.67 ? 0.75 : 1.25;
     const shoreSlopeBias = Number.isFinite(worldOptions?.terrain?.shoreSlopeBias)
       ? worldOptions.terrain.shoreSlopeBias
       : 0;
     columnSample.oceanDepth = oceanDepthHint;
     columnSample.shorelineAffinity = shorelineAffinity;
+    columnSample.oceanDepthTier = depthTier;
+    if (height < waterLevel) {
+      const tierSeabedHeight = waterLevel - chunkSize * depthTier;
+      const shorelineWeight = clamp(shorelineAffinity, 0, 1);
+      const shorelineAdjustedTarget =
+        tierSeabedHeight +
+        (waterLevel - tierSeabedHeight) * shorelineWeight;
+      const noiseAmplitude = Math.max(1, chunkSize * 0.08);
+      const noiseOffset = (randomAt(worldX, worldZ, 7919) - 0.5) * noiseAmplitude;
+      const terrainFloorBound = Number.isFinite(terrainClampBounds?.min)
+        ? Math.ceil(terrainClampBounds.min)
+        : Number.NEGATIVE_INFINITY;
+      const maxSeabedHeight = waterLevel - 0.25;
+      const clampedTarget = clamp(
+        shorelineAdjustedTarget + noiseOffset,
+        terrainFloorBound,
+        maxSeabedHeight,
+      );
+      const depthInfluence = clamp(0.4 + oceanDepthHint * 0.45, 0, 0.95);
+      height = height + (clampedTarget - height) * depthInfluence;
+      height = clamp(height, terrainFloorBound, maxSeabedHeight);
+      columnSample.adjustedHeight = height;
+    }
     const searchRadiusBase = 4 + shorelineAffinity * 2 + oceanDepthHint * 3;
     const slopeBiasContribution =
       shoreSlopeBias >= 0
