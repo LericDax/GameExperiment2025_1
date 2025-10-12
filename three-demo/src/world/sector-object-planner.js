@@ -214,6 +214,27 @@ function resolveThemeMetrics(sectorX, sectorZ) {
 
 function resolveThemeFromMetrics(metrics) {
   const { canopy, wetness, stone, meadow, river } = metrics;
+  const ocean = metrics.ocean;
+
+  if (ocean) {
+    const province = clamp01(ocean.province ?? 0.5);
+    const shoreline = clamp01(ocean.shoreline ?? 0);
+    const currentStrength = clamp01(ocean.current?.strength ?? 0);
+    const salinity = clamp01(ocean.salinity ?? 0.5);
+    const isUnderwater = province < 0.46;
+    if (isUnderwater) {
+      if (currentStrength > 0.62 && salinity > 0.58 && province < 0.38) {
+        return 'ocean-vent';
+      }
+      if (province < 0.2) {
+        return 'ocean-deep';
+      }
+      if (shoreline > 0.55 || province > 0.32) {
+        return 'ocean-shelf';
+      }
+      return 'ocean-deep';
+    }
+  }
 
   if (river > 0.68) {
     return wetness > 0.55 ? 'river-wetland' : 'river-meadow';
@@ -282,6 +303,32 @@ function resolveBlendTags(theme, metrics, neighborThemes) {
   }
   if (canopy > 0.7) {
     tags.add('dense');
+  }
+
+  const ocean = metrics.ocean;
+  if (ocean) {
+    const province = clamp01(ocean.province ?? 0.5);
+    if (province < 0.46) {
+      tags.add('underwater');
+      if (clamp01(ocean.shoreline ?? 0) > 0.55) {
+        tags.add('shoreline');
+      }
+      if (province < 0.2) {
+        tags.add('deep-ocean');
+      }
+      const currentStrength = clamp01(ocean.current?.strength ?? 0);
+      if (currentStrength > 0.6) {
+        tags.add('current-strong');
+      } else if (currentStrength < 0.35) {
+        tags.add('current-calm');
+      }
+      const salinity = clamp01(ocean.salinity ?? 0.5);
+      if (salinity > 0.6) {
+        tags.add('briny');
+      } else if (salinity < 0.4) {
+        tags.add('freshened');
+      }
+    }
   }
 
   return Array.from(tags);
@@ -1458,6 +1505,141 @@ const schemaLibrary = [
         jitterRadius: 2.7,
         minSpacing: 2.8,
         seed: 383,
+      }),
+    ],
+  },
+  {
+    id: 'shelf-holdfast-garden',
+    weight: 1,
+    themes: weightEntries(['ocean-shelf', 1.6], ['ocean-vent', 0.4]),
+    tags: weightEntries(
+      ['shoreline', 0.7],
+      ['underwater', 0.5],
+      ['current-calm', 0.3],
+    ),
+    allowUnderwater: true,
+    requireUnderwater: true,
+    preferShore: true,
+    preferCalmWater: true,
+    densityPreference: 'medium',
+    instructions: [
+      scatter('water-plants', {
+        count: 5,
+        radius: 13,
+        jitterRadius: 3.2,
+        minSpacing: 2.6,
+        seed: 701,
+        allowUnderwater: true,
+        requireUnderwater: true,
+        preferShore: true,
+      }),
+      line('rocks', {
+        count: 4,
+        length: 12,
+        jitterRadius: 1.7,
+        minSpacing: 4.1,
+        seed: 707,
+        allowUnderwater: true,
+        requireUnderwater: true,
+      }),
+      scatter('structures', {
+        count: 1,
+        radius: 8,
+        jitterRadius: 1.6,
+        minSpacing: 6,
+        seed: 713,
+        instances: 1,
+        allowUnderwater: true,
+        requireUnderwater: true,
+        preferShore: true,
+      }),
+    ],
+  },
+  {
+    id: 'abyssal-pillar-court',
+    weight: 0.95,
+    themes: weightEntries(['ocean-deep', 1.6], ['ocean-vent', 0.5]),
+    tags: weightEntries(
+      ['deep-ocean', 0.8],
+      ['underwater', 0.5],
+      ['current-calm', 0.4],
+    ),
+    allowUnderwater: true,
+    requireUnderwater: true,
+    preferCalmWater: true,
+    densityPreference: 'sparse',
+    instructions: [
+      scatter('structures', {
+        count: 2,
+        radius: 9,
+        jitterRadius: 2,
+        minSpacing: 5.8,
+        seed: 731,
+        instances: 1,
+        allowUnderwater: true,
+        requireUnderwater: true,
+      }),
+      scatter('rocks', {
+        count: 3,
+        radius: 12,
+        jitterRadius: 2.9,
+        minSpacing: 4.6,
+        seed: 737,
+        allowUnderwater: true,
+        requireUnderwater: true,
+      }),
+      scatter('water-plants', {
+        count: 2,
+        radius: 11,
+        jitterRadius: 3.4,
+        minSpacing: 3.9,
+        seed: 743,
+        allowUnderwater: true,
+        requireUnderwater: true,
+      }),
+    ],
+  },
+  {
+    id: 'hydrothermal-vent-garden',
+    weight: 0.92,
+    themes: weightEntries(['ocean-vent', 1.7], ['ocean-deep', 0.6]),
+    tags: weightEntries(
+      ['current-strong', 0.7],
+      ['briny', 0.5],
+      ['deep-ocean', 0.3],
+    ),
+    allowUnderwater: true,
+    requireUnderwater: true,
+    preferCurrents: true,
+    densityPreference: 'medium',
+    instructions: [
+      line('structures', {
+        count: 3,
+        length: 9,
+        jitterRadius: 1.4,
+        minSpacing: 4.8,
+        seed: 751,
+        instances: 1,
+        allowUnderwater: true,
+        requireUnderwater: true,
+      }),
+      scatter('water-plants', {
+        count: 3,
+        radius: 10,
+        jitterRadius: 3,
+        minSpacing: 2.9,
+        seed: 757,
+        allowUnderwater: true,
+        requireUnderwater: true,
+      }),
+      scatter('rocks', {
+        count: 4,
+        radius: 11,
+        jitterRadius: 2.5,
+        minSpacing: 3.7,
+        seed: 761,
+        allowUnderwater: true,
+        requireUnderwater: true,
       }),
     ],
   },
