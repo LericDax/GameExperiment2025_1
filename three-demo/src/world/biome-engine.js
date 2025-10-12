@@ -155,6 +155,38 @@ function normalizeNumeric(value) {
   return Number.isFinite(value) ? value : undefined;
 }
 
+function normalizeRangeScalarOverride(value) {
+  if (Number.isFinite(value)) {
+    return value;
+  }
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const result = {};
+  if (Number.isFinite(value.value)) {
+    result.value = value.value;
+  }
+  if (Number.isFinite(value.delta)) {
+    result.delta = value.delta;
+  }
+  if (Number.isFinite(value.multiplier)) {
+    result.multiplier = value.multiplier;
+  }
+  if (Number.isFinite(value.min)) {
+    result.min = value.min;
+  }
+  if (Number.isFinite(value.max)) {
+    result.max = value.max;
+  }
+  if (typeof value.baseKey === 'string') {
+    result.baseKey = value.baseKey;
+  }
+  if (Number.isFinite(value.base)) {
+    result.base = value.base;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function normalizeVectorOverride(value) {
   if (Number.isFinite(value)) {
     return { x: value, z: value };
@@ -226,7 +258,7 @@ function normalizeOperatorModulationOverride(value) {
     return undefined;
   }
   const result = {};
-  const amplitude = normalizeNumeric(value.amplitude);
+  const amplitude = normalizeRangeScalarOverride(value.amplitude);
   if (amplitude !== undefined) {
     result.amplitude = amplitude;
   }
@@ -250,7 +282,7 @@ function normalizeOperatorEnvelopeOverride(value) {
     return undefined;
   }
   const result = {};
-  const amplitude = normalizeNumeric(value.amplitude);
+  const amplitude = normalizeRangeScalarOverride(value.amplitude);
   if (amplitude !== undefined) {
     result.amplitude = amplitude;
   }

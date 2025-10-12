@@ -56,7 +56,7 @@ Example:
     "primary": {
       "waveformId": "ridge-primary",
       "transfer": "tanh",
-      "amplitude": 1.2,
+      "envelope": { "amplitude": { "multiplier": 1.2 } },
       "domainWarp": { "x": 0.15, "z": -0.05 },
       "modulation": { "amplitude": 0.35 }
     }

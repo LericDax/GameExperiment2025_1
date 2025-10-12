@@ -102,6 +102,23 @@ export function createTerrainEngine({
         : defaults.climateHeightInfluence,
   };
 
+  const baselinePrimaryAmplitude = Number.isFinite(
+    defaultWorldOptions?.terrain?.primaryAmplitude,
+  )
+    ? defaultWorldOptions.terrain.primaryAmplitude
+    : 1;
+  const activePrimaryAmplitude = Number.isFinite(config.primaryAmplitude)
+    ? config.primaryAmplitude
+    : baselinePrimaryAmplitude;
+  const rawTerrainAmplitudeScale =
+    baselinePrimaryAmplitude > 0
+      ? activePrimaryAmplitude / baselinePrimaryAmplitude
+      : 1;
+  const terrainAmplitudeScale =
+    Number.isFinite(rawTerrainAmplitudeScale) && rawTerrainAmplitudeScale > 0
+      ? rawTerrainAmplitudeScale
+      : 1;
+
   let tfmsConfig = normalizeTfmsConfiguration({
     seed,
     terrainConfig,
@@ -186,6 +203,7 @@ export function createTerrainEngine({
     const overrideConfig = createBiomeTfmsConfiguration(
       tfmsConfig,
       combinedOverrides,
+      { terrainAmplitudeScale },
     );
     if (!overrideConfig) {
       biomeTfmsNetworks.set(key, null);
@@ -1410,7 +1428,7 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function createBiomeTfmsConfiguration(baseConfig, overrides) {
+function createBiomeTfmsConfiguration(baseConfig, overrides, normalization = {}) {
   if (!isPlainObject(overrides)) {
     return null;
   }
@@ -1433,7 +1451,9 @@ function createBiomeTfmsConfiguration(baseConfig, overrides) {
   }
 
   if (Array.isArray(overrides.operators) && overrides.operators.length > 0) {
-    if (applyOperatorOverrides(clone.operators, overrides.operators)) {
+    if (
+      applyOperatorOverrides(clone.operators, overrides.operators, normalization)
+    ) {
       mutated = true;
     }
   }
@@ -1790,7 +1810,7 @@ function applyOperatorWeights(target, weights) {
   return mutated;
 }
 
-function applyOperatorOverrides(target, overrides) {
+function applyOperatorOverrides(target, overrides, normalization = {}) {
   if (!Array.isArray(target) || !Array.isArray(overrides)) {
     return false;
   }
@@ -1941,13 +1961,17 @@ function applyOperatorOverrides(target, overrides) {
     }
     if (
       override.envelope &&
-      applyEnvelopeOverride(operator.envelope, override.envelope)
+      applyEnvelopeOverride(operator.envelope, override.envelope, normalization)
     ) {
       mutated = true;
     }
     if (
       override.modulation &&
-      applyModulationOverride(operator.modulation, override.modulation)
+      applyModulationOverride(
+        operator.modulation,
+        override.modulation,
+        normalization,
+      )
     ) {
       mutated = true;
     }
@@ -2106,126 +2130,202 @@ function applyVectorOverrideProperty(target, property, override) {
   return true;
 }
 
-function applyEnvelopeOverride(targetEnvelope, override) {
+function getTerrainAmplitudeScale(normalization) {
+  if (!normalization || typeof normalization !== 'object') {
+    return 1;
+  }
+  const direct = normalization.terrainAmplitudeScale;
+  if (Number.isFinite(direct)) {
+    return direct > 0 ? direct : 0;
+  }
+  const fallback = normalization.amplitudeScale;
+  if (Number.isFinite(fallback)) {
+    return fallback > 0 ? fallback : 0;
+  }
+  return 1;
+}
+
+function clampRangeValue(value, range) {
+  if (!Number.isFinite(value)) {
+    return value;
+  }
+  let result = value;
+  if (Number.isFinite(range?.min)) {
+    result = Math.max(range.min, result);
+  }
+  if (Number.isFinite(range?.max)) {
+    result = Math.min(range.max, result);
+  }
+  return result;
+}
+
+function applyScalarRangeOverride(range, override, scale = 1) {
+  if (!range || typeof range !== 'object') {
+    return false;
+  }
+  if (override === undefined || override === null) {
+    return false;
+  }
+
+  if (Number.isFinite(override)) {
+    const nextValue = clampRangeValue(override * scale, range);
+    if (!Number.isFinite(range.value) || range.value !== nextValue) {
+      range.value = nextValue;
+      return true;
+    }
+    return false;
+  }
+
+  if (!isPlainObject(override)) {
+    return false;
+  }
+
+  let mutated = false;
+
+  if (Number.isFinite(override.min) && range.min !== override.min) {
+    range.min = override.min;
+    mutated = true;
+  }
+  if (Number.isFinite(override.max) && range.max !== override.max) {
+    range.max = override.max;
+    mutated = true;
+  }
+  if (typeof override.baseKey === 'string' && range.baseKey !== override.baseKey) {
+    range.baseKey = override.baseKey;
+    mutated = true;
+  }
+  if (Number.isFinite(override.base) && range.base !== override.base) {
+    range.base = override.base;
+    mutated = true;
+  }
+
+  const currentValue = Number.isFinite(range.value)
+    ? range.value
+    : Number.isFinite(range.base)
+      ? range.base
+      : 0;
+
+  let nextValue = currentValue;
+  let mutatedValue = false;
+
+  if (Number.isFinite(override.multiplier)) {
+    const multiplier = override.multiplier;
+    nextValue *= multiplier;
+    if (multiplier !== 1) {
+      mutatedValue = true;
+    }
+  }
+
+  if (Number.isFinite(override.delta)) {
+    const deltaScaled = override.delta * scale;
+    nextValue += deltaScaled;
+    if (deltaScaled !== 0) {
+      mutatedValue = true;
+    }
+  }
+
+  if (Number.isFinite(override.value)) {
+    nextValue = override.value * scale;
+    mutatedValue = true;
+  }
+
+  if (mutatedValue) {
+    const clamped = clampRangeValue(nextValue, range);
+    if (!Number.isFinite(range.value) || range.value !== clamped) {
+      range.value = clamped;
+      mutated = true;
+    }
+  }
+
+  return mutated;
+}
+
+function applyEnvelopeOverride(targetEnvelope, override, normalization = {}) {
   if (!isPlainObject(override)) {
     return false;
   }
   if (!targetEnvelope || typeof targetEnvelope !== 'object') {
     return false;
   }
+  const amplitudeScale = getTerrainAmplitudeScale(normalization);
   let mutated = false;
-  if (Number.isFinite(override.amplitude)) {
-    targetEnvelope.amplitude = {
-      ...(targetEnvelope.amplitude ?? {}),
-      value: override.amplitude,
-    };
-    mutated = true;
-  }
-  if (Number.isFinite(override.frequency)) {
-    targetEnvelope.frequency = {
-      ...(targetEnvelope.frequency ?? {}),
-      value: override.frequency,
-    };
-    mutated = true;
-  }
-  if (override.phase && isPlainObject(override.phase)) {
-    targetEnvelope.phase = targetEnvelope.phase
-      ? { ...targetEnvelope.phase }
-      : { x: {}, z: {} };
-    if (Number.isFinite(override.phase.x)) {
-      targetEnvelope.phase.x = {
-        ...(targetEnvelope.phase.x ?? {}),
-        value: override.phase.x,
-      };
+  if (override.amplitude !== undefined) {
+    const range = targetEnvelope.amplitude ?? (targetEnvelope.amplitude = { value: 0 });
+    if (applyScalarRangeOverride(range, override.amplitude, amplitudeScale)) {
       mutated = true;
     }
-    if (Number.isFinite(override.phase.z)) {
-      targetEnvelope.phase.z = {
-        ...(targetEnvelope.phase.z ?? {}),
-        value: override.phase.z,
-      };
+  }
+  if (override.frequency !== undefined) {
+    const range = targetEnvelope.frequency ?? (targetEnvelope.frequency = { value: 0 });
+    if (applyScalarRangeOverride(range, override.frequency, 1)) {
+      mutated = true;
+    }
+  }
+  if (override.phase && isPlainObject(override.phase)) {
+    const phase = targetEnvelope.phase ?? { x: { value: 0 }, z: { value: 0 } };
+    targetEnvelope.phase = phase;
+    if (applyScalarRangeOverride(phase.x, override.phase.x, 1)) {
+      mutated = true;
+    }
+    if (applyScalarRangeOverride(phase.z, override.phase.z, 1)) {
       mutated = true;
     }
   }
   if (override.warp && isPlainObject(override.warp)) {
-    targetEnvelope.warp = targetEnvelope.warp
-      ? { ...targetEnvelope.warp }
-      : { x: {}, z: {} };
-    if (Number.isFinite(override.warp.x)) {
-      targetEnvelope.warp.x = {
-        ...(targetEnvelope.warp.x ?? {}),
-        value: override.warp.x,
-      };
+    const warp = targetEnvelope.warp ?? { x: { value: 0 }, z: { value: 0 } };
+    targetEnvelope.warp = warp;
+    if (applyScalarRangeOverride(warp.x, override.warp.x, amplitudeScale)) {
       mutated = true;
     }
-    if (Number.isFinite(override.warp.z)) {
-      targetEnvelope.warp.z = {
-        ...(targetEnvelope.warp.z ?? {}),
-        value: override.warp.z,
-      };
+    if (applyScalarRangeOverride(warp.z, override.warp.z, amplitudeScale)) {
       mutated = true;
     }
   }
   return mutated;
 }
 
-function applyModulationOverride(targetModulation, override) {
+function applyModulationOverride(targetModulation, override, normalization = {}) {
   if (!isPlainObject(override)) {
     return false;
   }
   if (!targetModulation || typeof targetModulation !== 'object') {
     return false;
   }
+  const amplitudeScale = getTerrainAmplitudeScale(normalization);
   let mutated = false;
-  if (Number.isFinite(override.amplitude)) {
-    targetModulation.amplitude = {
-      ...(targetModulation.amplitude ?? {}),
-      value: override.amplitude,
+  if (override.amplitude !== undefined) {
+    const range = targetModulation.amplitude ?? {
+      value: 0,
     };
-    mutated = true;
-  }
-  if (Number.isFinite(override.frequency)) {
-    targetModulation.frequency = {
-      ...(targetModulation.frequency ?? {}),
-      value: override.frequency,
-    };
-    mutated = true;
-  }
-  if (override.phase && isPlainObject(override.phase)) {
-    targetModulation.phase = targetModulation.phase
-      ? { ...targetModulation.phase }
-      : { x: {}, z: {} };
-    if (Number.isFinite(override.phase.x)) {
-      targetModulation.phase.x = {
-        ...(targetModulation.phase.x ?? {}),
-        value: override.phase.x,
-      };
+    targetModulation.amplitude = range;
+    if (applyScalarRangeOverride(range, override.amplitude, amplitudeScale)) {
       mutated = true;
     }
-    if (Number.isFinite(override.phase.z)) {
-      targetModulation.phase.z = {
-        ...(targetModulation.phase.z ?? {}),
-        value: override.phase.z,
-      };
+  }
+  if (override.frequency !== undefined) {
+    const range = targetModulation.frequency ?? { value: 0 };
+    targetModulation.frequency = range;
+    if (applyScalarRangeOverride(range, override.frequency, 1)) {
+      mutated = true;
+    }
+  }
+  if (override.phase && isPlainObject(override.phase)) {
+    const phase = targetModulation.phase ?? { x: { value: 0 }, z: { value: 0 } };
+    targetModulation.phase = phase;
+    if (applyScalarRangeOverride(phase.x, override.phase.x, 1)) {
+      mutated = true;
+    }
+    if (applyScalarRangeOverride(phase.z, override.phase.z, 1)) {
       mutated = true;
     }
   }
   if (override.warp && isPlainObject(override.warp)) {
-    targetModulation.warp = targetModulation.warp
-      ? { ...targetModulation.warp }
-      : { x: {}, z: {} };
-    if (Number.isFinite(override.warp.x)) {
-      targetModulation.warp.x = {
-        ...(targetModulation.warp.x ?? {}),
-        value: override.warp.x,
-      };
+    const warp = targetModulation.warp ?? { x: { value: 0 }, z: { value: 0 } };
+    targetModulation.warp = warp;
+    if (applyScalarRangeOverride(warp.x, override.warp.x, amplitudeScale)) {
       mutated = true;
     }
-    if (Number.isFinite(override.warp.z)) {
-      targetModulation.warp.z = {
-        ...(targetModulation.warp.z ?? {}),
-        value: override.warp.z,
-      };
+    if (applyScalarRangeOverride(warp.z, override.warp.z, amplitudeScale)) {
       mutated = true;
     }
   }
