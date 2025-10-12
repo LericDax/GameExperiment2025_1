@@ -1,0 +1,88 @@
+{
+  "id": "temperate_tidal_shelf",
+  "label": "Temperate Tidal Shelf",
+  "tags": ["ocean", "temperate", "shore", "tidal"],
+  "climate": {
+    "temperature": 0.5,
+    "moisture": 0.92,
+    "weight": 0.96
+  },
+  "terrain": {
+    "surfaceBlock": "sand",
+    "shoreBlock": "sand",
+    "subSurfaceBlock": "sand",
+    "subSurfaceDepth": 4,
+    "deepBlock": "stone",
+    "treeDensity": 0,
+    "shrubChance": 0.12,
+    "flowerChance": 0.04,
+    "rockChance": 0.18,
+    "fungiChance": 0.05,
+    "waterPlantChance": 0.48,
+    "structureChance": 0.18,
+    "objectDensityMultiplier": 1.05,
+    "objectDensityMultipliers": {
+      "waterPlants": 1.35,
+      "structures": 1.22,
+      "rocks": 1.1,
+      "shrubs": 1.15
+    },
+    "treeHeight": {
+      "min": 2,
+      "max": 3
+    },
+    "heightOffset": -1
+  },
+  "palette": {
+    "sand": "#e0d0a6",
+    "grass": "#6bb28b",
+    "dirt": "#4a6f55",
+    "stone": "#4c6668",
+    "leaf": "#7ad3a4",
+    "log": "#476056",
+    "water": "#32929c",
+    "cloud": "#f1fbff"
+  },
+  "shader": {
+    "fogColor": "#3e7a75",
+    "tintColor": "#53b9a1",
+    "tintStrength": 0.48,
+    "effects": {
+      "tidalFoam": {
+        "intensity": 0.58,
+        "oscillation": 0.42
+      }
+    }
+  },
+  "tfmsProfile": {
+    "blend": 0.82,
+    "schemaPool": [
+      { "id": "monsoon-shoal-runnels", "weight": 3.1 },
+      { "id": "monsoon-shoal-runnels", "weight": 1.2, "blend": 0.54 },
+      { "id": "kelp-spiral-mounds", "weight": 2.1 },
+      { "id": "kelp-spiral-mounds", "weight": 0.9, "blend": 0.46 },
+      { "id": "reef-plateau-bastions", "weight": 1.5 },
+      { "id": "reef-plateau-bastions", "weight": 0.7, "blend": 0.5 },
+      { "id": "ocean-shelf-canyons", "weight": 1.1, "blend": 0.42 }
+    ]
+  },
+  "weather": {
+    "candidates": [
+      {
+        "id": "clear_skies",
+        "weight": 3.6,
+        "duration": { "min": 260, "max": 500 }
+      },
+      {
+        "id": "misty_rain",
+        "weight": 2.8,
+        "duration": { "min": 160, "max": 320 }
+      },
+      {
+        "id": "charged_storm",
+        "weight": 0.6,
+        "duration": { "min": 100, "max": 200 }
+      }
+    ]
+  }
+}

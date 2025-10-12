@@ -1,0 +1,87 @@
+{
+  "id": "temperate_kelp_forest",
+  "label": "Temperate Kelp Forest",
+  "tags": ["ocean", "temperate", "kelp", "deep"],
+  "climate": {
+    "temperature": 0.46,
+    "moisture": 0.88,
+    "weight": 1
+  },
+  "terrain": {
+    "surfaceBlock": "sand",
+    "shoreBlock": "sand",
+    "subSurfaceBlock": "stone",
+    "subSurfaceDepth": 5,
+    "deepBlock": "stone",
+    "treeDensity": 0,
+    "shrubChance": 0.04,
+    "flowerChance": 0,
+    "rockChance": 0.16,
+    "fungiChance": 0.06,
+    "waterPlantChance": 0.58,
+    "structureChance": 0.14,
+    "objectDensityMultiplier": 1.02,
+    "objectDensityMultipliers": {
+      "waterPlants": 1.6,
+      "structures": 1.18,
+      "rocks": 1.12
+    },
+    "treeHeight": {
+      "min": 2,
+      "max": 3
+    },
+    "heightOffset": -3
+  },
+  "palette": {
+    "sand": "#d6cfa8",
+    "grass": "#4f9a78",
+    "dirt": "#3a5a47",
+    "stone": "#3d5f63",
+    "leaf": "#5fc190",
+    "log": "#34574a",
+    "water": "#2a7f7c",
+    "cloud": "#eef9ff"
+  },
+  "shader": {
+    "fogColor": "#2c676a",
+    "tintColor": "#3fa18c",
+    "tintStrength": 0.52,
+    "effects": {
+      "kelpCanopy": {
+        "density": 0.7,
+        "sway": 0.45
+      }
+    }
+  },
+  "tfmsProfile": {
+    "blend": 0.84,
+    "schemaPool": [
+      { "id": "kelp-spiral-mounds", "weight": 3.8 },
+      { "id": "kelp-spiral-mounds", "weight": 1.6, "blend": 0.74 },
+      { "id": "monsoon-shoal-runnels", "weight": 2.4 },
+      { "id": "monsoon-shoal-runnels", "weight": 1.1, "blend": 0.58 },
+      { "id": "ocean-shelf-canyons", "weight": 1.6 },
+      { "id": "ocean-shelf-canyons", "weight": 0.7, "blend": 0.46 },
+      { "id": "reef-plateau-bastions", "weight": 1.2, "blend": 0.52 }
+    ]
+  },
+  "weather": {
+    "candidates": [
+      {
+        "id": "clear_skies",
+        "weight": 3.4,
+        "duration": { "min": 260, "max": 520 }
+      },
+      {
+        "id": "misty_rain",
+        "weight": 2.6,
+        "duration": { "min": 160, "max": 320 }
+      },
+      {
+        "id": "charged_storm",
+        "weight": 0.8,
+        "duration": { "min": 100, "max": 200 }
+      }
+    ]
+  }
+}

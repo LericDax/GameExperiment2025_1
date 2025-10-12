@@ -13,6 +13,13 @@ This document tracks the multi-layer deliverables for integrating the upcoming b
   - Obsidian Mycelium Hollows ↔ Prismarine Vent Plateau: extend subterranean fungal economies into surface vents, emphasizing heat gradients and mineral reclamation.
 - **Import wiring:** once the JSON files ship, extend the import block and biome registry array in `three-demo/src/world/biome-engine.js` so the new IDs can be instantiated. Cross-check the onboarding steps in `README.md` to keep the process documentation aligned with future rollouts.
 
+  - **Arctic Abyssal Trench** — file: `arctic_abyssal_trench.json`, biomeId: `arctic_abyssal_trench`, climate: polar hadal trench threaded with glacial vent plumes. _Status: ✅ JSON definition delivered._
+    - **Arctic Brine Chimney** — file: `arctic_brine_chimney.json`, biomeId: `arctic_brine_chimney`, climate: super-saline tidal shelf with active brine chimneys. _Status: ✅ JSON definition delivered._
+  - **Temperate Kelp Forest** — file: `temperate_kelp_forest.json`, biomeId: `temperate_kelp_forest`, climate: temperate shelf canopy dominated by kelp superstructures. _Status: ✅ JSON definition delivered._
+    - **Temperate Tidal Shelf** — file: `temperate_tidal_shelf.json`, biomeId: `temperate_tidal_shelf`, climate: mixed sandbar terraces with persistent tidal surge lanes. _Status: ✅ JSON definition delivered._
+  - **Tropical Midnight Gyre** — file: `tropical_midnight_gyre.json`, biomeId: `tropical_midnight_gyre`, climate: abyssal equatorial gyre lit by planktonic bloom thermals. _Status: ✅ JSON definition delivered._
+    - **Tropical Luminous Shallows** — file: `tropical_luminous_shallows.json`, biomeId: `tropical_luminous_shallows`, climate: tidal lagoon shelf saturated with bioluminescent shallows. _Status: ✅ JSON definition delivered._
+
 ## Layer 1 – Voxel Object Coverage
 For each biome JSON above, provide voxel object payloads before enabling spawning. Deliverables should live under `three-demo/src/world/voxel-objects/` in their respective category folders.
 - **Solar Chroma Steppe**

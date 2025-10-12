@@ -1,0 +1,93 @@
+{
+  "id": "arctic_brine_chimney",
+  "label": "Arctic Brine Chimney",
+  "tags": ["ocean", "arctic", "shore", "tidal"],
+  "climate": {
+    "temperature": 0.18,
+    "moisture": 1,
+    "weight": 0.78
+  },
+  "terrain": {
+    "surfaceBlock": "stone",
+    "shoreBlock": "snow",
+    "subSurfaceBlock": "stone",
+    "subSurfaceDepth": 6,
+    "deepBlock": "stone",
+    "treeDensity": 0,
+    "shrubChance": 0.06,
+    "flowerChance": 0,
+    "rockChance": 0.22,
+    "fungiChance": 0.08,
+    "waterPlantChance": 0.36,
+    "structureChance": 0.28,
+    "objectDensityMultiplier": 0.88,
+    "objectDensityMultipliers": {
+      "rocks": 1.2,
+      "waterPlants": 1.45,
+      "structures": 1.55
+    },
+    "treeHeight": {
+      "min": 1,
+      "max": 2
+    },
+    "heightOffset": -2
+  },
+  "palette": {
+    "sand": "#2f5873",
+    "grass": "#4d8c9a",
+    "dirt": "#2a4452",
+    "stone": "#355d6f",
+    "leaf": "#6cb8c2",
+    "log": "#3a5f6c",
+    "water": "#2b7fa3",
+    "cloud": "#e3f7ff"
+  },
+  "shader": {
+    "fogColor": "#1c4866",
+    "tintColor": "#44a0b8",
+    "tintStrength": 0.58,
+    "effects": {
+      "brinePools": {
+        "glow": 0.42,
+        "falloff": 0.65
+      }
+    }
+  },
+  "tfmsProfile": {
+    "blend": 0.86,
+    "schemaPool": [
+      { "id": "ocean-shelf-canyons", "weight": 2.8 },
+      { "id": "ocean-shelf-canyons", "weight": 1.2, "blend": 0.6 },
+      { "id": "reef-plateau-bastions", "weight": 1.9 },
+      { "id": "reef-plateau-bastions", "weight": 0.8, "blend": 0.52 },
+      { "id": "abyssal-vent-fields", "weight": 1.4 },
+      { "id": "abyssal-vent-fields", "weight": 0.6, "blend": 0.54 },
+      { "id": "polar-reef-atolls", "weight": 1.3, "blend": 0.68 },
+      { "id": "tundra-crystal-deltas", "weight": 0.9, "blend": 0.56 }
+    ]
+  },
+  "weather": {
+    "candidates": [
+      {
+        "id": "clear_skies",
+        "weight": 2.9,
+        "duration": { "min": 260, "max": 480 }
+      },
+      {
+        "id": "misty_rain",
+        "weight": 2.2,
+        "duration": { "min": 160, "max": 320 }
+      },
+      {
+        "id": "polar_aurora",
+        "weight": 3.8,
+        "duration": { "min": 220, "max": 420 }
+      },
+      {
+        "id": "soft_snowfall",
+        "weight": 1.4,
+        "duration": { "min": 150, "max": 280 }
+      }
+    ]
+  }
+}
