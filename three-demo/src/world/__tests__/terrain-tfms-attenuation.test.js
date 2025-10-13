@@ -74,6 +74,7 @@ function measureSlopeStatistics(engine, { gridRadius, sampleSpacing }) {
     median: computePercentile(slopes, 0.5),
     percentile95: computePercentile(slopes, 0.95),
     percentile98: computePercentile(slopes, 0.98),
+    percentile995: computePercentile(slopes, 0.995),
   };
 }
 
@@ -232,6 +233,30 @@ test('default terrain slope distribution stays within calibrated targets', () =>
     assert.ok(
       percentile95 < slope95Threshold,
       `expected 95th percentile slope < ${slope95Threshold}, received ${percentile95}`,
+    );
+  } finally {
+    engine.dispose();
+  }
+});
+
+test('default terrain neighbour slopes rarely exceed the calibrated threshold', () => {
+  const engine = createTerrainEngine({ THREE });
+  try {
+    const { percentile98, percentile995 } = measureSlopeStatistics(engine, {
+      gridRadius: 24,
+      sampleSpacing: 1,
+    });
+
+    const frequentSlopeThreshold = 1.75;
+    const rareSlopeThreshold = 2.85;
+
+    assert.ok(
+      percentile98 < frequentSlopeThreshold,
+      `expected 98th percentile slope < ${frequentSlopeThreshold}, received ${percentile98}`,
+    );
+    assert.ok(
+      percentile995 < rareSlopeThreshold,
+      `expected 99.5th percentile slope < ${rareSlopeThreshold}, received ${percentile995}`,
     );
   } finally {
     engine.dispose();

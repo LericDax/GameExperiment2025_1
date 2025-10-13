@@ -103,23 +103,23 @@ const defaultRidgeStrength = Math.max(
     remainingAfterDetail,
   ),
 )
-const legacyPrimarySlopeBudget =
-  legacyPrimaryAmplitudeBudget * legacyPrimaryFrequency
-const legacyDetailSlopeBudget =
-  legacyDetailAmplitudeBudget * legacyDetailFrequency
-const legacyRidgeSlopeBudget =
-  legacyRidgeStrengthBudget * legacyRidgeFrequency
 const defaultPrimaryFrequency =
   defaultPrimaryAmplitude > 0
-    ? legacyPrimarySlopeBudget / defaultPrimaryAmplitude
+    ?
+      legacyPrimaryFrequency *
+      (legacyPrimaryAmplitudeBudget / defaultPrimaryAmplitude)
     : legacyPrimaryFrequency
 const defaultDetailFrequency =
   defaultDetailAmplitude > 0
-    ? legacyDetailSlopeBudget / defaultDetailAmplitude
+    ?
+      legacyDetailFrequency *
+      (legacyDetailAmplitudeBudget / defaultDetailAmplitude)
     : legacyDetailFrequency
 const defaultRidgeFrequency =
   defaultRidgeStrength > 0
-    ? legacyRidgeSlopeBudget / defaultRidgeStrength
+    ?
+      legacyRidgeFrequency *
+      (legacyRidgeStrengthBudget / defaultRidgeStrength)
     : legacyRidgeFrequency
 
 const tfmsWaveformOptions = Object.freeze([
