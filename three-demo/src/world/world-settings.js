@@ -110,13 +110,6 @@ const DEFAULT_TERRAIN_RIDGE_STRENGTH = getDescriptorDefault([
   'terrain',
   'ridgeStrength',
 ])
-const DEFAULT_TERRAIN_PRIMARY_SLOPE_BUDGET =
-  DEFAULT_TERRAIN_PRIMARY_AMPLITUDE * DEFAULT_TERRAIN_PRIMARY_FREQUENCY
-const DEFAULT_TERRAIN_DETAIL_SLOPE_BUDGET =
-  DEFAULT_TERRAIN_DETAIL_AMPLITUDE * DEFAULT_TERRAIN_DETAIL_FREQUENCY
-const DEFAULT_TERRAIN_RIDGE_SLOPE_BUDGET =
-  DEFAULT_TERRAIN_RIDGE_STRENGTH * DEFAULT_TERRAIN_RIDGE_FREQUENCY
-
 const DEFAULT_TERRAIN_VERTICAL_EXTENT =
   DEFAULT_CHUNK_SIZE * TERRAIN_VERTICAL_SPAN_MULTIPLIER
 const PRIMARY_AMPLITUDE_RATIO =
@@ -206,36 +199,39 @@ function computeTerrainWaveDefaults({
   const frequencyScale =
     normalizedSize > 0 ? DEFAULT_CHUNK_SIZE / normalizedSize : 1
 
-  const scaledPrimarySlopeBudget =
-    DEFAULT_TERRAIN_PRIMARY_SLOPE_BUDGET * frequencyScale
+  const basePrimaryFrequency = DEFAULT_TERRAIN_PRIMARY_FREQUENCY * frequencyScale
   const primaryFrequencyCandidate =
-    primaryAmplitude > 0
-      ? scaledPrimarySlopeBudget / primaryAmplitude
-      : DEFAULT_TERRAIN_PRIMARY_FREQUENCY * frequencyScale
+    primaryAmplitude > 0 && DEFAULT_TERRAIN_PRIMARY_AMPLITUDE > 0
+      ?
+        basePrimaryFrequency *
+        (DEFAULT_TERRAIN_PRIMARY_AMPLITUDE / primaryAmplitude)
+      : basePrimaryFrequency
   const primaryFrequency = normalizeWithDescriptor(
     primaryFrequencyCandidate,
     DEFAULT_TERRAIN_PRIMARY_FREQUENCY,
     ['terrain', 'primaryFrequency'],
   )
 
-  const scaledDetailSlopeBudget =
-    DEFAULT_TERRAIN_DETAIL_SLOPE_BUDGET * frequencyScale
+  const baseDetailFrequency = DEFAULT_TERRAIN_DETAIL_FREQUENCY * frequencyScale
   const detailFrequencyCandidate =
-    detailAmplitude > 0
-      ? scaledDetailSlopeBudget / detailAmplitude
-      : DEFAULT_TERRAIN_DETAIL_FREQUENCY * frequencyScale
+    detailAmplitude > 0 && DEFAULT_TERRAIN_DETAIL_AMPLITUDE > 0
+      ?
+        baseDetailFrequency *
+        (DEFAULT_TERRAIN_DETAIL_AMPLITUDE / detailAmplitude)
+      : baseDetailFrequency
   const detailFrequency = normalizeWithDescriptor(
     detailFrequencyCandidate,
     DEFAULT_TERRAIN_DETAIL_FREQUENCY,
     ['terrain', 'detailFrequency'],
   )
 
-  const scaledRidgeSlopeBudget =
-    DEFAULT_TERRAIN_RIDGE_SLOPE_BUDGET * frequencyScale
+  const baseRidgeFrequency = DEFAULT_TERRAIN_RIDGE_FREQUENCY * frequencyScale
   const ridgeFrequencyCandidate =
-    ridgeStrength > 0
-      ? scaledRidgeSlopeBudget / ridgeStrength
-      : DEFAULT_TERRAIN_RIDGE_FREQUENCY * frequencyScale
+    ridgeStrength > 0 && DEFAULT_TERRAIN_RIDGE_STRENGTH > 0
+      ?
+        baseRidgeFrequency *
+        (DEFAULT_TERRAIN_RIDGE_STRENGTH / ridgeStrength)
+      : baseRidgeFrequency
   const ridgeFrequency = normalizeWithDescriptor(
     ridgeFrequencyCandidate,
     DEFAULT_TERRAIN_RIDGE_FREQUENCY,
@@ -612,6 +608,18 @@ function createMutableWorldOptions() {
     forceMaxHeight: true,
     forceTfmsClamp: true,
   })
+
+  const waveDefaults = computeTerrainWaveDefaults({
+    chunkSize: envelope.chunkSize,
+    baseHeight: options.terrain.baseHeight,
+  })
+  options.terrain.primaryAmplitude = waveDefaults.primaryAmplitude
+  options.terrain.detailAmplitude = waveDefaults.detailAmplitude
+  options.terrain.ridgeStrength = waveDefaults.ridgeStrength
+  options.terrain.primaryFrequency = waveDefaults.primaryFrequency
+  options.terrain.detailFrequency = waveDefaults.detailFrequency
+  options.terrain.ridgeFrequency = waveDefaults.ridgeFrequency
+
   return options
 }
 
