@@ -1276,20 +1276,55 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
       ? 1 / detailStrengthNormalizationRatio
       : 1
 
+  const chunkSizeCandidate = Number.isFinite(terrainDefaults?.chunkSize)
+    ? terrainDefaults.chunkSize
+    : Number.isFinite(terrainDefaults?.chunk?.size)
+    ? terrainDefaults.chunk.size
+    : DEFAULT_CHUNK_SIZE
+  const normalizedChunkSize = normalizeChunkSizeForEnvelope(chunkSizeCandidate)
+  const defaultNormalizedChunkSize = normalizeChunkSizeForEnvelope(
+    DEFAULT_CHUNK_SIZE,
+  )
+  const computeWarpBudget = (size) =>
+    clampValue(
+      (size / Math.max(defaultNormalizedChunkSize, 1)) * 2.5,
+      2,
+      3,
+    )
+  const desiredWarp = computeWarpBudget(normalizedChunkSize)
+  const baselineDesiredWarp = computeWarpBudget(defaultNormalizedChunkSize)
+  const warpCarrierAmplitude = Math.max(normalizedBaseAmplitude, 1)
+  const warpMultiplier = desiredWarp / warpCarrierAmplitude
+  const baselineWarpCarrier = Math.max(safeBaselinePrimaryAmplitude, 1)
+  const baselineWarpMultiplier =
+    baselineWarpCarrier > 0
+      ? baselineDesiredWarp / baselineWarpCarrier
+      : warpMultiplier
+  const warpStrengthNormalization =
+    baselineWarpMultiplier > 0 ? warpMultiplier / baselineWarpMultiplier : 1
+
   const baselineModulationNormalizedRaw =
     (baselinePrimaryAmplitude / 16) * baselinePrimaryNormalizationRatio
   const baselineDerivedModulation = clampValue(
-    baselineModulationNormalizedRaw * baselinePrimaryLegacyInverseRatio,
+    baselineModulationNormalizedRaw *
+      baselinePrimaryLegacyInverseRatio *
+      warpStrengthNormalization,
     0.3,
     1,
   )
   const baselineDerivedWarp = clampValue(
-    baselineModulationNormalizedRaw * 0.75 * baselinePrimaryLegacyInverseRatio,
+    baselineModulationNormalizedRaw *
+      0.75 *
+      baselinePrimaryLegacyInverseRatio *
+      warpStrengthNormalization,
     0,
     1,
   )
   const baselineDerivedPhase = clampValue(
-    baselineModulationNormalizedRaw * 0.45 * baselinePrimaryLegacyInverseRatio,
+    baselineModulationNormalizedRaw *
+      0.45 *
+      baselinePrimaryLegacyInverseRatio *
+      warpStrengthNormalization,
     0,
     1,
   )
@@ -1351,7 +1386,8 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   const derivedModulationBaseline =
     derivedModulationNormalizedRaw *
     derivedStrengthNormalizationRatio *
-    primaryStrengthInverseRatio
+    primaryStrengthInverseRatio *
+    warpStrengthNormalization
   const derivedModulationScaled =
     primaryRatio > 0
       ? derivedModulationBaseline / primaryRatio
@@ -1365,7 +1401,8 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     derivedModulationNormalizedRaw *
     0.75 *
     derivedStrengthNormalizationRatio *
-    primaryStrengthInverseRatio
+    primaryStrengthInverseRatio *
+    warpStrengthNormalization
   const derivedWarpScaled =
     primaryRatio > 0 ? derivedWarpBaseline / primaryRatio : derivedWarpBaseline
   let derivedWarp = clampValue(derivedWarpScaled, 0, 1)
@@ -1373,7 +1410,8 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     derivedModulationNormalizedRaw *
     0.45 *
     derivedStrengthNormalizationRatio *
-    primaryStrengthInverseRatio
+    primaryStrengthInverseRatio *
+    warpStrengthNormalization
   const derivedPhaseScaled =
     primaryRatio > 0
       ? derivedPhaseBaseline / primaryRatio
@@ -1394,35 +1432,33 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     1,
   )
 
-  const chunkSizeCandidate = Number.isFinite(terrainDefaults?.chunkSize)
-    ? terrainDefaults.chunkSize
-    : Number.isFinite(terrainDefaults?.chunk?.size)
-    ? terrainDefaults.chunk.size
-    : DEFAULT_CHUNK_SIZE
-  const normalizedChunkSize = normalizeChunkSizeForEnvelope(chunkSizeCandidate)
-  const domainWarpNormalizationRatio =
+  const warpNormalizationRatio =
     (Number.isFinite(derivedStrengthNormalizationRatio) &&
     derivedStrengthNormalizationRatio > 0
       ? derivedStrengthNormalizationRatio
       : 1) * primaryStrengthInverseRatio
-  const domainWarpAmplitudeBaseline = 0.32 * domainWarpNormalizationRatio
-  let domainWarpAmplitudeMultiplier =
-    primaryRatio > 0
-      ? domainWarpAmplitudeBaseline / primaryRatio
-      : domainWarpAmplitudeBaseline
-  let domainWarpAmplitudeMax = 256
-  let domainWarpFrequencyMultiplier = 0.65 * domainWarpNormalizationRatio
-  const domainWarpPrimaryGainBaseline = 0.7 * domainWarpNormalizationRatio
+  const warpLimit = desiredWarp
+  const warpMultiplierLimit = warpMultiplier
+  const domainWarpAmplitudeBaseline = warpMultiplier * warpNormalizationRatio
+  let domainWarpAmplitudeMultiplier = clampValue(
+    domainWarpAmplitudeBaseline,
+    0,
+    warpMultiplierLimit,
+  )
+  let domainWarpAmplitudeMax = warpLimit
+  let domainWarpFrequencyMultiplier = 0.65 * warpNormalizationRatio
+  const domainWarpPrimaryGainBaseline =
+    0.7 * warpNormalizationRatio * warpStrengthNormalization
   let domainWarpPrimaryGainValue =
     primaryRatio > 0
       ? domainWarpPrimaryGainBaseline / primaryRatio
       : domainWarpPrimaryGainBaseline
-  const domainWarpRidgeGainBaseline = 0.5 * domainWarpNormalizationRatio
+  const domainWarpRidgeGainBaseline =
+    0.5 * warpNormalizationRatio * warpStrengthNormalization
   let domainWarpRidgeGainValue =
     primaryRatio > 0
       ? domainWarpRidgeGainBaseline / primaryRatio
       : domainWarpRidgeGainBaseline
-  let domainWarpGainLimit = 4
 
   if (amplitudeRatioNormalizedRaw > 1) {
     const amplitudeScale = Math.min(amplitudeRatioNormalizedRaw, 4)
@@ -1444,38 +1480,46 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
       0.75,
     )
 
-    const warpLimit = Math.max(4, normalizedChunkSize * 0.28 * amplitudeScale)
     domainWarpAmplitudeMultiplier = clampValue(
       domainWarpAmplitudeMultiplier * amplitudeScale,
       0,
       warpLimit / Math.max(normalizedBaseAmplitude, 1),
     )
-    domainWarpAmplitudeMax = Math.min(256, warpLimit)
+    domainWarpAmplitudeMax = warpLimit
     domainWarpFrequencyMultiplier = clampValue(
       domainWarpFrequencyMultiplier * amplitudeScale,
       0.2,
       1,
     )
-
-    const warpCarrierAmplitude =
-      normalizedBaseAmplitude * Math.max(domainWarpAmplitudeMultiplier, 0)
-    domainWarpGainLimit = Math.min(
-      4,
-      warpCarrierAmplitude > 0
-        ? warpLimit / Math.max(warpCarrierAmplitude, 1)
-        : 4,
-    )
     domainWarpPrimaryGainValue = clampValue(
       domainWarpPrimaryGainValue * amplitudeScale,
       0,
-      domainWarpGainLimit,
+      Number.POSITIVE_INFINITY,
     )
     domainWarpRidgeGainValue = clampValue(
       domainWarpRidgeGainValue * amplitudeScale,
       0,
-      domainWarpGainLimit,
+      Number.POSITIVE_INFINITY,
     )
   }
+
+  const warpCarrierAmplitudeForGain =
+    normalizedBaseAmplitude * Math.max(domainWarpAmplitudeMultiplier, 0)
+  const warpGainLimitCandidate =
+    warpCarrierAmplitudeForGain > 0
+      ? warpLimit / Math.max(warpCarrierAmplitudeForGain, 1)
+      : 4
+  const domainWarpGainLimit = clampValue(warpGainLimitCandidate, 0, 4)
+  domainWarpPrimaryGainValue = clampValue(
+    domainWarpPrimaryGainValue,
+    0,
+    domainWarpGainLimit,
+  )
+  domainWarpRidgeGainValue = clampValue(
+    domainWarpRidgeGainValue,
+    0,
+    domainWarpGainLimit,
+  )
 
   if (detailRatioNormalizedRaw > 1) {
     const detailScale = Math.min(detailRatioNormalizedRaw, 4)

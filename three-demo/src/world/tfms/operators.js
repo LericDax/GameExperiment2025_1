@@ -101,10 +101,15 @@ function createDomainWarpOperator(typeOrConfig, maybeConfig) {
         z: warpSample.z * amplitude,
       };
       const magnitude = Math.min(1, Math.hypot(warpSample.x, warpSample.z));
+      const maxDisplacement = Math.max(Math.abs(amplitude), 0);
+      const clampedWarpedDomain = {
+        x: clamp(warpedDomain.x, -maxDisplacement, maxDisplacement),
+        z: clamp(warpedDomain.z, -maxDisplacement, maxDisplacement),
+      };
       return {
-        value: Math.hypot(warpedDomain.x, warpedDomain.z),
+        value: Math.hypot(clampedWarpedDomain.x, clampedWarpedDomain.z),
         raw: magnitude,
-        domain: combineDomainWarp({ x: 0, z: 0 }, warpedDomain),
+        domain: combineDomainWarp({ x: 0, z: 0 }, clampedWarpedDomain),
       };
     },
   };
