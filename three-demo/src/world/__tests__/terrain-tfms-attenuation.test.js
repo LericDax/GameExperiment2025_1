@@ -335,21 +335,26 @@ test('default domain warp displaces coordinates by only a few voxels', () => {
 
   const metrics = computeWarpDeltaMetrics(warpedGrid, unwarpedGrid, warpedGrid.spacing);
 
+  const displacement95Budget = 2.75;
+  const displacementMaxBudget = 4.5;
+  const slopeDelta95Budget = 0.45;
+  const slopeDeltaMaxBudget = 0.85;
+
   assert.ok(
-    metrics.displacement95 <= 3.5,
-    `expected 95th percentile displacement <= 3.5, received ${metrics.displacement95}`,
+    metrics.displacement95 <= displacement95Budget,
+    `expected 95th percentile displacement <= ${displacement95Budget}, received ${metrics.displacement95}`,
   );
   assert.ok(
-    metrics.displacementMax <= 6,
-    `expected max displacement <= 6, received ${metrics.displacementMax}`,
+    metrics.displacementMax <= displacementMaxBudget,
+    `expected max displacement <= ${displacementMaxBudget}, received ${metrics.displacementMax}`,
   );
   assert.ok(
-    metrics.slopeDelta95 <= 0.55,
-    `expected 95th percentile slope delta <= 0.55, received ${metrics.slopeDelta95}`,
+    metrics.slopeDelta95 <= slopeDelta95Budget,
+    `expected 95th percentile slope delta <= ${slopeDelta95Budget}, received ${metrics.slopeDelta95}`,
   );
   assert.ok(
-    metrics.slopeDeltaMax <= 1.1,
-    `expected max slope delta <= 1.1, received ${metrics.slopeDeltaMax}`,
+    metrics.slopeDeltaMax <= slopeDeltaMaxBudget,
+    `expected max slope delta <= ${slopeDeltaMaxBudget}, received ${metrics.slopeDeltaMax}`,
   );
 
   warpedEngine.dispose();
