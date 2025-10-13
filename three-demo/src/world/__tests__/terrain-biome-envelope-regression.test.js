@@ -68,6 +68,7 @@ test('default biome blends stay within the three-chunk TFMS envelope', () => {
 
     let maxDeltaX = 0;
     let maxDeltaZ = 0;
+    const neighborSlopes = [];
     for (let rowIndex = 0; rowIndex < gridSize; rowIndex += 1) {
       for (let columnIndex = 0; columnIndex < gridSize; columnIndex += 1) {
         const current = heightGrid[rowIndex][columnIndex];
@@ -76,12 +77,14 @@ test('default biome blends stay within the three-chunk TFMS envelope', () => {
           if (delta > maxDeltaX) {
             maxDeltaX = delta;
           }
+          neighborSlopes.push(delta / spacing);
         }
         if (rowIndex + 1 < gridSize) {
           const delta = Math.abs(current - heightGrid[rowIndex + 1][columnIndex]);
           if (delta > maxDeltaZ) {
             maxDeltaZ = delta;
           }
+          neighborSlopes.push(delta / spacing);
         }
       }
     }
@@ -90,6 +93,15 @@ test('default biome blends stay within the three-chunk TFMS envelope', () => {
     assert.ok(
       maxDeltaX > variationThreshold && maxDeltaZ > variationThreshold,
       `expected terrain variation along both axes (Δx=${maxDeltaX}, Δz=${maxDeltaZ})`,
+    );
+
+    neighborSlopes.sort((a, b) => a - b);
+    const slopePercentileIndex = Math.floor(neighborSlopes.length * 0.95);
+    const slope95 = neighborSlopes[Math.min(neighborSlopes.length - 1, slopePercentileIndex)];
+    const slopeThreshold = 0.35;
+    assert.ok(
+      slope95 <= slopeThreshold,
+      `expected 95th percentile neighbour slope ≤ ${slopeThreshold}, received ${slope95}`,
     );
 
     assert.ok(
