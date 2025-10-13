@@ -1191,6 +1191,36 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     ? defaultTerrainTfmsBiomeBlendStrength
     : 0.45
 
+  const clampSpan =
+    Number.isFinite(clampMax) && Number.isFinite(clampMin)
+      ? Math.max(1, clampMax - clampMin)
+      : safeMaxHeight * 2
+  const halfClampSpan = clampSpan > 0 ? clampSpan / 2 : 1
+  const primaryBudgetReference = Math.max(
+    1,
+    Math.min(LEGACY_TFMS_PRIMARY_AMPLITUDE, halfClampSpan),
+  )
+  const detailBudgetReference = Math.max(
+    1,
+    Math.min(LEGACY_TFMS_DETAIL_AMPLITUDE, halfClampSpan),
+  )
+  const primaryStrengthNormalizationRatio =
+    normalizedBaseAmplitude > 0
+      ? normalizedBaseAmplitude / primaryBudgetReference
+      : 1
+  const primaryStrengthInverseRatio =
+    primaryStrengthNormalizationRatio > 0
+      ? 1 / primaryStrengthNormalizationRatio
+      : 1
+  const detailStrengthNormalizationRatio =
+    normalizedDetailAmplitude > 0
+      ? normalizedDetailAmplitude / detailBudgetReference
+      : 1
+  const detailStrengthInverseRatio =
+    detailStrengthNormalizationRatio > 0
+      ? 1 / detailStrengthNormalizationRatio
+      : 1
+
   const baselineModulationNormalizedRaw =
     (baselinePrimaryAmplitude / 16) * baselinePrimaryNormalizationRatio
   const baselineDerivedModulation = clampValue(
@@ -1264,23 +1294,33 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
 
   const derivedModulationNormalizedRaw = normalizedBaseAmplitude / 16
   let derivedModulation = clampValue(
-    derivedModulationNormalizedRaw * derivedStrengthNormalizationRatio,
+    derivedModulationNormalizedRaw *
+      derivedStrengthNormalizationRatio *
+      primaryStrengthInverseRatio,
     0.3,
     1,
   )
   let derivedWarp = clampValue(
-    derivedModulationNormalizedRaw * 0.75 * derivedStrengthNormalizationRatio,
+    derivedModulationNormalizedRaw *
+      0.75 *
+      derivedStrengthNormalizationRatio *
+      primaryStrengthInverseRatio,
     0,
     1,
   )
   let derivedPhase = clampValue(
-    derivedModulationNormalizedRaw * 0.45 * derivedStrengthNormalizationRatio,
+    derivedModulationNormalizedRaw *
+      0.45 *
+      derivedStrengthNormalizationRatio *
+      primaryStrengthInverseRatio,
     0,
     1,
   )
   const derivedSpectralNormalizedRaw = normalizedDetailAmplitude / 6
   let derivedSpectral = clampValue(
-    derivedSpectralNormalizedRaw * derivedStrengthNormalizationRatio,
+    derivedSpectralNormalizedRaw *
+      derivedStrengthNormalizationRatio *
+      detailStrengthInverseRatio,
     0.2,
     1,
   )
@@ -1292,10 +1332,10 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     : DEFAULT_CHUNK_SIZE
   const normalizedChunkSize = normalizeChunkSizeForEnvelope(chunkSizeCandidate)
   const domainWarpNormalizationRatio =
-    Number.isFinite(derivedStrengthNormalizationRatio) &&
+    (Number.isFinite(derivedStrengthNormalizationRatio) &&
     derivedStrengthNormalizationRatio > 0
       ? derivedStrengthNormalizationRatio
-      : 1
+      : 1) * primaryStrengthInverseRatio
   let domainWarpAmplitudeMultiplier =
     0.32 * domainWarpNormalizationRatio
   let domainWarpAmplitudeMax = 256
