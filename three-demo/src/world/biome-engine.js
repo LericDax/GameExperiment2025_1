@@ -4,6 +4,8 @@ import {
   defaultWorldOptions,
   biomeOptionMetadata,
   getWorldOptions,
+  LEGACY_TFMS_PRIMARY_AMPLITUDE,
+  LEGACY_TFMS_DETAIL_AMPLITUDE,
 } from './world-settings.js';
 
 function loadBiomeModules() {
@@ -187,6 +189,39 @@ function normalizeRangeScalarOverride(value) {
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
+function scaleRangeOverrideValue(value, scale = 1) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  if (!Number.isFinite(scale) || scale === 1) {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value * scale;
+  }
+  if (!isPlainObject(value)) {
+    return value;
+  }
+  const scaled = { ...value };
+  if (Number.isFinite(scaled.value)) {
+    scaled.value *= scale;
+  }
+  if (Number.isFinite(scaled.delta)) {
+    scaled.delta *= scale;
+  }
+  if (Number.isFinite(scaled.min)) {
+    scaled.min *= scale;
+  }
+  if (Number.isFinite(scaled.max)) {
+    scaled.max *= scale;
+  }
+  if (Number.isFinite(scaled.base)) {
+    scaled.base *= scale;
+  }
+  // Preserve multipliers as dimensionless factors.
+  return scaled;
+}
+
 function normalizeVectorOverride(value) {
   if (Number.isFinite(value)) {
     return { x: value, z: value };
@@ -253,14 +288,15 @@ function normalizeFmOperatorWeights(definition, operatorLookup = getTerrainOpera
   return weights.some((value) => value !== undefined) ? weights : null;
 }
 
-function normalizeOperatorModulationOverride(value) {
+function normalizeOperatorModulationOverride(value, amplitudeScale = 1) {
   if (!isPlainObject(value)) {
     return undefined;
   }
   const result = {};
   const amplitude = normalizeRangeScalarOverride(value.amplitude);
-  if (amplitude !== undefined) {
-    result.amplitude = amplitude;
+  const scaledAmplitude = scaleRangeOverrideValue(amplitude, amplitudeScale);
+  if (scaledAmplitude !== undefined) {
+    result.amplitude = scaledAmplitude;
   }
   const frequency = normalizeNumeric(value.frequency);
   if (frequency !== undefined) {
@@ -277,14 +313,15 @@ function normalizeOperatorModulationOverride(value) {
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-function normalizeOperatorEnvelopeOverride(value) {
+function normalizeOperatorEnvelopeOverride(value, amplitudeScale = 1) {
   if (!isPlainObject(value)) {
     return undefined;
   }
   const result = {};
   const amplitude = normalizeRangeScalarOverride(value.amplitude);
-  if (amplitude !== undefined) {
-    result.amplitude = amplitude;
+  const scaledAmplitude = scaleRangeOverrideValue(amplitude, amplitudeScale);
+  if (scaledAmplitude !== undefined) {
+    result.amplitude = scaledAmplitude;
   }
   const frequency = normalizeNumeric(value.frequency);
   if (frequency !== undefined) {
@@ -347,7 +384,75 @@ function normalizeWaveformOverrides(definition) {
     .filter(Boolean);
 }
 
-function normalizeOperatorOverrides(definition, operatorLookup) {
+function getOperatorAmplitudeNormalization(operatorLookup) {
+  const worldOptions = getWorldOptions();
+  const terrain = worldOptions?.terrain ?? defaultWorldOptions.terrain ?? {};
+  const defaults = defaultWorldOptions.terrain ?? {};
+  const fallbackPrimary = Number.isFinite(defaults?.primaryAmplitude)
+    ? Math.max(defaults.primaryAmplitude, 1)
+    : 1;
+  const fallbackDetail = Number.isFinite(defaults?.detailAmplitude)
+    ? Math.max(defaults.detailAmplitude, 1)
+    : 1;
+  const activePrimary = Number.isFinite(terrain?.primaryAmplitude)
+    ? Math.max(terrain.primaryAmplitude, 1)
+    : fallbackPrimary;
+  const activeDetail = Number.isFinite(terrain?.detailAmplitude)
+    ? Math.max(terrain.detailAmplitude, 1)
+    : fallbackDetail;
+
+  const primaryScale =
+    activePrimary > 0
+      ? LEGACY_TFMS_PRIMARY_AMPLITUDE / activePrimary
+      : 1;
+  const detailScale =
+    activeDetail > 0 ? LEGACY_TFMS_DETAIL_AMPLITUDE / activeDetail : 1;
+
+  const preset = terrain?.tfms ?? defaults.tfms ?? {};
+  const operators = Array.isArray(preset?.operators) ? preset.operators : [];
+  const operatorScaleMap = new Map();
+  if (Array.isArray(operatorLookup?.ids)) {
+    operatorLookup.ids.forEach((operatorId, index) => {
+      if (typeof operatorId !== 'string') {
+        return;
+      }
+      const operator = operators[index];
+      const baseKey = operator?.envelope?.amplitude?.baseKey;
+      let scale = 1;
+      if (baseKey === 'primaryAmplitude') {
+        scale = primaryScale;
+      } else if (baseKey === 'detailAmplitude' || baseKey === 'ridgeStrength') {
+        scale = detailScale;
+      }
+      if (!Number.isFinite(scale) || scale <= 0) {
+        scale = 1;
+      }
+      operatorScaleMap.set(operatorId, scale);
+    });
+  }
+
+  return {
+    primaryScale: Number.isFinite(primaryScale) && primaryScale > 0 ? primaryScale : 1,
+    detailScale: Number.isFinite(detailScale) && detailScale > 0 ? detailScale : 1,
+    operatorScaleMap,
+  };
+}
+
+function getOperatorAmplitudeScale(operatorId, normalization) {
+  if (!operatorId || !normalization) {
+    return 1;
+  }
+  const { operatorScaleMap } = normalization;
+  if (operatorScaleMap && typeof operatorScaleMap.get === 'function') {
+    const scale = operatorScaleMap.get(operatorId);
+    if (Number.isFinite(scale) && scale > 0) {
+      return scale;
+    }
+  }
+  return 1;
+}
+
+function normalizeOperatorOverrides(definition, operatorLookup, amplitudeNormalization = null) {
   let source = [];
   if (Array.isArray(definition)) {
     source = definition.filter(isPlainObject);
@@ -443,14 +548,20 @@ function normalizeOperatorOverrides(definition, operatorLookup) {
           override.tectonic = tectonic;
         }
       }
+      const amplitudeScale = getOperatorAmplitudeScale(
+        operatorId,
+        amplitudeNormalization,
+      );
       const envelope = normalizeOperatorEnvelopeOverride(
         candidate.envelope,
+        amplitudeScale,
       );
       if (envelope) {
         override.envelope = envelope;
       }
       const modulation = normalizeOperatorModulationOverride(
         candidate.modulation,
+        amplitudeScale,
       );
       if (modulation) {
         override.modulation = modulation;
@@ -755,6 +866,7 @@ function normalizeBiomeFmProfile(definition) {
 
   const overrides = {};
   const operatorLookup = getTerrainOperatorLookup();
+  const amplitudeNormalization = getOperatorAmplitudeNormalization(operatorLookup);
 
   const waveformOverrides = normalizeWaveformOverrides(definition.waveforms);
   if (waveformOverrides.length > 0) {
@@ -764,6 +876,7 @@ function normalizeBiomeFmProfile(definition) {
   const operatorOverrides = normalizeOperatorOverrides(
     definition.operators,
     operatorLookup,
+    amplitudeNormalization,
   );
   if (operatorOverrides.length > 0) {
     overrides.operators = operatorOverrides;

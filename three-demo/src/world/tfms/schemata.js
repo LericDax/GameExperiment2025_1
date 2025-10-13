@@ -78,7 +78,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.12,
-          envelope: { amplitude: { multiplier: 1.04 } },
+          envelope: { amplitude: { delta: 0.1 } },
         },
         {
           id: 'ridge-noise',
@@ -260,7 +260,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.44,
-          envelope: { amplitude: { multiplier: 1.26 } },
+          envelope: { amplitude: { delta: 0.32 } },
         },
         {
           id: 'ridge-noise',
@@ -294,15 +294,15 @@ const RAW_TFMS_SCHEMATA = [
         },
         {
           id: 'domain-warp->primary-fbm:domain-x',
-          gain: 0.62,
+          gain: 0.52,
         },
         {
           id: 'domain-warp->primary-fbm:domain-z',
-          gain: 0.58,
+          gain: 0.48,
         },
         {
           id: 'ridge-noise->domain-warp:amplitude',
-          gain: 0.28,
+          gain: 0.24,
         },
       ],
     },
@@ -441,11 +441,11 @@ const RAW_TFMS_SCHEMATA = [
         },
         {
           id: 'domain-warp->primary-fbm:domain-x',
-          gain: 0.72,
+          gain: 0.6,
         },
         {
           id: 'domain-warp->primary-fbm:domain-z',
-          gain: 0.68,
+          gain: 0.56,
         },
         {
           id: 'domain-warp->ridge-noise:domain-x',
@@ -481,7 +481,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.38,
-          envelope: { amplitude: { multiplier: 1.3 } },
+          envelope: { amplitude: { delta: 0.36 } },
         },
         {
           id: 'ridge-noise',
@@ -550,7 +550,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.26,
-          envelope: { amplitude: { multiplier: 1.06 } },
+          envelope: { amplitude: { delta: 0.12 } },
           modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
@@ -622,7 +622,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.4,
-          envelope: { amplitude: { multiplier: 1.14 } },
+          envelope: { amplitude: { delta: 0.2 } },
         },
         {
           id: 'ridge-noise',
@@ -690,7 +690,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.32,
-          envelope: { amplitude: { multiplier: 1.04 } },
+          envelope: { amplitude: { delta: 0.1 } },
           modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
@@ -796,7 +796,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.24,
-          envelope: { amplitude: { multiplier: 1.12 } },
+          envelope: { amplitude: { delta: 0.18 } },
           modulation: { amplitude: { multiplier: 0.34 } },
         },
         {
@@ -962,7 +962,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.3,
-          envelope: { amplitude: { multiplier: 1.16 } },
+          envelope: { amplitude: { delta: 0.22 } },
           modulation: { amplitude: { multiplier: 0.34 } },
         },
         {
@@ -1047,7 +1047,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.22,
-          envelope: { amplitude: { multiplier: 1.08 } },
+          envelope: { amplitude: { delta: 0.14 } },
           modulation: { amplitude: { multiplier: 0.26 } },
         },
         {
@@ -1132,7 +1132,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.28,
-          envelope: { amplitude: { multiplier: 1.18 } },
+          envelope: { amplitude: { delta: 0.24 } },
           modulation: { amplitude: { multiplier: 0.32 } },
         },
         {
@@ -1216,7 +1216,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.32,
-          envelope: { amplitude: { multiplier: 1.2 } },
+          envelope: { amplitude: { delta: 0.26 } },
           modulation: { amplitude: { multiplier: 0.38 } },
         },
         {
@@ -1302,7 +1302,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.36,
-          envelope: { amplitude: { multiplier: 1.26 } },
+          envelope: { amplitude: { delta: 0.32 } },
           modulation: { amplitude: { multiplier: 0.34 } },
         },
         {
@@ -1388,7 +1388,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.22,
-          envelope: { amplitude: { multiplier: 1.02 } },
+          envelope: { amplitude: { delta: 0.08 } },
           modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
@@ -1473,7 +1473,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.28,
-          envelope: { amplitude: { multiplier: 1.1 } },
+          envelope: { amplitude: { delta: 0.16 } },
           modulation: { amplitude: { multiplier: 0.32 } },
         },
         {
@@ -1515,11 +1515,11 @@ const RAW_TFMS_SCHEMATA = [
         },
         {
           id: 'domain-warp->primary-fbm:domain-x',
-          gain: 0.72,
+          gain: 0.6,
         },
         {
           id: 'domain-warp->primary-fbm:domain-z',
-          gain: 0.68,
+          gain: 0.56,
         },
         {
           id: 'domain-warp->ridge-noise:domain-x',
@@ -1558,7 +1558,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.34,
-          envelope: { amplitude: { multiplier: 1.18 } },
+          envelope: { amplitude: { delta: 0.24 } },
           modulation: { amplitude: { multiplier: 0.36 } },
         },
         {
@@ -1644,7 +1644,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.34,
-          envelope: { amplitude: { multiplier: 1.12 } },
+          envelope: { amplitude: { delta: 0.18 } },
           modulation: { amplitude: { multiplier: 0.2 } },
         },
         {
@@ -1678,7 +1678,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.28,
-          envelope: { amplitude: { multiplier: 1.08 } },
+          envelope: { amplitude: { delta: 0.14 } },
           modulation: { amplitude: { multiplier: 0.22 } },
         },
         {
@@ -1760,7 +1760,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.4,
-          envelope: { amplitude: { multiplier: 1.2 } },
+          envelope: { amplitude: { delta: 0.26 } },
           modulation: { amplitude: { multiplier: 0.28 } },
         },
         {
@@ -1842,7 +1842,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.26,
-          envelope: { amplitude: { multiplier: 1.04 } },
+          envelope: { amplitude: { delta: 0.1 } },
           modulation: { amplitude: { multiplier: 0.24 } },
         },
         {
@@ -2006,7 +2006,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.3,
-          envelope: { amplitude: { multiplier: 1.1 } },
+          envelope: { amplitude: { delta: 0.16 } },
           modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
@@ -2120,7 +2120,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.28,
-          envelope: { amplitude: { multiplier: 1.06 } },
+          envelope: { amplitude: { delta: 0.12 } },
           modulation: { amplitude: { multiplier: 0.26 } },
         },
         {
@@ -2229,7 +2229,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.2,
-          envelope: { amplitude: { multiplier: 1.02 } },
+          envelope: { amplitude: { delta: 0.08 } },
           modulation: { amplitude: { multiplier: 0.28 } },
         },
         {
@@ -2311,7 +2311,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.3,
-          envelope: { amplitude: { multiplier: 1.16 } },
+          envelope: { amplitude: { delta: 0.22 } },
           modulation: { amplitude: { multiplier: 0.32 } },
         },
         {
@@ -2397,7 +2397,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.24,
-          envelope: { amplitude: { multiplier: 1.08 } },
+          envelope: { amplitude: { delta: 0.14 } },
           modulation: { amplitude: { multiplier: 0.26 } },
         },
         {
@@ -2431,7 +2431,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.38,
-          envelope: { amplitude: { multiplier: 1.24 } },
+          envelope: { amplitude: { delta: 0.3 } },
           modulation: { amplitude: { multiplier: 0.36 } },
         },
         {
@@ -2517,7 +2517,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.22,
-          envelope: { amplitude: { multiplier: 1.04 } },
+          envelope: { amplitude: { delta: 0.1 } },
           modulation: { amplitude: { multiplier: 0.28 } },
         },
         {
@@ -2603,7 +2603,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.3,
-          envelope: { amplitude: { multiplier: 1.12 } },
+          envelope: { amplitude: { delta: 0.18 } },
           modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
@@ -2684,7 +2684,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.18,
-          envelope: { amplitude: { multiplier: 1.04 } },
+          envelope: { amplitude: { delta: 0.1 } },
           modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
@@ -2882,7 +2882,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.22,
-          envelope: { amplitude: { multiplier: 1.08 } },
+          envelope: { amplitude: { delta: 0.14 } },
           modulation: { amplitude: { multiplier: 0.32 } },
         },
         {
@@ -2968,7 +2968,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.26,
-          envelope: { amplitude: { multiplier: 1.1 } },
+          envelope: { amplitude: { delta: 0.16 } },
           modulation: { amplitude: { multiplier: 0.32 } },
         },
         {
@@ -3054,7 +3054,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.34,
-          envelope: { amplitude: { multiplier: 1.18 } },
+          envelope: { amplitude: { delta: 0.24 } },
           modulation: { amplitude: { multiplier: 0.34 } },
         },
         {
@@ -3140,7 +3140,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.32,
-          envelope: { amplitude: { multiplier: 1.22 }, warp: { x: -14, z: 18 } },
+          envelope: { amplitude: { delta: 0.28 }, warp: { x: -14, z: 18 } },
           modulation: { amplitude: { multiplier: 0.32 } },
         },
         {
@@ -3232,7 +3232,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.2,
-          envelope: { amplitude: { multiplier: 1.06 } },
+          envelope: { amplitude: { delta: 0.12 } },
           modulation: { amplitude: { multiplier: 0.28 } },
         },
         {
@@ -3318,7 +3318,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.2,
-          envelope: { amplitude: { multiplier: 1.08 } },
+          envelope: { amplitude: { delta: 0.14 } },
           modulation: { amplitude: { multiplier: 0.26 } },
         },
         {
@@ -3409,7 +3409,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.16,
-          envelope: { amplitude: { multiplier: 1.04 } },
+          envelope: { amplitude: { delta: 0.1 } },
           modulation: { amplitude: { multiplier: 0.22 } },
         },
         {
@@ -3587,7 +3587,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.26,
-          envelope: { amplitude: { multiplier: 1.12 } },
+          envelope: { amplitude: { delta: 0.18 } },
           modulation: { amplitude: { multiplier: 0.34 } },
         },
         {
@@ -3775,7 +3775,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.36,
-          envelope: { amplitude: { multiplier: 1.22 } },
+          envelope: { amplitude: { delta: 0.28 } },
           modulation: { amplitude: { multiplier: 0.34 } },
         },
         {
@@ -3857,7 +3857,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.4,
-          envelope: { amplitude: { multiplier: 1.24 } },
+          envelope: { amplitude: { delta: 0.3 } },
           modulation: { amplitude: { multiplier: 0.36 } },
         },
         {
@@ -3938,7 +3938,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.32,
-          envelope: { amplitude: { multiplier: 1.14 } },
+          envelope: { amplitude: { delta: 0.2 } },
           modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
@@ -3971,7 +3971,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.34,
-          envelope: { amplitude: { multiplier: 1.16 } },
+          envelope: { amplitude: { delta: 0.22 } },
           modulation: { amplitude: { multiplier: 0.32 } },
         },
         {
@@ -4228,7 +4228,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.3,
-          envelope: { amplitude: { multiplier: 1.12 } },
+          envelope: { amplitude: { delta: 0.18 } },
           modulation: { amplitude: { multiplier: 0.3 } },
         },
         {
@@ -4313,7 +4313,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.32,
-          envelope: { amplitude: { multiplier: 1.14 } },
+          envelope: { amplitude: { delta: 0.2 } },
           modulation: { amplitude: { multiplier: 0.32 } },
         },
         {
@@ -4394,7 +4394,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.28,
-          envelope: { amplitude: { multiplier: 1.08 } },
+          envelope: { amplitude: { delta: 0.14 } },
           modulation: { amplitude: { multiplier: 0.28 } },
         },
         {
@@ -4475,7 +4475,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.36,
-          envelope: { amplitude: { multiplier: 1.22 } },
+          envelope: { amplitude: { delta: 0.28 } },
           modulation: { amplitude: { multiplier: 0.36 } },
         },
         {
@@ -4556,7 +4556,7 @@ const RAW_TFMS_SCHEMATA = [
         {
           id: 'primary-fbm',
           bias: 0.34,
-          envelope: { amplitude: { multiplier: 1.18 } },
+          envelope: { amplitude: { delta: 0.24 } },
           modulation: { amplitude: { multiplier: 0.34 } },
         },
         {
