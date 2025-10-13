@@ -21,7 +21,12 @@ const biomeModuleMap = Object.fromEntries(
 globalThis.__BIOME_MODULE_MAP__ = biomeModuleMap
 
 const { createTerrainEngine } = await import('../terrain-engine.js')
-const { defaultWorldOptions } = await import('../world-settings.js')
+const {
+  defaultWorldOptions,
+  LEGACY_PRIMARY_SLOPE_BUDGET,
+  LEGACY_DETAIL_SLOPE_BUDGET,
+  LEGACY_RIDGE_SLOPE_BUDGET,
+} = await import('../world-settings.js')
 
 function computeSlopePercentile(slopes, percentile) {
   if (!Array.isArray(slopes) || slopes.length === 0) {
@@ -73,6 +78,45 @@ test('default terrain adjacent slopes stay within the calibrated budget', () => 
       slope95 <= slopeLimit,
       `expected 95th percentile adjacent slope ≤ ${slopeLimit}, received ${slope95}`,
     )
+
+    const terrain = defaultWorldOptions.terrain
+    const tolerance = 1e-9
+
+    const expectedPrimaryFrequency =
+      terrain.primaryAmplitude > 0
+        ? LEGACY_PRIMARY_SLOPE_BUDGET / terrain.primaryAmplitude
+        : 0
+    if (expectedPrimaryFrequency > 0) {
+      assert.ok(
+        Math.abs(terrain.primaryFrequency - expectedPrimaryFrequency) <=
+          Math.max(expectedPrimaryFrequency, 1) * tolerance,
+        `expected primary frequency ≈ ${expectedPrimaryFrequency}, received ${terrain.primaryFrequency}`,
+      )
+    }
+
+    const expectedDetailFrequency =
+      terrain.detailAmplitude > 0
+        ? LEGACY_DETAIL_SLOPE_BUDGET / terrain.detailAmplitude
+        : 0
+    if (expectedDetailFrequency > 0) {
+      assert.ok(
+        Math.abs(terrain.detailFrequency - expectedDetailFrequency) <=
+          Math.max(expectedDetailFrequency, 1) * tolerance,
+        `expected detail frequency ≈ ${expectedDetailFrequency}, received ${terrain.detailFrequency}`,
+      )
+    }
+
+    const expectedRidgeFrequency =
+      terrain.ridgeStrength > 0
+        ? LEGACY_RIDGE_SLOPE_BUDGET / terrain.ridgeStrength
+        : 0
+    if (expectedRidgeFrequency > 0) {
+      assert.ok(
+        Math.abs(terrain.ridgeFrequency - expectedRidgeFrequency) <=
+          Math.max(expectedRidgeFrequency, 1) * tolerance,
+        `expected ridge frequency ≈ ${expectedRidgeFrequency}, received ${terrain.ridgeFrequency}`,
+      )
+    }
   } finally {
     engine.dispose()
   }

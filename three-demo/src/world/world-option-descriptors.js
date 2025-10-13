@@ -62,23 +62,30 @@ const baseRidgeFrequency = 0.02
 const legacyPrimaryAmplitudeBudget = 8
 const legacyDetailAmplitudeBudget = 3
 const legacyRidgeStrengthBudget = 2.4
+const legacyPrimarySlopeBudget =
+  basePrimaryFrequency * legacyPrimaryAmplitudeBudget
+const legacyDetailSlopeBudget =
+  baseDetailFrequency * legacyDetailAmplitudeBudget
+const legacyRidgeSlopeBudget =
+  baseRidgeFrequency * legacyRidgeStrengthBudget
 
 function deriveLegacySlopeFrequency({
   amplitude,
   baselineFrequency,
   legacyAmplitudeTarget,
+  legacySlopeBudget,
 }) {
   if (!Number.isFinite(amplitude) || amplitude <= 0) {
     return baselineFrequency
   }
-  if (!Number.isFinite(legacyAmplitudeTarget) || legacyAmplitudeTarget <= 0) {
+  const slopeBudget =
+    Number.isFinite(legacySlopeBudget) && legacySlopeBudget > 0
+      ? legacySlopeBudget
+      : baselineFrequency * legacyAmplitudeTarget
+  if (!Number.isFinite(slopeBudget) || slopeBudget <= 0) {
     return baselineFrequency
   }
-  const amplitudeRatio = amplitude / legacyAmplitudeTarget
-  if (!Number.isFinite(amplitudeRatio) || amplitudeRatio <= 0) {
-    return baselineFrequency
-  }
-  return baselineFrequency / amplitudeRatio
+  return slopeBudget / amplitude
 }
 const defaultTerrainClampMin = -defaultTerrainVerticalExtent
 const defaultTerrainClampMax = defaultTerrainVerticalExtent
@@ -122,16 +129,19 @@ const defaultPrimaryFrequency = deriveLegacySlopeFrequency({
   amplitude: defaultPrimaryAmplitude,
   baselineFrequency: basePrimaryFrequency,
   legacyAmplitudeTarget: legacyPrimaryAmplitudeBudget,
+  legacySlopeBudget: legacyPrimarySlopeBudget,
 })
 const defaultDetailFrequency = deriveLegacySlopeFrequency({
   amplitude: defaultDetailAmplitude,
   baselineFrequency: baseDetailFrequency,
   legacyAmplitudeTarget: legacyDetailAmplitudeBudget,
+  legacySlopeBudget: legacyDetailSlopeBudget,
 })
 const defaultRidgeFrequency = deriveLegacySlopeFrequency({
   amplitude: defaultRidgeStrength,
   baselineFrequency: baseRidgeFrequency,
   legacyAmplitudeTarget: legacyRidgeStrengthBudget,
+  legacySlopeBudget: legacyRidgeSlopeBudget,
 })
 
 const tfmsWaveformOptions = Object.freeze([
