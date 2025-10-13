@@ -74,7 +74,11 @@ function deriveLegacyScaledFrequency({
   if (!Number.isFinite(legacyAmplitudeTarget) || legacyAmplitudeTarget <= 0) {
     return baselineFrequency
   }
-  return baselineFrequency * (legacyAmplitudeTarget / amplitude)
+  const amplitudeRatio = legacyAmplitudeTarget / amplitude
+  if (!Number.isFinite(amplitudeRatio) || amplitudeRatio <= 0) {
+    return baselineFrequency
+  }
+  return baselineFrequency * amplitudeRatio
 }
 const defaultTerrainClampMin = -defaultTerrainVerticalExtent
 const defaultTerrainClampMax = defaultTerrainVerticalExtent

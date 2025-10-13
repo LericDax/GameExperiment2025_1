@@ -149,7 +149,11 @@ function deriveLegacyScaledFrequency({
   if (!Number.isFinite(legacyAmplitudeTarget) || legacyAmplitudeTarget <= 0) {
     return fallbackFrequency
   }
-  return baselineFrequency * (legacyAmplitudeTarget / amplitude)
+  const amplitudeRatio = legacyAmplitudeTarget / amplitude
+  if (!Number.isFinite(amplitudeRatio) || amplitudeRatio <= 0) {
+    return fallbackFrequency
+  }
+  return baselineFrequency * amplitudeRatio
 }
 
 function normalizeChunkSizeForEnvelope(chunkSize) {
@@ -223,23 +227,21 @@ function computeTerrainWaveDefaults({
     ['terrain', 'ridgeStrength'],
   )
 
+  const slopeAlignedPrimaryFrequency = deriveLegacyScaledFrequency({
+    amplitude: DEFAULT_TERRAIN_PRIMARY_AMPLITUDE,
+    baselineFrequency: LEGACY_PRIMARY_FREQUENCY_BASELINE,
+    legacyAmplitudeTarget: LEGACY_PRIMARY_AMPLITUDE_TARGET,
+    fallbackFrequency: LEGACY_PRIMARY_FREQUENCY_BASELINE,
+  })
   const defaultPrimaryFrequency =
     DEFAULT_TERRAIN_PRIMARY_FREQUENCY > 0
       ? DEFAULT_TERRAIN_PRIMARY_FREQUENCY
-      : deriveLegacyScaledFrequency({
-          amplitude: DEFAULT_TERRAIN_PRIMARY_AMPLITUDE,
-          baselineFrequency: LEGACY_PRIMARY_FREQUENCY_BASELINE,
-          legacyAmplitudeTarget: LEGACY_PRIMARY_AMPLITUDE_TARGET,
-          fallbackFrequency: LEGACY_PRIMARY_FREQUENCY_BASELINE,
-        })
+      : slopeAlignedPrimaryFrequency
   const primaryFrequencyCandidate = deriveLegacyScaledFrequency({
     amplitude: primaryAmplitude,
     baselineFrequency: LEGACY_PRIMARY_FREQUENCY_BASELINE,
     legacyAmplitudeTarget: LEGACY_PRIMARY_AMPLITUDE_TARGET,
-    fallbackFrequency:
-      defaultPrimaryFrequency > 0
-        ? defaultPrimaryFrequency
-        : LEGACY_PRIMARY_FREQUENCY_BASELINE,
+    fallbackFrequency: defaultPrimaryFrequency,
   })
   const primaryFrequency = normalizeWithDescriptor(
     primaryFrequencyCandidate,
@@ -247,23 +249,21 @@ function computeTerrainWaveDefaults({
     ['terrain', 'primaryFrequency'],
   )
 
+  const slopeAlignedDetailFrequency = deriveLegacyScaledFrequency({
+    amplitude: DEFAULT_TERRAIN_DETAIL_AMPLITUDE,
+    baselineFrequency: LEGACY_DETAIL_FREQUENCY_BASELINE,
+    legacyAmplitudeTarget: LEGACY_DETAIL_AMPLITUDE_TARGET,
+    fallbackFrequency: LEGACY_DETAIL_FREQUENCY_BASELINE,
+  })
   const defaultDetailFrequency =
     DEFAULT_TERRAIN_DETAIL_FREQUENCY > 0
       ? DEFAULT_TERRAIN_DETAIL_FREQUENCY
-      : deriveLegacyScaledFrequency({
-          amplitude: DEFAULT_TERRAIN_DETAIL_AMPLITUDE,
-          baselineFrequency: LEGACY_DETAIL_FREQUENCY_BASELINE,
-          legacyAmplitudeTarget: LEGACY_DETAIL_AMPLITUDE_TARGET,
-          fallbackFrequency: LEGACY_DETAIL_FREQUENCY_BASELINE,
-        })
+      : slopeAlignedDetailFrequency
   const detailFrequencyCandidate = deriveLegacyScaledFrequency({
     amplitude: detailAmplitude,
     baselineFrequency: LEGACY_DETAIL_FREQUENCY_BASELINE,
     legacyAmplitudeTarget: LEGACY_DETAIL_AMPLITUDE_TARGET,
-    fallbackFrequency:
-      defaultDetailFrequency > 0
-        ? defaultDetailFrequency
-        : LEGACY_DETAIL_FREQUENCY_BASELINE,
+    fallbackFrequency: defaultDetailFrequency,
   })
   const detailFrequency = normalizeWithDescriptor(
     detailFrequencyCandidate,
@@ -271,23 +271,21 @@ function computeTerrainWaveDefaults({
     ['terrain', 'detailFrequency'],
   )
 
+  const slopeAlignedRidgeFrequency = deriveLegacyScaledFrequency({
+    amplitude: DEFAULT_TERRAIN_RIDGE_STRENGTH,
+    baselineFrequency: LEGACY_RIDGE_FREQUENCY_BASELINE,
+    legacyAmplitudeTarget: LEGACY_RIDGE_STRENGTH_TARGET,
+    fallbackFrequency: LEGACY_RIDGE_FREQUENCY_BASELINE,
+  })
   const defaultRidgeFrequency =
     DEFAULT_TERRAIN_RIDGE_FREQUENCY > 0
       ? DEFAULT_TERRAIN_RIDGE_FREQUENCY
-      : deriveLegacyScaledFrequency({
-          amplitude: DEFAULT_TERRAIN_RIDGE_STRENGTH,
-          baselineFrequency: LEGACY_RIDGE_FREQUENCY_BASELINE,
-          legacyAmplitudeTarget: LEGACY_RIDGE_STRENGTH_TARGET,
-          fallbackFrequency: LEGACY_RIDGE_FREQUENCY_BASELINE,
-        })
+      : slopeAlignedRidgeFrequency
   const ridgeFrequencyCandidate = deriveLegacyScaledFrequency({
     amplitude: ridgeStrength,
     baselineFrequency: LEGACY_RIDGE_FREQUENCY_BASELINE,
     legacyAmplitudeTarget: LEGACY_RIDGE_STRENGTH_TARGET,
-    fallbackFrequency:
-      defaultRidgeFrequency > 0
-        ? defaultRidgeFrequency
-        : LEGACY_RIDGE_FREQUENCY_BASELINE,
+    fallbackFrequency: defaultRidgeFrequency,
   })
   const ridgeFrequency = normalizeWithDescriptor(
     ridgeFrequencyCandidate,
@@ -2597,7 +2595,11 @@ export function applyWorldOptions(overrides = {}) {
   const previousChunkSize = Number.isFinite(worldOptions.chunk?.size)
     ? worldOptions.chunk.size
     : DEFAULT_CHUNK_SIZE
+  const previousBaseHeight = Number.isFinite(worldOptions.terrain?.baseHeight)
+    ? worldOptions.terrain.baseHeight
+    : DEFAULT_TERRAIN_BASE_HEIGHT
   let chunkSizeChanged = false
+  let baseHeightChanged = false
   const chunkOverrides = isObject(overrides.chunk) ? overrides.chunk : null
   const resolvedChunkSize = normalizeNumber(
     chunkOverrides?.size ?? overrides.chunkSize,
@@ -2659,6 +2661,7 @@ export function applyWorldOptions(overrides = {}) {
       worldOptions.terrain.baseHeight,
       ['terrain', 'baseHeight'],
     )
+    baseHeightChanged = baseHeight !== previousBaseHeight
     worldOptions.baseHeight = baseHeight
     worldOptions.terrain.baseHeight = baseHeight
   }
@@ -2742,7 +2745,7 @@ export function applyWorldOptions(overrides = {}) {
     }
   })
 
-  if (chunkSizeChanged) {
+  if (chunkSizeChanged || baseHeightChanged) {
     const waveDefaults = computeTerrainWaveDefaults({
       chunkSize: worldOptions.chunk.size,
       baseHeight: worldOptions.terrain.baseHeight,
