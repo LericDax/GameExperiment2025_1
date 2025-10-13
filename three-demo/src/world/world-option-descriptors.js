@@ -62,12 +62,24 @@ const baseRidgeFrequency = 0.02
 const legacyPrimaryAmplitudeBudget = 8
 const legacyDetailAmplitudeBudget = 3
 const legacyRidgeStrengthBudget = 2.4
-const legacyPrimarySlopeBudget =
-  basePrimaryFrequency * legacyPrimaryAmplitudeBudget
-const legacyDetailSlopeBudget =
-  baseDetailFrequency * legacyDetailAmplitudeBudget
-const legacyRidgeSlopeBudget =
-  baseRidgeFrequency * legacyRidgeStrengthBudget
+
+function deriveLegacySlopeFrequency({
+  amplitude,
+  baselineFrequency,
+  legacyAmplitudeTarget,
+}) {
+  if (!Number.isFinite(amplitude) || amplitude <= 0) {
+    return baselineFrequency
+  }
+  if (!Number.isFinite(legacyAmplitudeTarget) || legacyAmplitudeTarget <= 0) {
+    return baselineFrequency
+  }
+  const amplitudeRatio = amplitude / legacyAmplitudeTarget
+  if (!Number.isFinite(amplitudeRatio) || amplitudeRatio <= 0) {
+    return baselineFrequency
+  }
+  return baselineFrequency / amplitudeRatio
+}
 const defaultTerrainClampMin = -defaultTerrainVerticalExtent
 const defaultTerrainClampMax = defaultTerrainVerticalExtent
 const primaryAmplitudeRatio = 0.58
@@ -106,18 +118,21 @@ const defaultRidgeStrength = Math.max(
     remainingAfterDetail,
   ),
 )
-const defaultPrimaryFrequency =
-  defaultPrimaryAmplitude > 0
-    ? legacyPrimarySlopeBudget / defaultPrimaryAmplitude
-    : basePrimaryFrequency
-const defaultDetailFrequency =
-  defaultDetailAmplitude > 0
-    ? legacyDetailSlopeBudget / defaultDetailAmplitude
-    : baseDetailFrequency
-const defaultRidgeFrequency =
-  defaultRidgeStrength > 0
-    ? legacyRidgeSlopeBudget / defaultRidgeStrength
-    : baseRidgeFrequency
+const defaultPrimaryFrequency = deriveLegacySlopeFrequency({
+  amplitude: defaultPrimaryAmplitude,
+  baselineFrequency: basePrimaryFrequency,
+  legacyAmplitudeTarget: legacyPrimaryAmplitudeBudget,
+})
+const defaultDetailFrequency = deriveLegacySlopeFrequency({
+  amplitude: defaultDetailAmplitude,
+  baselineFrequency: baseDetailFrequency,
+  legacyAmplitudeTarget: legacyDetailAmplitudeBudget,
+})
+const defaultRidgeFrequency = deriveLegacySlopeFrequency({
+  amplitude: defaultRidgeStrength,
+  baselineFrequency: baseRidgeFrequency,
+  legacyAmplitudeTarget: legacyRidgeStrengthBudget,
+})
 
 const tfmsWaveformOptions = Object.freeze([
   Object.freeze({
