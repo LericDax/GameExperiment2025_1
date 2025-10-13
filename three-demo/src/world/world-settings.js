@@ -565,6 +565,9 @@ const defaultTerrainTfmsKameaErosion = getDescriptorDefault([
 export const LEGACY_TFMS_PRIMARY_AMPLITUDE = 8
 export const LEGACY_TFMS_DETAIL_AMPLITUDE = 3
 
+const LEGACY_TFMS_PRIMARY_AMPLITUDE_BASELINE = LEGACY_TFMS_PRIMARY_AMPLITUDE
+const LEGACY_TFMS_DETAIL_AMPLITUDE_BASELINE = LEGACY_TFMS_DETAIL_AMPLITUDE
+
 /**
  * Default TFMS preset mirroring the six-operator attenuation stack outlined in
  * docs/tfms-system.md#default-operator-catalogue. Update the guide alongside
@@ -1154,8 +1157,6 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   const ridgeFrequency = terrainDefaults.ridgeFrequency
   const ridgeOffset = terrainDefaults.ridgeOffset
 
-  const legacyPrimaryAmplitude = LEGACY_TFMS_PRIMARY_AMPLITUDE
-  const legacyDetailAmplitude = LEGACY_TFMS_DETAIL_AMPLITUDE
   const safePrimaryAmplitude = Number.isFinite(baseAmplitude)
     ? Math.max(baseAmplitude, 1)
     : 1
@@ -1163,15 +1164,16 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     ? Math.max(detailAmplitude, 1)
     : 1
   const primaryRatio =
-    legacyPrimaryAmplitude > 0
-      ? safePrimaryAmplitude / legacyPrimaryAmplitude
+    LEGACY_TFMS_PRIMARY_AMPLITUDE_BASELINE > 0
+      ? safePrimaryAmplitude / LEGACY_TFMS_PRIMARY_AMPLITUDE_BASELINE
       : 1
   const detailRatio =
-    legacyDetailAmplitude > 0
-      ? safeDetailAmplitude / legacyDetailAmplitude
+    LEGACY_TFMS_DETAIL_AMPLITUDE_BASELINE > 0
+      ? safeDetailAmplitude / LEGACY_TFMS_DETAIL_AMPLITUDE_BASELINE
       : 1
-  const primaryNormalizationScale =
-    primaryRatio > 0 ? 1 / primaryRatio : 1
+  const primaryInverseRatio = primaryRatio > 0 ? 1 / primaryRatio : 1
+  const detailInverseRatio = detailRatio > 0 ? 1 / detailRatio : 1
+  const primaryNormalizationScale = primaryInverseRatio
 
   const clampValue = (value, min, max) => {
     let next = value
@@ -1362,37 +1364,37 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
       : 1
 
   const derivedModulationNormalizedRaw = normalizedPrimaryForStrength / 16
-  let derivedModulation = clampValue(
+  const derivedModulationUnclamped =
     derivedModulationNormalizedRaw *
-      derivedStrengthNormalizationRatio *
-      primaryStrengthInverseRatio,
+    derivedStrengthNormalizationRatio *
+    primaryStrengthInverseRatio *
+    primaryInverseRatio
+  let derivedModulation = clampValue(
+    derivedModulationUnclamped,
     0.3,
     1,
   )
-  let derivedWarp = clampValue(
+  const derivedWarpUnclamped =
     derivedModulationNormalizedRaw *
-      0.75 *
-      derivedStrengthNormalizationRatio *
-      primaryStrengthInverseRatio,
-    0,
-    1,
-  )
-  let derivedPhase = clampValue(
+    0.75 *
+    derivedStrengthNormalizationRatio *
+    primaryStrengthInverseRatio *
+    primaryInverseRatio
+  let derivedWarp = clampValue(derivedWarpUnclamped, 0, 1)
+  const derivedPhaseUnclamped =
     derivedModulationNormalizedRaw *
-      0.45 *
-      derivedStrengthNormalizationRatio *
-      primaryStrengthInverseRatio,
-    0,
-    1,
-  )
+    0.45 *
+    derivedStrengthNormalizationRatio *
+    primaryStrengthInverseRatio *
+    primaryInverseRatio
+  let derivedPhase = clampValue(derivedPhaseUnclamped, 0, 1)
   const derivedSpectralNormalizedRaw = normalizedDetailForStrength / 6
-  let derivedSpectral = clampValue(
+  const derivedSpectralUnclamped =
     derivedSpectralNormalizedRaw *
-      derivedStrengthNormalizationRatio *
-      detailStrengthInverseRatio,
-    0.2,
-    1,
-  )
+    derivedStrengthNormalizationRatio *
+    detailStrengthInverseRatio *
+    detailInverseRatio
+  let derivedSpectral = clampValue(derivedSpectralUnclamped, 0.2, 1)
 
   const chunkSizeCandidate = Number.isFinite(terrainDefaults?.chunkSize)
     ? terrainDefaults.chunkSize
