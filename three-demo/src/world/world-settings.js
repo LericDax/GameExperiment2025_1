@@ -495,6 +495,7 @@ const defaultTerrainTfmsKameaErosion = getDescriptorDefault([
 ])
 
 export const LEGACY_TFMS_PRIMARY_AMPLITUDE = 8
+export const LEGACY_TFMS_DETAIL_AMPLITUDE = 3
 
 /**
  * Default TFMS preset mirroring the six-operator attenuation stack outlined in
@@ -1111,12 +1112,10 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   const baselineDetailRatio =
     defaultTerrainCore.detailAmplitude / baselineMaxHeight
 
-  const normalizationFactor =
+  const primaryNormalizationRatio =
     normalizedBaseAmplitude > 0
-      ? normalizedBaseAmplitude / LEGACY_TFMS_PRIMARY_AMPLITUDE
+      ? Math.min(1, LEGACY_TFMS_PRIMARY_AMPLITUDE / normalizedBaseAmplitude)
       : 1
-  const normalizationGain =
-    normalizationFactor > 0 ? 1 / normalizationFactor : 1
 
   const baselinePrimaryAmplitude =
     Number.isFinite(defaultTerrainCore?.primaryAmplitude) &&
@@ -1128,12 +1127,18 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     defaultTerrainCore.detailAmplitude > 0
       ? defaultTerrainCore.detailAmplitude
       : normalizedDetailAmplitude
-  const baselineNormalizationFactor =
+  const baselinePrimaryNormalizationRatio =
     baselinePrimaryAmplitude > 0
-      ? baselinePrimaryAmplitude / LEGACY_TFMS_PRIMARY_AMPLITUDE
+      ? Math.min(1, LEGACY_TFMS_PRIMARY_AMPLITUDE / baselinePrimaryAmplitude)
       : 1
-  const baselineNormalizationGain =
-    baselineNormalizationFactor > 0 ? 1 / baselineNormalizationFactor : 1
+  const detailNormalizationRatio =
+    normalizedDetailAmplitude > 0
+      ? Math.min(1, LEGACY_TFMS_DETAIL_AMPLITUDE / normalizedDetailAmplitude)
+      : 1
+  const baselineDetailNormalizationRatio =
+    baselineDetailAmplitude > 0
+      ? Math.min(1, LEGACY_TFMS_DETAIL_AMPLITUDE / baselineDetailAmplitude)
+      : 1
 
   const amplitudeRatioNormalizedRaw =
     baselinePrimaryRatio > 0 ? baseAmplitudeRatio / baselinePrimaryRatio : 1
@@ -1158,7 +1163,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     : 0.45
 
   const baselineModulationNormalizedRaw =
-    (baselinePrimaryAmplitude / 16) * baselineNormalizationGain
+    (baselinePrimaryAmplitude / 16) * baselinePrimaryNormalizationRatio
   const baselineDerivedModulation = clampValue(
     baselineModulationNormalizedRaw,
     0.3,
@@ -1175,7 +1180,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     1,
   )
   const baselineSpectralNormalizedRaw =
-    (baselineDetailAmplitude / 6) * baselineNormalizationGain
+    (baselineDetailAmplitude / 6) * baselineDetailNormalizationRatio
   const baselineDerivedSpectral = clampValue(
     baselineSpectralNormalizedRaw,
     0.2,
@@ -1183,12 +1188,12 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   )
 
   const derivedModulationNormalizedRaw =
-    (normalizedBaseAmplitude / 16) * normalizationGain
+    (normalizedBaseAmplitude / 16) * primaryNormalizationRatio
   let derivedModulation = clampValue(derivedModulationNormalizedRaw, 0.3, 1)
   let derivedWarp = clampValue(derivedModulationNormalizedRaw * 0.75, 0, 1)
   let derivedPhase = clampValue(derivedModulationNormalizedRaw * 0.45, 0, 1)
   const derivedSpectralNormalizedRaw =
-    (normalizedDetailAmplitude / 6) * normalizationGain
+    (normalizedDetailAmplitude / 6) * detailNormalizationRatio
   let derivedSpectral = clampValue(derivedSpectralNormalizedRaw, 0.2, 1)
 
   const chunkSizeCandidate = Number.isFinite(terrainDefaults?.chunkSize)
@@ -1197,15 +1202,15 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     ? terrainDefaults.chunk.size
     : DEFAULT_CHUNK_SIZE
   const normalizedChunkSize = normalizeChunkSizeForEnvelope(chunkSizeCandidate)
-  const domainWarpNormalizationGain =
-    Number.isFinite(normalizationGain) && normalizationGain > 0
-      ? normalizationGain
+  const domainWarpNormalizationRatio =
+    Number.isFinite(primaryNormalizationRatio) && primaryNormalizationRatio > 0
+      ? primaryNormalizationRatio
       : 1
-  let domainWarpAmplitudeMultiplier = 0.32 * domainWarpNormalizationGain
+  let domainWarpAmplitudeMultiplier = 0.32 * domainWarpNormalizationRatio
   let domainWarpAmplitudeMax = 256
-  let domainWarpFrequencyMultiplier = 0.65 * domainWarpNormalizationGain
-  let domainWarpPrimaryGainValue = 0.7 * domainWarpNormalizationGain
-  let domainWarpRidgeGainValue = 0.5 * domainWarpNormalizationGain
+  let domainWarpFrequencyMultiplier = 0.65 * domainWarpNormalizationRatio
+  let domainWarpPrimaryGainValue = 0.7 * domainWarpNormalizationRatio
+  let domainWarpRidgeGainValue = 0.5 * domainWarpNormalizationRatio
   let domainWarpGainLimit = 4
 
   if (amplitudeRatioNormalizedRaw > 1) {
