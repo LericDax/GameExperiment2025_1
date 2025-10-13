@@ -51,13 +51,13 @@ Skybox IDs are sourced from `listSkyboxes()`, which enumerates the HDR and LDR p
 | `terrain.maxHeight` | Maximum Height | Hard cap on how tall terrain columns may grow before clamping to a ceiling. | `number` | `144` | `1` – `1024` | `1` |
 | `terrain.clamp.min` | Clamp Minimum | Lower clamp bound applied after noise sampling to prevent deep pits. | `number` | `-144` | `-144` – `1024` | `1` |
 | `terrain.clamp.max` | Clamp Maximum | Upper clamp bound applied after noise sampling to prevent towering spikes. | `number` | `144` | `1` – `1024` | `1` |
-| `terrain.primaryFrequency` | Primary Frequency | Base frequency for macro terrain variation. Lower values create large landforms. | `number` | `0.06` | `0.0001` – `1` | `0.0001` |
+| `terrain.primaryFrequency` | Primary Frequency | Base frequency for macro terrain variation. Lower values create large landforms. | `number` | `0.005714285714285714` | `0.0001` – `1` | `0.0001` |
 | `terrain.primaryAmplitude` | Primary Amplitude | Strength of the macro terrain wave. Higher values exaggerate hills and valleys. | `number` | `84` | `0` – `256` | `0.1` |
 | `terrain.primaryOffset` | Primary Offset | Phase offset applied to the macro terrain noise field. | `number` | `0` | `-10000` – `10000` | `1` |
-| `terrain.detailFrequency` | Detail Frequency | Frequency of secondary detail used to break up flat areas. | `number` | `0.08` | `0.0001` – `2` | `0.0001` |
+| `terrain.detailFrequency` | Detail Frequency | Frequency of secondary detail used to break up flat areas. | `number` | `0.018461538461538463` | `0.0001` – `2` | `0.0001` |
 | `terrain.detailAmplitude` | Detail Amplitude | Strength of the secondary detail contribution. | `number` | `13` | `0` – `128` | `0.1` |
 | `terrain.detailOffset` | Detail Offset | Phase offset for the detail terrain noise. | `number` | `100` | `-10000` – `10000` | `1` |
-| `terrain.ridgeFrequency` | Ridge Frequency | Frequency controlling how often sharp ridgelines occur. | `number` | `0.02` | `0.0001` – `1` | `0.0001` |
+| `terrain.ridgeFrequency` | Ridge Frequency | Frequency controlling how often sharp ridgelines occur. | `number` | `0.0048` | `0.0001` – `1` | `0.0001` |
 | `terrain.ridgeStrength` | Ridge Strength | Strength multiplier for ridge contributions on top of base terrain. | `number` | `10` | `0` – `64` | `0.1` |
 | `terrain.ridgeOffset` | Ridge Offset | Phase offset for the ridge noise sampler. | `number` | `220` | `-10000` – `10000` | `1` |
 | `terrain.climateHeightInfluence` | Climate Height Influence | How strongly biome climate data affects the perceived terrain elevation. | `number` | `1.2` | `-10` – `10` | `0.05` |
