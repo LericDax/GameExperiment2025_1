@@ -1142,6 +1142,14 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   const ridgeFrequency = terrainDefaults.ridgeFrequency
   const ridgeOffset = terrainDefaults.ridgeOffset
 
+  const legacyPrimaryAmplitude = Math.max(
+    1,
+    LEGACY_TFMS_PRIMARY_AMPLITUDE_BASELINE,
+  )
+  const legacyDetailAmplitude = Math.max(
+    1,
+    LEGACY_TFMS_DETAIL_AMPLITUDE_BASELINE,
+  )
   const safePrimaryAmplitude = Number.isFinite(baseAmplitude)
     ? Math.max(baseAmplitude, 1)
     : 1
@@ -1149,16 +1157,15 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     ? Math.max(detailAmplitude, 1)
     : 1
   const primaryRatio =
-    LEGACY_TFMS_PRIMARY_AMPLITUDE_BASELINE > 0
-      ? safePrimaryAmplitude / LEGACY_TFMS_PRIMARY_AMPLITUDE_BASELINE
+    legacyPrimaryAmplitude > 0
+      ? safePrimaryAmplitude / legacyPrimaryAmplitude
       : 1
   const detailRatio =
-    LEGACY_TFMS_DETAIL_AMPLITUDE_BASELINE > 0
-      ? safeDetailAmplitude / LEGACY_TFMS_DETAIL_AMPLITUDE_BASELINE
+    legacyDetailAmplitude > 0
+      ? safeDetailAmplitude / legacyDetailAmplitude
       : 1
   const primaryInverseRatio = primaryRatio > 0 ? 1 / primaryRatio : 1
   const detailInverseRatio = detailRatio > 0 ? 1 / detailRatio : 1
-  const primaryNormalizationScale = primaryInverseRatio
 
   const clampValue = (value, min, max) => {
     let next = value
@@ -1349,37 +1356,37 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
       : 1
 
   const derivedModulationNormalizedRaw = normalizedPrimaryForStrength / 16
-  const derivedModulationUnclamped =
+  const derivedModulationBaseline =
     derivedModulationNormalizedRaw *
     derivedStrengthNormalizationRatio *
-    primaryStrengthInverseRatio *
-    primaryInverseRatio
+    primaryStrengthInverseRatio
   let derivedModulation = clampValue(
-    derivedModulationUnclamped,
+    derivedModulationBaseline * primaryInverseRatio,
     0.3,
     1,
   )
-  const derivedWarpUnclamped =
+  const derivedWarpBaseline =
     derivedModulationNormalizedRaw *
     0.75 *
     derivedStrengthNormalizationRatio *
-    primaryStrengthInverseRatio *
-    primaryInverseRatio
-  let derivedWarp = clampValue(derivedWarpUnclamped, 0, 1)
-  const derivedPhaseUnclamped =
+    primaryStrengthInverseRatio
+  let derivedWarp = clampValue(derivedWarpBaseline * primaryInverseRatio, 0, 1)
+  const derivedPhaseBaseline =
     derivedModulationNormalizedRaw *
     0.45 *
     derivedStrengthNormalizationRatio *
-    primaryStrengthInverseRatio *
-    primaryInverseRatio
-  let derivedPhase = clampValue(derivedPhaseUnclamped, 0, 1)
+    primaryStrengthInverseRatio
+  let derivedPhase = clampValue(derivedPhaseBaseline * primaryInverseRatio, 0, 1)
   const derivedSpectralNormalizedRaw = normalizedDetailForStrength / 6
-  const derivedSpectralUnclamped =
+  const derivedSpectralBaseline =
     derivedSpectralNormalizedRaw *
     derivedStrengthNormalizationRatio *
-    detailStrengthInverseRatio *
-    detailInverseRatio
-  let derivedSpectral = clampValue(derivedSpectralUnclamped, 0.2, 1)
+    detailStrengthInverseRatio
+  let derivedSpectral = clampValue(
+    derivedSpectralBaseline * detailInverseRatio,
+    0.2,
+    1,
+  )
 
   const chunkSizeCandidate = Number.isFinite(terrainDefaults?.chunkSize)
     ? terrainDefaults.chunkSize
@@ -1393,13 +1400,13 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
       ? derivedStrengthNormalizationRatio
       : 1) * primaryStrengthInverseRatio
   let domainWarpAmplitudeMultiplier =
-    0.32 * domainWarpNormalizationRatio * primaryNormalizationScale
+    0.32 * domainWarpNormalizationRatio * primaryInverseRatio
   let domainWarpAmplitudeMax = 256
   let domainWarpFrequencyMultiplier = 0.65 * domainWarpNormalizationRatio
   let domainWarpPrimaryGainValue =
-    0.7 * domainWarpNormalizationRatio * primaryNormalizationScale
+    0.7 * domainWarpNormalizationRatio * primaryInverseRatio
   let domainWarpRidgeGainValue =
-    0.5 * domainWarpNormalizationRatio * primaryNormalizationScale
+    0.5 * domainWarpNormalizationRatio * primaryInverseRatio
   let domainWarpGainLimit = 4
 
   if (amplitudeRatioNormalizedRaw > 1) {
