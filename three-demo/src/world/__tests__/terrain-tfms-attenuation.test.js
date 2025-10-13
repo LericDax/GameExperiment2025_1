@@ -78,6 +78,63 @@ function measureSlopeStatistics(engine, { gridRadius, sampleSpacing }) {
   };
 }
 
+function sampleHeightGrid(engine, { gridRadius, sampleSpacing }) {
+  const clampedSpacing = Math.max(1, sampleSpacing);
+  const gridSize = gridRadius * 2 + 1;
+  const grid = [];
+
+  for (let zi = -gridRadius; zi <= gridRadius; zi += 1) {
+    const row = [];
+    for (let xi = -gridRadius; xi <= gridRadius; xi += 1) {
+      const { height } = engine.sampleColumn(xi * clampedSpacing, zi * clampedSpacing);
+      row.push(height);
+    }
+    grid.push(row);
+  }
+
+  return { grid, gridSize, spacing: clampedSpacing };
+}
+
+function computeWarpDeltaMetrics(warpedGrid, referenceGrid, spacing) {
+  const { grid: warpedHeights, gridSize } = warpedGrid;
+  const { grid: referenceHeights } = referenceGrid;
+  const displacements = [];
+  const slopeDeltas = [];
+
+  for (let rowIndex = 0; rowIndex < gridSize; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex < gridSize; columnIndex += 1) {
+      const warped = warpedHeights[rowIndex][columnIndex];
+      const baseline = referenceHeights[rowIndex][columnIndex];
+      displacements.push(Math.abs(warped - baseline));
+
+      if (columnIndex + 1 < gridSize) {
+        const warpedEast = warpedHeights[rowIndex][columnIndex + 1];
+        const baselineEast = referenceHeights[rowIndex][columnIndex + 1];
+        const warpedSlope = Math.abs(warpedEast - warped) / spacing;
+        const baselineSlope = Math.abs(baselineEast - baseline) / spacing;
+        slopeDeltas.push(Math.abs(warpedSlope - baselineSlope));
+      }
+
+      if (rowIndex + 1 < gridSize) {
+        const warpedSouth = warpedHeights[rowIndex + 1][columnIndex];
+        const baselineSouth = referenceHeights[rowIndex + 1][columnIndex];
+        const warpedSlope = Math.abs(warpedSouth - warped) / spacing;
+        const baselineSlope = Math.abs(baselineSouth - baseline) / spacing;
+        slopeDeltas.push(Math.abs(warpedSlope - baselineSlope));
+      }
+    }
+  }
+
+  return {
+    displacements,
+    slopeDeltas,
+    displacement95: computePercentile(displacements, 0.95),
+    displacementMax: displacements.length > 0 ? Math.max(...displacements) : 0,
+    slopeDelta95: computePercentile(slopeDeltas, 0.95),
+    slopeDeltaMax: slopeDeltas.length > 0 ? Math.max(...slopeDeltas) : 0,
+  };
+}
+
 test('terrain engine scales TFMS envelopes by the configured base attenuation', () => {
   const seed = 4242;
   const position = { x: 96, z: -128 };
@@ -213,6 +270,90 @@ test('terrain engine clamps scaled TFMS envelopes to configured bounds', () => {
   );
 
   clampedEngine.dispose();
+});
+
+test('default domain warp displaces coordinates by only a few voxels', () => {
+  const seed = 8137;
+  const gridRadius = 6;
+  const sampleSpacing = 4;
+
+  const warpedEngine = createTerrainEngine({
+    THREE,
+    seed,
+    worldConfig: {
+      baseHeight: 0,
+      terrain: {
+        baseHeight: 0,
+        climateHeightInfluence: 0,
+      },
+    },
+  });
+
+  const unwarpedEngine = createTerrainEngine({
+    THREE,
+    seed,
+    worldConfig: {
+      baseHeight: 0,
+      terrain: {
+        baseHeight: 0,
+        climateHeightInfluence: 0,
+        tfms: {
+          operators: [
+            {
+              id: 'domain-warp',
+              envelope: {
+                amplitude: { value: 0 },
+                warp: {
+                  x: { value: 0 },
+                  z: { value: 0 },
+                },
+              },
+              modulation: {
+                warp: {
+                  x: { value: 0 },
+                  z: { value: 0 },
+                },
+              },
+            },
+          ],
+          modulationMatrix: [
+            { id: 'domain-warp->primary-fbm:domain-x', gain: 0 },
+            { id: 'domain-warp->primary-fbm:domain-z', gain: 0 },
+            { id: 'domain-warp->ridge-noise:domain-x', gain: 0 },
+            { id: 'domain-warp->ridge-noise:domain-z', gain: 0 },
+          ],
+        },
+      },
+    },
+  });
+
+  const warpedGrid = sampleHeightGrid(warpedEngine, { gridRadius, sampleSpacing });
+  const unwarpedGrid = sampleHeightGrid(unwarpedEngine, {
+    gridRadius,
+    sampleSpacing,
+  });
+
+  const metrics = computeWarpDeltaMetrics(warpedGrid, unwarpedGrid, warpedGrid.spacing);
+
+  assert.ok(
+    metrics.displacement95 <= 3.5,
+    `expected 95th percentile displacement <= 3.5, received ${metrics.displacement95}`,
+  );
+  assert.ok(
+    metrics.displacementMax <= 6,
+    `expected max displacement <= 6, received ${metrics.displacementMax}`,
+  );
+  assert.ok(
+    metrics.slopeDelta95 <= 0.55,
+    `expected 95th percentile slope delta <= 0.55, received ${metrics.slopeDelta95}`,
+  );
+  assert.ok(
+    metrics.slopeDeltaMax <= 1.1,
+    `expected max slope delta <= 1.1, received ${metrics.slopeDeltaMax}`,
+  );
+
+  warpedEngine.dispose();
+  unwarpedEngine.dispose();
 });
 
 test('default terrain slope distribution stays within calibrated targets', () => {

@@ -1120,11 +1120,6 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   const baselineDetailRatio =
     defaultTerrainCore.detailAmplitude / baselineMaxHeight
 
-  const primaryNormalizationRatio =
-    normalizedBaseAmplitude > 0
-      ? Math.min(1, LEGACY_TFMS_PRIMARY_AMPLITUDE / normalizedBaseAmplitude)
-      : 1
-
   const baselinePrimaryAmplitude =
     Number.isFinite(defaultTerrainCore?.primaryAmplitude) &&
     defaultTerrainCore.primaryAmplitude > 0
@@ -1138,10 +1133,6 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   const baselinePrimaryNormalizationRatio =
     baselinePrimaryAmplitude > 0
       ? Math.min(1, LEGACY_TFMS_PRIMARY_AMPLITUDE / baselinePrimaryAmplitude)
-      : 1
-  const detailNormalizationRatio =
-    normalizedDetailAmplitude > 0
-      ? Math.min(1, LEGACY_TFMS_DETAIL_AMPLITUDE / normalizedDetailAmplitude)
       : 1
   const baselineDetailNormalizationRatio =
     baselineDetailAmplitude > 0
@@ -1195,14 +1186,74 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     1,
   )
 
-  const derivedModulationNormalizedRaw =
-    (normalizedBaseAmplitude / 16) * primaryNormalizationRatio
-  let derivedModulation = clampValue(derivedModulationNormalizedRaw, 0.3, 1)
-  let derivedWarp = clampValue(derivedModulationNormalizedRaw * 0.75, 0, 1)
-  let derivedPhase = clampValue(derivedModulationNormalizedRaw * 0.45, 0, 1)
-  const derivedSpectralNormalizedRaw =
-    (normalizedDetailAmplitude / 6) * detailNormalizationRatio
-  let derivedSpectral = clampValue(derivedSpectralNormalizedRaw, 0.2, 1)
+  const legacyPrimaryBudgetRatio =
+    normalizedBaseAmplitude > 0
+      ? clampValue(
+          LEGACY_TFMS_PRIMARY_AMPLITUDE / normalizedBaseAmplitude,
+          0,
+          1,
+        )
+      : 1
+  const legacyDetailBudgetRatio =
+    normalizedDetailAmplitude > 0
+      ? clampValue(
+          LEGACY_TFMS_DETAIL_AMPLITUDE / normalizedDetailAmplitude,
+          0,
+          1,
+        )
+      : 1
+
+  const legacyClampMin = Number.isFinite(defaultTerrainTfmsClamp?.min)
+    ? defaultTerrainTfmsClamp.min
+    : defaultTerrainEnvelope.clampMin
+  const legacyClampMax = Number.isFinite(defaultTerrainTfmsClamp?.max)
+    ? defaultTerrainTfmsClamp.max
+    : defaultTerrainEnvelope.clampMax
+  const legacyClampSpan = legacyClampMax - legacyClampMin
+  const activeClampSpan = clampMax - clampMin
+  const clampNormalizationRatio =
+    Number.isFinite(legacyClampSpan) &&
+    legacyClampSpan > 0 &&
+    Number.isFinite(activeClampSpan) &&
+    activeClampSpan > 0
+      ? clampValue(legacyClampSpan / activeClampSpan, 0, 1)
+      : 1
+
+  const normalizationCandidates = [
+    legacyPrimaryBudgetRatio,
+    legacyDetailBudgetRatio,
+    clampNormalizationRatio,
+  ].filter((candidate) => Number.isFinite(candidate) && candidate > 0)
+  const derivedStrengthNormalizationRatio =
+    normalizationCandidates.length > 0
+      ? normalizationCandidates.reduce(
+          (minimum, candidate) => Math.min(minimum, candidate),
+          1,
+        )
+      : 1
+
+  const derivedModulationNormalizedRaw = normalizedBaseAmplitude / 16
+  let derivedModulation = clampValue(
+    derivedModulationNormalizedRaw * derivedStrengthNormalizationRatio,
+    0.3,
+    1,
+  )
+  let derivedWarp = clampValue(
+    derivedModulationNormalizedRaw * 0.75 * derivedStrengthNormalizationRatio,
+    0,
+    1,
+  )
+  let derivedPhase = clampValue(
+    derivedModulationNormalizedRaw * 0.45 * derivedStrengthNormalizationRatio,
+    0,
+    1,
+  )
+  const derivedSpectralNormalizedRaw = normalizedDetailAmplitude / 6
+  let derivedSpectral = clampValue(
+    derivedSpectralNormalizedRaw * derivedStrengthNormalizationRatio,
+    0.2,
+    1,
+  )
 
   const chunkSizeCandidate = Number.isFinite(terrainDefaults?.chunkSize)
     ? terrainDefaults.chunkSize
@@ -1211,10 +1262,12 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     : DEFAULT_CHUNK_SIZE
   const normalizedChunkSize = normalizeChunkSizeForEnvelope(chunkSizeCandidate)
   const domainWarpNormalizationRatio =
-    Number.isFinite(primaryNormalizationRatio) && primaryNormalizationRatio > 0
-      ? primaryNormalizationRatio
+    Number.isFinite(derivedStrengthNormalizationRatio) &&
+    derivedStrengthNormalizationRatio > 0
+      ? derivedStrengthNormalizationRatio
       : 1
-  let domainWarpAmplitudeMultiplier = 0.32 * domainWarpNormalizationRatio
+  let domainWarpAmplitudeMultiplier =
+    0.32 * domainWarpNormalizationRatio
   let domainWarpAmplitudeMax = 256
   let domainWarpFrequencyMultiplier = 0.65 * domainWarpNormalizationRatio
   let domainWarpPrimaryGainValue = 0.7 * domainWarpNormalizationRatio
