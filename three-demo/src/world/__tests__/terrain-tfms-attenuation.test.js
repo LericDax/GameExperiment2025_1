@@ -21,7 +21,13 @@ const biomeModuleMap = Object.fromEntries(
 globalThis.__BIOME_MODULE_MAP__ = biomeModuleMap;
 
 const { createTerrainEngine } = await import('../terrain-engine.js');
-const { defaultWorldOptions } = await import('../world-settings.js');
+const {
+  defaultWorldOptions,
+  LEGACY_PRIMARY_SLOPE_BUDGET,
+  LEGACY_DETAIL_SLOPE_BUDGET,
+  LEGACY_TFMS_PRIMARY_AMPLITUDE,
+  LEGACY_TFMS_DETAIL_AMPLITUDE,
+} = await import('../world-settings.js');
 
 function getEnvelopeFromSample(sample, terrainConfig) {
   const climateAdjustment =
@@ -361,6 +367,33 @@ test('default domain warp displaces coordinates by only a few voxels', () => {
   unwarpedEngine.dispose();
 });
 
+test('default terrain neighbour slopes respect the legacy budget', () => {
+  const engine = createTerrainEngine({ THREE });
+  try {
+    const stats = measureSlopeStatistics(engine, {
+      gridRadius: 24,
+      sampleSpacing: 4,
+    });
+
+    const terrain = defaultWorldOptions.terrain;
+    const primaryRatio =
+      Math.max(terrain.primaryAmplitude, 1) / LEGACY_TFMS_PRIMARY_AMPLITUDE;
+    const detailRatio =
+      Math.max(terrain.detailAmplitude, 1) / LEGACY_TFMS_DETAIL_AMPLITUDE;
+    const primarySlopeBudget = LEGACY_PRIMARY_SLOPE_BUDGET * primaryRatio;
+    const detailSlopeBudget = LEGACY_DETAIL_SLOPE_BUDGET * detailRatio;
+    const slopeBudget = Math.min(primarySlopeBudget, detailSlopeBudget);
+    const allowance = slopeBudget * 1.08;
+
+    assert.ok(
+      stats.percentile95 <= allowance,
+      `expected 95th percentile slope <= ${allowance}, received ${stats.percentile95}`,
+    );
+  } finally {
+    engine.dispose();
+  }
+});
+
 test('default terrain slope distribution stays within calibrated targets', () => {
   const engine = createTerrainEngine({ THREE });
   try {
@@ -393,8 +426,21 @@ test('default terrain neighbour slopes rarely exceed the calibrated threshold', 
       sampleSpacing: 1,
     });
 
-    const frequentSlopeThreshold = 2.75;
-    const rareSlopeThreshold = 3.8;
+    const terrain = defaultWorldOptions.terrain;
+    const primaryRatio =
+      Math.max(terrain.primaryAmplitude, 1) / LEGACY_TFMS_PRIMARY_AMPLITUDE;
+    const detailRatio =
+      Math.max(terrain.detailAmplitude, 1) / LEGACY_TFMS_DETAIL_AMPLITUDE;
+    const primarySlopeBudget = LEGACY_PRIMARY_SLOPE_BUDGET * primaryRatio;
+    const detailSlopeBudget = LEGACY_DETAIL_SLOPE_BUDGET * detailRatio;
+    const frequentSlopeThreshold = Math.min(
+      primarySlopeBudget * 0.55,
+      detailSlopeBudget * 2.7,
+    );
+    const rareSlopeThreshold = Math.max(
+      primarySlopeBudget * 0.8,
+      detailSlopeBudget * 3.5,
+    );
 
     assert.ok(
       percentile98 < frequentSlopeThreshold,
