@@ -116,11 +116,11 @@ const LEGACY_RIDGE_FREQUENCY_BASELINE = 0.02
 const LEGACY_PRIMARY_AMPLITUDE_TARGET = 8
 const LEGACY_DETAIL_AMPLITUDE_TARGET = 3
 const LEGACY_RIDGE_STRENGTH_TARGET = 2.4
-const LEGACY_PRIMARY_SLOPE_BUDGET =
+export const LEGACY_PRIMARY_SLOPE_BUDGET =
   LEGACY_PRIMARY_FREQUENCY_BASELINE * LEGACY_PRIMARY_AMPLITUDE_TARGET
-const LEGACY_DETAIL_SLOPE_BUDGET =
+export const LEGACY_DETAIL_SLOPE_BUDGET =
   LEGACY_DETAIL_FREQUENCY_BASELINE * LEGACY_DETAIL_AMPLITUDE_TARGET
-const LEGACY_RIDGE_SLOPE_BUDGET =
+export const LEGACY_RIDGE_SLOPE_BUDGET =
   LEGACY_RIDGE_FREQUENCY_BASELINE * LEGACY_RIDGE_STRENGTH_TARGET
 const DEFAULT_TERRAIN_VERTICAL_EXTENT =
   DEFAULT_CHUNK_SIZE * TERRAIN_VERTICAL_SPAN_MULTIPLIER
@@ -1154,6 +1154,25 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   const ridgeFrequency = terrainDefaults.ridgeFrequency
   const ridgeOffset = terrainDefaults.ridgeOffset
 
+  const legacyPrimaryAmplitude = LEGACY_TFMS_PRIMARY_AMPLITUDE
+  const legacyDetailAmplitude = LEGACY_TFMS_DETAIL_AMPLITUDE
+  const safePrimaryAmplitude = Number.isFinite(baseAmplitude)
+    ? Math.max(baseAmplitude, 1)
+    : 1
+  const safeDetailAmplitude = Number.isFinite(detailAmplitude)
+    ? Math.max(detailAmplitude, 1)
+    : 1
+  const primaryRatio =
+    legacyPrimaryAmplitude > 0
+      ? safePrimaryAmplitude / legacyPrimaryAmplitude
+      : 1
+  const detailRatio =
+    legacyDetailAmplitude > 0
+      ? safeDetailAmplitude / legacyDetailAmplitude
+      : 1
+  const primaryNormalizationScale =
+    primaryRatio > 0 ? 1 / primaryRatio : 1
+
   const clampValue = (value, min, max) => {
     let next = value
     if (Number.isFinite(min)) {
@@ -1246,17 +1265,25 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     1,
     Math.min(LEGACY_TFMS_DETAIL_AMPLITUDE, halfClampSpan),
   )
+  const normalizedPrimaryForStrength =
+    primaryRatio > 0
+      ? normalizedBaseAmplitude / primaryRatio
+      : normalizedBaseAmplitude
+  const normalizedDetailForStrength =
+    detailRatio > 0
+      ? normalizedDetailAmplitude / detailRatio
+      : normalizedDetailAmplitude
   const primaryStrengthNormalizationRatio =
-    normalizedBaseAmplitude > 0
-      ? normalizedBaseAmplitude / primaryBudgetReference
+    normalizedPrimaryForStrength > 0
+      ? normalizedPrimaryForStrength / primaryBudgetReference
       : 1
   const primaryStrengthInverseRatio =
     primaryStrengthNormalizationRatio > 0
       ? 1 / primaryStrengthNormalizationRatio
       : 1
   const detailStrengthNormalizationRatio =
-    normalizedDetailAmplitude > 0
-      ? normalizedDetailAmplitude / detailBudgetReference
+    normalizedDetailForStrength > 0
+      ? normalizedDetailForStrength / detailBudgetReference
       : 1
   const detailStrengthInverseRatio =
     detailStrengthNormalizationRatio > 0
@@ -1289,17 +1316,17 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
   )
 
   const legacyPrimaryBudgetRatio =
-    normalizedBaseAmplitude > 0
+    normalizedPrimaryForStrength > 0
       ? clampValue(
-          LEGACY_TFMS_PRIMARY_AMPLITUDE / normalizedBaseAmplitude,
+          LEGACY_TFMS_PRIMARY_AMPLITUDE / normalizedPrimaryForStrength,
           0,
           1,
         )
       : 1
   const legacyDetailBudgetRatio =
-    normalizedDetailAmplitude > 0
+    normalizedDetailForStrength > 0
       ? clampValue(
-          LEGACY_TFMS_DETAIL_AMPLITUDE / normalizedDetailAmplitude,
+          LEGACY_TFMS_DETAIL_AMPLITUDE / normalizedDetailForStrength,
           0,
           1,
         )
@@ -1334,7 +1361,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
         )
       : 1
 
-  const derivedModulationNormalizedRaw = normalizedBaseAmplitude / 16
+  const derivedModulationNormalizedRaw = normalizedPrimaryForStrength / 16
   let derivedModulation = clampValue(
     derivedModulationNormalizedRaw *
       derivedStrengthNormalizationRatio *
@@ -1358,7 +1385,7 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     0,
     1,
   )
-  const derivedSpectralNormalizedRaw = normalizedDetailAmplitude / 6
+  const derivedSpectralNormalizedRaw = normalizedDetailForStrength / 6
   let derivedSpectral = clampValue(
     derivedSpectralNormalizedRaw *
       derivedStrengthNormalizationRatio *
@@ -1379,11 +1406,13 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
       ? derivedStrengthNormalizationRatio
       : 1) * primaryStrengthInverseRatio
   let domainWarpAmplitudeMultiplier =
-    0.32 * domainWarpNormalizationRatio
+    0.32 * domainWarpNormalizationRatio * primaryNormalizationScale
   let domainWarpAmplitudeMax = 256
   let domainWarpFrequencyMultiplier = 0.65 * domainWarpNormalizationRatio
-  let domainWarpPrimaryGainValue = 0.7 * domainWarpNormalizationRatio
-  let domainWarpRidgeGainValue = 0.5 * domainWarpNormalizationRatio
+  let domainWarpPrimaryGainValue =
+    0.7 * domainWarpNormalizationRatio * primaryNormalizationScale
+  let domainWarpRidgeGainValue =
+    0.5 * domainWarpNormalizationRatio * primaryNormalizationScale
   let domainWarpGainLimit = 4
 
   if (amplitudeRatioNormalizedRaw > 1) {
