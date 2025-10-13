@@ -40,6 +40,43 @@ function computePercentile(values, percentile) {
   return sorted[index];
 }
 
+function measureSlopeStatistics(engine, { gridRadius, sampleSpacing }) {
+  const clampedSpacing = Math.max(1, sampleSpacing);
+  const gridSize = gridRadius * 2 + 1;
+  const heights = [];
+
+  for (let zi = -gridRadius; zi <= gridRadius; zi += 1) {
+    const row = [];
+    for (let xi = -gridRadius; xi <= gridRadius; xi += 1) {
+      const { height } = engine.sampleColumn(xi * clampedSpacing, zi * clampedSpacing);
+      row.push(height);
+    }
+    heights.push(row);
+  }
+
+  const slopes = [];
+  for (let rowIndex = 0; rowIndex < gridSize; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex < gridSize; columnIndex += 1) {
+      const current = heights[rowIndex][columnIndex];
+      if (columnIndex + 1 < gridSize) {
+        const east = heights[rowIndex][columnIndex + 1];
+        slopes.push(Math.abs(east - current) / clampedSpacing);
+      }
+      if (rowIndex + 1 < gridSize) {
+        const south = heights[rowIndex + 1][columnIndex];
+        slopes.push(Math.abs(south - current) / clampedSpacing);
+      }
+    }
+  }
+
+  return {
+    slopes,
+    median: computePercentile(slopes, 0.5),
+    percentile95: computePercentile(slopes, 0.95),
+    percentile98: computePercentile(slopes, 0.98),
+  };
+}
+
 test('terrain engine scales TFMS envelopes by the configured base attenuation', () => {
   const seed = 4242;
   const position = { x: 96, z: -128 };
@@ -177,44 +214,24 @@ test('terrain engine clamps scaled TFMS envelopes to configured bounds', () => {
   clampedEngine.dispose();
 });
 
-test('default terrain adjacent-column slope percentile stays within the expected envelope', () => {
+test('default terrain slope distribution stays within calibrated targets', () => {
   const engine = createTerrainEngine({ THREE });
   try {
-    const gridRadius = 24;
-    const sampleSpacing = 1;
-    const gridSize = gridRadius * 2 + 1;
-    const heights = [];
+    const { median, percentile95 } = measureSlopeStatistics(engine, {
+      gridRadius: 24,
+      sampleSpacing: 1,
+    });
 
-    for (let zi = -gridRadius; zi <= gridRadius; zi += 1) {
-      const row = [];
-      for (let xi = -gridRadius; xi <= gridRadius; xi += 1) {
-        const { height } = engine.sampleColumn(xi * sampleSpacing, zi * sampleSpacing);
-        row.push(height);
-      }
-      heights.push(row);
-    }
-
-    const slopes = [];
-    for (let rowIndex = 0; rowIndex < gridSize; rowIndex += 1) {
-      for (let columnIndex = 0; columnIndex < gridSize; columnIndex += 1) {
-        const current = heights[rowIndex][columnIndex];
-        if (columnIndex + 1 < gridSize) {
-          const east = heights[rowIndex][columnIndex + 1];
-          slopes.push(Math.abs(east - current) / sampleSpacing);
-        }
-        if (rowIndex + 1 < gridSize) {
-          const south = heights[rowIndex + 1][columnIndex];
-          slopes.push(Math.abs(south - current) / sampleSpacing);
-        }
-      }
-    }
-
-    const slope95 = computePercentile(slopes, 0.95);
-    const slopeThreshold = 1.25;
+    const medianThreshold = 0.2;
+    const slope95Threshold = 1.05;
 
     assert.ok(
-      slope95 < slopeThreshold,
-      `expected 95th percentile slope < ${slopeThreshold}, received ${slope95}`,
+      median < medianThreshold,
+      `expected median slope < ${medianThreshold}, received ${median}`,
+    );
+    assert.ok(
+      percentile95 < slope95Threshold,
+      `expected 95th percentile slope < ${slope95Threshold}, received ${percentile95}`,
     );
   } finally {
     engine.dispose();
@@ -224,41 +241,15 @@ test('default terrain adjacent-column slope percentile stays within the expected
 test('default terrain median slope remains within the gentle slope target', () => {
   const engine = createTerrainEngine({ THREE });
   try {
-    const gridRadius = 16;
-    const sampleSpacing = 6;
-    const gridSize = gridRadius * 2 + 1;
-    const heights = [];
-
-    for (let zi = -gridRadius; zi <= gridRadius; zi += 1) {
-      const row = [];
-      for (let xi = -gridRadius; xi <= gridRadius; xi += 1) {
-        const { height } = engine.sampleColumn(xi * sampleSpacing, zi * sampleSpacing);
-        row.push(height);
-      }
-      heights.push(row);
-    }
-
-    const slopes = [];
-    for (let rowIndex = 0; rowIndex < gridSize; rowIndex += 1) {
-      for (let columnIndex = 0; columnIndex < gridSize; columnIndex += 1) {
-        const current = heights[rowIndex][columnIndex];
-        if (columnIndex + 1 < gridSize) {
-          const east = heights[rowIndex][columnIndex + 1];
-          slopes.push(Math.abs(east - current) / sampleSpacing);
-        }
-        if (rowIndex + 1 < gridSize) {
-          const south = heights[rowIndex + 1][columnIndex];
-          slopes.push(Math.abs(south - current) / sampleSpacing);
-        }
-      }
-    }
-
-    const medianSlope = computePercentile(slopes, 0.5);
-    const medianThreshold = 0.55;
+    const { median } = measureSlopeStatistics(engine, {
+      gridRadius: 16,
+      sampleSpacing: 6,
+    });
+    const medianThreshold = 0.3;
 
     assert.ok(
-      medianSlope < medianThreshold,
-      `expected median slope < ${medianThreshold}, received ${medianSlope}`,
+      median < medianThreshold,
+      `expected median slope < ${medianThreshold}, received ${median}`,
     );
   } finally {
     engine.dispose();
@@ -292,40 +283,16 @@ test('high-amplitude terrain keeps neighbour slopes within the budget', () => {
   });
 
   try {
-    const gridRadius = 18;
     const sampleSpacing = 4;
-    const gridSize = gridRadius * 2 + 1;
-    const heights = [];
-
-    for (let zi = -gridRadius; zi <= gridRadius; zi += 1) {
-      const row = [];
-      for (let xi = -gridRadius; xi <= gridRadius; xi += 1) {
-        const { height } = engine.sampleColumn(xi * sampleSpacing, zi * sampleSpacing);
-        row.push(height);
-      }
-      heights.push(row);
-    }
-
-    const slopes = [];
-    for (let rowIndex = 0; rowIndex < gridSize; rowIndex += 1) {
-      for (let columnIndex = 0; columnIndex < gridSize; columnIndex += 1) {
-        const current = heights[rowIndex][columnIndex];
-        if (columnIndex + 1 < gridSize) {
-          const east = heights[rowIndex][columnIndex + 1];
-          slopes.push(Math.abs(east - current) / sampleSpacing);
-        }
-        if (rowIndex + 1 < gridSize) {
-          const south = heights[rowIndex + 1][columnIndex];
-          slopes.push(Math.abs(south - current) / sampleSpacing);
-        }
-      }
-    }
-
+    const { slopes, percentile98 } = measureSlopeStatistics(engine, {
+      gridRadius: 18,
+      sampleSpacing,
+    });
     const displacements = slopes.map((slope) => slope * sampleSpacing);
     const chunkSize =
       defaultWorldOptions.chunk?.size ?? defaultWorldOptions.chunkSize ?? 64;
     const displacementBudget = Math.min(maxHeight * 0.35, chunkSize * 0.85);
-    const percentileDisplacement = computePercentile(displacements, 0.98);
+    const percentileDisplacement = percentile98 * sampleSpacing;
     assert.ok(
       percentileDisplacement < displacementBudget,
       `expected 98th percentile displacement < ${displacementBudget}, received ${percentileDisplacement}`,
