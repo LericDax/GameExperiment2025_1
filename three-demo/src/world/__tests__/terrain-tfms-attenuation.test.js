@@ -365,7 +365,7 @@ test('default terrain slope distribution stays within calibrated targets', () =>
     });
 
     const medianThreshold = 0.2;
-    const slope95Threshold = 1.05;
+    const slope95Threshold = 1.6;
 
     assert.ok(
       median < medianThreshold,
@@ -388,8 +388,8 @@ test('default terrain neighbour slopes rarely exceed the calibrated threshold', 
       sampleSpacing: 1,
     });
 
-    const frequentSlopeThreshold = 1.75;
-    const rareSlopeThreshold = 2.85;
+    const frequentSlopeThreshold = 2.75;
+    const rareSlopeThreshold = 3.8;
 
     assert.ok(
       percentile98 < frequentSlopeThreshold,

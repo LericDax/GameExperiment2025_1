@@ -62,9 +62,12 @@ const baseRidgeFrequency = 0.02
 const legacyPrimaryAmplitudeBudget = 8
 const legacyDetailAmplitudeBudget = 3
 const legacyRidgeStrengthBudget = 2.4
-const legacyPrimaryFrequency = basePrimaryFrequency / terrainVerticalSpanMultiplier
-const legacyDetailFrequency = baseDetailFrequency / terrainVerticalSpanMultiplier
-const legacyRidgeFrequency = baseRidgeFrequency / terrainVerticalSpanMultiplier
+const legacyPrimarySlopeBudget =
+  basePrimaryFrequency * legacyPrimaryAmplitudeBudget
+const legacyDetailSlopeBudget =
+  baseDetailFrequency * legacyDetailAmplitudeBudget
+const legacyRidgeSlopeBudget =
+  baseRidgeFrequency * legacyRidgeStrengthBudget
 const defaultTerrainClampMin = -defaultTerrainVerticalExtent
 const defaultTerrainClampMax = defaultTerrainVerticalExtent
 const primaryAmplitudeRatio = 0.58
@@ -105,22 +108,16 @@ const defaultRidgeStrength = Math.max(
 )
 const defaultPrimaryFrequency =
   defaultPrimaryAmplitude > 0
-    ?
-      legacyPrimaryFrequency *
-      (legacyPrimaryAmplitudeBudget / defaultPrimaryAmplitude)
-    : legacyPrimaryFrequency
+    ? legacyPrimarySlopeBudget / defaultPrimaryAmplitude
+    : basePrimaryFrequency
 const defaultDetailFrequency =
   defaultDetailAmplitude > 0
-    ?
-      legacyDetailFrequency *
-      (legacyDetailAmplitudeBudget / defaultDetailAmplitude)
-    : legacyDetailFrequency
+    ? legacyDetailSlopeBudget / defaultDetailAmplitude
+    : baseDetailFrequency
 const defaultRidgeFrequency =
   defaultRidgeStrength > 0
-    ?
-      legacyRidgeFrequency *
-      (legacyRidgeStrengthBudget / defaultRidgeStrength)
-    : legacyRidgeFrequency
+    ? legacyRidgeSlopeBudget / defaultRidgeStrength
+    : baseRidgeFrequency
 
 const tfmsWaveformOptions = Object.freeze([
   Object.freeze({
