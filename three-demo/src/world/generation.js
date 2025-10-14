@@ -23,6 +23,7 @@ import {
   worldOptions,
   applyWorldOptions,
   computeTerrainVerticalEnvelope,
+  defaultWorldOptions,
 } from './world-settings.js';
 import { configureSectorObjectPlanner } from './sector-object-planner.js';
 import { isBlockOccluding } from './block-occlusion.js';
@@ -455,6 +456,26 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
 
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
   const { chunkSize, waterLevel } = worldOptions;
+  const terrainEnvelope = computeTerrainVerticalEnvelope(worldOptions.chunk?.size);
+  const legacyEnvelope = computeTerrainVerticalEnvelope(
+    defaultWorldOptions.chunk?.size ?? defaultWorldOptions.chunkSize,
+  );
+  const slopeNormalizationSpan = (() => {
+    const terrainMaxHeight = Number.isFinite(terrainEnvelope?.maxHeight)
+      ? terrainEnvelope.maxHeight
+      : Number.NaN;
+    const legacyMaxHeight = Number.isFinite(legacyEnvelope?.maxHeight)
+      ? legacyEnvelope.maxHeight
+      : Number.NaN;
+    if (!Number.isFinite(terrainMaxHeight) || !Number.isFinite(legacyMaxHeight)) {
+      return 6;
+    }
+    if (legacyMaxHeight <= 0) {
+      return Math.max(terrainMaxHeight, 6);
+    }
+    const normalizationScale = terrainMaxHeight / legacyMaxHeight;
+    return Math.max(6, 6 * normalizationScale);
+  })();
 
   const terrainSampler = (x, z) => engine.sampleColumn(x, z);
 
@@ -490,7 +511,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     return Math.floor(clamp(sample.height, bounds.min, bounds.max));
   };
 
-  const computeSlope = (x, z, baseHeight) => {
+  const computeSlope = (x, z, baseHeight, normalizationSpan = slopeNormalizationSpan) => {
     const offsets = [
       [1, 0],
       [-1, 0],
@@ -509,7 +530,10 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
         maxDifference = difference;
       }
     }
-    return clamp(maxDifference / 6, 0, 1);
+    const span = Number.isFinite(normalizationSpan) && normalizationSpan > 0
+      ? normalizationSpan
+      : 6;
+    return clamp(maxDifference / span, 0, 1);
   };
 
   const computeWaterMetrics = (x, z, baseHeight, searchRadius = 6) => {
@@ -1503,7 +1527,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       columnSample.height = height;
     }
     const columnTop = Math.floor(height);
-    const slope = computeSlope(worldX, worldZ, columnTop);
+    const slope = computeSlope(worldX, worldZ, columnTop, slopeNormalizationSpan);
     const searchRadiusBase = 4 + shorelineAffinity * 2 + oceanDepthHint * 3;
     const slopeBiasContribution =
       shoreSlopeBias >= 0
