@@ -448,13 +448,24 @@ test('default terrain neighbour slopes respect the legacy budget', () => {
       `expected 95th percentile slope <= ${allowance}, received ${stats.percentile95}`,
     );
 
+    const chunkSize =
+      defaultWorldOptions.chunk?.size ?? defaultWorldOptions.chunkSize ?? 48;
+    const verticalExtent = Math.max(
+      1,
+      Number.isFinite(terrain.maxHeight)
+        ? terrain.maxHeight
+        : chunkSize * TERRAIN_VERTICAL_SPAN_MULTIPLIER,
+    );
+    const legacySpan = chunkSize;
+    const frequencyScale = legacySpan / verticalExtent;
     const tolerance = 1e-9;
 
     const basePrimaryFrequency =
       LEGACY_PRIMARY_SLOPE_BUDGET / LEGACY_TFMS_PRIMARY_AMPLITUDE;
     const expectedPrimaryFrequency =
       basePrimaryFrequency *
-      (LEGACY_TFMS_PRIMARY_AMPLITUDE / Math.max(terrain.primaryAmplitude, 1));
+      (LEGACY_TFMS_PRIMARY_AMPLITUDE / Math.max(terrain.primaryAmplitude, 1)) *
+      frequencyScale;
     assert.ok(
       Math.abs(terrain.primaryFrequency - expectedPrimaryFrequency) <=
         Math.max(expectedPrimaryFrequency, 1) * tolerance,
@@ -465,7 +476,8 @@ test('default terrain neighbour slopes respect the legacy budget', () => {
       LEGACY_DETAIL_SLOPE_BUDGET / LEGACY_TFMS_DETAIL_AMPLITUDE;
     const expectedDetailFrequency =
       baseDetailFrequency *
-      (LEGACY_TFMS_DETAIL_AMPLITUDE / Math.max(terrain.detailAmplitude, 1));
+      (LEGACY_TFMS_DETAIL_AMPLITUDE / Math.max(terrain.detailAmplitude, 1)) *
+      frequencyScale;
     assert.ok(
       Math.abs(terrain.detailFrequency - expectedDetailFrequency) <=
         Math.max(expectedDetailFrequency, 1) * tolerance,
@@ -476,7 +488,8 @@ test('default terrain neighbour slopes respect the legacy budget', () => {
       LEGACY_RIDGE_SLOPE_BUDGET / LEGACY_TFMS_RIDGE_AMPLITUDE;
     const expectedRidgeFrequency =
       baseRidgeFrequency *
-      (LEGACY_TFMS_RIDGE_AMPLITUDE / Math.max(terrain.ridgeStrength, 1));
+      (LEGACY_TFMS_RIDGE_AMPLITUDE / Math.max(terrain.ridgeStrength, 1)) *
+      frequencyScale;
     assert.ok(
       Math.abs(terrain.ridgeFrequency - expectedRidgeFrequency) <=
         Math.max(expectedRidgeFrequency, 1) * tolerance,
@@ -502,13 +515,10 @@ test('default terrain neighbour slopes stay within the legacy slope ceiling', ()
       LEGACY_PRIMARY_SLOPE_BUDGET,
       LEGACY_DETAIL_SLOPE_BUDGET,
     );
-    // Provide a small 4% buffer for the coarser spacing check now that slopes
-    // target the full legacy budget instead of the span-scaled variant.
-    const ceilingAllowance = legacySlopeCeiling * 1.04;
 
     assert.ok(
-      stats.percentile95 <= ceilingAllowance,
-      `expected 95th percentile slope at spacing ${chunkSpacing} <= ${ceilingAllowance}, received ${stats.percentile95}`,
+      stats.percentile95 <= legacySlopeCeiling,
+      `expected 95th percentile slope at spacing ${chunkSpacing} <= ${legacySlopeCeiling}, received ${stats.percentile95}`,
     );
   } finally {
     engine.dispose();
@@ -525,13 +535,8 @@ test('default terrain slope distribution stays within calibrated targets', () =>
 
     const combinedSlopeBudget =
       LEGACY_PRIMARY_SLOPE_BUDGET + LEGACY_DETAIL_SLOPE_BUDGET;
-    // Removal of the vertical-span frequency scale increases the steady-state
-    // slope floor, so treat roughly 26% of the combined budgets as the median
-    // allowance (~0.19 with default amplitudes).
-    const medianThreshold = combinedSlopeBudget * 0.26;
-    // With full-budget frequencies the 95th percentile climbs toward ~1.5, so
-    // reserve generous headroom at ~2.2× the combined slope budget.
-    const slope95Threshold = combinedSlopeBudget * 2.2;
+    const medianThreshold = combinedSlopeBudget * 0.16;
+    const slope95Threshold = combinedSlopeBudget * 1.5;
 
     assert.ok(
       median <= medianThreshold,
