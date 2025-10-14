@@ -258,6 +258,7 @@ export function createChunkManager({
   const preloadQueue = [];
   const pendingPreloadEntries = new Map();
   let queueDirty = false;
+  let urgentPreloadBoost = 0;
 
   const chunkCullFrustum = new THREE.Frustum();
   const chunkCullMatrix = new THREE.Matrix4();
@@ -1197,25 +1198,58 @@ export function createChunkManager({
     loadedChunks.set(key, chunk);
   }
 
-  function ensureChunk(chunkX, chunkZ) {
+  function ensureChunk(chunkX, chunkZ, options = {}) {
     const key = chunkKey(chunkX, chunkZ);
     if (loadedChunks.has(key)) {
       return;
     }
+    const blocking = options.blocking === true;
+    const centerChunkX =
+      typeof options.centerChunkX === 'number' ? options.centerChunkX : chunkX;
+    const centerChunkZ =
+      typeof options.centerChunkZ === 'number' ? options.centerChunkZ : chunkZ;
+    const urgentBurst = Math.max(1, defaultPreloadBurst);
     const pendingEntry = pendingPreloadEntries.get(key);
     if (pendingEntry) {
-      const index = preloadQueue.indexOf(pendingEntry);
-      if (index >= 0) {
-        preloadQueue.splice(index, 1);
+      if (blocking) {
+        const index = preloadQueue.indexOf(pendingEntry);
+        if (index >= 0) {
+          preloadQueue.splice(index, 1);
+        }
+        pendingPreloadEntries.delete(key);
+        let done = false;
+        while (!done) {
+          const result = pendingEntry.task.step(Number.POSITIVE_INFINITY);
+          done = Boolean(result?.done);
+        }
+        const chunk = pendingEntry.task.finalize();
+        registerGeneratedChunk(chunk);
+        return;
       }
-      pendingPreloadEntries.delete(key);
-      let done = false;
-      while (!done) {
-        const result = pendingEntry.task.step(Number.POSITIVE_INFINITY);
-        done = Boolean(result?.done);
+
+      if (!pendingEntry.urgent) {
+        pendingEntry.urgent = true;
+        queueDirty = true;
       }
-      const chunk = pendingEntry.task.finalize();
-      registerGeneratedChunk(chunk);
+
+      const { done } = pendingEntry.task.step(urgentBurst);
+      urgentPreloadBoost = Math.max(urgentPreloadBoost, urgentBurst);
+      if (done) {
+        const index = preloadQueue.indexOf(pendingEntry);
+        if (index >= 0) {
+          preloadQueue.splice(index, 1);
+        }
+        pendingPreloadEntries.delete(key);
+        const chunk = pendingEntry.task.finalize();
+        registerGeneratedChunk(chunk);
+      }
+      return;
+    }
+    if (!blocking) {
+      schedulePreload(chunkX, chunkZ, centerChunkX, centerChunkZ, {
+        urgent: true,
+      });
+      urgentPreloadBoost = Math.max(urgentPreloadBoost, urgentBurst);
       return;
     }
     const task = createChunkBuildTask({
@@ -1515,6 +1549,13 @@ export function createChunkManager({
       ? Number.POSITIVE_INFINITY
       : Math.max(0, Math.floor(Number(limit) || 0));
 
+    if (unlimited) {
+      urgentPreloadBoost = 0;
+    } else if (urgentPreloadBoost > 0) {
+      remainingBudget += urgentPreloadBoost;
+      urgentPreloadBoost = 0;
+    }
+
     if (queueDirty) {
       preloadQueue.sort((a, b) => {
         if (a.urgent !== b.urgent) {
@@ -1711,7 +1752,11 @@ export function createChunkManager({
 
     for (let dx = -guaranteeRadius; dx <= guaranteeRadius; dx += 1) {
       for (let dz = -guaranteeRadius; dz <= guaranteeRadius; dz += 1) {
-        ensureChunk(centerChunkX + dx, centerChunkZ + dz);
+        ensureChunk(centerChunkX + dx, centerChunkZ + dz, {
+          blocking: force,
+          centerChunkX,
+          centerChunkZ,
+        });
       }
     }
 
@@ -1790,7 +1835,10 @@ export function createChunkManager({
         ? Math.max(1, defaultPreloadBurst)
         : preloadBudget;
 
-    if (normalizedPreloadBudget > 0) {
+    const shouldProcessPreload =
+      normalizedPreloadBudget > 0 || urgentPreloadBoost > 0;
+
+    if (shouldProcessPreload) {
       processPreloadQueue(normalizedPreloadBudget);
     }
 
