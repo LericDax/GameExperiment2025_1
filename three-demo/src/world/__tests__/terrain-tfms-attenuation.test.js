@@ -341,19 +341,10 @@ test('default domain warp displaces coordinates by only a few voxels', () => {
 
   const metrics = computeWarpDeltaMetrics(warpedGrid, unwarpedGrid, warpedGrid.spacing);
 
-  const terrain = defaultWorldOptions.terrain;
-  const primaryRatio =
-    Math.max(terrain.primaryAmplitude, 1) / LEGACY_TFMS_PRIMARY_AMPLITUDE;
-  const detailRatio =
-    Math.max(terrain.detailAmplitude, 1) / LEGACY_TFMS_DETAIL_AMPLITUDE;
-  const slopeBudget = Math.min(
-    LEGACY_PRIMARY_SLOPE_BUDGET * primaryRatio,
-    LEGACY_DETAIL_SLOPE_BUDGET * detailRatio,
-  );
-  const slopeDelta95Budget = slopeBudget;
-  const slopeDeltaMaxBudget = slopeBudget * 1.1;
   const displacement95Budget = 2.75;
   const displacementMaxBudget = 4.5;
+  const slopeDelta95Budget = 0.45;
+  const slopeDeltaMaxBudget = 0.85;
 
   assert.ok(
     metrics.displacement95 <= displacement95Budget,
