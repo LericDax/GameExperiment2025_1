@@ -27,6 +27,11 @@ const {
   defaultWorldOptions,
 } = await import('../world-settings.js');
 
+const defaultVerticalSpanChunks =
+  defaultWorldOptions.terrain?.verticalSpanChunks ??
+  defaultWorldOptions.verticalSpanChunks ??
+  3;
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -46,8 +51,14 @@ test('terrain slopes stay below common decoration thresholds after envelope scal
     const legacyChunkSize =
       defaultWorldOptions.chunk?.size ?? defaultWorldOptions.chunkSize ?? 48;
     const scaledChunkSize = legacyChunkSize * 2;
-    const legacyEnvelope = computeTerrainVerticalEnvelope(legacyChunkSize);
-    const scaledEnvelope = computeTerrainVerticalEnvelope(scaledChunkSize);
+    const legacyEnvelope = computeTerrainVerticalEnvelope({
+      chunkSize: legacyChunkSize,
+      verticalSpanChunks: defaultVerticalSpanChunks,
+    });
+    const scaledEnvelope = computeTerrainVerticalEnvelope({
+      chunkSize: scaledChunkSize,
+      verticalSpanChunks: defaultVerticalSpanChunks,
+    });
     const normalizationScale =
       legacyEnvelope.maxHeight > 0
         ? scaledEnvelope.maxHeight / legacyEnvelope.maxHeight

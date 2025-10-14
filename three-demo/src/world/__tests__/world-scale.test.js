@@ -6,6 +6,11 @@ import {
   getWorldOptions,
   getWorldScale,
   resetWorldOptions,
+  computeTerrainVerticalEnvelope,
+  defaultWorldOptions,
+  LEGACY_PRIMARY_SLOPE_BUDGET,
+  LEGACY_DETAIL_SLOPE_BUDGET,
+  LEGACY_RIDGE_SLOPE_BUDGET,
 } from '../world-settings.js'
 import {
   clearTerrainSampleCache,
@@ -19,6 +24,10 @@ test('computeWorldScale normalizes odd chunk bounds', () => {
   const scale = computeWorldScale({ size: 33 })
   assert.equal(scale.size, 33)
   assert.equal(scale.halfExtent, 16)
+  assert.equal(scale.verticalSpanChunks, 3)
+  assert.equal(scale.verticalExtent, scale.size * scale.verticalSpanChunks)
+  assert.equal(scale.verticalClampMin, -scale.verticalExtent)
+  assert.equal(scale.verticalClampMax, scale.verticalExtent)
 
   const originBounds = scale.chunkWorldBounds(0, 0)
   assert.equal(originBounds.minX, -16)
@@ -89,4 +98,71 @@ test('world scale integrates with world settings when chunk size changes', () =>
   assert.equal(originBounds.maxX + 0.5, eastBounds.minX - 0.5)
 
   resetWorldOptions()
+})
+
+test('vertical span scaling updates clamps and slope budgets', () => {
+  resetWorldOptions()
+  const customSpan = 4
+  const chunkSize = 48
+
+  applyWorldOptions({
+    chunk: { size: chunkSize },
+    terrain: { verticalSpanChunks: customSpan },
+  })
+
+  const options = getWorldOptions()
+  const scale = getWorldScale()
+
+  try {
+    assert.equal(options.terrain.verticalSpanChunks, customSpan)
+    assert.equal(options.verticalSpanChunks, customSpan)
+    assert.equal(scale.verticalSpanChunks, customSpan)
+    assert.equal(scale.verticalExtent, scale.size * customSpan)
+    assert.equal(scale.verticalClampMin, -scale.verticalExtent)
+    assert.equal(scale.verticalClampMax, scale.verticalExtent)
+
+    const envelope = computeTerrainVerticalEnvelope({
+      chunkSize: options.chunk.size,
+      verticalSpanChunks: options.terrain.verticalSpanChunks,
+    })
+    assert.equal(envelope.maxHeight, scale.verticalExtent)
+    assert.equal(envelope.clampMin, scale.verticalClampMin)
+    assert.equal(envelope.clampMax, scale.verticalClampMax)
+
+    const primarySlope =
+      options.terrain.primaryFrequency * options.terrain.primaryAmplitude
+    const detailSlope =
+      options.terrain.detailFrequency * options.terrain.detailAmplitude
+    const ridgeSlope =
+      options.terrain.ridgeFrequency * options.terrain.ridgeStrength
+    const legacySpan =
+      defaultWorldOptions.chunk?.size ??
+      defaultWorldOptions.chunkSize ??
+      scale.size
+    const expectedPrimary =
+      LEGACY_PRIMARY_SLOPE_BUDGET * (legacySpan / scale.verticalExtent)
+    const expectedDetail =
+      LEGACY_DETAIL_SLOPE_BUDGET * (legacySpan / scale.verticalExtent)
+    const expectedRidge =
+      LEGACY_RIDGE_SLOPE_BUDGET * (legacySpan / scale.verticalExtent)
+    const tolerance = 1e-3
+
+    assert.ok(
+      Math.abs(primarySlope - expectedPrimary) <= tolerance,
+      `expected primary slope budget ≈ ${expectedPrimary}, received ${primarySlope}`,
+    )
+    assert.ok(
+      Math.abs(detailSlope - expectedDetail) <= tolerance,
+      `expected detail slope budget ≈ ${expectedDetail}, received ${detailSlope}`,
+    )
+    assert.ok(
+      Math.abs(ridgeSlope - expectedRidge) <= tolerance,
+      `expected ridge slope budget ≈ ${expectedRidge}, received ${ridgeSlope}`,
+    )
+
+    assert.equal(options.terrain.clamp.min, scale.verticalClampMin)
+    assert.equal(options.terrain.clamp.max, scale.verticalClampMax)
+  } finally {
+    resetWorldOptions()
+  }
 })
