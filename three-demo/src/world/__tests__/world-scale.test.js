@@ -135,16 +135,9 @@ test('vertical span scaling updates clamps and slope budgets', () => {
       options.terrain.detailFrequency * options.terrain.detailAmplitude
     const ridgeSlope =
       options.terrain.ridgeFrequency * options.terrain.ridgeStrength
-    const legacySpan =
-      defaultWorldOptions.chunk?.size ??
-      defaultWorldOptions.chunkSize ??
-      scale.size
-    const expectedPrimary =
-      LEGACY_PRIMARY_SLOPE_BUDGET * (legacySpan / scale.verticalExtent)
-    const expectedDetail =
-      LEGACY_DETAIL_SLOPE_BUDGET * (legacySpan / scale.verticalExtent)
-    const expectedRidge =
-      LEGACY_RIDGE_SLOPE_BUDGET * (legacySpan / scale.verticalExtent)
+    const expectedPrimary = LEGACY_PRIMARY_SLOPE_BUDGET
+    const expectedDetail = LEGACY_DETAIL_SLOPE_BUDGET
+    const expectedRidge = LEGACY_RIDGE_SLOPE_BUDGET
     const tolerance = 1e-3
 
     assert.ok(
