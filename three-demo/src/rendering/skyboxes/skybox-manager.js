@@ -3,8 +3,12 @@ import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { TextureEngine } from '../texture-engine.js';
 
 function loadSkyboxUrlMap() {
+  const manualMap = Object.freeze({
+    '../../../public/assets/skyboxes/skybox-1.jpg': '/assets/skyboxes/skybox-1.jpg',
+  });
+
   if (typeof import.meta?.glob === 'function') {
-    return import.meta.glob(
+    const discovered = import.meta.glob(
       // The skyboxes live under `public/assets`, so we climb out of `src/` to reach them.
       '../../../public/assets/skyboxes/**/*.{exr,EXR,hdr,HDR,jpg,jpeg,JPG,JPEG,png,PNG}',
       {
@@ -13,12 +17,17 @@ function loadSkyboxUrlMap() {
         query: '?url',
       },
     );
+    if (discovered && Object.keys(discovered).length > 0) {
+      return { ...manualMap, ...discovered };
+    }
   }
+
   const fallback = globalThis.__SKYBOX_URL_MAP__;
-  if (fallback && typeof fallback === 'object') {
-    return fallback;
+  if (fallback && typeof fallback === 'object' && Object.keys(fallback).length > 0) {
+    return { ...manualMap, ...fallback };
   }
-  return {};
+
+  return manualMap;
 }
 
 const SKYBOX_URLS = loadSkyboxUrlMap();
