@@ -137,18 +137,23 @@ const RIDGE_STRENGTH_RATIO =
     ? DEFAULT_TERRAIN_RIDGE_STRENGTH / DEFAULT_TERRAIN_VERTICAL_EXTENT
     : 0
 
-function deriveSlopeAlignedFrequency({
+function deriveLegacyScaledFrequency({
   amplitude,
-  slopeBudget,
-  fallbackFrequency = 0,
+  baselineFrequency,
+  legacyAmplitudeTarget,
+  fallbackFrequency = baselineFrequency,
 }) {
   if (!Number.isFinite(amplitude) || amplitude <= 0) {
     return fallbackFrequency
   }
-  if (!Number.isFinite(slopeBudget) || slopeBudget <= 0) {
+  if (!Number.isFinite(legacyAmplitudeTarget) || legacyAmplitudeTarget <= 0) {
     return fallbackFrequency
   }
-  return slopeBudget / amplitude
+  const amplitudeRatio = legacyAmplitudeTarget / amplitude
+  if (!Number.isFinite(amplitudeRatio) || amplitudeRatio <= 0) {
+    return fallbackFrequency
+  }
+  return baselineFrequency * amplitudeRatio
 }
 
 function normalizeChunkSizeForEnvelope(chunkSize) {
@@ -222,18 +227,20 @@ function computeTerrainWaveDefaults({
     ['terrain', 'ridgeStrength'],
   )
 
-  const slopeAlignedPrimaryFrequency = deriveSlopeAlignedFrequency({
+  const slopeAlignedPrimaryFrequency = deriveLegacyScaledFrequency({
     amplitude: DEFAULT_TERRAIN_PRIMARY_AMPLITUDE,
-    slopeBudget: LEGACY_PRIMARY_SLOPE_BUDGET,
+    baselineFrequency: LEGACY_PRIMARY_FREQUENCY_BASELINE,
+    legacyAmplitudeTarget: LEGACY_PRIMARY_AMPLITUDE_TARGET,
     fallbackFrequency: LEGACY_PRIMARY_FREQUENCY_BASELINE,
   })
   const defaultPrimaryFrequency =
     DEFAULT_TERRAIN_PRIMARY_FREQUENCY > 0
       ? DEFAULT_TERRAIN_PRIMARY_FREQUENCY
       : slopeAlignedPrimaryFrequency
-  const primaryFrequencyCandidate = deriveSlopeAlignedFrequency({
+  const primaryFrequencyCandidate = deriveLegacyScaledFrequency({
     amplitude: primaryAmplitude,
-    slopeBudget: LEGACY_PRIMARY_SLOPE_BUDGET,
+    baselineFrequency: LEGACY_PRIMARY_FREQUENCY_BASELINE,
+    legacyAmplitudeTarget: LEGACY_PRIMARY_AMPLITUDE_TARGET,
     fallbackFrequency: defaultPrimaryFrequency,
   })
   const primaryFrequency = normalizeWithDescriptor(
@@ -242,18 +249,20 @@ function computeTerrainWaveDefaults({
     ['terrain', 'primaryFrequency'],
   )
 
-  const slopeAlignedDetailFrequency = deriveSlopeAlignedFrequency({
+  const slopeAlignedDetailFrequency = deriveLegacyScaledFrequency({
     amplitude: DEFAULT_TERRAIN_DETAIL_AMPLITUDE,
-    slopeBudget: LEGACY_DETAIL_SLOPE_BUDGET,
+    baselineFrequency: LEGACY_DETAIL_FREQUENCY_BASELINE,
+    legacyAmplitudeTarget: LEGACY_DETAIL_AMPLITUDE_TARGET,
     fallbackFrequency: LEGACY_DETAIL_FREQUENCY_BASELINE,
   })
   const defaultDetailFrequency =
     DEFAULT_TERRAIN_DETAIL_FREQUENCY > 0
       ? DEFAULT_TERRAIN_DETAIL_FREQUENCY
       : slopeAlignedDetailFrequency
-  const detailFrequencyCandidate = deriveSlopeAlignedFrequency({
+  const detailFrequencyCandidate = deriveLegacyScaledFrequency({
     amplitude: detailAmplitude,
-    slopeBudget: LEGACY_DETAIL_SLOPE_BUDGET,
+    baselineFrequency: LEGACY_DETAIL_FREQUENCY_BASELINE,
+    legacyAmplitudeTarget: LEGACY_DETAIL_AMPLITUDE_TARGET,
     fallbackFrequency: defaultDetailFrequency,
   })
   const detailFrequency = normalizeWithDescriptor(
@@ -262,18 +271,20 @@ function computeTerrainWaveDefaults({
     ['terrain', 'detailFrequency'],
   )
 
-  const slopeAlignedRidgeFrequency = deriveSlopeAlignedFrequency({
+  const slopeAlignedRidgeFrequency = deriveLegacyScaledFrequency({
     amplitude: DEFAULT_TERRAIN_RIDGE_STRENGTH,
-    slopeBudget: LEGACY_RIDGE_SLOPE_BUDGET,
+    baselineFrequency: LEGACY_RIDGE_FREQUENCY_BASELINE,
+    legacyAmplitudeTarget: LEGACY_RIDGE_STRENGTH_TARGET,
     fallbackFrequency: LEGACY_RIDGE_FREQUENCY_BASELINE,
   })
   const defaultRidgeFrequency =
     DEFAULT_TERRAIN_RIDGE_FREQUENCY > 0
       ? DEFAULT_TERRAIN_RIDGE_FREQUENCY
       : slopeAlignedRidgeFrequency
-  const ridgeFrequencyCandidate = deriveSlopeAlignedFrequency({
+  const ridgeFrequencyCandidate = deriveLegacyScaledFrequency({
     amplitude: ridgeStrength,
-    slopeBudget: LEGACY_RIDGE_SLOPE_BUDGET,
+    baselineFrequency: LEGACY_RIDGE_FREQUENCY_BASELINE,
+    legacyAmplitudeTarget: LEGACY_RIDGE_STRENGTH_TARGET,
     fallbackFrequency: defaultRidgeFrequency,
   })
   const ridgeFrequency = normalizeWithDescriptor(

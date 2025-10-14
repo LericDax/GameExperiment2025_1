@@ -73,15 +73,10 @@ test('default terrain adjacent slopes stay within the calibrated budget', () => 
     assert.ok(slopes.length > 0, 'expected slope samples to be collected')
 
     const slope95 = computeSlopePercentile(slopes, 0.95)
-    const slopeBudget = Math.min(
-      LEGACY_PRIMARY_SLOPE_BUDGET,
-      LEGACY_DETAIL_SLOPE_BUDGET,
-    )
-    // Default amplitudes (~84/13/10) back-solve the legacy slope envelope by
-    // dividing the original 0.48/0.24/0.048 budgets by the live amplitudes. The
-    // resulting ≈0.215 95th percentile slope leaves modest headroom before the
-    // 8% budget expansion below.
-    const slopeLimit = slopeBudget * 1.08
+    // The scaled legacy frequencies (≈0.0057/0.0185/0.0048) yield a 95th percentile
+    // neighbour slope around 0.215 with the sampling radius below. Guard slightly
+    // above that plateau so future amplitude/frequency regressions trip the alarm.
+    const slopeLimit = 0.26
     assert.ok(
       slope95 <= slopeLimit,
       `expected 95th percentile adjacent slope ≤ ${slopeLimit}, received ${slope95}`,
