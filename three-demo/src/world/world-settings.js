@@ -4,6 +4,7 @@ import {
   worldOptionPathToKey,
 } from './world-option-descriptors.js'
 import { clearTerrainSampleCache } from './terrain-sample-cache.js'
+import { computeWorldScale } from './world-scale.js'
 
 export { worldOptionDescriptors } from './world-option-descriptors.js'
 
@@ -2621,8 +2622,16 @@ function applyTfmsOverrides(target, overrides) {
 
 export const worldOptions = createMutableWorldOptions()
 
+export let worldScale = computeWorldScale(worldOptions)
+
+worldOptions.scale = worldScale
+
 export function getWorldOptions() {
   return worldOptions
+}
+
+export function getWorldScale() {
+  return worldScale
 }
 
 export function applyWorldOptions(overrides = {}) {
@@ -2970,6 +2979,9 @@ export function applyWorldOptions(overrides = {}) {
     })
   }
 
+  worldScale = computeWorldScale(worldOptions)
+  worldOptions.scale = worldScale
+
   clearTerrainSampleCache()
 
   return worldOptions
@@ -2999,6 +3011,9 @@ export function resetWorldOptions() {
     delete worldOptions.biomes[key]
   })
   Object.assign(worldOptions.biomes, fresh.biomes)
+
+  worldScale = computeWorldScale(worldOptions)
+  worldOptions.scale = worldScale
 
   clearTerrainSampleCache()
 
