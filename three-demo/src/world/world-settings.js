@@ -91,7 +91,6 @@ const DEFAULT_WORLD_SCALE = computeWorldScale({
   terrain: { verticalSpanChunks: DEFAULT_VERTICAL_SPAN_CHUNKS },
   verticalSpanChunks: DEFAULT_VERTICAL_SPAN_CHUNKS,
 })
-const LEGACY_TERRAIN_VERTICAL_SPAN = DEFAULT_CHUNK_SIZE
 const DEFAULT_TERRAIN_BASE_HEIGHT = getDescriptorDefault([
   'terrain',
   'baseHeight',
@@ -133,10 +132,6 @@ export const LEGACY_DETAIL_SLOPE_BUDGET =
 export const LEGACY_RIDGE_SLOPE_BUDGET =
   LEGACY_RIDGE_FREQUENCY_BASELINE * LEGACY_RIDGE_STRENGTH_BASELINE
 const DEFAULT_TERRAIN_VERTICAL_EXTENT = DEFAULT_WORLD_SCALE.verticalExtent
-const DEFAULT_FREQUENCY_SCALE =
-  DEFAULT_TERRAIN_VERTICAL_EXTENT > 0
-    ? LEGACY_TERRAIN_VERTICAL_SPAN / DEFAULT_TERRAIN_VERTICAL_EXTENT
-    : 1
 const PRIMARY_AMPLITUDE_RATIO =
   DEFAULT_TERRAIN_VERTICAL_EXTENT > 0
     ? DEFAULT_TERRAIN_PRIMARY_AMPLITUDE / DEFAULT_TERRAIN_VERTICAL_EXTENT
@@ -154,23 +149,19 @@ function deriveLegacyAlignedFrequency({
   amplitude,
   legacyAmplitude,
   baseFrequency,
-  frequencyScale = 1,
   fallbackFrequency,
 }) {
-  const scale = Number.isFinite(frequencyScale) && frequencyScale > 0 ? frequencyScale : 1
-  const scaledBaseFrequency = baseFrequency * scale
   const fallback =
     Number.isFinite(fallbackFrequency) && fallbackFrequency > 0
       ? fallbackFrequency
-      : scaledBaseFrequency
+      : baseFrequency
   if (!Number.isFinite(amplitude) || amplitude <= 0) {
     return fallback
   }
   if (!Number.isFinite(legacyAmplitude) || legacyAmplitude <= 0) {
     return fallback
   }
-  const alignedFrequency =
-    baseFrequency * (legacyAmplitude / amplitude) * scale
+  const alignedFrequency = baseFrequency * (legacyAmplitude / amplitude)
   if (!Number.isFinite(alignedFrequency) || alignedFrequency <= 0) {
     return fallback
   }
@@ -262,10 +253,6 @@ function computeTerrainWaveDefaults({
     terrain: { verticalSpanChunks: normalizedSpan },
   })
   const verticalExtent = scale.verticalExtent
-  const frequencyScale =
-    verticalExtent > 0
-      ? LEGACY_TERRAIN_VERTICAL_SPAN / verticalExtent
-      : 1
   const safeBaseHeight = Number.isFinite(baseHeight) ? baseHeight : 0
   const amplitudeBudget = Math.max(0, verticalExtent - safeBaseHeight)
 
@@ -317,7 +304,6 @@ function computeTerrainWaveDefaults({
     amplitude: primaryAmplitude,
     legacyAmplitude: LEGACY_PRIMARY_AMPLITUDE_BASELINE,
     baseFrequency: LEGACY_PRIMARY_FREQUENCY_BASELINE,
-    frequencyScale,
     fallbackFrequency: DEFAULT_TERRAIN_PRIMARY_FREQUENCY,
   })
   const primaryFrequency = normalizeWithDescriptor(
@@ -330,7 +316,6 @@ function computeTerrainWaveDefaults({
     amplitude: detailAmplitude,
     legacyAmplitude: LEGACY_DETAIL_AMPLITUDE_BASELINE,
     baseFrequency: LEGACY_DETAIL_FREQUENCY_BASELINE,
-    frequencyScale,
     fallbackFrequency: DEFAULT_TERRAIN_DETAIL_FREQUENCY,
   })
   const detailFrequency = normalizeWithDescriptor(
@@ -343,7 +328,6 @@ function computeTerrainWaveDefaults({
     amplitude: ridgeStrength,
     legacyAmplitude: LEGACY_RIDGE_STRENGTH_BASELINE,
     baseFrequency: LEGACY_RIDGE_FREQUENCY_BASELINE,
-    frequencyScale,
     fallbackFrequency: DEFAULT_TERRAIN_RIDGE_FREQUENCY,
   })
   const ridgeFrequency = normalizeWithDescriptor(
