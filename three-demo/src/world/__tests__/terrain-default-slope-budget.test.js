@@ -78,9 +78,10 @@ test('default terrain adjacent slopes stay within the calibrated budget', () => 
       LEGACY_DETAIL_SLOPE_BUDGET,
     )
     // Default amplitudes (~84/13/10) back-solve the legacy slope envelope by
-    // dividing the original 0.48/0.24/0.048 budgets by the live amplitudes.
-    // The resulting ≈0.44 95th percentile slope leaves modest headroom before
-    // the 8% budget expansion below.
+    // dividing the original 0.48/0.24/0.048 budgets by the live amplitudes and
+    // applying the vertical-span frequency scale (≈48 / 144). The resulting
+    // ≈0.215 95th percentile slope leaves modest headroom before the 8% budget
+    // expansion below.
     const slopeLimit = slopeBudget * 1.08
     assert.ok(
       slope95 <= slopeLimit,
@@ -89,9 +90,20 @@ test('default terrain adjacent slopes stay within the calibrated budget', () => 
 
     const terrain = defaultWorldOptions.terrain
     const tolerance = 1e-9
+    const legacySpan = chunkSize
+    const verticalExtent = Math.max(
+      1,
+      Number.isFinite(terrain.maxHeight)
+        ? terrain.maxHeight
+        : chunkSize * 3,
+    )
+    const frequencyScale =
+      verticalExtent > 0 ? legacySpan / verticalExtent : 1
+
     const expectedPrimaryFrequency =
       terrain.primaryAmplitude > 0
-        ? LEGACY_PRIMARY_SLOPE_BUDGET / terrain.primaryAmplitude
+        ? (LEGACY_PRIMARY_SLOPE_BUDGET / terrain.primaryAmplitude) *
+          frequencyScale
         : 0
     if (expectedPrimaryFrequency > 0) {
       assert.ok(
@@ -103,7 +115,8 @@ test('default terrain adjacent slopes stay within the calibrated budget', () => 
 
     const expectedDetailFrequency =
       terrain.detailAmplitude > 0
-        ? LEGACY_DETAIL_SLOPE_BUDGET / terrain.detailAmplitude
+        ? (LEGACY_DETAIL_SLOPE_BUDGET / terrain.detailAmplitude) *
+          frequencyScale
         : 0
     if (expectedDetailFrequency > 0) {
       assert.ok(
@@ -115,7 +128,8 @@ test('default terrain adjacent slopes stay within the calibrated budget', () => 
 
     const expectedRidgeFrequency =
       terrain.ridgeStrength > 0
-        ? LEGACY_RIDGE_SLOPE_BUDGET / terrain.ridgeStrength
+        ? (LEGACY_RIDGE_SLOPE_BUDGET / terrain.ridgeStrength) *
+          frequencyScale
         : 0
     if (expectedRidgeFrequency > 0) {
       assert.ok(

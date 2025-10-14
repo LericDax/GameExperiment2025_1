@@ -56,6 +56,11 @@ const defaultChunkSize = 48
 const defaultVerticalSpanChunks = 3
 const defaultTerrainBaseHeight = 10
 const defaultTerrainVerticalExtent = defaultChunkSize * defaultVerticalSpanChunks
+const legacyTerrainVerticalSpan = defaultChunkSize
+const defaultFrequencyScale =
+  defaultTerrainVerticalExtent > 0
+    ? legacyTerrainVerticalSpan / defaultTerrainVerticalExtent
+    : 1
 const basePrimaryFrequency = 0.06
 const baseDetailFrequency = 0.08
 const baseRidgeFrequency = 0.02
@@ -112,33 +117,40 @@ function deriveLegacyAlignedFrequency({
   amplitude,
   legacyAmplitude,
   baseFrequency,
+  frequencyScale = 1,
 }) {
+  const scale = Number.isFinite(frequencyScale) && frequencyScale > 0 ? frequencyScale : 1
+  const scaledBaseFrequency = baseFrequency * scale
   if (!Number.isFinite(amplitude) || amplitude <= 0) {
-    return baseFrequency
+    return scaledBaseFrequency
   }
   if (!Number.isFinite(legacyAmplitude) || legacyAmplitude <= 0) {
-    return baseFrequency
+    return scaledBaseFrequency
   }
-  const alignedFrequency = baseFrequency * (legacyAmplitude / amplitude)
+  const alignedFrequency =
+    baseFrequency * (legacyAmplitude / amplitude) * scale
   return Number.isFinite(alignedFrequency) && alignedFrequency > 0
     ? alignedFrequency
-    : baseFrequency
+    : scaledBaseFrequency
 }
 
 const defaultPrimaryFrequency = deriveLegacyAlignedFrequency({
   amplitude: defaultPrimaryAmplitude,
   legacyAmplitude: LEGACY_PRIMARY_AMPLITUDE,
   baseFrequency: basePrimaryFrequency,
+  frequencyScale: defaultFrequencyScale,
 })
 const defaultDetailFrequency = deriveLegacyAlignedFrequency({
   amplitude: defaultDetailAmplitude,
   legacyAmplitude: LEGACY_DETAIL_AMPLITUDE,
   baseFrequency: baseDetailFrequency,
+  frequencyScale: defaultFrequencyScale,
 })
 const defaultRidgeFrequency = deriveLegacyAlignedFrequency({
   amplitude: defaultRidgeStrength,
   legacyAmplitude: LEGACY_RIDGE_STRENGTH,
   baseFrequency: baseRidgeFrequency,
+  frequencyScale: defaultFrequencyScale,
 })
 
 const tfmsWaveformOptions = Object.freeze([
