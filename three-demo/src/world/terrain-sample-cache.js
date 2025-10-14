@@ -1,5 +1,3 @@
-import { computeWorldScale } from './world-scale.js';
-
 const DEFAULT_MAX_ENTRIES = 200000;
 
 const cache = new Map();
@@ -207,28 +205,8 @@ export const pruneTerrainSampleCache = ({ maxEntries: limit } = {}) => {
   return cache.size;
 };
 
-const normalizePadding = (value) => {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return 0;
-  }
-  return Math.max(0, Math.floor(numeric));
-};
-
-const computeChunkBounds = (chunkX, chunkZ, chunkSize, padding = 0) => {
-  const scale = computeWorldScale({ size: chunkSize });
-  const base = scale.chunkWorldBounds(chunkX, chunkZ);
-  const pad = normalizePadding(padding);
-  if (pad === 0) {
-    return base;
-  }
-  return {
-    minX: base.minX - pad,
-    maxX: base.maxX + pad,
-    minZ: base.minZ - pad,
-    maxZ: base.maxZ + pad,
-  };
-};
+const chunkWorldMin = (chunk, chunkSize) => chunk * chunkSize - chunkSize / 2;
+const chunkWorldMax = (chunk, chunkSize) => chunkWorldMin(chunk, chunkSize) + chunkSize - 1;
 
 export const invalidateTerrainSamplesForChunk = ({
   chunkX,
@@ -239,8 +217,11 @@ export const invalidateTerrainSamplesForChunk = ({
   if (!Number.isFinite(chunkSize) || chunkSize <= 0) {
     return 0;
   }
-  const bounds = computeChunkBounds(chunkX, chunkZ, chunkSize, padding);
-  return invalidateTerrainSampleRange(bounds);
+  const minX = chunkWorldMin(chunkX, chunkSize) - padding;
+  const maxX = chunkWorldMax(chunkX, chunkSize) + padding;
+  const minZ = chunkWorldMin(chunkZ, chunkSize) - padding;
+  const maxZ = chunkWorldMax(chunkZ, chunkSize) + padding;
+  return invalidateTerrainSampleRange({ minX, maxX, minZ, maxZ });
 };
 
 export const pruneTerrainSampleCacheOutsideRadius = ({
@@ -263,14 +244,11 @@ export const pruneTerrainSampleCacheOutsideRadius = ({
   const maxChunkX = centerChunkX + chunkRadius;
   const minChunkZ = centerChunkZ - chunkRadius;
   const maxChunkZ = centerChunkZ + chunkRadius;
-  const scale = computeWorldScale({ size: chunkSize });
-  const bounds = {
-    minX: scale.chunkWorldMin(minChunkX),
-    maxX: scale.chunkWorldMax(maxChunkX),
-    minZ: scale.chunkWorldMin(minChunkZ),
-    maxZ: scale.chunkWorldMax(maxChunkZ),
-  };
-  return pruneTerrainSampleCacheOutsideBounds(bounds);
+  const minX = chunkWorldMin(minChunkX, chunkSize);
+  const maxX = chunkWorldMax(maxChunkX, chunkSize);
+  const minZ = chunkWorldMin(minChunkZ, chunkSize);
+  const maxZ = chunkWorldMax(maxChunkZ, chunkSize);
+  return pruneTerrainSampleCacheOutsideBounds({ minX, maxX, minZ, maxZ });
 };
 
 export const clearTerrainSampleCache = () => {
