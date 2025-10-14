@@ -80,98 +80,6 @@ export { worldOptionDescriptors } from './world-option-descriptors.js'
 
 const descriptorIndex = createWorldOptionDescriptorIndex(worldOptionDescriptors)
 
-const TERRAIN_VERTICAL_SPAN_MULTIPLIER = 3
-const DEFAULT_CHUNK_SIZE = getDescriptorDefault(['chunk', 'size'])
-const DEFAULT_TERRAIN_BASE_HEIGHT = getDescriptorDefault([
-  'terrain',
-  'baseHeight',
-])
-
-function normalizeChunkSizeForEnvelope(chunkSize) {
-  if (Number.isFinite(chunkSize)) {
-    return Math.max(1, Math.floor(chunkSize))
-  }
-  return Math.max(1, Math.floor(DEFAULT_CHUNK_SIZE))
-}
-
-export function computeTerrainVerticalEnvelope(chunkSize = DEFAULT_CHUNK_SIZE) {
-  const normalizedSize = normalizeChunkSizeForEnvelope(chunkSize)
-  const verticalExtent = normalizedSize * TERRAIN_VERTICAL_SPAN_MULTIPLIER
-  return {
-    chunkSize: normalizedSize,
-    maxHeight: verticalExtent,
-    clampMin: -verticalExtent,
-    clampMax: verticalExtent,
-  }
-}
-
-function syncTerrainVerticalEnvelope(
-  options,
-  envelope,
-  {
-    forceClamp = false,
-    forceMaxHeight = false,
-    forceTfmsClamp = false,
-  } = {},
-) {
-  if (!options || !options.terrain || !envelope) {
-    return
-  }
-
-  const { clampMin, clampMax, maxHeight } = envelope
-
-  if (forceMaxHeight || !Number.isFinite(options.terrain.maxHeight)) {
-    options.terrain.maxHeight = maxHeight
-  } else if (forceMaxHeight || options.terrain.maxHeight < maxHeight) {
-    options.terrain.maxHeight = maxHeight
-  }
-
-  if (forceMaxHeight || !Number.isFinite(options.maxHeight)) {
-    options.maxHeight = options.terrain.maxHeight
-  } else if (options.maxHeight < options.terrain.maxHeight) {
-    options.maxHeight = options.terrain.maxHeight
-  }
-
-  const clamp = options.terrain.clamp ?? (options.terrain.clamp = {})
-  if (forceClamp || !Number.isFinite(clamp.min)) {
-    clamp.min = clampMin
-  } else if (forceClamp || clamp.min > clampMin) {
-    clamp.min = clampMin
-  }
-  if (forceClamp || !Number.isFinite(clamp.max)) {
-    clamp.max = clampMax
-  } else if (forceClamp || clamp.max < clampMax) {
-    clamp.max = clampMax
-  }
-  if (Number.isFinite(clamp.min) && Number.isFinite(clamp.max) && clamp.max < clamp.min) {
-    clamp.max = clamp.min
-  }
-
-  const tfms = options.terrain.tfms
-  if (!tfms || typeof tfms !== 'object') {
-    return
-  }
-
-  const tfmsClamp = tfms.clamp ?? (tfms.clamp = {})
-  if (forceTfmsClamp || !Number.isFinite(tfmsClamp.min)) {
-    tfmsClamp.min = clampMin
-  } else if (forceTfmsClamp || tfmsClamp.min > clampMin) {
-    tfmsClamp.min = clampMin
-  }
-  if (forceTfmsClamp || !Number.isFinite(tfmsClamp.max)) {
-    tfmsClamp.max = clampMax
-  } else if (forceTfmsClamp || tfmsClamp.max < clampMax) {
-    tfmsClamp.max = clampMax
-  }
-  if (
-    Number.isFinite(tfmsClamp.min) &&
-    Number.isFinite(tfmsClamp.max) &&
-    tfmsClamp.max < tfmsClamp.min
-  ) {
-    tfmsClamp.max = tfmsClamp.min
-  }
-}
-
 export function getWorldOptionDescriptor(pathKey) {
   return descriptorIndex.get(pathKey) ?? null
 }
@@ -243,16 +151,14 @@ const defaultEnvironmentOptions = Object.freeze({
   skyboxId: getDescriptorDefault(['environment', 'skyboxId']),
 })
 
-const defaultTerrainEnvelope = computeTerrainVerticalEnvelope(DEFAULT_CHUNK_SIZE)
-
 const defaultTerrainClamp = Object.freeze({
-  min: defaultTerrainEnvelope.clampMin,
-  max: defaultTerrainEnvelope.clampMax,
+  min: getDescriptorDefault(['terrain', 'clamp', 'min']),
+  max: getDescriptorDefault(['terrain', 'clamp', 'max']),
 })
 
 const defaultTerrainCore = Object.freeze({
-  baseHeight: DEFAULT_TERRAIN_BASE_HEIGHT,
-  maxHeight: defaultTerrainEnvelope.maxHeight,
+  baseHeight: getDescriptorDefault(['terrain', 'baseHeight']),
+  maxHeight: getDescriptorDefault(['terrain', 'maxHeight']),
   clamp: defaultTerrainClamp,
   primaryFrequency: getDescriptorDefault(['terrain', 'primaryFrequency']),
   primaryAmplitude: getDescriptorDefault(['terrain', 'primaryAmplitude']),
@@ -422,7 +328,7 @@ function createMutableWorldOptions() {
     DEFAULT_SEED_VALUE,
     DEFAULT_SEED_HASH,
   )
-  const options = {
+  return {
     seed: seedInfo.value,
     seedHash: seedInfo.hash,
     chunkSize: defaultWorldOptions.chunkSize,
@@ -451,13 +357,6 @@ function createMutableWorldOptions() {
     },
     biomes: { ...defaultWorldOptions.biomes },
   }
-  const envelope = computeTerrainVerticalEnvelope(options.chunk.size)
-  syncTerrainVerticalEnvelope(options, envelope, {
-    forceClamp: true,
-    forceMaxHeight: true,
-    forceTfmsClamp: true,
-  })
-  return options
 }
 
 function isObject(value) {
@@ -914,14 +813,10 @@ function createDefaultTerrainTfmsPreset(terrainDefaults) {
     : 1
   const clampMin = Number.isFinite(defaultTerrainTfmsClamp?.min)
     ? defaultTerrainTfmsClamp.min
-    : Number.isFinite(terrainDefaults?.clamp?.min)
-    ? terrainDefaults.clamp.min
-    : defaultTerrainEnvelope.clampMin
+    : -24
   const clampMax = Number.isFinite(defaultTerrainTfmsClamp?.max)
     ? defaultTerrainTfmsClamp.max
-    : Number.isFinite(terrainDefaults?.clamp?.max)
-    ? terrainDefaults.clamp.max
-    : defaultTerrainEnvelope.clampMax
+    : 24
   const biomeBlendStrength = Number.isFinite(defaultTerrainTfmsBiomeBlendStrength)
     ? defaultTerrainTfmsBiomeBlendStrength
     : 0.45
@@ -2009,10 +1904,6 @@ export function applyWorldOptions(overrides = {}) {
     worldOptions.seedHash = seedInfo.hash
   }
 
-  const previousChunkSize = Number.isFinite(worldOptions.chunk?.size)
-    ? worldOptions.chunk.size
-    : DEFAULT_CHUNK_SIZE
-  let chunkSizeChanged = false
   const chunkOverrides = isObject(overrides.chunk) ? overrides.chunk : null
   const resolvedChunkSize = normalizeNumber(
     chunkOverrides?.size ?? overrides.chunkSize,
@@ -2026,7 +1917,6 @@ export function applyWorldOptions(overrides = {}) {
       worldOptions.chunk.size,
       ['chunk', 'size'],
     )
-    chunkSizeChanged = normalizedChunkSize !== previousChunkSize
     worldOptions.chunk.size = normalizedChunkSize
     worldOptions.chunkSize = normalizeWithDescriptor(
       normalizedChunkSize,
@@ -2060,10 +1950,6 @@ export function applyWorldOptions(overrides = {}) {
 
   const terrainOverrides = isObject(overrides.terrain) ? overrides.terrain : null
 
-  let maxHeightOverrideProvided = false
-  let clampMinOverrideProvided = false
-  let clampMaxOverrideProvided = false
-
   const resolvedBaseHeight = normalizeNumber(
     terrainOverrides?.baseHeight ?? overrides.baseHeight,
     null,
@@ -2083,7 +1969,6 @@ export function applyWorldOptions(overrides = {}) {
     null,
   )
   if (resolvedMaxHeight !== null) {
-    maxHeightOverrideProvided = true
     const maxHeight = normalizeWithDescriptor(
       resolvedMaxHeight,
       worldOptions.terrain.maxHeight,
@@ -2102,7 +1987,6 @@ export function applyWorldOptions(overrides = {}) {
     : null
   const resolvedClampMin = normalizeNumber(clampOverrides?.min, null)
   if (resolvedClampMin !== null) {
-    clampMinOverrideProvided = true
     worldOptions.terrain.clamp.min = normalizeWithDescriptor(
       resolvedClampMin,
       worldOptions.terrain.clamp.min,
@@ -2111,7 +1995,6 @@ export function applyWorldOptions(overrides = {}) {
   }
   const resolvedClampMax = normalizeNumber(clampOverrides?.max, null)
   if (resolvedClampMax !== null) {
-    clampMaxOverrideProvided = true
     const clampMax = normalizeWithDescriptor(
       resolvedClampMax,
       worldOptions.terrain.clamp.max,
@@ -2120,8 +2003,6 @@ export function applyWorldOptions(overrides = {}) {
     worldOptions.terrain.clamp.max = clampMax
     worldOptions.maxHeight = Math.max(worldOptions.maxHeight, clampMax)
   }
-
-  const clampOverrideProvided = clampMinOverrideProvided || clampMaxOverrideProvided
 
   const terrainOptionKeys = [
     'primaryFrequency',
@@ -2147,7 +2028,6 @@ export function applyWorldOptions(overrides = {}) {
     }
   })
 
-  let tfmsClampOverrideProvided = false
   const topLevelTfmsOverrides = isObject(overrides.tfms)
     ? overrides.tfms
     : null
@@ -2156,15 +2036,9 @@ export function applyWorldOptions(overrides = {}) {
     : null
 
   if (topLevelTfmsOverrides) {
-    if (isObject(topLevelTfmsOverrides.clamp)) {
-      tfmsClampOverrideProvided = true
-    }
     applyTfmsOverrides(worldOptions.terrain.tfms, topLevelTfmsOverrides)
   }
   if (nestedTfmsOverrides) {
-    if (isObject(nestedTfmsOverrides.clamp)) {
-      tfmsClampOverrideProvided = true
-    }
     applyTfmsOverrides(worldOptions.terrain.tfms, nestedTfmsOverrides)
   }
 
@@ -2172,9 +2046,6 @@ export function applyWorldOptions(overrides = {}) {
   legacyTfmsOverrideSources.forEach((candidate) => {
     if (!isObject(candidate)) {
       return
-    }
-    if (isObject(candidate.clamp)) {
-      tfmsClampOverrideProvided = true
     }
     if (
       Array.isArray(candidate.fmOperators) ||
@@ -2187,16 +2058,9 @@ export function applyWorldOptions(overrides = {}) {
     }
   })
 
-  const derivedEnvelope = computeTerrainVerticalEnvelope(worldOptions.chunk.size)
-  syncTerrainVerticalEnvelope(worldOptions, derivedEnvelope, {
-    forceClamp: chunkSizeChanged && !clampOverrideProvided,
-    forceMaxHeight: chunkSizeChanged && !maxHeightOverrideProvided,
-    forceTfmsClamp: chunkSizeChanged && !tfmsClampOverrideProvided,
-  })
-
   worldOptions.baseHeight = normalizeWithDescriptor(
     worldOptions.baseHeight,
-    DEFAULT_TERRAIN_BASE_HEIGHT,
+    defaultTerrainOptions.baseHeight,
     ['baseHeight'],
   )
   worldOptions.terrain.baseHeight = worldOptions.baseHeight
@@ -2208,7 +2072,7 @@ export function applyWorldOptions(overrides = {}) {
   worldOptions.terrain.maxHeight = Math.max(
     normalizeWithDescriptor(
       worldOptions.terrain.maxHeight,
-      derivedEnvelope.maxHeight,
+      defaultTerrainOptions.maxHeight,
       ['terrain', 'maxHeight'],
     ),
     minimumMaxHeight,
@@ -2216,7 +2080,7 @@ export function applyWorldOptions(overrides = {}) {
   worldOptions.maxHeight = Math.max(
     normalizeWithDescriptor(
       worldOptions.maxHeight,
-      derivedEnvelope.maxHeight,
+      defaultTerrainOptions.maxHeight,
       ['maxHeight'],
     ),
     worldOptions.terrain.maxHeight,
@@ -2238,13 +2102,13 @@ export function applyWorldOptions(overrides = {}) {
 
   worldOptions.terrain.clamp.min = normalizeWithDescriptor(
     worldOptions.terrain.clamp.min,
-    derivedEnvelope.clampMin,
+    defaultTerrainOptions.clamp.min,
     ['terrain', 'clamp', 'min'],
   )
   worldOptions.terrain.clamp.max = Math.max(
     normalizeWithDescriptor(
       worldOptions.terrain.clamp.max,
-      derivedEnvelope.clampMax,
+      defaultTerrainOptions.clamp.max,
       ['terrain', 'clamp', 'max'],
     ),
     worldOptions.terrain.clamp.min,
@@ -2253,7 +2117,6 @@ export function applyWorldOptions(overrides = {}) {
   worldOptions.maxHeight = Math.max(
     worldOptions.maxHeight,
     worldOptions.terrain.clamp.max,
-    derivedEnvelope.maxHeight,
   )
 
   const waterOverrides = isObject(overrides.water) ? overrides.water : null
