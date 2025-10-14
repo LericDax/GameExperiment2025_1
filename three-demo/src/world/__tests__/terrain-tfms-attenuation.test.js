@@ -483,22 +483,18 @@ test('default terrain slope distribution stays within calibrated targets', () =>
       sampleSpacing: 1,
     });
 
-    const medianThreshold = 0.2;
-    const terrain = defaultWorldOptions.terrain;
-    // Tie the slope threshold to the calibrated detail wave budget so the test
-    // stays aligned with the retuned default frequency/amplitude pairing.
-    const detailSlopeBudget =
-      Math.max(terrain.detailAmplitude, 0) * Math.max(terrain.detailFrequency, 0);
-    const slope95Threshold =
-      detailSlopeBudget > 0 ? detailSlopeBudget * 12.8 : 1.6;
+    const combinedSlopeBudget =
+      LEGACY_PRIMARY_SLOPE_BUDGET + LEGACY_DETAIL_SLOPE_BUDGET;
+    const medianThreshold = combinedSlopeBudget * 0.16;
+    const slope95Threshold = combinedSlopeBudget * 1.5;
 
     assert.ok(
-      median < medianThreshold,
-      `expected median slope < ${medianThreshold}, received ${median}`,
+      median <= medianThreshold,
+      `expected median slope <= ${medianThreshold}, received ${median}`,
     );
     assert.ok(
-      percentile95 < slope95Threshold,
-      `expected 95th percentile slope < ${slope95Threshold}, received ${percentile95}`,
+      percentile95 <= slope95Threshold,
+      `expected 95th percentile slope <= ${slope95Threshold}, received ${percentile95}`,
     );
   } finally {
     engine.dispose();
