@@ -114,15 +114,15 @@ const DEFAULT_TERRAIN_RIDGE_STRENGTH = getDescriptorDefault([
 const LEGACY_PRIMARY_FREQUENCY_BASELINE = 0.06
 const LEGACY_DETAIL_FREQUENCY_BASELINE = 0.08
 const LEGACY_RIDGE_FREQUENCY_BASELINE = 0.02
-const LEGACY_PRIMARY_AMPLITUDE_BASELINE = 8
-const LEGACY_DETAIL_AMPLITUDE_BASELINE = 3
-const LEGACY_RIDGE_STRENGTH_BASELINE = 2.4
+const LEGACY_PRIMARY_AMPLITUDE_TARGET = 8
+const LEGACY_DETAIL_AMPLITUDE_TARGET = 3
+const LEGACY_RIDGE_STRENGTH_TARGET = 2.4
 export const LEGACY_PRIMARY_SLOPE_BUDGET =
-  LEGACY_PRIMARY_FREQUENCY_BASELINE * LEGACY_PRIMARY_AMPLITUDE_BASELINE
+  LEGACY_PRIMARY_FREQUENCY_BASELINE * LEGACY_PRIMARY_AMPLITUDE_TARGET
 export const LEGACY_DETAIL_SLOPE_BUDGET =
-  LEGACY_DETAIL_FREQUENCY_BASELINE * LEGACY_DETAIL_AMPLITUDE_BASELINE
+  LEGACY_DETAIL_FREQUENCY_BASELINE * LEGACY_DETAIL_AMPLITUDE_TARGET
 export const LEGACY_RIDGE_SLOPE_BUDGET =
-  LEGACY_RIDGE_FREQUENCY_BASELINE * LEGACY_RIDGE_STRENGTH_BASELINE
+  LEGACY_RIDGE_FREQUENCY_BASELINE * LEGACY_RIDGE_STRENGTH_TARGET
 const DEFAULT_TERRAIN_VERTICAL_EXTENT =
   DEFAULT_CHUNK_SIZE * TERRAIN_VERTICAL_SPAN_MULTIPLIER
 const DEFAULT_FREQUENCY_SCALE =
@@ -142,31 +142,18 @@ const RIDGE_STRENGTH_RATIO =
     ? DEFAULT_TERRAIN_RIDGE_STRENGTH / DEFAULT_TERRAIN_VERTICAL_EXTENT
     : 0
 
-function deriveLegacyAlignedFrequency({
+function deriveSlopeAlignedFrequency({
   amplitude,
-  legacyAmplitude,
-  baseFrequency,
-  frequencyScale = 1,
-  fallbackFrequency,
+  slopeBudget,
+  fallbackFrequency = 0,
 }) {
-  const scale = Number.isFinite(frequencyScale) && frequencyScale > 0 ? frequencyScale : 1
-  const scaledBaseFrequency = baseFrequency * scale
-  const fallback =
-    Number.isFinite(fallbackFrequency) && fallbackFrequency > 0
-      ? fallbackFrequency
-      : scaledBaseFrequency
   if (!Number.isFinite(amplitude) || amplitude <= 0) {
-    return fallback
+    return fallbackFrequency
   }
-  if (!Number.isFinite(legacyAmplitude) || legacyAmplitude <= 0) {
-    return fallback
+  if (!Number.isFinite(slopeBudget) || slopeBudget <= 0) {
+    return fallbackFrequency
   }
-  const alignedFrequency =
-    baseFrequency * (legacyAmplitude / amplitude) * scale
-  if (!Number.isFinite(alignedFrequency) || alignedFrequency <= 0) {
-    return fallback
-  }
-  return alignedFrequency
+  return slopeBudget / amplitude
 }
 
 function normalizeChunkSizeForEnvelope(chunkSize) {
@@ -244,41 +231,80 @@ function computeTerrainWaveDefaults({
     ['terrain', 'ridgeStrength'],
   )
 
-  const primaryFrequencyCandidate = deriveLegacyAlignedFrequency({
-    amplitude: primaryAmplitude,
-    legacyAmplitude: LEGACY_PRIMARY_AMPLITUDE_BASELINE,
-    baseFrequency: LEGACY_PRIMARY_FREQUENCY_BASELINE,
-    frequencyScale,
-    fallbackFrequency: DEFAULT_TERRAIN_PRIMARY_FREQUENCY,
+  const slopeAlignedPrimaryFrequencyUnscaled = deriveSlopeAlignedFrequency({
+    amplitude: DEFAULT_TERRAIN_PRIMARY_AMPLITUDE,
+    slopeBudget: LEGACY_PRIMARY_SLOPE_BUDGET,
+    fallbackFrequency: LEGACY_PRIMARY_FREQUENCY_BASELINE,
   })
+  const defaultPrimaryFrequencyUnscaled =
+    DEFAULT_FREQUENCY_SCALE > 0
+      ? DEFAULT_TERRAIN_PRIMARY_FREQUENCY / DEFAULT_FREQUENCY_SCALE
+      : DEFAULT_TERRAIN_PRIMARY_FREQUENCY
+  const baselinePrimaryFrequencyUnscaled =
+    defaultPrimaryFrequencyUnscaled > 0
+      ? defaultPrimaryFrequencyUnscaled
+      : slopeAlignedPrimaryFrequencyUnscaled
+  const primaryFrequencyCandidateUnscaled = deriveSlopeAlignedFrequency({
+    amplitude: primaryAmplitude,
+    slopeBudget: LEGACY_PRIMARY_SLOPE_BUDGET,
+    fallbackFrequency: baselinePrimaryFrequencyUnscaled,
+  })
+  const primaryFrequencyScaled =
+    primaryFrequencyCandidateUnscaled * frequencyScale
   const primaryFrequency = normalizeWithDescriptor(
-    primaryFrequencyCandidate,
+    primaryFrequencyScaled,
     DEFAULT_TERRAIN_PRIMARY_FREQUENCY,
     ['terrain', 'primaryFrequency'],
   )
 
-  const detailFrequencyCandidate = deriveLegacyAlignedFrequency({
-    amplitude: detailAmplitude,
-    legacyAmplitude: LEGACY_DETAIL_AMPLITUDE_BASELINE,
-    baseFrequency: LEGACY_DETAIL_FREQUENCY_BASELINE,
-    frequencyScale,
-    fallbackFrequency: DEFAULT_TERRAIN_DETAIL_FREQUENCY,
+  const slopeAlignedDetailFrequencyUnscaled = deriveSlopeAlignedFrequency({
+    amplitude: DEFAULT_TERRAIN_DETAIL_AMPLITUDE,
+    slopeBudget: LEGACY_DETAIL_SLOPE_BUDGET,
+    fallbackFrequency: LEGACY_DETAIL_FREQUENCY_BASELINE,
   })
+  const defaultDetailFrequencyUnscaled =
+    DEFAULT_FREQUENCY_SCALE > 0
+      ? DEFAULT_TERRAIN_DETAIL_FREQUENCY / DEFAULT_FREQUENCY_SCALE
+      : DEFAULT_TERRAIN_DETAIL_FREQUENCY
+  const baselineDetailFrequencyUnscaled =
+    defaultDetailFrequencyUnscaled > 0
+      ? defaultDetailFrequencyUnscaled
+      : slopeAlignedDetailFrequencyUnscaled
+  const detailFrequencyCandidateUnscaled = deriveSlopeAlignedFrequency({
+    amplitude: detailAmplitude,
+    slopeBudget: LEGACY_DETAIL_SLOPE_BUDGET,
+    fallbackFrequency: baselineDetailFrequencyUnscaled,
+  })
+  const detailFrequencyScaled =
+    detailFrequencyCandidateUnscaled * frequencyScale
   const detailFrequency = normalizeWithDescriptor(
-    detailFrequencyCandidate,
+    detailFrequencyScaled,
     DEFAULT_TERRAIN_DETAIL_FREQUENCY,
     ['terrain', 'detailFrequency'],
   )
 
-  const ridgeFrequencyCandidate = deriveLegacyAlignedFrequency({
-    amplitude: ridgeStrength,
-    legacyAmplitude: LEGACY_RIDGE_STRENGTH_BASELINE,
-    baseFrequency: LEGACY_RIDGE_FREQUENCY_BASELINE,
-    frequencyScale,
-    fallbackFrequency: DEFAULT_TERRAIN_RIDGE_FREQUENCY,
+  const slopeAlignedRidgeFrequencyUnscaled = deriveSlopeAlignedFrequency({
+    amplitude: DEFAULT_TERRAIN_RIDGE_STRENGTH,
+    slopeBudget: LEGACY_RIDGE_SLOPE_BUDGET,
+    fallbackFrequency: LEGACY_RIDGE_FREQUENCY_BASELINE,
   })
+  const defaultRidgeFrequencyUnscaled =
+    DEFAULT_FREQUENCY_SCALE > 0
+      ? DEFAULT_TERRAIN_RIDGE_FREQUENCY / DEFAULT_FREQUENCY_SCALE
+      : DEFAULT_TERRAIN_RIDGE_FREQUENCY
+  const baselineRidgeFrequencyUnscaled =
+    defaultRidgeFrequencyUnscaled > 0
+      ? defaultRidgeFrequencyUnscaled
+      : slopeAlignedRidgeFrequencyUnscaled
+  const ridgeFrequencyCandidateUnscaled = deriveSlopeAlignedFrequency({
+    amplitude: ridgeStrength,
+    slopeBudget: LEGACY_RIDGE_SLOPE_BUDGET,
+    fallbackFrequency: baselineRidgeFrequencyUnscaled,
+  })
+  const ridgeFrequencyScaled =
+    ridgeFrequencyCandidateUnscaled * frequencyScale
   const ridgeFrequency = normalizeWithDescriptor(
-    ridgeFrequencyCandidate,
+    ridgeFrequencyScaled,
     DEFAULT_TERRAIN_RIDGE_FREQUENCY,
     ['terrain', 'ridgeFrequency'],
   )
@@ -537,7 +563,6 @@ const defaultTerrainTfmsKameaErosion = getDescriptorDefault([
 
 export const LEGACY_TFMS_PRIMARY_AMPLITUDE = 8
 export const LEGACY_TFMS_DETAIL_AMPLITUDE = 3
-export const LEGACY_TFMS_RIDGE_AMPLITUDE = 2.4
 
 /**
  * Default TFMS preset mirroring the six-operator attenuation stack outlined in
