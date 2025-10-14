@@ -25,6 +25,13 @@ const { computeTerrainVerticalEnvelope, defaultWorldOptions } = await import(
   '../world-settings.js'
 );
 
+const defaultEnvelopeOptions = Object.freeze({
+  chunkSize: defaultWorldOptions.chunk?.size ?? defaultWorldOptions.chunkSize,
+  verticalSpanChunks:
+    defaultWorldOptions.terrain?.verticalSpanChunks ??
+    defaultWorldOptions.verticalSpanChunks,
+});
+
 function getEnvelopeFromSample(sample, terrainConfig) {
   const climateAdjustment =
     (sample.climate.moisture - 0.5) * terrainConfig.climateHeightInfluence;
@@ -32,11 +39,11 @@ function getEnvelopeFromSample(sample, terrainConfig) {
   return sample.height - terrainConfig.baseHeight - climateAdjustment - biomeOffset;
 }
 
-test('default biome blends stay within the three-chunk TFMS envelope', () => {
+test('default biome blends stay within the configured TFMS envelope', () => {
   const engine = createTerrainEngine({ THREE });
   try {
     const terrainConfig = engine.getTerrainConfig();
-    const envelope = computeTerrainVerticalEnvelope(defaultWorldOptions.chunk.size);
+    const envelope = computeTerrainVerticalEnvelope(defaultEnvelopeOptions);
     const clampMin = envelope.clampMin;
     const clampMax = envelope.clampMax;
 
@@ -113,11 +120,11 @@ test('default biome blends stay within the three-chunk TFMS envelope', () => {
   }
 });
 
-test('schema blends remain inside the three-chunk envelope without pillars', () => {
+test('schema blends remain inside the configured envelope without pillars', () => {
   const engine = createTerrainEngine({ THREE });
   try {
     const terrainConfig = engine.getTerrainConfig();
-    const envelope = computeTerrainVerticalEnvelope(defaultWorldOptions.chunk.size);
+    const envelope = computeTerrainVerticalEnvelope(defaultEnvelopeOptions);
     const clampMin = envelope.clampMin;
     const clampMax = envelope.clampMax;
 

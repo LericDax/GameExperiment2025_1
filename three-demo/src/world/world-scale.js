@@ -1,3 +1,5 @@
+const DEFAULT_VERTICAL_SPAN_CHUNKS = 3;
+
 const normalizeChunkSize = (options) => {
   const candidates = [
     options?.chunk?.size,
@@ -30,6 +32,22 @@ const normalizePadding = (value) => {
     return 0;
   }
   return Math.max(0, Math.floor(numeric));
+};
+
+const normalizeVerticalSpanChunks = (options) => {
+  const candidates = [
+    options?.terrain?.verticalSpanChunks,
+    options?.verticalSpanChunks,
+    options?.verticalSpan?.chunks,
+    options?.verticalSpan,
+  ];
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = Number(candidates[i]);
+    if (Number.isFinite(candidate) && candidate > 0) {
+      return Math.max(1, Math.floor(candidate));
+    }
+  }
+  return DEFAULT_VERTICAL_SPAN_CHUNKS;
 };
 
 /**
@@ -66,6 +84,10 @@ export function computeWorldScale(options = {}) {
   const halfExtent = Math.floor(size / 2);
   const sizeMinusOne = Math.max(0, size - 1);
   const chunkArea = size * size;
+  const verticalSpanChunks = normalizeVerticalSpanChunks(options);
+  const verticalExtent = size * verticalSpanChunks;
+  const verticalClampMin = -verticalExtent;
+  const verticalClampMax = verticalExtent;
 
   const chunkWorldMin = (chunk) => {
     const normalizedChunk = normalizeChunkCoordinate(chunk);
@@ -118,6 +140,10 @@ export function computeWorldScale(options = {}) {
     halfExtent,
     sizeMinusOne,
     chunkArea,
+    verticalSpanChunks,
+    verticalExtent,
+    verticalClampMin,
+    verticalClampMax,
     chunkWorldMin,
     chunkWorldMax,
     chunkWorldBounds,

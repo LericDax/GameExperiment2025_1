@@ -81,8 +81,16 @@ export { worldOptionDescriptors } from './world-option-descriptors.js'
 
 const descriptorIndex = createWorldOptionDescriptorIndex(worldOptionDescriptors)
 
-const TERRAIN_VERTICAL_SPAN_MULTIPLIER = 3
 const DEFAULT_CHUNK_SIZE = getDescriptorDefault(['chunk', 'size'])
+const DEFAULT_VERTICAL_SPAN_CHUNKS = getDescriptorDefault([
+  'terrain',
+  'verticalSpanChunks',
+])
+const DEFAULT_WORLD_SCALE = computeWorldScale({
+  chunk: { size: DEFAULT_CHUNK_SIZE },
+  terrain: { verticalSpanChunks: DEFAULT_VERTICAL_SPAN_CHUNKS },
+  verticalSpanChunks: DEFAULT_VERTICAL_SPAN_CHUNKS,
+})
 const LEGACY_TERRAIN_VERTICAL_SPAN = DEFAULT_CHUNK_SIZE
 const DEFAULT_TERRAIN_BASE_HEIGHT = getDescriptorDefault([
   'terrain',
@@ -124,8 +132,7 @@ export const LEGACY_DETAIL_SLOPE_BUDGET =
   LEGACY_DETAIL_FREQUENCY_BASELINE * LEGACY_DETAIL_AMPLITUDE_BASELINE
 export const LEGACY_RIDGE_SLOPE_BUDGET =
   LEGACY_RIDGE_FREQUENCY_BASELINE * LEGACY_RIDGE_STRENGTH_BASELINE
-const DEFAULT_TERRAIN_VERTICAL_EXTENT =
-  DEFAULT_CHUNK_SIZE * TERRAIN_VERTICAL_SPAN_MULTIPLIER
+const DEFAULT_TERRAIN_VERTICAL_EXTENT = DEFAULT_WORLD_SCALE.verticalExtent
 const DEFAULT_FREQUENCY_SCALE =
   DEFAULT_TERRAIN_VERTICAL_EXTENT > 0
     ? LEGACY_TERRAIN_VERTICAL_SPAN / DEFAULT_TERRAIN_VERTICAL_EXTENT
@@ -177,23 +184,84 @@ function normalizeChunkSizeForEnvelope(chunkSize) {
   return Math.max(1, Math.floor(DEFAULT_CHUNK_SIZE))
 }
 
-export function computeTerrainVerticalEnvelope(chunkSize = DEFAULT_CHUNK_SIZE) {
-  const normalizedSize = normalizeChunkSizeForEnvelope(chunkSize)
-  const verticalExtent = normalizedSize * TERRAIN_VERTICAL_SPAN_MULTIPLIER
+function normalizeVerticalSpanChunksForEnvelope(verticalSpanChunks) {
+  if (Number.isFinite(verticalSpanChunks)) {
+    return Math.max(1, Math.floor(verticalSpanChunks))
+  }
+  return Math.max(1, Math.floor(DEFAULT_VERTICAL_SPAN_CHUNKS))
+}
+
+function resolveEnvelopeScale(input) {
+  if (typeof input === 'object' && input !== null) {
+    const chunkSizeCandidate = normalizeChunkSizeForEnvelope(
+      input.chunkSize ?? input.chunk?.size ?? input.size,
+    )
+    const verticalSpanCandidate = normalizeVerticalSpanChunksForEnvelope(
+      input.verticalSpanChunks ?? input.terrain?.verticalSpanChunks,
+    )
+    return computeWorldScale({
+      size: chunkSizeCandidate,
+      chunk: { size: chunkSizeCandidate },
+      verticalSpanChunks: verticalSpanCandidate,
+      terrain: { verticalSpanChunks: verticalSpanCandidate },
+    })
+  }
+  const normalizedSize = normalizeChunkSizeForEnvelope(input)
+  const verticalSpanCandidate = normalizeVerticalSpanChunksForEnvelope(
+    DEFAULT_VERTICAL_SPAN_CHUNKS,
+  )
+  return computeWorldScale({
+    size: normalizedSize,
+    chunk: { size: normalizedSize },
+    verticalSpanChunks: verticalSpanCandidate,
+    terrain: { verticalSpanChunks: verticalSpanCandidate },
+  })
+}
+
+export function computeTerrainVerticalEnvelope(
+  input = DEFAULT_CHUNK_SIZE,
+  verticalSpanOverride,
+) {
+  const scale =
+    typeof input === 'number' && verticalSpanOverride !== undefined
+      ? computeWorldScale({
+          size: normalizeChunkSizeForEnvelope(input),
+          chunk: { size: normalizeChunkSizeForEnvelope(input) },
+          verticalSpanChunks: normalizeVerticalSpanChunksForEnvelope(
+            verticalSpanOverride,
+          ),
+          terrain: {
+            verticalSpanChunks: normalizeVerticalSpanChunksForEnvelope(
+              verticalSpanOverride,
+            ),
+          },
+        })
+      : resolveEnvelopeScale(input)
   return {
-    chunkSize: normalizedSize,
-    maxHeight: verticalExtent,
-    clampMin: -verticalExtent,
-    clampMax: verticalExtent,
+    chunkSize: scale.size,
+    verticalSpanChunks: scale.verticalSpanChunks,
+    maxHeight: scale.verticalExtent,
+    clampMin: scale.verticalClampMin,
+    clampMax: scale.verticalClampMax,
   }
 }
 
 function computeTerrainWaveDefaults({
   chunkSize = DEFAULT_CHUNK_SIZE,
+  verticalSpanChunks = DEFAULT_VERTICAL_SPAN_CHUNKS,
   baseHeight = DEFAULT_TERRAIN_BASE_HEIGHT,
 } = {}) {
   const normalizedSize = normalizeChunkSizeForEnvelope(chunkSize)
-  const verticalExtent = normalizedSize * TERRAIN_VERTICAL_SPAN_MULTIPLIER
+  const normalizedSpan = normalizeVerticalSpanChunksForEnvelope(
+    verticalSpanChunks,
+  )
+  const scale = computeWorldScale({
+    size: normalizedSize,
+    chunk: { size: normalizedSize },
+    verticalSpanChunks: normalizedSpan,
+    terrain: { verticalSpanChunks: normalizedSpan },
+  })
+  const verticalExtent = scale.verticalExtent
   const frequencyScale =
     verticalExtent > 0
       ? LEGACY_TERRAIN_VERTICAL_SPAN / verticalExtent
@@ -434,10 +502,14 @@ const defaultEnvironmentOptions = Object.freeze({
 
 const defaultTerrainWaveDefaults = computeTerrainWaveDefaults({
   chunkSize: DEFAULT_CHUNK_SIZE,
+  verticalSpanChunks: DEFAULT_VERTICAL_SPAN_CHUNKS,
   baseHeight: DEFAULT_TERRAIN_BASE_HEIGHT,
 })
 
-const defaultTerrainEnvelope = computeTerrainVerticalEnvelope(DEFAULT_CHUNK_SIZE)
+const defaultTerrainEnvelope = computeTerrainVerticalEnvelope({
+  chunkSize: DEFAULT_CHUNK_SIZE,
+  verticalSpanChunks: DEFAULT_VERTICAL_SPAN_CHUNKS,
+})
 
 const defaultTerrainClamp = Object.freeze({
   min: defaultTerrainEnvelope.clampMin,
@@ -446,6 +518,7 @@ const defaultTerrainClamp = Object.freeze({
 
 const defaultTerrainCore = Object.freeze({
   baseHeight: DEFAULT_TERRAIN_BASE_HEIGHT,
+  verticalSpanChunks: DEFAULT_VERTICAL_SPAN_CHUNKS,
   maxHeight: defaultTerrainEnvelope.maxHeight,
   clamp: defaultTerrainClamp,
   primaryFrequency: defaultTerrainWaveDefaults.primaryFrequency,
@@ -600,6 +673,7 @@ export const defaultWorldOptions = Object.freeze({
   seed: DEFAULT_SEED_VALUE,
   seedHash: DEFAULT_SEED_HASH,
   chunkSize: getDescriptorDefault(['chunkSize']),
+  verticalSpanChunks: getDescriptorDefault(['verticalSpanChunks']),
   baseHeight: getDescriptorDefault(['baseHeight']),
   maxHeight: getDescriptorDefault(['maxHeight']),
   waterLevel: getDescriptorDefault(['waterLevel']),
@@ -624,6 +698,7 @@ function createMutableWorldOptions() {
     seed: seedInfo.value,
     seedHash: seedInfo.hash,
     chunkSize: defaultWorldOptions.chunkSize,
+    verticalSpanChunks: defaultWorldOptions.verticalSpanChunks,
     baseHeight: defaultWorldOptions.baseHeight,
     maxHeight: defaultWorldOptions.maxHeight,
     waterLevel: defaultWorldOptions.waterLevel,
@@ -632,6 +707,7 @@ function createMutableWorldOptions() {
     environment: { skyboxId: defaultEnvironmentOptions.skyboxId },
     terrain: {
       baseHeight: defaultTerrainOptions.baseHeight,
+      verticalSpanChunks: defaultTerrainOptions.verticalSpanChunks,
       maxHeight: defaultTerrainOptions.maxHeight,
       clamp: { ...defaultTerrainOptions.clamp },
       primaryFrequency: defaultTerrainOptions.primaryFrequency,
@@ -649,7 +725,10 @@ function createMutableWorldOptions() {
     },
     biomes: { ...defaultWorldOptions.biomes },
   }
-  const envelope = computeTerrainVerticalEnvelope(options.chunk.size)
+  const envelope = computeTerrainVerticalEnvelope({
+    chunkSize: options.chunk.size,
+    verticalSpanChunks: options.terrain.verticalSpanChunks,
+  })
   syncTerrainVerticalEnvelope(options, envelope, {
     forceClamp: true,
     forceMaxHeight: true,
@@ -658,6 +737,7 @@ function createMutableWorldOptions() {
 
   const waveDefaults = computeTerrainWaveDefaults({
     chunkSize: envelope.chunkSize,
+    verticalSpanChunks: envelope.verticalSpanChunks,
     baseHeight: options.terrain.baseHeight,
   })
   options.terrain.primaryAmplitude = waveDefaults.primaryAmplitude
@@ -2661,8 +2741,14 @@ export function applyWorldOptions(overrides = {}) {
   const previousBaseHeight = Number.isFinite(worldOptions.terrain?.baseHeight)
     ? worldOptions.terrain.baseHeight
     : DEFAULT_TERRAIN_BASE_HEIGHT
+  const previousVerticalSpan = Number.isFinite(
+    worldOptions.terrain?.verticalSpanChunks,
+  )
+    ? worldOptions.terrain.verticalSpanChunks
+    : DEFAULT_VERTICAL_SPAN_CHUNKS
   let chunkSizeChanged = false
   let baseHeightChanged = false
+  let verticalSpanChanged = false
   const chunkOverrides = isObject(overrides.chunk) ? overrides.chunk : null
   const resolvedChunkSize = normalizeNumber(
     chunkOverrides?.size ?? overrides.chunkSize,
@@ -2682,6 +2768,39 @@ export function applyWorldOptions(overrides = {}) {
       normalizedChunkSize,
       worldOptions.chunkSize,
       ['chunkSize'],
+    )
+  }
+
+  const terrainOverrides = isObject(overrides.terrain) ? overrides.terrain : null
+
+  const resolvedVerticalSpan = normalizeNumber(
+    terrainOverrides?.verticalSpanChunks ?? overrides.verticalSpanChunks,
+    null,
+  )
+  if (resolvedVerticalSpan !== null) {
+    const flooredSpan = Math.max(1, Math.floor(resolvedVerticalSpan))
+    const normalizedSpan = normalizeWithDescriptor(
+      flooredSpan,
+      worldOptions.terrain.verticalSpanChunks ?? previousVerticalSpan,
+      ['terrain', 'verticalSpanChunks'],
+    )
+    verticalSpanChanged = normalizedSpan !== previousVerticalSpan
+    worldOptions.terrain.verticalSpanChunks = normalizedSpan
+    worldOptions.verticalSpanChunks = normalizeWithDescriptor(
+      normalizedSpan,
+      worldOptions.verticalSpanChunks ?? normalizedSpan,
+      ['verticalSpanChunks'],
+    )
+  } else {
+    const fallbackSpan =
+      Number.isFinite(worldOptions.terrain?.verticalSpanChunks)
+        ? worldOptions.terrain.verticalSpanChunks
+        : DEFAULT_VERTICAL_SPAN_CHUNKS
+    worldOptions.terrain.verticalSpanChunks = fallbackSpan
+    worldOptions.verticalSpanChunks = normalizeWithDescriptor(
+      fallbackSpan,
+      worldOptions.verticalSpanChunks ?? fallbackSpan,
+      ['verticalSpanChunks'],
     )
   }
 
@@ -2707,8 +2826,6 @@ export function applyWorldOptions(overrides = {}) {
   } else if (Object.prototype.hasOwnProperty.call(overrides, 'skyboxId')) {
     applySkyboxOverride(overrides.skyboxId)
   }
-
-  const terrainOverrides = isObject(overrides.terrain) ? overrides.terrain : null
 
   let maxHeightOverrideProvided = false
   let clampMinOverrideProvided = false
@@ -2808,9 +2925,10 @@ export function applyWorldOptions(overrides = {}) {
     }
   })
 
-  if (chunkSizeChanged || baseHeightChanged) {
+  if (chunkSizeChanged || baseHeightChanged || verticalSpanChanged) {
     const waveDefaults = computeTerrainWaveDefaults({
       chunkSize: worldOptions.chunk.size,
+      verticalSpanChunks: worldOptions.terrain.verticalSpanChunks,
       baseHeight: worldOptions.terrain.baseHeight,
     })
 
@@ -2874,11 +2992,17 @@ export function applyWorldOptions(overrides = {}) {
     }
   })
 
-  const derivedEnvelope = computeTerrainVerticalEnvelope(worldOptions.chunk.size)
+  const derivedEnvelope = computeTerrainVerticalEnvelope({
+    chunkSize: worldOptions.chunk.size,
+    verticalSpanChunks: worldOptions.terrain.verticalSpanChunks,
+  })
   syncTerrainVerticalEnvelope(worldOptions, derivedEnvelope, {
-    forceClamp: chunkSizeChanged && !clampOverrideProvided,
-    forceMaxHeight: chunkSizeChanged && !maxHeightOverrideProvided,
-    forceTfmsClamp: chunkSizeChanged && !tfmsClampOverrideProvided,
+    forceClamp:
+      (chunkSizeChanged || verticalSpanChanged) && !clampOverrideProvided,
+    forceMaxHeight:
+      (chunkSizeChanged || verticalSpanChanged) && !maxHeightOverrideProvided,
+    forceTfmsClamp:
+      (chunkSizeChanged || verticalSpanChanged) && !tfmsClampOverrideProvided,
   })
 
   worldOptions.baseHeight = normalizeWithDescriptor(
@@ -2993,6 +3117,7 @@ export function resetWorldOptions() {
   worldOptions.seed = fresh.seed
   worldOptions.seedHash = fresh.seedHash
   worldOptions.chunkSize = fresh.chunkSize
+  worldOptions.verticalSpanChunks = fresh.verticalSpanChunks
   worldOptions.baseHeight = fresh.baseHeight
   worldOptions.maxHeight = fresh.maxHeight
   worldOptions.waterLevel = fresh.waterLevel
