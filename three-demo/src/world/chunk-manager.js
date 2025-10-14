@@ -338,8 +338,6 @@ export function createChunkManager({
       return false;
     }
 
-    const scale = getWorldScale();
-
     const columnsByType =
       chunk.fluidColumnsByType instanceof Map ? chunk.fluidColumnsByType : null;
     const waterColumnStore = columnsByType?.get('water');
@@ -373,14 +371,9 @@ export function createChunkManager({
     }
 
     const startY = Math.floor(currentBottom - 0.5);
-    const fallbackMinY = Number.isFinite(scale?.verticalClampMin)
-      ? scale.verticalClampMin
-      : -Math.abs(
-          scale.size * (Number.isFinite(scale?.verticalSpanChunks) ? scale.verticalSpanChunks : 3),
-        );
     const minYLimit = Number.isFinite(chunk.bounds?.minY)
       ? Math.floor(chunk.bounds.minY - 1)
-      : Math.floor(fallbackMinY - 1);
+      : -64;
     let supportTop = null;
     for (let y = startY; y >= minYLimit; y -= 1) {
       const candidateKey = `${coordinates.x}|${y}|${coordinates.z}`;
@@ -471,36 +464,21 @@ export function createChunkManager({
       if (Number.isFinite(clampMin)) {
         return clampMin;
       }
-      if (Number.isFinite(scale?.verticalClampMin)) {
-        return scale.verticalClampMin;
+      let configuredChunkSize = worldConfig?.chunk?.size;
+      if (!Number.isFinite(configuredChunkSize)) {
+        configuredChunkSize = worldConfig?.chunkSize;
       }
-      const normalizedSpan = Number.isFinite(scale?.verticalSpanChunks)
-        ? scale.verticalSpanChunks
-        : 3;
-      return -Math.abs(scale.size * normalizedSpan);
-    })();
-    const fallbackMaxYBase = (() => {
-      const clampMax = worldConfig?.terrain?.clamp?.max;
-      if (Number.isFinite(clampMax)) {
-        return clampMax;
+      if (!Number.isFinite(configuredChunkSize)) {
+        configuredChunkSize = 32;
       }
-      if (Number.isFinite(scale?.verticalClampMax)) {
-        return scale.verticalClampMax;
-      }
-      if (Number.isFinite(maxHeight)) {
-        return maxHeight;
-      }
-      const normalizedSpan = Number.isFinite(scale?.verticalSpanChunks)
-        ? scale.verticalSpanChunks
-        : 3;
-      return Math.abs(scale.size * normalizedSpan);
+      return -Math.abs(configuredChunkSize) * 3;
     })();
     const minY = Number.isFinite(bounds.minY)
       ? bounds.minY
       : fallbackMinYBase - chunkBoundSafetyMargin;
     const maxY = Number.isFinite(bounds.maxY)
       ? bounds.maxY
-      : fallbackMaxYBase + chunkBoundSafetyMargin;
+      : maxHeight + 32;
 
     const box = chunk.boundsBox ?? new THREE.Box3();
     box.min.set(minX - chunkCullPadding, minY - chunkCullPadding, minZ - chunkCullPadding);

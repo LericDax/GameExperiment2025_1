@@ -44,11 +44,6 @@ const MESHING_MODE_STORAGE_KEY = 'voxelMeshingMode';
 const SEABED_NOISE_FREQUENCY = 0.075;
 const SEABED_NOISE_SEED_SALT = 7919;
 
-const DEFAULT_WORLD_VERTICAL_SPAN_CHUNKS =
-  defaultWorldOptions.terrain?.verticalSpanChunks ??
-  defaultWorldOptions.verticalSpanChunks ??
-  3;
-
 const normalizeMeshingMode = (value) => {
   const normalized = String(value ?? '').trim().toLowerCase();
   if (!normalized) {
@@ -219,10 +214,7 @@ function clamp(value, min, max) {
 }
 
 function resolveTerrainClampBounds() {
-  const envelope = computeTerrainVerticalEnvelope({
-    chunkSize: worldOptions.chunk?.size,
-    verticalSpanChunks: worldOptions.terrain?.verticalSpanChunks,
-  });
+  const envelope = computeTerrainVerticalEnvelope(worldOptions.chunk?.size);
   const clampRange = worldOptions.terrain?.clamp ?? null;
   const minHeight = Number.isFinite(clampRange?.min)
     ? clampRange.min
@@ -482,17 +474,10 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
 
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
   const { chunkSize, waterLevel } = worldOptions;
-  const terrainEnvelope = computeTerrainVerticalEnvelope({
-    chunkSize: worldOptions.chunk?.size,
-    verticalSpanChunks: worldOptions.terrain?.verticalSpanChunks,
-  });
-  const legacyEnvelope = computeTerrainVerticalEnvelope({
-    chunkSize:
-      defaultWorldOptions.chunk?.size ?? defaultWorldOptions.chunkSize,
-    verticalSpanChunks:
-      defaultWorldOptions.terrain?.verticalSpanChunks ??
-      defaultWorldOptions.verticalSpanChunks,
-  });
+  const terrainEnvelope = computeTerrainVerticalEnvelope(worldOptions.chunk?.size);
+  const legacyEnvelope = computeTerrainVerticalEnvelope(
+    defaultWorldOptions.chunk?.size ?? defaultWorldOptions.chunkSize,
+  );
   const slopeNormalizationSpan = (() => {
     const terrainMaxHeight = Number.isFinite(terrainEnvelope?.maxHeight)
       ? terrainEnvelope.maxHeight
@@ -1537,20 +1522,12 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     columnSample.shorelineAffinity = shorelineAffinity;
     columnSample.oceanDepthTier = depthTier;
     if (height < waterLevel) {
-      const scale = getWorldScale();
-      const verticalSpanRatio =
-        Number.isFinite(scale?.verticalSpanChunks) &&
-        scale.verticalSpanChunks > 0 &&
-        DEFAULT_WORLD_VERTICAL_SPAN_CHUNKS > 0
-          ? scale.verticalSpanChunks / DEFAULT_WORLD_VERTICAL_SPAN_CHUNKS
-          : 1;
-      const tierSeabedHeight =
-        waterLevel - scale.size * depthTier * verticalSpanRatio;
+      const tierSeabedHeight = waterLevel - chunkSize * depthTier;
       const shorelineWeight = clamp(shorelineAffinity, 0, 1);
       const shorelineAdjustedTarget =
         tierSeabedHeight +
         (waterLevel - tierSeabedHeight) * shorelineWeight;
-      const noiseAmplitude = Math.max(1, scale.size * 0.08 * verticalSpanRatio);
+      const noiseAmplitude = Math.max(1, chunkSize * 0.08);
       const seabedNoise = ensureSeabedNoiseField();
       const sampleX = worldX * SEABED_NOISE_FREQUENCY;
       const sampleZ = worldZ * SEABED_NOISE_FREQUENCY;

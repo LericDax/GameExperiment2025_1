@@ -53,9 +53,10 @@ function buildEnvironmentSkyboxOptions() {
 const environmentSkyboxOptions = buildEnvironmentSkyboxOptions()
 
 const defaultChunkSize = 48
-const defaultVerticalSpanChunks = 3
+const terrainVerticalSpanMultiplier = 3
 const defaultTerrainBaseHeight = 10
-const defaultTerrainVerticalExtent = defaultChunkSize * defaultVerticalSpanChunks
+const defaultTerrainVerticalExtent =
+  defaultChunkSize * terrainVerticalSpanMultiplier
 const legacyTerrainVerticalSpan = defaultChunkSize
 const defaultFrequencyScale =
   defaultTerrainVerticalExtent > 0
@@ -76,7 +77,6 @@ const LEGACY_RIDGE_SLOPE_BUDGET =
 
 const defaultTerrainClampMin = -defaultTerrainVerticalExtent
 const defaultTerrainClampMax = defaultTerrainVerticalExtent
-const terrainClampMinLowerBound = -4096
 const primaryAmplitudeRatio = 0.58
 const detailAmplitudeRatio = 0.09
 const ridgeStrengthRatio = 0.07
@@ -1019,19 +1019,6 @@ const legacyChunkSizeDescriptor = Object.freeze({
   path: Object.freeze(['chunkSize']),
 })
 
-const legacyVerticalSpanDescriptor = Object.freeze({
-  id: 'verticalSpanChunks',
-  label: 'Vertical Span (alias)',
-  description:
-    'Legacy top-level alias mirroring the terrain vertical span chunk count.',
-  type: numberType,
-  min: 1,
-  max: 32,
-  step: 1,
-  default: defaultVerticalSpanChunks,
-  path: Object.freeze(['verticalSpanChunks']),
-})
-
 const environmentGroup = Object.freeze({
   id: 'environment',
   label: 'Environment',
@@ -1102,18 +1089,6 @@ const terrainGroup = Object.freeze({
       path: Object.freeze(['terrain', 'baseHeight']),
     }),
     Object.freeze({
-      id: 'terrain.verticalSpanChunks',
-      label: 'Vertical Span (±chunks)',
-      description:
-        'Number of chunk heights available above and below the datum for terrain envelopes.',
-      type: numberType,
-      min: 1,
-      max: 32,
-      step: 1,
-      default: defaultVerticalSpanChunks,
-      path: Object.freeze(['terrain', 'verticalSpanChunks']),
-    }),
-    Object.freeze({
       id: 'terrain.maxHeight',
       label: 'Maximum Height',
       description:
@@ -1131,7 +1106,7 @@ const terrainGroup = Object.freeze({
       description:
         'Lower clamp bound applied after noise sampling to prevent deep pits.',
       type: numberType,
-      min: terrainClampMinLowerBound,
+      min: defaultTerrainClampMin,
       max: 1024,
       step: 1,
       default: defaultTerrainClampMin,
@@ -1423,7 +1398,6 @@ export const worldOptionDescriptors = Object.freeze([
   chunkGroup,
   environmentGroup,
   legacyChunkSizeDescriptor,
-  legacyVerticalSpanDescriptor,
   waterGroup,
   legacyWaterLevelDescriptor,
   terrainGroup,

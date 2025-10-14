@@ -30,21 +30,6 @@ const {
 
 generationModule.initializeWorldGeneration({ THREE });
 
-function buildEnvelopeOptions(options) {
-  const chunkSize =
-    options?.chunk?.size ??
-    options?.chunkSize ??
-    defaultWorldOptions.chunk?.size ??
-    defaultWorldOptions.chunkSize;
-  const verticalSpanChunks =
-    options?.terrain?.verticalSpanChunks ??
-    options?.verticalSpanChunks ??
-    defaultWorldOptions.terrain?.verticalSpanChunks ??
-    defaultWorldOptions.verticalSpanChunks ??
-    3;
-  return { chunkSize, verticalSpanChunks };
-}
-
 function createBlockMaterials() {
   const createdMaterials = new Set();
   const registry = new Proxy(
@@ -177,7 +162,9 @@ test('deep ocean columns extend to the terrain clamp floor', () => {
     defaultWorldOptions.chunkSize ??
     48;
 
-  const envelope = computeTerrainVerticalEnvelope(buildEnvelopeOptions(worldOptions));
+  const envelope = computeTerrainVerticalEnvelope(
+    worldOptions.chunk?.size ?? chunkSize,
+  );
   const clampRange = worldOptions.terrain?.clamp ?? null;
   const terrainFloor = Math.ceil(
     Number.isFinite(clampRange?.min) ? clampRange.min : envelope.clampMin,
