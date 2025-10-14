@@ -430,14 +430,15 @@ try {
   if (typeof chunkManager.preloadAround === 'function') {
     chunkManager.preloadAround(playerControls.getPosition(), 4, {
       viewDistance: 3,
-      force: false,
+      force: true,
+      maxPreload: 32,
     })
   }
 
   chunkManager.setViewDistance(3)
   chunkManager.setRetentionDistance(4)
 
-  chunkManager.update(playerControls.getPosition(), { camera })
+  chunkManager.update(playerControls.getPosition(), { camera, force: true })
 
   if (shouldPauseInput) {
     playerControls.setInputEnabled(true)
