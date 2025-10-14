@@ -52,36 +52,6 @@ function buildEnvironmentSkyboxOptions() {
 
 const environmentSkyboxOptions = buildEnvironmentSkyboxOptions()
 
-const defaultChunkSize = 48
-const terrainVerticalSpanMultiplier = 3
-const defaultTerrainBaseHeight = 10
-const defaultTerrainVerticalExtent = defaultChunkSize * terrainVerticalSpanMultiplier
-const defaultTerrainClampMin = -defaultTerrainVerticalExtent
-const defaultTerrainClampMax = defaultTerrainVerticalExtent
-const defaultPrimaryAmplitudeWeight = 8
-const defaultDetailAmplitudeWeight = 3
-const defaultRidgeAmplitudeWeight = 2.4
-const defaultAmplitudeWeightTotal =
-  defaultPrimaryAmplitudeWeight +
-  defaultDetailAmplitudeWeight +
-  defaultRidgeAmplitudeWeight
-const defaultAmplitudeBudget = Math.max(
-  0,
-  defaultTerrainVerticalExtent - defaultTerrainBaseHeight,
-)
-const defaultPrimaryAmplitude = Math.round(
-  (defaultAmplitudeBudget * defaultPrimaryAmplitudeWeight) /
-    defaultAmplitudeWeightTotal,
-)
-const defaultDetailAmplitude = Math.round(
-  (defaultAmplitudeBudget * defaultDetailAmplitudeWeight) /
-    defaultAmplitudeWeightTotal,
-)
-const defaultRidgeStrength = Math.max(
-  0,
-  defaultAmplitudeBudget - defaultPrimaryAmplitude - defaultDetailAmplitude,
-)
-
 const tfmsWaveformOptions = Object.freeze([
   Object.freeze({
     value: 'primary-fbm',
@@ -859,10 +829,10 @@ const terrainTfmsGlobalGroup = Object.freeze({
       description:
         'Lower clamp applied to the final TFMS envelope before biome adjustments.',
       type: numberType,
-      min: defaultTerrainClampMin,
+      min: -128,
       max: 0,
       step: 0.5,
-      default: defaultTerrainClampMin,
+      default: -24,
       path: Object.freeze(['terrain', 'tfms', 'clamp', 'min']),
     }),
     Object.freeze({
@@ -872,9 +842,9 @@ const terrainTfmsGlobalGroup = Object.freeze({
         'Upper clamp applied to the final TFMS envelope before biome adjustments.',
       type: numberType,
       min: 0,
-      max: defaultTerrainClampMax,
+      max: 128,
       step: 0.5,
-      default: defaultTerrainClampMax,
+      default: 24,
       path: Object.freeze(['terrain', 'tfms', 'clamp', 'max']),
     }),
     Object.freeze({
@@ -930,7 +900,7 @@ const chunkGroup = Object.freeze({
       min: 1,
       max: 512,
       step: 1,
-      default: defaultChunkSize,
+      default: 48,
       path: Object.freeze(['chunk', 'size']),
     }),
   ]),
@@ -944,7 +914,7 @@ const legacyChunkSizeDescriptor = Object.freeze({
   min: 1,
   max: 512,
   step: 1,
-  default: defaultChunkSize,
+  default: 48,
   path: Object.freeze(['chunkSize']),
 })
 
@@ -1014,7 +984,7 @@ const terrainGroup = Object.freeze({
       min: 0,
       max: 512,
       step: 1,
-      default: defaultTerrainBaseHeight,
+      default: 10,
       path: Object.freeze(['terrain', 'baseHeight']),
     }),
     Object.freeze({
@@ -1026,7 +996,7 @@ const terrainGroup = Object.freeze({
       min: 1,
       max: 1024,
       step: 1,
-      default: defaultTerrainClampMax,
+      default: 20,
       path: Object.freeze(['terrain', 'maxHeight']),
     }),
     Object.freeze({
@@ -1035,10 +1005,10 @@ const terrainGroup = Object.freeze({
       description:
         'Lower clamp bound applied after noise sampling to prevent deep pits.',
       type: numberType,
-      min: defaultTerrainClampMin,
+      min: 0,
       max: 1024,
       step: 1,
-      default: defaultTerrainClampMin,
+      default: 2,
       path: Object.freeze(['terrain', 'clamp', 'min']),
     }),
     Object.freeze({
@@ -1050,7 +1020,7 @@ const terrainGroup = Object.freeze({
       min: 1,
       max: 1024,
       step: 1,
-      default: defaultTerrainClampMax,
+      default: 20,
       path: Object.freeze(['terrain', 'clamp', 'max']),
     }),
     Object.freeze({
@@ -1074,7 +1044,7 @@ const terrainGroup = Object.freeze({
       min: 0,
       max: 256,
       step: 0.1,
-      default: defaultPrimaryAmplitude,
+      default: 8,
       path: Object.freeze(['terrain', 'primaryAmplitude']),
     }),
     Object.freeze({
@@ -1107,7 +1077,7 @@ const terrainGroup = Object.freeze({
       min: 0,
       max: 128,
       step: 0.1,
-      default: defaultDetailAmplitude,
+      default: 3,
       path: Object.freeze(['terrain', 'detailAmplitude']),
     }),
     Object.freeze({
@@ -1140,7 +1110,7 @@ const terrainGroup = Object.freeze({
       min: 0,
       max: 64,
       step: 0.1,
-      default: defaultRidgeStrength,
+      default: 2.4,
       path: Object.freeze(['terrain', 'ridgeStrength']),
     }),
     Object.freeze({
@@ -1190,7 +1160,7 @@ const legacyBaseHeightDescriptor = Object.freeze({
   min: 0,
   max: 512,
   step: 1,
-  default: defaultTerrainBaseHeight,
+  default: 10,
   path: Object.freeze(['baseHeight']),
 })
 
@@ -1203,7 +1173,7 @@ const legacyMaxHeightDescriptor = Object.freeze({
   min: 1,
   max: 1024,
   step: 1,
-  default: defaultTerrainClampMax,
+  default: 20,
   path: Object.freeze(['maxHeight']),
 })
 
