@@ -55,13 +55,7 @@ const environmentSkyboxOptions = buildEnvironmentSkyboxOptions()
 const defaultChunkSize = 48
 const terrainVerticalSpanMultiplier = 3
 const defaultTerrainBaseHeight = 10
-const defaultTerrainVerticalExtent =
-  defaultChunkSize * terrainVerticalSpanMultiplier
-const legacyTerrainVerticalSpan = defaultChunkSize
-const defaultFrequencyScale =
-  defaultTerrainVerticalExtent > 0
-    ? legacyTerrainVerticalSpan / defaultTerrainVerticalExtent
-    : 1
+const defaultTerrainVerticalExtent = defaultChunkSize * terrainVerticalSpanMultiplier
 const basePrimaryFrequency = 0.06
 const baseDetailFrequency = 0.08
 const baseRidgeFrequency = 0.02
@@ -126,24 +120,21 @@ const defaultRidgeStrength = Math.max(
     remainingAfterDetail,
   ),
 )
-const defaultPrimaryFrequency =
-  deriveSlopeAlignedFrequency({
-    amplitude: defaultPrimaryAmplitude,
-    slopeBudget: LEGACY_PRIMARY_SLOPE_BUDGET,
-    fallbackFrequency: basePrimaryFrequency,
-  }) * defaultFrequencyScale
-const defaultDetailFrequency =
-  deriveSlopeAlignedFrequency({
-    amplitude: defaultDetailAmplitude,
-    slopeBudget: LEGACY_DETAIL_SLOPE_BUDGET,
-    fallbackFrequency: baseDetailFrequency,
-  }) * defaultFrequencyScale
-const defaultRidgeFrequency =
-  deriveSlopeAlignedFrequency({
-    amplitude: defaultRidgeStrength,
-    slopeBudget: LEGACY_RIDGE_SLOPE_BUDGET,
-    fallbackFrequency: baseRidgeFrequency,
-  }) * defaultFrequencyScale
+const defaultPrimaryFrequency = deriveSlopeAlignedFrequency({
+  amplitude: defaultPrimaryAmplitude,
+  slopeBudget: LEGACY_PRIMARY_SLOPE_BUDGET,
+  fallbackFrequency: basePrimaryFrequency,
+})
+const defaultDetailFrequency = deriveSlopeAlignedFrequency({
+  amplitude: defaultDetailAmplitude,
+  slopeBudget: LEGACY_DETAIL_SLOPE_BUDGET,
+  fallbackFrequency: baseDetailFrequency,
+})
+const defaultRidgeFrequency = deriveSlopeAlignedFrequency({
+  amplitude: defaultRidgeStrength,
+  slopeBudget: LEGACY_RIDGE_SLOPE_BUDGET,
+  fallbackFrequency: baseRidgeFrequency,
+})
 
 const tfmsWaveformOptions = Object.freeze([
   Object.freeze({

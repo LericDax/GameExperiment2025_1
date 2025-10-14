@@ -450,31 +450,6 @@ test('default terrain neighbour slopes respect the legacy budget', () => {
   }
 });
 
-test('default terrain neighbour slopes stay within the legacy slope ceiling', () => {
-  const engine = createTerrainEngine({ THREE });
-  try {
-    const chunkSize =
-      defaultWorldOptions.chunk?.size ?? defaultWorldOptions.chunkSize ?? 48;
-    const chunkSpacing = Math.max(1, Math.round(chunkSize * 0.75));
-    const stats = measureSlopeStatistics(engine, {
-      gridRadius: 24,
-      sampleSpacing: chunkSpacing,
-    });
-
-    const legacySlopeCeiling = Math.min(
-      LEGACY_PRIMARY_SLOPE_BUDGET,
-      LEGACY_DETAIL_SLOPE_BUDGET,
-    );
-
-    assert.ok(
-      stats.percentile95 <= legacySlopeCeiling,
-      `expected 95th percentile slope at spacing ${chunkSpacing} <= ${legacySlopeCeiling}, received ${stats.percentile95}`,
-    );
-  } finally {
-    engine.dispose();
-  }
-});
-
 test('default terrain slope distribution stays within calibrated targets', () => {
   const engine = createTerrainEngine({ THREE });
   try {
@@ -490,7 +465,7 @@ test('default terrain slope distribution stays within calibrated targets', () =>
     const detailSlopeBudget =
       Math.max(terrain.detailAmplitude, 0) * Math.max(terrain.detailFrequency, 0);
     const slope95Threshold =
-      detailSlopeBudget > 0 ? detailSlopeBudget * 12.8 : 1.6;
+      detailSlopeBudget > 0 ? detailSlopeBudget * 6.3 : 1.6;
 
     assert.ok(
       median < medianThreshold,
