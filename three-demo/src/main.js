@@ -416,7 +416,23 @@ try {
     onStateChange: updateHud,
   })
 
+  const shouldPauseInput =
+    playerControls && typeof playerControls.setInputEnabled === 'function'
+  if (shouldPauseInput) {
+    playerControls.setInputEnabled(false)
+  }
+
+  if (typeof chunkManager.preloadAround === 'function') {
+    chunkManager.preloadAround(playerControls.getPosition(), 4, {
+      viewDistance: 3,
+    })
+  }
+
   chunkManager.update(playerControls.getPosition(), { camera })
+
+  if (shouldPauseInput) {
+    playerControls.setInputEnabled(true)
+  }
   updateHud(playerControls.getState())
 
   registerBuiltinEntities()
