@@ -196,6 +196,13 @@ export function createChunkManager({
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   const eventListeners = new Map();
   const defaultDisposalBudget = resolveBudget(maxDisposalsPerUpdate, 1);
+  const defaultPreloadBurst = (() => {
+    const numeric = Number(maxPreloadPerUpdate);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return 2;
+    }
+    return Math.max(1, Math.floor(numeric));
+  })();
   const addEventListener = (type, listener) => {
     if (!type || typeof listener !== 'function') {
       return () => {};
@@ -1766,7 +1773,7 @@ export function createChunkManager({
 
     lastCenterKey = centerKey;
 
-    if (force || preloadBudget === Number.POSITIVE_INFINITY) {
+    if (force) {
       processPreloadQueue(Number.POSITIVE_INFINITY);
 
       flushChunkDisposals(Number.POSITIVE_INFINITY);
@@ -1778,8 +1785,13 @@ export function createChunkManager({
       return;
     }
 
-    if (preloadBudget > 0) {
-      processPreloadQueue(preloadBudget);
+    const normalizedPreloadBudget =
+      preloadBudget === Number.POSITIVE_INFINITY
+        ? Math.max(1, defaultPreloadBurst)
+        : preloadBudget;
+
+    if (normalizedPreloadBudget > 0) {
+      processPreloadQueue(normalizedPreloadBudget);
     }
 
     flushChunkDisposals();
@@ -1834,6 +1846,7 @@ export function createChunkManager({
     if (!position) {
       return;
     }
+    const force = options.force === true;
     const targetRetention = Math.max(
       currentViewDistance,
       normalizeDistance(distance, retentionDistance),
@@ -1854,15 +1867,22 @@ export function createChunkManager({
     );
     const effectiveBudget =
       desiredBudget === 0 ? maxPreloadPerUpdate * 2 : desiredBudget;
+    const minimumBurst = Math.max(1, defaultPreloadBurst * 2);
+    let normalizedBudget = effectiveBudget;
+    if (!Number.isFinite(normalizedBudget) || normalizedBudget <= 0) {
+      normalizedBudget = minimumBurst;
+    } else {
+      normalizedBudget = Math.max(normalizedBudget, minimumBurst);
+    }
 
     update(position, {
       viewDistance: warmView,
       retainDistance: targetRetention,
       maxPreload:
-        effectiveBudget === Number.POSITIVE_INFINITY
+        force || normalizedBudget === Number.POSITIVE_INFINITY
           ? Number.POSITIVE_INFINITY
-          : Math.max(effectiveBudget, maxPreloadPerUpdate * 2),
-      force: true,
+          : normalizedBudget,
+      force,
     });
   }
 

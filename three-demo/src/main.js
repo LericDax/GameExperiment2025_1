@@ -97,6 +97,8 @@ function setOverlayStatus(message, { isError = false, revealOverlay = true } = {
   }
 }
 
+setOverlayStatus('Generating world terrain…')
+
 function applyFogSettingsToScene(targetScene, fogSettings) {
   if (!targetScene || !fogSettings) {
     return
@@ -305,6 +307,7 @@ try {
       ChunkManagerEvents.FIRST_CHUNK_MESHED,
       (event) => {
         console.info(RENDER_READY_MARKER, event?.detail ?? {})
+        setOverlayStatus('')
         removeListener?.()
       },
     )
@@ -427,6 +430,7 @@ try {
   if (typeof chunkManager.preloadAround === 'function') {
     chunkManager.preloadAround(playerControls.getPosition(), 4, {
       viewDistance: 3,
+      force: false,
     })
   }
 
