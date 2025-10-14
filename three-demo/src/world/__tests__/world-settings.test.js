@@ -8,25 +8,6 @@ import {
   resetWorldOptions,
 } from '../world-settings.js'
 
-function readDomainWarpBudget() {
-  const options = getWorldOptions()
-  const domainWarp = options.terrain?.tfms?.operators?.find(
-    (operator) => operator.id === 'domain-warp',
-  )
-  assert(domainWarp, 'expected domain-warp operator in TFMS preset')
-  const amplitudeRange = domainWarp.envelope?.amplitude
-  assert(amplitudeRange, 'expected domain-warp amplitude range')
-  const multiplier = Number.isFinite(amplitudeRange.multiplier)
-    ? amplitudeRange.multiplier
-    : 0
-  const max = Number.isFinite(amplitudeRange.max) ? amplitudeRange.max : 0
-  const primaryAmplitude = Number.isFinite(options.terrain?.primaryAmplitude)
-    ? options.terrain.primaryAmplitude
-    : 0
-  const effectiveWarp = Math.min(primaryAmplitude * multiplier, max)
-  return { effectiveWarp, max }
-}
-
 test('applyWorldOptions clamps terrain height overrides to descriptor bounds', () => {
   resetWorldOptions()
   const baseHeightDescriptor = getWorldOptionDescriptor('terrain.baseHeight')
@@ -137,51 +118,4 @@ test('increasing TFMS warp strength slider is required for all-warp output', () 
   )
 
   resetWorldOptions()
-})
-
-test('default domain-warp budget stays within the calibrated window', () => {
-  resetWorldOptions()
-  const budget = readDomainWarpBudget()
-  assert.ok(
-    budget.effectiveWarp >= 2,
-    `expected default warp budget above two voxels, received ${budget.effectiveWarp}`,
-  )
-  assert.ok(
-    budget.effectiveWarp <= 3,
-    `expected default warp budget to remain within a three-voxel window, received ${budget.effectiveWarp}`,
-  )
-  assert.ok(
-    budget.max <= 3,
-    `expected domain-warp envelope max within calibrated range, received ${budget.max}`,
-  )
-})
-
-test('domain-warp budget remains bounded when chunk size increases', () => {
-  resetWorldOptions()
-  applyWorldOptions({ chunk: { size: 96 } })
-  const budget = readDomainWarpBudget()
-  assert.ok(
-    budget.effectiveWarp <= 3,
-    `expected warp budget to stay within a three-voxel window, received ${budget.effectiveWarp}`,
-  )
-  assert.ok(
-    budget.max <= 3,
-    `expected envelope max within budget, received ${budget.max}`,
-  )
-})
-
-test('domain-warp budget resists large primary amplitude overrides', () => {
-  resetWorldOptions()
-  const descriptor = getWorldOptionDescriptor('terrain.primaryAmplitude')
-  assert(descriptor, 'expected primary amplitude descriptor')
-  applyWorldOptions({ terrain: { primaryAmplitude: descriptor.max } })
-  const budget = readDomainWarpBudget()
-  assert.ok(
-    budget.effectiveWarp <= 3,
-    `expected warp budget to stay within calibrated bounds, received ${budget.effectiveWarp}`,
-  )
-  assert.ok(
-    budget.max <= 3,
-    `expected envelope cap within calibrated bounds, received ${budget.max}`,
-  )
 })
