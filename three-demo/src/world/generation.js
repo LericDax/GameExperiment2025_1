@@ -1611,24 +1611,40 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       ? biome?.terrain?.shoreBlock ?? 'sand'
       : biome?.terrain?.subSurfaceBlock ?? 'dirt';
     const deepBlock = biome?.terrain?.deepBlock ?? 'stone';
+    const coreBlock = biome?.terrain?.coreBlock ?? null;
     const subSurfaceDepth = Math.max(1, biome?.terrain?.subSurfaceDepth ?? 4);
     const terrainFloor = Number.isFinite(terrainClampBounds?.min)
       ? Math.ceil(terrainClampBounds.min)
       : columnTop;
-    const surfaceBase =
-      columnTop >= 0 ? 0 : columnTop - (subSurfaceDepth - 1);
-    const columnBottom = Math.max(
-      terrainFloor,
-      Math.min(surfaceBase, columnTop),
-    );
+
+    let columnBottom;
+    if (columnTop < 0) {
+      const floorBound = Number.isFinite(terrainFloor) ? terrainFloor : columnTop;
+      columnBottom = Math.min(floorBound, columnTop);
+    } else {
+      const surfaceBase = 0;
+      const floorBound = Number.isFinite(terrainFloor) ? terrainFloor : surfaceBase;
+      columnBottom = Math.min(columnTop, Math.max(floorBound, surfaceBase));
+    }
+
+    const baseDeepBlock = deepBlock;
+    const resolvedCoreBlock =
+      coreBlock ?? (baseDeepBlock === subSurfaceBlock ? 'stone' : null);
+    const coreTransitionDepth =
+      baseDeepBlock === subSurfaceBlock
+        ? subSurfaceDepth
+        : Math.max(subSurfaceDepth + 8, subSurfaceDepth * 2);
 
     for (let y = columnBottom; y <= columnTop; y += 1) {
+      const depthFromTop = columnTop - y;
       if (y === columnTop) {
         addBlock(surfaceBlock, worldX, y, worldZ, biome);
-      } else if (columnTop - y < subSurfaceDepth) {
+      } else if (depthFromTop < subSurfaceDepth) {
         addBlock(subSurfaceBlock, worldX, y, worldZ, biome);
+      } else if (resolvedCoreBlock && depthFromTop >= coreTransitionDepth) {
+        addBlock(resolvedCoreBlock, worldX, y, worldZ, biome);
       } else {
-        addBlock(deepBlock, worldX, y, worldZ, biome);
+        addBlock(baseDeepBlock, worldX, y, worldZ, biome);
       }
     }
 
