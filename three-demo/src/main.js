@@ -293,9 +293,9 @@ try {
   chunkManager = createChunkManager({
     scene,
     blockMaterials,
-    viewDistance: 2,
-    retainDistance: 3,
-    maxPreloadPerUpdate: 3,
+    viewDistance: 3,
+    retainDistance: 4,
+    maxPreloadPerUpdate: 4,
   })
 
   if (chunkManager?.events?.addEventListener) {
@@ -427,6 +427,9 @@ try {
       viewDistance: 3,
     })
   }
+
+  chunkManager.setViewDistance(3)
+  chunkManager.setRetentionDistance(4)
 
   chunkManager.update(playerControls.getPosition(), { camera })
 
