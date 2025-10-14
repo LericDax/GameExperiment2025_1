@@ -3,6 +3,7 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 
 import { createBlockMaterials } from './rendering/textures.js'
 import {
+  applyWorldOptions,
   initializeWorldGeneration,
   terrainHeight,
   getWorldOptions,
@@ -110,6 +111,7 @@ function applyFogSettingsToScene(targetScene, fogSettings) {
   targetScene.fog.far = fogFar
 }
 
+applyWorldOptions({ chunkSize: 64 })
 initializeWorldGeneration({ THREE })
 initializeFluidRegistry({ THREE })
 
@@ -295,7 +297,7 @@ try {
     blockMaterials,
     viewDistance: 3,
     retainDistance: 4,
-    maxPreloadPerUpdate: 4,
+    maxPreloadPerUpdate: 8,
   })
 
   if (chunkManager?.events?.addEventListener) {
