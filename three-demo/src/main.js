@@ -308,6 +308,9 @@ try {
       (event) => {
         console.info(RENDER_READY_MARKER, event?.detail ?? {})
         setOverlayStatus('')
+        if (playerControls && typeof playerControls.setInputEnabled === 'function') {
+          playerControls.setInputEnabled(true)
+        }
         removeListener?.()
       },
     )
@@ -430,8 +433,6 @@ try {
   if (typeof chunkManager.preloadAround === 'function') {
     chunkManager.preloadAround(playerControls.getPosition(), 4, {
       viewDistance: 3,
-      force: true,
-      maxPreload: 32,
     })
   }
 
@@ -440,9 +441,6 @@ try {
 
   chunkManager.update(playerControls.getPosition(), { camera, force: true })
 
-  if (shouldPauseInput) {
-    playerControls.setInputEnabled(true)
-  }
   updateHud(playerControls.getState())
 
   registerBuiltinEntities()
