@@ -16,6 +16,11 @@ export function createBiomeTintMaterial({
     throw new Error('createBiomeTintMaterial requires a texture map');
   }
 
+  const hasCustomSide = Object.prototype.hasOwnProperty.call(
+    materialOptions,
+    'side',
+  );
+
   const material = new THREE.MeshStandardMaterial({
     map: texture,
     flatShading: true,
@@ -23,6 +28,11 @@ export function createBiomeTintMaterial({
     roughness: 0.85,
     ...materialOptions,
   });
+
+  const isTranslucent = material.transparent === true || material.opacity < 1;
+  if (isTranslucent && !hasCustomSide && material.side === THREE.FrontSide) {
+    material.side = THREE.DoubleSide;
+  }
 
   material.name = name;
   material.defines = material.defines || {};
