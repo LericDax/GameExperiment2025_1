@@ -34,10 +34,14 @@ import {
   primeTerrainSample,
   clearTerrainSampleCache,
 } from './terrain-sample-cache.js';
+import { ValueNoise2D } from './noise.js';
 export { worldOptions, getWorldOptions } from './world-settings.js';
 export { isBlockOccluding } from './block-occlusion.js';
 
 const MESHING_MODE_STORAGE_KEY = 'voxelMeshingMode';
+
+const SEABED_NOISE_FREQUENCY = 0.075;
+const SEABED_NOISE_SEED_SALT = 7919;
 
 const normalizeMeshingMode = (value) => {
   const normalized = String(value ?? '').trim().toLowerCase();
@@ -229,6 +233,7 @@ function resolveTerrainClampBounds() {
 let THREERef = null;
 let terrainEngine = null;
 let worldSeedHash = worldOptions.seedHash >>> 0;
+let seabedNoiseField = null;
 
 function ensureThree() {
   if (!THREERef) {
@@ -266,6 +271,7 @@ export function initializeWorldGeneration({ THREE, worldOptions: overrides } = {
   clearTerrainSampleCache();
 
   worldSeedHash = worldOptions.seedHash >>> 0;
+  configureSeabedNoise(worldSeedHash);
 
   if (terrainEngine) {
     disposeTerrainEngineInstance(terrainEngine);
@@ -318,6 +324,21 @@ function hashCoordinate(x, z, offset = 0, seed = worldSeedHash) {
   h = Math.imul(h ^ seed, 3266489917);
   h ^= h >>> 16;
   return h >>> 0;
+}
+
+function configureSeabedNoise(seedHash) {
+  const normalizedSeed =
+    typeof seedHash === 'number' && Number.isFinite(seedHash) ? seedHash >>> 0 : 0;
+  const hashed = hashCoordinate(0, 0, SEABED_NOISE_SEED_SALT, normalizedSeed) >>> 0;
+  const seed = hashed === 0 ? 1 : hashed;
+  seabedNoiseField = new ValueNoise2D(seed * 1.193 + 0.5);
+}
+
+function ensureSeabedNoiseField() {
+  if (!seabedNoiseField) {
+    configureSeabedNoise(worldSeedHash);
+  }
+  return seabedNoiseField;
 }
 
 export function randomAt(x, z, offset = 0) {
@@ -1510,7 +1531,11 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
         tierSeabedHeight +
         (waterLevel - tierSeabedHeight) * shorelineWeight;
       const noiseAmplitude = Math.max(1, chunkSize * 0.08);
-      const noiseOffset = (randomAt(worldX, worldZ, 7919) - 0.5) * noiseAmplitude;
+      const seabedNoise = ensureSeabedNoiseField();
+      const sampleX = worldX * SEABED_NOISE_FREQUENCY;
+      const sampleZ = worldZ * SEABED_NOISE_FREQUENCY;
+      const seabedSample = seabedNoise.noise(sampleX, sampleZ);
+      const noiseOffset = (seabedSample - 0.5) * noiseAmplitude;
       const terrainFloorBound = Number.isFinite(terrainClampBounds?.min)
         ? Math.ceil(terrainClampBounds.min)
         : Number.NEGATIVE_INFINITY;
