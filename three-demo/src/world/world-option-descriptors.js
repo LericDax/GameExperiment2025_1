@@ -75,19 +75,6 @@ const LEGACY_DETAIL_SLOPE_BUDGET =
 const LEGACY_RIDGE_SLOPE_BUDGET =
   baseRidgeFrequency * LEGACY_RIDGE_STRENGTH
 
-function deriveSlopeAlignedFrequency({
-  amplitude,
-  slopeBudget,
-  fallbackFrequency,
-}) {
-  if (!Number.isFinite(amplitude) || amplitude <= 0) {
-    return fallbackFrequency
-  }
-  if (!Number.isFinite(slopeBudget) || slopeBudget <= 0) {
-    return fallbackFrequency
-  }
-  return slopeBudget / amplitude
-}
 const defaultTerrainClampMin = -defaultTerrainVerticalExtent
 const defaultTerrainClampMax = defaultTerrainVerticalExtent
 const primaryAmplitudeRatio = 0.58
@@ -126,24 +113,45 @@ const defaultRidgeStrength = Math.max(
     remainingAfterDetail,
   ),
 )
-const defaultPrimaryFrequency =
-  deriveSlopeAlignedFrequency({
-    amplitude: defaultPrimaryAmplitude,
-    slopeBudget: LEGACY_PRIMARY_SLOPE_BUDGET,
-    fallbackFrequency: basePrimaryFrequency,
-  }) * defaultFrequencyScale
-const defaultDetailFrequency =
-  deriveSlopeAlignedFrequency({
-    amplitude: defaultDetailAmplitude,
-    slopeBudget: LEGACY_DETAIL_SLOPE_BUDGET,
-    fallbackFrequency: baseDetailFrequency,
-  }) * defaultFrequencyScale
-const defaultRidgeFrequency =
-  deriveSlopeAlignedFrequency({
-    amplitude: defaultRidgeStrength,
-    slopeBudget: LEGACY_RIDGE_SLOPE_BUDGET,
-    fallbackFrequency: baseRidgeFrequency,
-  }) * defaultFrequencyScale
+function deriveLegacyAlignedFrequency({
+  amplitude,
+  legacyAmplitude,
+  baseFrequency,
+  frequencyScale = 1,
+}) {
+  const scale = Number.isFinite(frequencyScale) && frequencyScale > 0 ? frequencyScale : 1
+  const scaledBaseFrequency = baseFrequency * scale
+  if (!Number.isFinite(amplitude) || amplitude <= 0) {
+    return scaledBaseFrequency
+  }
+  if (!Number.isFinite(legacyAmplitude) || legacyAmplitude <= 0) {
+    return scaledBaseFrequency
+  }
+  const alignedFrequency =
+    baseFrequency * (legacyAmplitude / amplitude) * scale
+  return Number.isFinite(alignedFrequency) && alignedFrequency > 0
+    ? alignedFrequency
+    : scaledBaseFrequency
+}
+
+const defaultPrimaryFrequency = deriveLegacyAlignedFrequency({
+  amplitude: defaultPrimaryAmplitude,
+  legacyAmplitude: LEGACY_PRIMARY_AMPLITUDE,
+  baseFrequency: basePrimaryFrequency,
+  frequencyScale: defaultFrequencyScale,
+})
+const defaultDetailFrequency = deriveLegacyAlignedFrequency({
+  amplitude: defaultDetailAmplitude,
+  legacyAmplitude: LEGACY_DETAIL_AMPLITUDE,
+  baseFrequency: baseDetailFrequency,
+  frequencyScale: defaultFrequencyScale,
+})
+const defaultRidgeFrequency = deriveLegacyAlignedFrequency({
+  amplitude: defaultRidgeStrength,
+  legacyAmplitude: LEGACY_RIDGE_STRENGTH,
+  baseFrequency: baseRidgeFrequency,
+  frequencyScale: defaultFrequencyScale,
+})
 
 const tfmsWaveformOptions = Object.freeze([
   Object.freeze({
