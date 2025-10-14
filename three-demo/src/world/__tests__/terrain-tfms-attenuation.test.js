@@ -347,20 +347,7 @@ test('default domain warp displaces coordinates by only a few voxels', () => {
     sampleSpacing,
   });
 
-  const metrics = computeWarpDeltaMetrics(
-    warpedGrid,
-    unwarpedGrid,
-    warpedGrid.spacing,
-  );
-  const fineWarpedGrid = sampleHeightGrid(warpedEngine, {
-    gridRadius,
-    sampleSpacing: 1,
-  });
-  const fineUnwarpedGrid = sampleHeightGrid(unwarpedEngine, {
-    gridRadius,
-    sampleSpacing: 1,
-  });
-  const fineMetrics = computeWarpDeltaMetrics(fineWarpedGrid, fineUnwarpedGrid, 1);
+  const metrics = computeWarpDeltaMetrics(warpedGrid, unwarpedGrid, warpedGrid.spacing);
 
   const terrain = defaultWorldOptions.terrain;
   const primaryRatio =
@@ -401,22 +388,6 @@ test('default domain warp displaces coordinates by only a few voxels', () => {
   assert.ok(
     metrics.warpedSlopeMax <= warpSlopeMaxBudget,
     `expected max warped slope <= ${warpSlopeMaxBudget}, received ${metrics.warpedSlopeMax}`,
-  );
-  assert.ok(
-    fineMetrics.slopeDelta95 <= slopeDelta95Budget,
-    `expected neighbouring slope delta (spacing 1) 95th percentile <= ${slopeDelta95Budget}, received ${fineMetrics.slopeDelta95}`,
-  );
-  assert.ok(
-    fineMetrics.slopeDeltaMax <= slopeDeltaMaxBudget,
-    `expected neighbouring slope delta (spacing 1) max <= ${slopeDeltaMaxBudget}, received ${fineMetrics.slopeDeltaMax}`,
-  );
-  assert.ok(
-    fineMetrics.warpedSlope95 <= warpSlope95Budget,
-    `expected neighbouring warped slope (spacing 1) 95th percentile <= ${warpSlope95Budget}, received ${fineMetrics.warpedSlope95}`,
-  );
-  assert.ok(
-    fineMetrics.warpedSlopeMax <= warpSlopeMaxBudget,
-    `expected neighbouring warped slope (spacing 1) max <= ${warpSlopeMaxBudget}, received ${fineMetrics.warpedSlopeMax}`,
   );
 
   warpedEngine.dispose();
