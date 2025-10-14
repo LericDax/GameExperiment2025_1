@@ -29,7 +29,7 @@ import {
   primeTerrainSample,
   clearTerrainSampleCache,
 } from './terrain-sample-cache.js';
-export { worldOptions, getWorldOptions } from './world-settings.js';
+export { worldOptions, getWorldOptions, applyWorldOptions } from './world-settings.js';
 export { isBlockOccluding } from './block-occlusion.js';
 
 const MESHING_MODE_STORAGE_KEY = 'voxelMeshingMode';
