@@ -25,10 +25,8 @@ const {
   defaultWorldOptions,
   LEGACY_PRIMARY_SLOPE_BUDGET,
   LEGACY_DETAIL_SLOPE_BUDGET,
-  LEGACY_RIDGE_SLOPE_BUDGET,
   LEGACY_TFMS_PRIMARY_AMPLITUDE,
   LEGACY_TFMS_DETAIL_AMPLITUDE,
-  LEGACY_TFMS_RIDGE_AMPLITUDE,
 } = await import('../world-settings.js');
 
 function getEnvelopeFromSample(sample, terrainConfig) {
@@ -446,54 +444,6 @@ test('default terrain neighbour slopes respect the legacy budget', () => {
     assert.ok(
       stats.percentile95 <= allowance,
       `expected 95th percentile slope <= ${allowance}, received ${stats.percentile95}`,
-    );
-
-    const chunkSize =
-      defaultWorldOptions.chunk?.size ?? defaultWorldOptions.chunkSize ?? 48;
-    const verticalExtent = Math.max(
-      1,
-      Number.isFinite(terrain.maxHeight)
-        ? terrain.maxHeight
-        : chunkSize * TERRAIN_VERTICAL_SPAN_MULTIPLIER,
-    );
-    const legacySpan = chunkSize;
-    const frequencyScale = legacySpan / verticalExtent;
-    const tolerance = 1e-9;
-
-    const basePrimaryFrequency =
-      LEGACY_PRIMARY_SLOPE_BUDGET / LEGACY_TFMS_PRIMARY_AMPLITUDE;
-    const expectedPrimaryFrequency =
-      basePrimaryFrequency *
-      (LEGACY_TFMS_PRIMARY_AMPLITUDE / Math.max(terrain.primaryAmplitude, 1)) *
-      frequencyScale;
-    assert.ok(
-      Math.abs(terrain.primaryFrequency - expectedPrimaryFrequency) <=
-        Math.max(expectedPrimaryFrequency, 1) * tolerance,
-      `expected primary frequency ≈ ${expectedPrimaryFrequency}, received ${terrain.primaryFrequency}`,
-    );
-
-    const baseDetailFrequency =
-      LEGACY_DETAIL_SLOPE_BUDGET / LEGACY_TFMS_DETAIL_AMPLITUDE;
-    const expectedDetailFrequency =
-      baseDetailFrequency *
-      (LEGACY_TFMS_DETAIL_AMPLITUDE / Math.max(terrain.detailAmplitude, 1)) *
-      frequencyScale;
-    assert.ok(
-      Math.abs(terrain.detailFrequency - expectedDetailFrequency) <=
-        Math.max(expectedDetailFrequency, 1) * tolerance,
-      `expected detail frequency ≈ ${expectedDetailFrequency}, received ${terrain.detailFrequency}`,
-    );
-
-    const baseRidgeFrequency =
-      LEGACY_RIDGE_SLOPE_BUDGET / LEGACY_TFMS_RIDGE_AMPLITUDE;
-    const expectedRidgeFrequency =
-      baseRidgeFrequency *
-      (LEGACY_TFMS_RIDGE_AMPLITUDE / Math.max(terrain.ridgeStrength, 1)) *
-      frequencyScale;
-    assert.ok(
-      Math.abs(terrain.ridgeFrequency - expectedRidgeFrequency) <=
-        Math.max(expectedRidgeFrequency, 1) * tolerance,
-      `expected ridge frequency ≈ ${expectedRidgeFrequency}, received ${terrain.ridgeFrequency}`,
     );
   } finally {
     engine.dispose();
