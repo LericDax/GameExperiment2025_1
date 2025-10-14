@@ -3,7 +3,6 @@ import * as THREE from 'three';
 import {
   createChunkBuildTask,
   getWorldOptions,
-  getWorldScale,
   buildInstancedBlockMesh,
   makeBlockKey,
   isBlockOccluding,
@@ -32,8 +31,8 @@ function chunkKey(x, z) {
 }
 
 function worldToChunk(value) {
-  const scale = getWorldScale();
-  return scale.worldToChunk(value);
+  const halfSize = worldConfig.chunkSize / 2;
+  return Math.floor((value + halfSize) / worldConfig.chunkSize);
 }
 
 function normalizeDistance(value, fallback = 0) {
@@ -448,12 +447,11 @@ export function createChunkManager({
     }
 
     const { chunkSize, maxHeight } = worldConfig;
-    const scale = getWorldScale();
-    const fallbackBounds = scale.chunkWorldBounds(chunk.chunkX, chunk.chunkZ);
-    const fallbackMinX = fallbackBounds.minX - 0.5;
-    const fallbackMaxX = fallbackBounds.maxX + 0.5;
-    const fallbackMinZ = fallbackBounds.minZ - 0.5;
-    const fallbackMaxZ = fallbackBounds.maxZ + 0.5;
+    const halfSize = chunkSize / 2;
+    const fallbackMinX = chunk.chunkX * chunkSize - halfSize - 0.5;
+    const fallbackMaxX = chunk.chunkX * chunkSize + halfSize + 0.5;
+    const fallbackMinZ = chunk.chunkZ * chunkSize - halfSize - 0.5;
+    const fallbackMaxZ = chunk.chunkZ * chunkSize + halfSize + 0.5;
     const bounds = chunk.bounds ?? {};
     const minX = Number.isFinite(bounds.minX) ? bounds.minX : fallbackMinX;
     const maxX = Number.isFinite(bounds.maxX) ? bounds.maxX : fallbackMaxX;

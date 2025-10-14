@@ -21,7 +21,6 @@ import {
 import { resolveBiomeTintMultiplier } from './color-utils.js';
 import {
   worldOptions,
-  getWorldScale,
   applyWorldOptions,
   computeTerrainVerticalEnvelope,
   defaultWorldOptions,
@@ -36,7 +35,7 @@ import {
   clearTerrainSampleCache,
 } from './terrain-sample-cache.js';
 import { ValueNoise2D } from './noise.js';
-export { worldOptions, worldScale, getWorldOptions, getWorldScale } from './world-settings.js';
+export { worldOptions, getWorldOptions } from './world-settings.js';
 export { isBlockOccluding } from './block-occlusion.js';
 
 const MESHING_MODE_STORAGE_KEY = 'voxelMeshingMode';
@@ -430,8 +429,12 @@ function addCloud(addBlock, x, y, z) {
 }
 
 function chunkWorldBounds(chunkX, chunkZ) {
-  const scale = getWorldScale();
-  return scale.chunkWorldBounds(chunkX, chunkZ);
+  const { chunkSize } = worldOptions;
+  const halfSize = chunkSize / 2;
+  return {
+    minX: chunkX * chunkSize - halfSize,
+    minZ: chunkZ * chunkSize - halfSize,
+  };
 }
 
 export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
@@ -2524,7 +2527,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       prototypeInstances,
       bounds: (() => {
         if (!hasBoundData) {
-          const scale = getWorldScale();
+          const halfSize = chunkSize / 2;
           const safetyMargin = 2;
           const fallbackMinYBase = (() => {
             const clampMin = worldOptions?.terrain?.clamp?.min;
@@ -2540,12 +2543,11 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
             }
             return -Math.abs(configuredChunkSize) * 3;
           })();
-          const fallbackBounds = scale.chunkWorldBounds(chunkX, chunkZ);
           return {
-            minX: fallbackBounds.minX - 0.5,
-            maxX: fallbackBounds.maxX + 0.5,
-            minZ: fallbackBounds.minZ - 0.5,
-            maxZ: fallbackBounds.maxZ + 0.5,
+            minX: chunkX * chunkSize - halfSize - 0.5,
+            maxX: chunkX * chunkSize + halfSize + 0.5,
+            minZ: chunkZ * chunkSize - halfSize - 0.5,
+            maxZ: chunkZ * chunkSize + halfSize + 0.5,
             minY: fallbackMinYBase - safetyMargin,
             maxY: worldOptions.maxHeight + 32,
           };
