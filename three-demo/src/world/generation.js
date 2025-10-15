@@ -2362,19 +2362,15 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       throw new Error('Chunk already finalized');
     }
     buildFluidSurfaces();
-    const group = new THREE.Group();
-    addMeshesFromMap(group);
+
+    const serializationGroup = new THREE.Group();
+    addMeshesFromMap(serializationGroup);
     decorationInstancedData.forEach((entries, type) => {
-      addDecorationMesh(group, type, entries);
+      addDecorationMesh(serializationGroup, type, entries);
     });
-    logFluidDebug('fluid surfaces count before group add', fluidSurfaces.length);
     fluidSurfaces.forEach((surface) => {
-      if (surface.userData?.type === 'fluid:water') {
-        logFluidDebug('adding water surface to group', surface.uuid);
-      }
-      group.add(surface);
+      serializationGroup.add(surface);
     });
-    group.name = `chunk_${chunkX}_${chunkZ}`;
 
     const chunkPayload = buildChunkPayload({
       chunkX,
@@ -2383,12 +2379,402 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       engine: {
         blockPlacements,
         fluidBlockKeys,
+        fluidColumnsByType,
+        waterColumnMetadata,
+        fluidSurfaces,
+        decorationInstancedData,
+        decorationGroups,
+        decorationOwnerIndex,
+        decorationTypeIndex,
+        decorationData,
         typeCapacities,
         typeData,
         biomePresence,
         prototypeInstances,
       },
     });
+
+    const rehydrateFluidState = (payload = {}) => {
+      const blockKeySet = new Set();
+      const keys = Array.isArray(payload.blockKeys) ? payload.blockKeys : [];
+      keys.forEach((key) => {
+        if (typeof key === 'string') {
+          blockKeySet.add(key);
+        }
+      });
+      const waterColumnsMap = new Map();
+      const waterColumnsPayload = payload.waterColumns ?? {};
+      const waterKeys = Array.isArray(waterColumnsPayload.keys)
+        ? waterColumnsPayload.keys
+        : [];
+      const bottomArray = waterColumnsPayload.bottomY ?? [];
+      const surfaceArray = waterColumnsPayload.surfaceY ?? [];
+      waterKeys.forEach((key, index) => {
+        if (!key) {
+          return;
+        }
+        const bottomValue = Number.isFinite(bottomArray?.[index])
+          ? bottomArray[index]
+          : null;
+        const surfaceValue = Number.isFinite(surfaceArray?.[index])
+          ? surfaceArray[index]
+          : null;
+        if (bottomValue === null && surfaceValue === null) {
+          waterColumnsMap.set(String(key), null);
+          return;
+        }
+        const normalizedBottom = bottomValue ?? surfaceValue ?? 0;
+        const normalizedSurface = surfaceValue ?? bottomValue ?? normalizedBottom;
+        waterColumnsMap.set(String(key), {
+          bottomY: normalizedBottom,
+          surfaceY: normalizedSurface,
+        });
+      });
+      const typeColumns = new Map();
+      const typeRecords = Array.isArray(payload.columnsByType)
+        ? payload.columnsByType
+        : [];
+      typeRecords.forEach((record) => {
+        const type = record?.type ?? null;
+        if (!type) {
+          return;
+        }
+        const keysArray = Array.isArray(record.keys) ? record.keys : [];
+        const positionsX = record.positions?.x ?? [];
+        const positionsZ = record.positions?.z ?? [];
+        const minY = record.minY ?? [];
+        const maxY = record.maxY ?? [];
+        const depthArray = record.depth ?? [];
+        const colors = record.colors ?? [];
+        const flowDirection = record.flowDirection ?? [];
+        const flowStrength = record.flowStrength ?? [];
+        const foamAmount = record.foamAmount ?? [];
+        const shoreline = record.shoreline ?? [];
+        const exposed = record.exposed ?? [];
+        const metadataEntries = Array.isArray(record.metadata)
+          ? record.metadata
+          : [];
+        const columns = new Map();
+        for (let index = 0; index < keysArray.length; index += 1) {
+          const key = keysArray[index] ?? null;
+          const colorIndex = index * 3;
+          const flowIndex = index * 2;
+          if (!key && !Number.isFinite(positionsX?.[index]) && !Number.isFinite(positionsZ?.[index])) {
+            continue;
+          }
+          const column = {
+            key: String(
+              key ?? `${Math.round(positionsX?.[index] ?? 0)}|${Math.round(positionsZ?.[index] ?? 0)}`,
+            ),
+            x: Number.isFinite(positionsX?.[index]) ? positionsX[index] : 0,
+            z: Number.isFinite(positionsZ?.[index]) ? positionsZ[index] : 0,
+            minY: Number.isFinite(minY?.[index]) ? minY[index] : 0,
+            maxY: Number.isFinite(maxY?.[index])
+              ? maxY[index]
+              : Number.isFinite(minY?.[index])
+              ? minY[index]
+              : 0,
+            depth: Number.isFinite(depthArray?.[index])
+              ? depthArray[index]
+              : Math.max(
+                  0.05,
+                  (Number.isFinite(maxY?.[index]) ? maxY[index] : 0) -
+                    (Number.isFinite(minY?.[index]) ? minY[index] : 0),
+                ),
+            color: new THREE.Color(
+              Number.isFinite(colors?.[colorIndex]) ? colors[colorIndex] : 0,
+              Number.isFinite(colors?.[colorIndex + 1]) ? colors[colorIndex + 1] : 0,
+              Number.isFinite(colors?.[colorIndex + 2]) ? colors[colorIndex + 2] : 0,
+            ),
+            flowDirection: new THREE.Vector2(
+              Number.isFinite(flowDirection?.[flowIndex]) ? flowDirection[flowIndex] : 0,
+              Number.isFinite(flowDirection?.[flowIndex + 1])
+                ? flowDirection[flowIndex + 1]
+                : 0,
+            ),
+            flowStrength: Number.isFinite(flowStrength?.[index]) ? flowStrength[index] : 0,
+            foamAmount: Number.isFinite(foamAmount?.[index]) ? foamAmount[index] : 0,
+            shoreline: Number.isFinite(shoreline?.[index]) ? shoreline[index] : 0,
+            isExposed:
+              (exposed instanceof Uint8Array ? exposed[index] === 1 : exposed?.[index] === 1) ||
+              exposed?.[index] === true,
+          };
+          column.surfaceY = column.maxY;
+          column.bottomY = column.minY;
+          const metadata = metadataEntries[index] ?? null;
+          if (metadata) {
+            if (Array.isArray(metadata.lifecycleCues)) {
+              column.lifecycleCues = new Set(
+                metadata.lifecycleCues.map((cue) => String(cue)),
+              );
+            }
+            if (metadata.biome) {
+              column.biome = metadata.biome;
+            }
+            if (Number.isFinite(metadata.auroraIntensitySum)) {
+              column.auroraIntensitySum = metadata.auroraIntensitySum;
+            }
+            if (Number.isFinite(metadata.auroraIntensitySamples)) {
+              column.auroraIntensitySamples = metadata.auroraIntensitySamples;
+            }
+            if (Number.isFinite(metadata.glowBiasSum)) {
+              column.glowBiasSum = metadata.glowBiasSum;
+            }
+            if (Number.isFinite(metadata.glowBiasSamples)) {
+              column.glowBiasSamples = metadata.glowBiasSamples;
+            }
+            if (Number.isFinite(metadata.pulseRateSum)) {
+              column.pulseRateSum = metadata.pulseRateSum;
+            }
+            if (Number.isFinite(metadata.pulseRateSamples)) {
+              column.pulseRateSamples = metadata.pulseRateSamples;
+            }
+            if (Number.isFinite(metadata.ridgeStrengthSum)) {
+              column.ridgeStrengthSum = metadata.ridgeStrengthSum;
+            }
+            if (Number.isFinite(metadata.ridgeStrengthSamples)) {
+              column.ridgeStrengthSamples = metadata.ridgeStrengthSamples;
+            }
+            if (metadata.orientationVector) {
+              column.orientationVector = metadata.orientationVector;
+            }
+            if (Number.isFinite(metadata.orientationSamples)) {
+              column.orientationSamples = metadata.orientationSamples;
+            }
+            if (metadata.flowDirectionHint) {
+              column.flowDirectionHint = metadata.flowDirectionHint;
+            }
+            if (Number.isFinite(metadata.flowDirectionHintSamples)) {
+              column.flowDirectionHintSamples = metadata.flowDirectionHintSamples;
+            }
+            if (Number.isFinite(metadata.flowStrengthHintSum)) {
+              column.flowStrengthHintSum = metadata.flowStrengthHintSum;
+            }
+            if (Number.isFinite(metadata.flowStrengthHintSamples)) {
+              column.flowStrengthHintSamples = metadata.flowStrengthHintSamples;
+            }
+            if (Number.isFinite(metadata.foamHint)) {
+              column.foamHint = metadata.foamHint;
+            }
+            if (Number.isFinite(metadata.localAuroraIntensity)) {
+              column.localAuroraIntensity = metadata.localAuroraIntensity;
+            }
+            if (Number.isFinite(metadata.localAuroraGlow)) {
+              column.localAuroraGlow = metadata.localAuroraGlow;
+            }
+            if (Number.isFinite(metadata.localPulseRate)) {
+              column.localPulseRate = metadata.localPulseRate;
+            }
+            if (Number.isFinite(metadata.ridgeStrength)) {
+              column.ridgeStrength = metadata.ridgeStrength;
+            }
+            if (Number.isFinite(metadata.ribbonOrientation)) {
+              column.ribbonOrientation = metadata.ribbonOrientation;
+            }
+            if (metadata.ribbonVector) {
+              column.ribbonVector = metadata.ribbonVector;
+            }
+            if (Number.isFinite(metadata.ribbonSegments)) {
+              column.ribbonSegments = metadata.ribbonSegments;
+            }
+            if (Number.isFinite(metadata.ribbonSpan)) {
+              column.ribbonSpan = metadata.ribbonSpan;
+            }
+            if (Number.isFinite(metadata.ribbonHeight)) {
+              column.ribbonHeight = metadata.ribbonHeight;
+            }
+          }
+          columns.set(column.key, column);
+        }
+        typeColumns.set(type, columns);
+      });
+      return {
+        blockKeys: blockKeySet,
+        waterColumns: waterColumnsMap,
+        columnsByType: typeColumns,
+      };
+    };
+
+    const rehydrateDecorationState = (payload = {}) => {
+      const decorationRecords = new Map();
+      const groupsMap = new Map();
+      const ownerIndexMap = new Map();
+      const typeIndexMap = new Map();
+      const batches = Array.isArray(payload.batches) ? payload.batches : [];
+      batches.forEach((batch) => {
+        const type = batch?.type ?? null;
+        if (!type) {
+          return;
+        }
+        const entryPayloads = Array.isArray(batch.entries) ? batch.entries : [];
+        const entries = entryPayloads
+          .map((entryPayload) => deserializeInstancedEntry(entryPayload, THREE))
+          .filter(Boolean);
+        const capacityCandidate = Number.isFinite(batch.capacity)
+          ? batch.capacity
+          : entries.length;
+        const { mesh, tintAttribute } = buildInstancedMesh(entries, type, {
+          capacity: Math.max(1, capacityCandidate, entries.length),
+        });
+        if (mesh) {
+          mesh.userData.decoration = true;
+          mesh.count = entries.length;
+          mesh.instanceMatrix.needsUpdate = entries.length > 0;
+        }
+        if (tintAttribute) {
+          tintAttribute.needsUpdate = entries.length > 0;
+        }
+        decorationRecords.set(type, {
+          entries,
+          mesh,
+          tintAttribute,
+          capacity: Math.max(1, capacityCandidate, entries.length),
+        });
+      });
+      const groups = Array.isArray(payload.groups) ? payload.groups : [];
+      groups.forEach((groupInfo) => {
+        const key = groupInfo?.key ?? null;
+        const type = groupInfo?.type ?? null;
+        if (!key || !type) {
+          return;
+        }
+        const record = decorationRecords.get(type);
+        const entries = record?.entries ?? [];
+        const indicesSource = groupInfo.entryIndices;
+        const instanceIndices = ArrayBuffer.isView(indicesSource)
+          ? Array.from(indicesSource)
+          : Array.isArray(indicesSource)
+          ? indicesSource.slice()
+          : [];
+        const metadata = {
+          key,
+          owner: groupInfo?.owner ?? null,
+          destructible:
+            typeof groupInfo?.destructible === 'boolean' ? groupInfo.destructible : true,
+          type,
+          mesh: record?.mesh ?? null,
+          tintAttribute: record?.tintAttribute ?? null,
+          instanceIndices,
+        };
+        groupsMap.set(key, metadata);
+        if (metadata.owner !== null && metadata.owner !== undefined) {
+          let ownerGroups = ownerIndexMap.get(metadata.owner);
+          if (!ownerGroups) {
+            ownerGroups = new Map();
+            ownerIndexMap.set(metadata.owner, ownerGroups);
+          }
+          ownerGroups.set(key, metadata);
+        }
+        let typeGroups = typeIndexMap.get(type);
+        if (!typeGroups) {
+          typeGroups = new Set();
+          typeIndexMap.set(type, typeGroups);
+        }
+        typeGroups.add(metadata);
+        metadata.instanceIndices.forEach((instanceIndex) => {
+          const entry = entries[instanceIndex];
+          if (entry) {
+            entry.decorationGroup = metadata;
+          }
+        });
+      });
+      const ownerIndexPayload = payload.ownerIndex ?? {};
+      if (ownerIndexPayload && typeof ownerIndexPayload === 'object') {
+        Object.entries(ownerIndexPayload).forEach(([ownerKey, groupKeys]) => {
+          const normalizedKeys = Array.isArray(groupKeys) ? groupKeys : [];
+          let ownerGroups = ownerIndexMap.get(ownerKey);
+          if (!ownerGroups) {
+            ownerGroups = new Map();
+            ownerIndexMap.set(ownerKey, ownerGroups);
+          }
+          normalizedKeys.forEach((groupKey) => {
+            const metadata = groupsMap.get(groupKey);
+            if (metadata) {
+              ownerGroups.set(groupKey, metadata);
+            }
+          });
+        });
+      }
+      const typeIndexPayload = payload.typeIndex ?? {};
+      if (typeIndexPayload && typeof typeIndexPayload === 'object') {
+        Object.entries(typeIndexPayload).forEach(([type, groupKeys]) => {
+          const normalizedKeys = Array.isArray(groupKeys) ? groupKeys : [];
+          let typeGroups = typeIndexMap.get(type);
+          if (!typeGroups) {
+            typeGroups = new Set();
+            typeIndexMap.set(type, typeGroups);
+          }
+          normalizedKeys.forEach((groupKey) => {
+            const metadata = groupsMap.get(groupKey);
+            if (metadata) {
+              typeGroups.add(metadata);
+            }
+          });
+        });
+      }
+      return {
+        decorationData: decorationRecords,
+        decorationGroups: groupsMap,
+        decorationOwnerIndex: ownerIndexMap,
+        decorationTypeIndex: typeIndexMap,
+      };
+    };
+
+    const fluidState = rehydrateFluidState(chunkPayload.fluids ?? {});
+    fluidBlockKeys.clear();
+    fluidState.blockKeys.forEach((key) => fluidBlockKeys.add(key));
+    waterColumnMetadata.clear();
+    fluidState.waterColumns.forEach((value, key) => {
+      waterColumnMetadata.set(key, value);
+    });
+    fluidColumnsByType.clear();
+    fluidState.columnsByType.forEach((columns, type) => {
+      fluidColumnsByType.set(type, columns);
+    });
+    buildFluidSurfaces();
+
+    const decorationState = rehydrateDecorationState(
+      chunkPayload.decorations ?? {},
+    );
+    decorationData.forEach((record) => {
+      if (record?.mesh?.parent) {
+        record.mesh.parent.remove(record.mesh);
+      }
+    });
+    decorationData.clear();
+    decorationGroups.clear();
+    decorationOwnerIndex.clear();
+    decorationTypeIndex.clear();
+    decorationInstancedData.clear();
+    decorationState.decorationData.forEach((record, type) => {
+      decorationData.set(type, record);
+      decorationInstancedData.set(type, record.entries);
+    });
+    decorationState.decorationGroups.forEach((metadata, key) => {
+      decorationGroups.set(key, metadata);
+    });
+    decorationState.decorationOwnerIndex.forEach((groups, owner) => {
+      decorationOwnerIndex.set(owner, groups);
+    });
+    decorationState.decorationTypeIndex.forEach((groups, type) => {
+      decorationTypeIndex.set(type, groups);
+    });
+
+    const group = new THREE.Group();
+    typeData.forEach((record) => {
+      if (record?.mesh) {
+        group.add(record.mesh);
+      }
+    });
+    decorationData.forEach((record) => {
+      if (record?.mesh) {
+        group.add(record.mesh);
+      }
+    });
+    fluidSurfaces.forEach((surface) => {
+      group.add(surface);
+    });
+    group.name = `chunk_${chunkX}_${chunkZ}`;
 
     const biomePayload = Array.isArray(chunkPayload.biomes)
       ? chunkPayload.biomes
