@@ -167,10 +167,19 @@ test('preload queue preserves partial tasks until forced to drain', () => {
     maxPreload: 0,
   });
 
-  assert.ok(
-    !infiniteScene.getObjectByName('chunk_1_0'),
-    'chunk should stay pending before infinite budget drains it',
-  );
+  const neighborChunkNames = [
+    'chunk_1_0',
+    'chunk_-1_0',
+    'chunk_0_1',
+    'chunk_0_-1',
+  ];
+
+  neighborChunkNames.forEach((name) => {
+    assert.ok(
+      !infiniteScene.getObjectByName(name),
+      'neighbor chunk should stay pending before infinite budget drains it',
+    );
+  });
 
   infiniteManager.update(origin, {
     viewDistance: 0,
@@ -178,10 +187,12 @@ test('preload queue preserves partial tasks until forced to drain', () => {
     maxPreload: Number.POSITIVE_INFINITY,
   });
 
-  assert.ok(
-    infiniteScene.getObjectByName('chunk_1_0'),
-    'infinite preload budget should drain every active chunk build task immediately',
-  );
+  neighborChunkNames.forEach((name) => {
+    assert.ok(
+      infiniteScene.getObjectByName(name),
+      'infinite preload budget should finish every pending chunk build task immediately',
+    );
+  });
 
   while (createdManagers.length > 0) {
     const instance = createdManagers.pop();
