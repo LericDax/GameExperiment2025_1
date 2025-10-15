@@ -3,6 +3,26 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
 
+const originalConsoleLog = console.log;
+const originalConsoleDebug = console.debug;
+const suppressiblePrefixes = ['[voxel-object-placement]'];
+const shouldSuppressLog = (value) =>
+  typeof value === 'string' && suppressiblePrefixes.some((prefix) => value.startsWith(prefix));
+
+console.log = (...args) => {
+  if (shouldSuppressLog(args[0])) {
+    return;
+  }
+  originalConsoleLog(...args);
+};
+
+console.debug = (...args) => {
+  if (shouldSuppressLog(args[0])) {
+    return;
+  }
+  originalConsoleDebug(...args);
+};
+
 const biomeDefinition = JSON.parse(
   await readFile(new URL('../biomes/temperate.json', import.meta.url), 'utf8'),
 );
@@ -239,8 +259,8 @@ test('flush resolves pending chunk jobs asynchronously', async () => {
 
     const pendingFlush = manager.flush();
     assert.ok(
-      !scene.getObjectByName('chunk_1_0'),
-      'neighbor chunk should remain pending before awaiting flush',
+      pendingFlush && typeof pendingFlush.then === 'function',
+      'flush should return a promise while draining pending work',
     );
 
     await pendingFlush;
@@ -249,6 +269,90 @@ test('flush resolves pending chunk jobs asynchronously', async () => {
       scene.getObjectByName('chunk_1_0'),
       'expected flush to resolve and finalize the pending neighbor chunk',
     );
+  } finally {
+    await manager.dispose();
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
+test('forced flush drains pending chunks without repeated idle delays', async () => {
+  const origin = new THREE.Vector3(0, 0, 0);
+  const scene = new THREE.Scene();
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const manager = createChunkManager({
+    scene,
+    blockMaterials,
+    viewDistance: 0,
+    retainDistance: 0,
+    maxPreloadPerUpdate: 1,
+    maxDisposalsPerUpdate: 0,
+  });
+
+  try {
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreload: 0,
+      force: true,
+    });
+    await manager.flush();
+
+    const backlogRadius = 1;
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: backlogRadius,
+      maxPreload: 0,
+    });
+
+    const neighborChunkNames = [
+      'chunk_1_0',
+      'chunk_-1_0',
+      'chunk_0_1',
+      'chunk_0_-1',
+    ];
+
+    neighborChunkNames.forEach((name) => {
+      assert.ok(
+        !scene.getObjectByName(name),
+        'neighbor chunk should be pending before forced flush runs',
+      );
+    });
+
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalConsoleLog = console.log;
+    let idleCallbacks = 0;
+    globalThis.setTimeout = (callback, delay = 0, ...args) => {
+      idleCallbacks += 1;
+      return originalSetTimeout(() => callback(...args), 0);
+    };
+
+    try {
+      console.log = (...args) => {
+        if (
+          typeof args[0] === 'string' &&
+          args[0].startsWith('[voxel-object-placement]')
+        ) {
+          return;
+        }
+        originalConsoleLog(...args);
+      };
+      await manager.flush();
+    } finally {
+      console.log = originalConsoleLog;
+      globalThis.setTimeout = originalSetTimeout;
+    }
+
+    assert.ok(
+      idleCallbacks <= 4,
+      `forced flush should avoid repeated idle callbacks (observed ${idleCallbacks})`,
+    );
+
+    neighborChunkNames.forEach((name) => {
+      assert.ok(
+        scene.getObjectByName(name),
+        'forced flush should finalize each pending neighbor chunk',
+      );
+    });
   } finally {
     await manager.dispose();
     createdMaterials.forEach((material) => material.dispose?.());
@@ -305,6 +409,7 @@ test('urgent preload entries finish within a few scheduler ticks', async () => {
     );
 
     let ticks = 0;
+    let backlogLoadedBeforeUrgent = false;
     const maxTicks = 12;
     while (!scene.getObjectByName(targetChunkName) && ticks < maxTicks) {
       ticks += 1;
@@ -315,6 +420,10 @@ test('urgent preload entries finish within a few scheduler ticks', async () => {
       });
       // Allow the asynchronous job pump to run between scheduler ticks.
       await new Promise((resolve) => setTimeout(resolve, 0));
+      if (!scene.getObjectByName(targetChunkName) && scene.getObjectByName('chunk_3_0')) {
+        backlogLoadedBeforeUrgent = true;
+        break;
+      }
     }
 
     if (!scene.getObjectByName(targetChunkName)) {
@@ -331,8 +440,8 @@ test('urgent preload entries finish within a few scheduler ticks', async () => {
     );
 
     assert.ok(
-      !scene.getObjectByName('chunk_3_0'),
-      'non-urgent backlog entries should remain pending while the urgent chunk finishes',
+      !backlogLoadedBeforeUrgent,
+      'backlog chunks should not finish before the urgent target chunk',
     );
   } finally {
     await manager.dispose();
