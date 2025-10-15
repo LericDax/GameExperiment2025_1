@@ -19,6 +19,64 @@ import {
   getDecorationMeshTemplate,
 } from './voxel-object-decoration-mesh.js';
 
+const VOXEL_OBJECT_DEBUG_ENV_KEY = 'VITE_DEBUG_VOXEL_PLACEMENT';
+
+function coerceDebugFlag(value) {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value !== 0 : false;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    if (['0', 'false', 'off', 'no', 'disable', 'disabled'].includes(normalized)) {
+      return false;
+    }
+    if (['1', 'true', 'on', 'yes', 'enable', 'enabled'].includes(normalized)) {
+      return true;
+    }
+    return true;
+  }
+  return Boolean(value);
+}
+
+function isVoxelPlacementDebugEnabled() {
+  if (typeof globalThis !== 'undefined' && '__ENABLE_VOXEL_OBJECT_DEBUG__' in globalThis) {
+    return coerceDebugFlag(globalThis.__ENABLE_VOXEL_OBJECT_DEBUG__);
+  }
+  if (typeof process !== 'undefined' && process?.env) {
+    const nodeEnvValue = process.env[VOXEL_OBJECT_DEBUG_ENV_KEY];
+    if (nodeEnvValue !== undefined) {
+      return coerceDebugFlag(nodeEnvValue);
+    }
+  }
+  const envValue =
+    typeof import.meta === 'object' && import.meta !== null && 'env' in import.meta
+      ? import.meta.env?.[VOXEL_OBJECT_DEBUG_ENV_KEY]
+      : undefined;
+  if (envValue !== undefined) {
+    return coerceDebugFlag(envValue);
+  }
+  return false;
+}
+
+function logVoxelPlacementDebug(message, payload) {
+  if (!isVoxelPlacementDebugEnabled()) {
+    return;
+  }
+  const logger = typeof console?.debug === 'function' ? console.debug : console?.log;
+  if (typeof logger === 'function') {
+    logger.call(console, message, payload);
+  }
+}
+
 const DEFAULT_DENSITY_SEED = 9103;
 let objectDensityField = new ValueNoise2D(DEFAULT_DENSITY_SEED);
 
@@ -62,25 +120,19 @@ export function placeVoxelObject(
     object?.destructionMode !== 'per-voxel' && typeof addPrototypeInstance === 'function';
 
   if (usePrototypePlacement) {
-    const debugPrototypeLogs =
-      typeof console !== 'undefined' && (import.meta.env?.DEV ?? true);
-    if (debugPrototypeLogs) {
-      console.debug('[voxel-object-placement] evaluating prototype placement', {
-        objectId: object.id ?? null,
-      });
-    }
+    logVoxelPlacementDebug('[voxel-object-placement] evaluating prototype placement', {
+      objectId: object.id ?? null,
+    });
     const prototype = getVoxelObjectPrototype(object);
     if (!prototype) {
-      if (debugPrototypeLogs) {
-        console.debug(
-          '[voxel-object-placement] prototype unavailable, using per-voxel placement',
-          {
-            objectId: object.id ?? null,
-          },
-        );
-      }
-    } else if (debugPrototypeLogs) {
-      console.debug('[voxel-object-placement] using prototype placement', {
+      logVoxelPlacementDebug(
+        '[voxel-object-placement] prototype unavailable, using per-voxel placement',
+        {
+          objectId: object.id ?? null,
+        },
+      );
+    } else {
+      logVoxelPlacementDebug('[voxel-object-placement] using prototype placement', {
         objectId: object.id ?? null,
         blockCount: prototype.blocks?.length ?? 0,
         decorationCount: prototype.decorations?.length ?? 0,
