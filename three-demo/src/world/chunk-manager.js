@@ -7,6 +7,7 @@ import {
   makeBlockKey,
   isBlockOccluding,
 } from './generation.js';
+import { finalizeChunkMeshes } from './finalize-chunk-meshes.js';
 import {
   createFluidSurface,
   disposeFluidSurface,
@@ -18,6 +19,7 @@ import {
   pruneTerrainSampleCacheOutsideRadius,
   clearTerrainSampleCache,
 } from './terrain-sample-cache.js';
+import { createChunkBuildWorker } from './workers/chunk-build.worker.js';
 
 export const ChunkManagerEvents = Object.freeze({
   FIRST_CHUNK_MESHED: 'first-chunk-meshed',
@@ -139,6 +141,72 @@ function normalizeWaterColumnBounds(bounds) {
     bottomY: min,
     surfaceY: max,
   };
+}
+
+let chunkBuildWorkerInstance = null;
+let chunkBuildWorkerFailed = false;
+
+const enableChunkBuildWorker = (() => {
+  if (
+    typeof globalThis !== 'undefined' &&
+    globalThis.__ENABLE_CHUNK_WORKER__ === true
+  ) {
+    return true;
+  }
+  if (
+    typeof globalThis !== 'undefined' &&
+    globalThis.__DISABLE_CHUNK_WORKER__ === true
+  ) {
+    return false;
+  }
+  if (typeof import.meta !== 'undefined' && import.meta?.env) {
+    const flag =
+      import.meta.env.VITE_ENABLE_CHUNK_WORKER ??
+      import.meta.env.VITE_CHUNK_WORKER ??
+      null;
+    if (typeof flag === 'string') {
+      const normalized = flag.trim().toLowerCase();
+      if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+        return true;
+      }
+      if (['0', 'false', 'no', 'off'].includes(normalized)) {
+        return false;
+      }
+    } else if (typeof flag === 'boolean') {
+      return flag;
+    }
+  }
+  return false;
+})();
+
+function shouldUseChunkBuildWorker() {
+  if (!enableChunkBuildWorker) {
+    return false;
+  }
+  if (typeof Worker === 'undefined') {
+    return false;
+  }
+  if (chunkBuildWorkerFailed) {
+    return false;
+  }
+  return true;
+}
+
+function ensureChunkBuildWorkerInstance() {
+  if (!shouldUseChunkBuildWorker()) {
+    return null;
+  }
+  if (chunkBuildWorkerInstance) {
+    return chunkBuildWorkerInstance;
+  }
+  try {
+    chunkBuildWorkerInstance = createChunkBuildWorker();
+  } catch (error) {
+    chunkBuildWorkerFailed = true;
+    chunkBuildWorkerInstance = null;
+    console.warn('[chunk-manager] Failed to create chunk build worker', error);
+  }
+  return chunkBuildWorkerInstance;
 }
 
 
@@ -267,6 +335,9 @@ export function createChunkManager({
   const chunkJobQueue = [];
   let chunkJobPumpActive = false;
   let chunkJobPumpPromise = null;
+  const chunkBuildWorker = ensureChunkBuildWorkerInstance();
+  const workerEnabled = Boolean(chunkBuildWorker);
+  const workerDisposables = [];
 
   function waitForNextJobSlice(timeout = 16) {
     return new Promise((resolve) => {
@@ -279,6 +350,277 @@ export function createChunkManager({
         return;
       }
       resolve();
+    });
+  }
+
+  function createWorkerJobController(entryKey, metadata) {
+    if (!workerEnabled || !chunkBuildWorker) {
+      return null;
+    }
+    return {
+      start(payload = {}) {
+        const transferables = Array.isArray(metadata?.buffers)
+          ? metadata.buffers
+          : [];
+        chunkBuildWorker.postMessage(
+          { type: 'start', key: entryKey, payload },
+          transferables,
+        );
+      },
+      step(budget) {
+        chunkBuildWorker.postMessage({ type: 'step', key: entryKey, budget });
+      },
+      cancel() {
+        chunkBuildWorker.postMessage({ type: 'cancel', key: entryKey });
+      },
+    };
+  }
+
+  function createChunkJobMetadata(entry) {
+    const metadata = {
+      mode: workerEnabled && chunkBuildWorker ? 'worker' : 'local',
+      controller: null,
+      buffers: [],
+      started: false,
+      inflight: false,
+      payload: null,
+      startPayload: null,
+    };
+    if (metadata.mode === 'worker') {
+      metadata.controller = createWorkerJobController(entry.key, metadata);
+      if (!metadata.controller) {
+        metadata.mode = 'local';
+      } else if (metadata.startPayload == null) {
+        metadata.started = true;
+      }
+    }
+    return metadata;
+  }
+
+  function fallbackChunkJobToLocal(entry) {
+    if (!entry) {
+      return;
+    }
+    const metadata = entry.metadata;
+    if (!metadata) {
+      return;
+    }
+    metadata.mode = 'local';
+    metadata.controller = null;
+    metadata.started = false;
+    metadata.inflight = false;
+    metadata.payload = null;
+    metadata.buffers = [];
+  }
+
+  function computeChunkBoundsFromPayload(entry, payload) {
+    const chunkSize = worldConfig.chunkSize;
+    const halfSize = chunkSize / 2;
+    const defaultBounds = {
+      minX: entry.chunkX * chunkSize - halfSize - 0.5,
+      maxX: entry.chunkX * chunkSize + halfSize + 0.5,
+      minZ: entry.chunkZ * chunkSize - halfSize - 0.5,
+      maxZ: entry.chunkZ * chunkSize + halfSize + 0.5,
+      minY: -32,
+      maxY: worldConfig.maxHeight + 32,
+    };
+    if (!payload || typeof payload !== 'object') {
+      return defaultBounds;
+    }
+    const occupancy = payload.occupancy;
+    const normalizeKeys = (value) => {
+      if (!value) {
+        return [];
+      }
+      if (Array.isArray(value)) {
+        return value;
+      }
+      if (value instanceof Set) {
+        return Array.from(value);
+      }
+      if (typeof value === 'object') {
+        return Object.keys(value);
+      }
+      return [];
+    };
+    const coordinateKeys = [
+      ...normalizeKeys(occupancy?.solidCoordinates),
+      ...normalizeKeys(occupancy?.softCoordinates),
+    ];
+    if (coordinateKeys.length === 0) {
+      return defaultBounds;
+    }
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+    coordinateKeys.forEach((key) => {
+      const coords = parseBlockCoordinateKey(key);
+      if (!coords) {
+        return;
+      }
+      if (Number.isFinite(coords.x)) {
+        minX = Math.min(minX, coords.x);
+        maxX = Math.max(maxX, coords.x);
+      }
+      if (Number.isFinite(coords.y)) {
+        minY = Math.min(minY, coords.y);
+        maxY = Math.max(maxY, coords.y);
+      }
+      if (Number.isFinite(coords.z)) {
+        minZ = Math.min(minZ, coords.z);
+        maxZ = Math.max(maxZ, coords.z);
+      }
+    });
+    if (
+      !Number.isFinite(minX) ||
+      !Number.isFinite(minY) ||
+      !Number.isFinite(minZ) ||
+      !Number.isFinite(maxX) ||
+      !Number.isFinite(maxY) ||
+      !Number.isFinite(maxZ)
+    ) {
+      return defaultBounds;
+    }
+    return {
+      minX: minX - 0.5,
+      maxX: maxX + 0.5,
+      minY: minY - 0.5,
+      maxY: maxY + 0.5,
+      minZ: minZ - 0.5,
+      maxZ: maxZ + 0.5,
+    };
+  }
+
+  function finalizeWorkerChunk(entry) {
+    const metadata = entry?.metadata;
+    const payload = metadata?.payload;
+    if (!payload) {
+      throw new Error('Chunk worker payload unavailable.');
+    }
+    const meshResult = finalizeChunkMeshes(payload, blockMaterials, THREE);
+    const toCoordinateSet = (source) => {
+      if (!source) {
+        return new Set();
+      }
+      if (source instanceof Set) {
+        return new Set(source);
+      }
+      if (Array.isArray(source)) {
+        return new Set(source.map((key) => String(key)));
+      }
+      if (typeof source === 'object') {
+        return new Set(Object.keys(source));
+      }
+      return new Set();
+    };
+    const occupancy = payload.occupancy ?? {};
+    const solidBlockKeys = toCoordinateSet(occupancy.solidCoordinates);
+    const softBlockKeys = toCoordinateSet(occupancy.softCoordinates);
+
+    const chunk = {
+      chunkX: entry.chunkX,
+      chunkZ: entry.chunkZ,
+      group: meshResult.chunkGroup,
+      solidBlockKeys,
+      softBlockKeys,
+      typeCapacities: meshResult.typeCapacities,
+      waterColumns: meshResult.waterColumns,
+      fluidColumnsByType: meshResult.fluidColumnsByType,
+      fluidSurfaces: meshResult.fluidSurfaces,
+      blockLookup: meshResult.blockLookup,
+      fluidBlockKeys: meshResult.fluidBlockKeys,
+      typeData: meshResult.typeData,
+      decorationData: meshResult.decorationData,
+      decorationGroups: meshResult.decorationGroups,
+      decorationOwnerIndex: meshResult.decorationOwnerIndex,
+      decorationTypeIndex: meshResult.decorationTypeIndex,
+      biomes: meshResult.biomes,
+      prototypeInstances: meshResult.prototypeInstances,
+      bounds: computeChunkBoundsFromPayload(entry, payload),
+    };
+    metadata.payload = null;
+    return chunk;
+  }
+
+  if (workerEnabled && chunkBuildWorker) {
+    const handleWorkerMessage = (event) => {
+      const data = event?.data;
+      if (!data || typeof data !== 'object') {
+        return;
+      }
+      const { key } = data;
+      if (!key) {
+        return;
+      }
+      const entry = pendingPreloadEntries.get(key);
+      if (!entry || entry.finalized || entry.cancelled) {
+        return;
+      }
+      const metadata = entry.metadata;
+      if (!metadata || metadata.mode !== 'worker') {
+        return;
+      }
+      metadata.inflight = false;
+      const processed = Math.max(0, Number(data.processed) || 0);
+      const done = data.done === true;
+
+      if (!entry.unlimited && Number.isFinite(entry.pendingBudget)) {
+        entry.pendingBudget = Math.max(0, entry.pendingBudget - processed);
+        if (processed === 0 && entry.pendingBudget > 0 && done) {
+          entry.pendingBudget = 0;
+        }
+      }
+
+      if (data.error) {
+        console.warn(
+          `[chunk-manager] chunk worker reported error for job ${entry.key}`,
+          data.error,
+        );
+        metadata.controller?.cancel?.();
+        fallbackChunkJobToLocal(entry);
+        if (!entry.finalized && !entry.cancelled) {
+          entry.active = true;
+          chunkJobQueue.push(entry);
+          ensureChunkJobPump();
+        }
+        return;
+      }
+
+      if (done && (data.payload === undefined || data.payload === null)) {
+        fallbackChunkJobToLocal(entry);
+        if (!entry.finalized && !entry.cancelled) {
+          entry.active = true;
+          chunkJobQueue.push(entry);
+          ensureChunkJobPump();
+        }
+        return;
+      }
+
+      if (done) {
+        metadata.payload = data.payload ?? null;
+        finalizePendingEntry(entry);
+        return;
+      }
+
+      if (entry.unlimited || entry.pendingBudget > 0) {
+        entry.active = true;
+        chunkJobQueue.push(entry);
+        ensureChunkJobPump();
+      }
+    };
+
+    const handleWorkerError = (event) => {
+      console.error('[chunk-manager] chunk build worker error', event?.error || event);
+    };
+
+    chunkBuildWorker.addEventListener('message', handleWorkerMessage);
+    chunkBuildWorker.addEventListener('error', handleWorkerError);
+    workerDisposables.push(() => {
+      chunkBuildWorker.removeEventListener('message', handleWorkerMessage);
+      chunkBuildWorker.removeEventListener('error', handleWorkerError);
     });
   }
 
@@ -309,11 +651,19 @@ export function createChunkManager({
     }
     pendingPreloadEntries.delete(entry.key);
     try {
-      const chunk = entry.task.finalize();
+      const chunk =
+        entry.metadata?.mode === 'worker'
+          ? finalizeWorkerChunk(entry)
+          : entry.task.finalize();
       registerGeneratedChunk(chunk);
       entry.resolve?.(chunk);
     } catch (error) {
       entry.reject?.(error);
+    }
+    if (entry.metadata) {
+      entry.metadata.inflight = false;
+      entry.metadata.payload = null;
+      entry.metadata = null;
     }
   }
 
@@ -326,6 +676,18 @@ export function createChunkManager({
     entry.pendingBudget = 0;
     entry.unlimited = false;
     entry.active = false;
+    if (entry.metadata?.mode === 'worker') {
+      try {
+        entry.metadata.controller?.cancel?.();
+      } catch (error) {
+        console.debug(
+          `[chunk-manager] Failed to cancel worker job ${entry.key}`,
+          error,
+        );
+      }
+      entry.metadata.inflight = false;
+      entry.metadata.payload = null;
+    }
     const queueIndex = preloadQueue.indexOf(entry);
     if (queueIndex >= 0) {
       preloadQueue.splice(queueIndex, 1);
@@ -385,6 +747,57 @@ export function createChunkManager({
                 stepHint,
               ),
             );
+
+        const metadata = entry.metadata;
+        if (metadata?.mode === 'worker') {
+          if (metadata.inflight) {
+            continue;
+          }
+          const controller = metadata.controller;
+          if (!controller) {
+            fallbackChunkJobToLocal(entry);
+          } else {
+            if (!metadata.started) {
+              if (metadata.startPayload) {
+                try {
+                  controller.start(metadata.startPayload);
+                  metadata.started = true;
+                } catch (error) {
+                  console.warn(
+                    `[chunk-manager] Failed to start worker job ${entry.key}`,
+                    error,
+                  );
+                  fallbackChunkJobToLocal(entry);
+                }
+              } else {
+                metadata.started = true;
+              }
+            }
+            if (metadata.mode === 'worker') {
+              try {
+                metadata.inflight = true;
+                controller.step(stepBudget);
+              } catch (error) {
+                metadata.inflight = false;
+                console.warn(
+                  `[chunk-manager] Failed to step worker job ${entry.key}`,
+                  error,
+                );
+                fallbackChunkJobToLocal(entry);
+              }
+              const wasUnlimited = entry.unlimited === true;
+              if (chunkJobQueue.length > 0) {
+                const hasUnlimitedPending =
+                  wasUnlimited ||
+                  chunkJobQueue.some((queuedEntry) => queuedEntry?.unlimited);
+                if (!hasUnlimitedPending) {
+                  await waitForNextJobSlice();
+                }
+              }
+              continue;
+            }
+          }
+        }
 
         let result;
         try {
@@ -1786,7 +2199,9 @@ export function createChunkManager({
       finalized: false,
       cancelled: false,
       stepHint: defaultPreloadBurst,
+      metadata: null,
     };
+    entry.metadata = createChunkJobMetadata(entry);
     pendingPreloadEntries.set(key, entry);
     preloadQueue.push(entry);
     queueDirty = true;
@@ -2167,6 +2582,14 @@ export function createChunkManager({
     lastCenterKey = null;
     clearTerrainSampleCache();
     raycastTargets.clear();
+    while (workerDisposables.length > 0) {
+      const disposeListener = workerDisposables.pop();
+      try {
+        disposeListener?.();
+      } catch (error) {
+        console.warn('[chunk-manager] Failed to dispose worker listener', error);
+      }
+    }
   }
 
   function setViewDistance(distance) {
