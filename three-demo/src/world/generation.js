@@ -19,6 +19,7 @@ import {
   createDecorationMeshBatches,
 } from './voxel-object-decoration-mesh.js';
 import { serializeInstancedEntry } from './chunk-payload-serializers.js';
+import { buildChunkPayload, chunkWorldBounds } from './chunk-build-core.js';
 import { resolveBiomeTintMultiplier } from './color-utils.js';
 import { worldOptions, applyWorldOptions } from './world-settings.js';
 import { configureSectorObjectPlanner } from './sector-object-planner.js';
@@ -388,15 +389,6 @@ function addCloud(addBlock, x, y, z) {
   blocks.forEach(([dx, dy, dz]) => addBlock('cloud', x + dx, y + dy, z + dz, null));
 }
 
-function chunkWorldBounds(chunkX, chunkZ) {
-  const { chunkSize } = worldOptions;
-  const halfSize = chunkSize / 2;
-  return {
-    minX: chunkX * chunkSize - halfSize,
-    minZ: chunkZ * chunkSize - halfSize,
-  };
-}
-
 export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
   const THREE = ensureThree();
   const engine = ensureTerrainEngine();
@@ -435,7 +427,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
   const prototypeInstances = new Map();
   let prototypeInstanceCounter = 0;
 
-  const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ);
+  const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ, worldOptions);
   const { chunkSize, waterLevel } = worldOptions;
 
   const terrainSampler = (x, z) => engine.sampleColumn(x, z);
