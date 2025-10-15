@@ -113,7 +113,8 @@ function applyFogSettingsToScene(targetScene, fogSettings) {
   targetScene.fog.far = fogFar
 }
 
-applyWorldOptions({ chunkSize: 64 })
+// Rely on the descriptor defaults so the world boots with lighter 48³ chunks.
+applyWorldOptions({})
 initializeWorldGeneration({ THREE })
 initializeFluidRegistry({ THREE })
 
@@ -297,8 +298,8 @@ try {
   chunkManager = createChunkManager({
     scene,
     blockMaterials,
-    viewDistance: 3,
-    retainDistance: 4,
+    viewDistance: 4,
+    retainDistance: 5,
     maxPreloadPerUpdate: 8,
   })
 
