@@ -2065,36 +2065,164 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     return entry;
   };
 
-  const createLeanPlacementRecord = (placement) => {
-    const payload = createSerializedPlacementPayload(placement);
-    if (!payload) {
+  const toPlainNumericArray = (value, length = null) => {
+    if (value == null) {
       return null;
     }
-    const type = payload.type ?? placement.type ?? null;
+    if (Array.isArray(value)) {
+      if (typeof length === 'number' && length > 0) {
+        if (value.length === length) {
+          return value;
+        }
+        const normalized = new Array(length);
+        for (let index = 0; index < length; index += 1) {
+          const entry = value[index];
+          normalized[index] = Number.isFinite(entry) ? entry : 0;
+        }
+        return normalized;
+      }
+      return value;
+    }
+    if (ArrayBuffer.isView(value)) {
+      const normalized = Array.from(value);
+      if (typeof length === 'number' && length > 0) {
+        if (normalized.length > length) {
+          return normalized.slice(0, length);
+        }
+        while (normalized.length < length) {
+          normalized.push(0);
+        }
+      }
+      return normalized;
+    }
+    if (typeof value === 'object') {
+      const vectorKeys = ['x', 'y', 'z'];
+      if (
+        length === 3 &&
+        vectorKeys.every((key) => Number.isFinite(value?.[key]))
+      ) {
+        return vectorKeys.map((key) => value[key]);
+      }
+    }
+    return null;
+  };
+
+  const createLeanPlacementRecord = (placement, index) => {
+    if (!placement || placement.removed) {
+      return null;
+    }
+    const existingPayload =
+      placement.payload && typeof placement.payload === 'object'
+        ? placement.payload
+        : null;
+    const payloadSource =
+      existingPayload ?? createSerializedPlacementPayload(placement);
+    if (!payloadSource) {
+      return null;
+    }
+
+    const type = payloadSource.type ?? placement.type ?? null;
     if (!type) {
       return null;
     }
+
+    const key =
+      payloadSource.key ?? placement.key ?? placement.coordinateKey ?? null;
+    const coordinateKey =
+      payloadSource.coordinateKey ?? placement.coordinateKey ?? key;
+    const biomeId = payloadSource.biomeId ?? placement.biome?.id ?? null;
+    const collisionMode =
+      payloadSource.collisionMode ?? placement.collisionMode ?? null;
+    const isSolid =
+      typeof placement.isSolid === 'boolean'
+        ? placement.isSolid
+        : typeof payloadSource.isSolid === 'boolean'
+        ? payloadSource.isSolid
+        : collisionMode === 'solid';
+    const isSoft =
+      typeof placement.isSoft === 'boolean'
+        ? placement.isSoft
+        : typeof payloadSource.isSoft === 'boolean'
+        ? payloadSource.isSoft
+        : collisionMode === 'soft';
+    const destructible =
+      typeof placement.destructible === 'boolean'
+        ? placement.destructible
+        : typeof payloadSource.destructible === 'boolean'
+        ? payloadSource.destructible
+        : null;
+
+    const isAlreadyPlain =
+      existingPayload &&
+      Array.isArray(existingPayload.matrix) &&
+      Array.isArray(existingPayload.position) &&
+      Array.isArray(existingPayload.scale);
+
+    const leanPayload = isAlreadyPlain
+      ? existingPayload
+      : {
+          key,
+          coordinateKey,
+          type,
+          biomeId,
+          matrix: toPlainNumericArray(payloadSource.matrix, 16),
+          position: toPlainNumericArray(payloadSource.position, 3),
+          scale: toPlainNumericArray(payloadSource.scale, 3),
+          visualScale: toPlainNumericArray(payloadSource.visualScale, 3),
+          visualOffset: toPlainNumericArray(payloadSource.visualOffset, 3),
+          paletteColor: toPlainNumericArray(payloadSource.paletteColor, 3),
+          tintColor: toPlainNumericArray(payloadSource.tintColor, 3),
+          tintOverride: toPlainNumericArray(payloadSource.tintOverride, 3),
+          destructible,
+          collisionMode,
+          isSolid,
+          isSoft,
+          isDecoration: payloadSource.isDecoration === true,
+          sourceObjectId: payloadSource.sourceObjectId ?? null,
+          voxelIndex: payloadSource.voxelIndex ?? null,
+          prototypeKey: payloadSource.prototypeKey ?? null,
+          prototypeLocalKey: payloadSource.prototypeLocalKey ?? null,
+          metadata: payloadSource.metadata ?? null,
+        };
+
+    placement.payload = leanPayload;
+    placement.materialized = false;
+    placement.mesh = null;
+    placement.tintAttribute = null;
+    placement.index = index ?? -1;
+    placement.isVisible = false;
+
     return {
-      key: payload.key ?? placement.key ?? placement.coordinateKey ?? null,
-      coordinateKey: payload.coordinateKey ?? placement.coordinateKey ?? null,
+      key,
+      coordinateKey,
       type,
-      biomeId: payload.biomeId ?? placement.biome?.id ?? null,
-      collisionMode: payload.collisionMode ?? placement.collisionMode ?? null,
-      isSolid:
-        typeof payload.isSolid === 'boolean'
-          ? payload.isSolid
-          : placement.isSolid ?? false,
-      isSoft:
-        typeof payload.isSoft === 'boolean'
-          ? payload.isSoft
-          : placement.isSoft ?? false,
-      destructible:
-        typeof payload.destructible === 'boolean'
-          ? payload.destructible
-          : typeof placement.destructible === 'boolean'
-          ? placement.destructible
-          : null,
-      payload,
+      biomeId,
+      collisionMode,
+      isSolid,
+      isSoft,
+      destructible,
+      payload: leanPayload,
+      matrix: leanPayload.matrix,
+      position: leanPayload.position,
+      scale: leanPayload.scale,
+      visualScale: leanPayload.visualScale,
+      visualOffset: leanPayload.visualOffset,
+      paletteColor: leanPayload.paletteColor,
+      tintColor: leanPayload.tintColor,
+      tintOverride: leanPayload.tintOverride,
+      metadata: leanPayload.metadata,
+      sourceObjectId: leanPayload.sourceObjectId,
+      voxelIndex: leanPayload.voxelIndex,
+      prototypeKey: leanPayload.prototypeKey,
+      prototypeLocalKey: leanPayload.prototypeLocalKey,
+      index: -1,
+      mesh: null,
+      tintAttribute: null,
+      gridIndex: -1,
+      gridPosition: null,
+      isDecoration: leanPayload.isDecoration,
+      materialized: false,
+      placementIndex: index ?? -1,
     };
   };
 
@@ -2107,7 +2235,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
         return;
       }
 
-      const record = createLeanPlacementRecord(placement);
+      const record = createLeanPlacementRecord(placement, placementIndex);
       if (!record) {
         return;
       }
@@ -2120,7 +2248,13 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
         occupancyPlacements[occupancyIndex] = placementIndex;
         occupancyTypes[occupancyIndex] = getTypeId(record.type);
         placement.gridIndex = occupancyIndex;
+        record.gridIndex = occupancyIndex;
+        record.gridPosition = { x: local.x, y: local.y, z: local.z };
       }
+      record.index = -1;
+      record.mesh = null;
+      record.tintAttribute = null;
+      record.isVisible = false;
 
       let entries = entriesByType.get(record.type);
       if (!entries) {
@@ -2128,7 +2262,15 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
         entriesByType.set(record.type, entries);
       }
       placement.index = entries.length;
+      record.index = entries.length;
       entries.push(record);
+
+      if (record.key) {
+        blockLookup.set(record.key, record);
+      }
+      if (record.coordinateKey && record.coordinateKey !== record.key) {
+        blockLookup.set(record.coordinateKey, record);
+      }
     });
 
     typeCounts.forEach((count, type) => {
