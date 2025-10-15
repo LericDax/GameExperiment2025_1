@@ -362,12 +362,13 @@ export function createPlayerControls({
     }
   }
 
-  function refreshChunksAtControlPosition() {
+  async function refreshChunksAtControlPosition() {
     if (!chunkManager || typeof chunkManager.update !== 'function') {
       return;
     }
     try {
       chunkManager.update(controlObject.position, { camera, force: true });
+      await chunkManager.flush();
     } catch (error) {
       console.error('Failed to refresh chunks after teleport:', error);
     }
@@ -842,7 +843,7 @@ export function createPlayerControls({
     throw new Error('Position must provide numeric x, y, z properties.');
   }
 
-  function setPosition(nextPosition) {
+  async function setPosition(nextPosition) {
     copyVectorLike(nextPosition, manualPosition);
     if (
       !Number.isFinite(manualPosition.x) ||
@@ -856,7 +857,7 @@ export function createPlayerControls({
     controlObject.position.copy(manualPosition);
 
     if (!collidesAt(controlObject.position)) {
-      refreshChunksAtControlPosition();
+      await refreshChunksAtControlPosition();
       return true;
     }
 
@@ -865,7 +866,7 @@ export function createPlayerControls({
       controlObject.position.copy(previousPosition);
     }
     if (resolved) {
-      refreshChunksAtControlPosition();
+      await refreshChunksAtControlPosition();
     }
     return resolved;
   }

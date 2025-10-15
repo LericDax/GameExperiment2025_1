@@ -149,7 +149,7 @@ function buildSummary(samples, metadata) {
   }
 }
 
-export function runPerfFlight({
+export async function runPerfFlight({
   playerControls,
   registerDiagnosticOverlay,
   renderer,
@@ -202,7 +202,7 @@ export function runPerfFlight({
   }
   if (typeof playerControls.setPosition === 'function' && originalPosition) {
     try {
-      playerControls.setPosition({
+      await playerControls.setPosition({
         x: originalPosition.x,
         y: originalPosition.y + 10,
         z: originalPosition.z,
@@ -240,7 +240,12 @@ export function runPerfFlight({
 
     if (originalPosition && typeof playerControls.setPosition === 'function') {
       try {
-        playerControls.setPosition(originalPosition)
+        const result = playerControls.setPosition(originalPosition)
+        if (result && typeof result.then === 'function') {
+          result.catch((error) => {
+            console.warn('perf flight: unable to restore original position.', error)
+          })
+        }
       } catch (error) {
         console.warn('perf flight: unable to restore original position.', error)
       }
