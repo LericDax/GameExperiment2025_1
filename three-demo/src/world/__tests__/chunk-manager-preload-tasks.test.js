@@ -193,3 +193,46 @@ test('preload queue preserves partial tasks until forced to drain', () => {
     }
   }
 });
+
+test('infinite view distance reuses the last finite scheduling radius', () => {
+  const origin = new THREE.Vector3(0, 0, 0);
+  const scene = new THREE.Scene();
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const manager = createChunkManager({
+    scene,
+    blockMaterials,
+    viewDistance: 2,
+    retainDistance: 3,
+    maxPreloadPerUpdate: 8,
+    maxDisposalsPerUpdate: 0,
+  });
+
+  try {
+    manager.update(origin, {
+      viewDistance: 2,
+      retainDistance: 3,
+      maxPreload: Number.POSITIVE_INFINITY,
+      force: true,
+    });
+
+    manager.update(origin, {
+      viewDistance: Number.POSITIVE_INFINITY,
+      retainDistance: Number.POSITIVE_INFINITY,
+      maxPreload: Number.POSITIVE_INFINITY,
+      force: true,
+    });
+
+    assert.ok(
+      scene.getObjectByName('chunk_2_0'),
+      'fallback view distance should continue scheduling adjacent chunks when infinite',
+    );
+
+    assert.ok(
+      scene.getObjectByName('chunk_3_0'),
+      'fallback retention distance should schedule outer chunks when infinite',
+    );
+  } finally {
+    manager.dispose();
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
