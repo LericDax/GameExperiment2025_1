@@ -1702,6 +1702,7 @@ export function createChunkManager({
 
     let processedChunks = 0;
     let index = 0;
+    let activeUrgentKey = null;
     while (index < preloadQueue.length) {
       const entry = preloadQueue[index];
       if (!entry) {
@@ -1709,6 +1710,9 @@ export function createChunkManager({
         continue;
       }
       if (loadedChunks.has(entry.key)) {
+        if (activeUrgentKey === entry.key) {
+          activeUrgentKey = null;
+        }
         preloadQueue.splice(index, 1);
         pendingPreloadEntries.delete(entry.key);
         continue;
@@ -1716,23 +1720,69 @@ export function createChunkManager({
       const task = entry.task;
       console.assert(task, 'expected preload entry to include a task');
 
-      let stepBudget;
-      if (remainingBudget > 0) {
-        const remainingEntries = preloadQueue.length - index;
-        stepBudget = Math.max(
-          1,
-          Math.floor(remainingBudget / Math.max(1, remainingEntries)) || 1,
-        );
-        stepBudget = Math.min(stepBudget, remainingBudget);
-      } else if (entry.urgent) {
-        stepBudget = 1;
-      } else {
+      if (entry.urgent) {
+        if (activeUrgentKey === null) {
+          if (remainingBudget <= 0) {
+            break;
+          }
+          activeUrgentKey = entry.key;
+        } else if (activeUrgentKey !== entry.key) {
+          if (remainingBudget <= 0) {
+            break;
+          }
+          activeUrgentKey = entry.key;
+        }
+
+        const burst = Math.max(defaultPreloadBurst, remainingBudget);
+        const stepBudget = Math.max(1, burst);
+        const result = task.step(stepBudget);
+        const done = Boolean(result?.done);
+        const processedCount = Math.max(0, Number(result?.processed) || 0);
+
+        if (processedCount > 0) {
+          remainingBudget = Math.max(0, remainingBudget - processedCount);
+        } else {
+          break;
+        }
+
+        if (done) {
+          preloadQueue.splice(index, 1);
+          pendingPreloadEntries.delete(entry.key);
+          const chunk = task.finalize();
+          registerGeneratedChunk(chunk);
+          processedChunks += 1;
+          activeUrgentKey = null;
+          if (remainingBudget <= 0) {
+            break;
+          }
+          continue;
+        }
+
+        if (remainingBudget <= 0) {
+          continue;
+        }
+
+        continue;
+      }
+
+      if (remainingBudget <= 0) {
         break;
       }
 
-      const { done, processed } = task.step(stepBudget);
-      if (processed > 0) {
-        remainingBudget = Math.max(0, remainingBudget - processed);
+      const remainingEntries = preloadQueue.length - index;
+      let stepBudget = Math.max(
+        1,
+        Math.floor(remainingBudget / Math.max(1, remainingEntries)) || 1,
+      );
+      stepBudget = Math.min(stepBudget, remainingBudget);
+
+      const result = task.step(stepBudget);
+      const done = Boolean(result?.done);
+      const processedCount = Math.max(0, Number(result?.processed) || 0);
+      if (processedCount > 0) {
+        remainingBudget = Math.max(0, remainingBudget - processedCount);
+      } else {
+        break;
       }
 
       if (done) {
@@ -1744,11 +1794,7 @@ export function createChunkManager({
         continue;
       }
 
-      if (processed === 0 && remainingBudget === 0) {
-        break;
-      }
-
-      if (remainingBudget === 0 && !entry.urgent) {
+      if (remainingBudget === 0) {
         break;
       }
 

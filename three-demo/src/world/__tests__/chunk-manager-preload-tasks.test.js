@@ -205,6 +205,84 @@ test('preload queue preserves partial tasks until forced to drain', () => {
   }
 });
 
+test('urgent preload entries finish within a few scheduler ticks', () => {
+  const origin = new THREE.Vector3(0, 0, 0);
+  const scene = new THREE.Scene();
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const manager = createChunkManager({
+    scene,
+    blockMaterials,
+    viewDistance: 0,
+    retainDistance: 0,
+    maxPreloadPerUpdate: 8,
+    maxDisposalsPerUpdate: 0,
+  });
+
+  try {
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreload: 0,
+      force: true,
+    });
+
+    const backlogRadius = 3;
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: backlogRadius,
+      maxPreload: 0,
+    });
+
+    const targetChunkName = 'chunk_2_0';
+    assert.ok(
+      !scene.getObjectByName(targetChunkName),
+      'target chunk should remain pending before it becomes urgent',
+    );
+
+    const { chunkSize } = generationModule.getWorldOptions();
+    const urgentPosition = new THREE.Vector3(chunkSize * 2, 0, 0);
+
+    manager.update(urgentPosition, {
+      viewDistance: 0,
+      retainDistance: backlogRadius,
+      maxPreload: 0,
+    });
+
+    assert.ok(
+      !scene.getObjectByName(targetChunkName),
+      'marking the chunk urgent should not immediately finalize it without budget',
+    );
+
+    let ticks = 0;
+    const maxTicks = 12;
+    while (!scene.getObjectByName(targetChunkName) && ticks < maxTicks) {
+      ticks += 1;
+      manager.update(urgentPosition, {
+        viewDistance: 0,
+        retainDistance: backlogRadius,
+        maxPreload: 8,
+      });
+    }
+
+    assert.ok(
+      scene.getObjectByName(targetChunkName),
+      'expected urgent chunk to finish after a short burst of scheduler updates',
+    );
+    assert.ok(
+      ticks <= maxTicks,
+      `expected urgent chunk to complete within ${maxTicks} ticks, processed in ${ticks}`,
+    );
+
+    assert.ok(
+      !scene.getObjectByName('chunk_3_0'),
+      'non-urgent backlog entries should remain pending while the urgent chunk finishes',
+    );
+  } finally {
+    manager.dispose();
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
 test('infinite view distance reuses the last finite scheduling radius', () => {
   const origin = new THREE.Vector3(0, 0, 0);
   const scene = new THREE.Scene();
