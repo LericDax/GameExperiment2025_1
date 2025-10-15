@@ -43,7 +43,14 @@ globalThis.__VOXEL_OBJECT_MODULE_MAP__ = {
 const generationModule = await import('../generation.js');
 generationModule.initializeWorldGeneration({ THREE });
 
-const { createChunkManager } = await import('../chunk-manager.js');
+const fluidRegistryModule = await import('../fluids/fluid-registry.js');
+fluidRegistryModule.initializeFluidRegistry({ THREE });
+
+const {
+  createChunkManager,
+  __setChunkBuildWorkerFactoryForTest,
+  __resetChunkBuildWorkerFactoryForTest,
+} = await import('../chunk-manager.js');
 
 function createBlockMaterials() {
   const createdMaterials = new Set();
@@ -445,6 +452,222 @@ test('urgent preload entries finish within a few scheduler ticks', async () => {
     );
   } finally {
     await manager.dispose();
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
+test('worker payload finalization completes during flush', async () => {
+  const origin = new THREE.Vector3(0, 0, 0);
+  const scene = new THREE.Scene();
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+
+  const identityMatrix = [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  ];
+
+  const createSerializedChunkPayload = (chunkX, chunkZ) => {
+    const coordinateKey = `${chunkX}|${chunkZ}|0`;
+    return {
+      chunkX,
+      chunkZ,
+      typeMetadata: [
+        {
+          type: 'test:block',
+          capacity: 1,
+          entryKeys: [coordinateKey],
+          entryPayloads: [
+            {
+              key: `${coordinateKey}:entry`,
+              coordinateKey,
+              type: 'test:block',
+              matrix: identityMatrix.slice(),
+              position: [chunkX * 16, 0, chunkZ * 16],
+              scale: [1, 1, 1],
+              visualScale: [1, 1, 1],
+              visualOffset: [0, 0, 0],
+              paletteColor: [0.65, 0.85, 1],
+              tintColor: [0.65, 0.85, 1],
+              isSolid: true,
+            },
+          ],
+        },
+      ],
+      occupancy: {
+        solidCoordinates: [coordinateKey],
+      },
+      fluids: {
+        blockKeys: [`water:${coordinateKey}`],
+        waterColumns: {
+          keys: [coordinateKey],
+          bottomY: [0],
+          surfaceY: [1],
+        },
+        columnsByType: [
+          {
+            type: 'water',
+            keys: [coordinateKey],
+            positions: {
+              x: [chunkX * 16 + 0.5],
+              z: [chunkZ * 16 + 0.5],
+            },
+            minY: [0],
+            maxY: [1],
+            depth: [1],
+            colors: [0.2, 0.4, 0.8],
+            flowDirection: [0, 0],
+            flowStrength: [0],
+            foamAmount: [0],
+            shoreline: [0],
+            exposed: [1],
+          },
+        ],
+        surfaces: [
+          {
+            type: 'water',
+            columnKeys: [coordinateKey],
+          },
+        ],
+      },
+    };
+  };
+
+  class MockChunkBuildWorker {
+    constructor() {
+      this.listeners = new Map();
+    }
+
+    addEventListener(type, handler) {
+      if (!this.listeners.has(type)) {
+        this.listeners.set(type, new Set());
+      }
+      this.listeners.get(type).add(handler);
+    }
+
+    removeEventListener(type, handler) {
+      const bucket = this.listeners.get(type);
+      if (!bucket) {
+        return;
+      }
+      bucket.delete(handler);
+      if (bucket.size === 0) {
+        this.listeners.delete(type);
+      }
+    }
+
+    postMessage(message) {
+      const { type, key } = message ?? {};
+      if (!key) {
+        return;
+      }
+      if (type === 'cancel') {
+        return;
+      }
+      if (type === 'step') {
+        const [chunkX = 0, chunkZ = 0] = key
+          .split('|')
+          .map((value) => Number.parseInt(value, 10) || 0);
+        const processedBudget = Number.isFinite(message?.budget)
+          ? Math.max(1, Math.floor(message.budget))
+          : 1;
+        const event = {
+          data: {
+            key,
+            processed: processedBudget,
+            done: true,
+            metadata: { mocked: true },
+            payload: createSerializedChunkPayload(chunkX, chunkZ),
+          },
+        };
+        queueMicrotask(() => this.#dispatch('message', event));
+      }
+    }
+
+    terminate() {
+      this.listeners.clear();
+    }
+
+    #dispatch(type, event) {
+      const bucket = this.listeners.get(type);
+      if (!bucket) {
+        return;
+      }
+      bucket.forEach((handler) => {
+        handler(event);
+      });
+    }
+  }
+
+  __setChunkBuildWorkerFactoryForTest(() => new MockChunkBuildWorker());
+
+  try {
+    const manager = createChunkManager({
+      scene,
+      blockMaterials,
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreloadPerUpdate: 1,
+      maxDisposalsPerUpdate: 0,
+    });
+
+    try {
+      manager.update(origin, {
+        viewDistance: 0,
+        retainDistance: 0,
+        maxPreload: 0,
+        force: true,
+      });
+      await manager.flush();
+
+      manager.update(origin, {
+        viewDistance: 0,
+        retainDistance: 1,
+        maxPreload: 0,
+      });
+
+      const pendingEntry = manager.__getPendingEntryForTest('1|0');
+      assert.ok(pendingEntry, 'expected neighbor chunk preload entry to exist');
+
+      const pendingFlush = manager.flush();
+      assert.ok(
+        pendingFlush && typeof pendingFlush.then === 'function',
+        'flush should return a promise while awaiting worker completion',
+      );
+
+      await pendingFlush;
+
+      const finalizedChunk = manager.__getLoadedChunkForTest('1|0');
+      assert.ok(finalizedChunk?.group?.isGroup, 'finalized chunk should expose a group');
+      assert.equal(finalizedChunk.group.name, 'chunk_1_0');
+
+      assert.ok(
+        finalizedChunk.typeData instanceof Map,
+        'type data should be stored as a Map after finalization',
+      );
+
+      const typeRecord = finalizedChunk.typeData?.get('test:block');
+      assert.ok(typeRecord, 'expected finalizeChunkMeshes to rebuild type data');
+      assert.equal(typeRecord.entries.length, 1, 'type payload should deserialize one entry');
+
+      assert.ok(Array.isArray(finalizedChunk.fluidSurfaces));
+      assert.ok(
+        finalizedChunk.fluidSurfaces.length > 0 &&
+          finalizedChunk.fluidSurfaces.every((surface) => surface?.isMesh),
+        'fluid surfaces should be reconstructed from worker payload',
+      );
+
+      assert.equal(
+        pendingEntry.workerPayload,
+        null,
+        'worker payload reference should be cleared after finalization',
+      );
+    } finally {
+      await manager.dispose();
+    }
+  } finally {
+    __resetChunkBuildWorkerFactoryForTest();
     createdMaterials.forEach((material) => material.dispose?.());
   }
 });

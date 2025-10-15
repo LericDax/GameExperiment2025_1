@@ -1,0 +1,1 @@
+import './src/world/__tests__/chunk-manager-preload-tasks.test.js';
