@@ -641,11 +641,199 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     hasBoundData = true;
   };
 
+  const createSerializedPlacementPayload = (placement) => {
+    if (!placement || placement.removed) {
+      return null;
+    }
+    const position = placement.position;
+    const type = placement.type;
+    if (!position || !type) {
+      return null;
+    }
+    const biome = placement.biome ?? null;
+    const options = placement.instancingOptions ?? {};
+    const x = Number.isFinite(position.x) ? position.x : 0;
+    const y = Number.isFinite(position.y) ? position.y : 0;
+    const z = Number.isFinite(position.z) ? position.z : 0;
+
+    const scaleVector = resolveScaleVector(options.scale);
+    const visualScaleVector = resolveScaleVector(
+      options.visualScale ?? options.scale,
+    );
+    const visualOffsetVector = resolveOffsetVector(options.visualOffset);
+    const visualPosition = reusablePosition
+      .set(x, y, z)
+      .add(visualOffsetVector);
+
+    matrix.compose(visualPosition, defaultQuaternion, visualScaleVector);
+    updateBoundsFromVisual(visualPosition, visualScaleVector);
+
+    const matrixArray = new Float32Array(16);
+    matrix.toArray(matrixArray, 0);
+    const scaleArray = new Float32Array([
+      scaleVector.x,
+      scaleVector.y,
+      scaleVector.z,
+    ]);
+    const visualScaleArray = new Float32Array([
+      visualScaleVector.x,
+      visualScaleVector.y,
+      visualScaleVector.z,
+    ]);
+    const visualOffsetArray = new Float32Array([
+      visualOffsetVector.x,
+      visualOffsetVector.y,
+      visualOffsetVector.z,
+    ]);
+
+    const paletteColor = engine.getBlockColor(biome, type);
+    const paletteColorArray =
+      paletteColor && typeof paletteColor.r === 'number'
+        ? new Float32Array([paletteColor.r, paletteColor.g, paletteColor.b])
+        : null;
+    const tintStrength = clamp(biome?.shader?.tintStrength ?? 1, 0, 1);
+    const tintHexOverride =
+      typeof options.tint === 'string' ? options.tint : null;
+    const tintOverride = parseTintOverride(options.tint);
+    const ignoreBiomeTint = options.ignoreBiomeTint === true;
+    const blockMaterial = blockMaterials?.[type];
+    const paletteBlend = new THREE.Color(1, 1, 1);
+    if (!ignoreBiomeTint) {
+      if (paletteColor) {
+        paletteBlend.lerp(paletteColor, tintStrength);
+      }
+
+      if (biome?.shader?.tintColor) {
+        const biomeTintBlend = new THREE.Color(1, 1, 1);
+        biomeTintBlend.lerp(biome.shader.tintColor, tintStrength * 0.65);
+        paletteBlend.multiply(biomeTintBlend);
+      }
+
+      if (biome?.climate) {
+        const dryness = clamp(1 - biome.climate.moisture, 0, 1);
+        const climateBlend = new THREE.Color(1, 1, 1);
+        climateBlend.lerp(
+          new THREE.Color(1.02, 0.98, 0.92),
+          dryness * 0.35,
+        );
+        paletteBlend.multiply(climateBlend);
+      }
+
+      const altitudeRange = Math.max(
+        1,
+        worldOptions.maxHeight - waterLevel + 6,
+      );
+      const altitude = clamp((y - waterLevel + 2) / altitudeRange, -0.25, 1);
+      const altitudeBlend = new THREE.Color(1, 1, 1);
+      if (altitude > 0) {
+        altitudeBlend.lerp(
+          new THREE.Color(0.95, 0.98, 1.04),
+          altitude * 0.3,
+        );
+      } else if (altitude < 0) {
+        altitudeBlend.lerp(
+          new THREE.Color(1.04, 1.01, 0.94),
+          Math.abs(altitude) * 0.25,
+        );
+      }
+      paletteBlend.multiply(altitudeBlend);
+
+      if (tintOverride) {
+        paletteBlend.multiply(tintOverride);
+      }
+    } else if (tintHexOverride) {
+      const multiplier = resolveBiomeTintMultiplier({
+        desiredHex: tintHexOverride,
+        type,
+        palette: biome?.palette,
+        paletteColors: biome?.paletteColors,
+        blockMaterial,
+      });
+      if (multiplier) {
+        paletteBlend.copy(multiplier);
+      } else if (tintOverride) {
+        paletteBlend.copy(tintOverride);
+      } else {
+        paletteBlend.setRGB(1, 1, 1);
+      }
+    } else {
+      paletteBlend.setRGB(1, 1, 1);
+    }
+
+    const tintColorArray = new Float32Array([
+      paletteBlend.r,
+      paletteBlend.g,
+      paletteBlend.b,
+    ]);
+    const tintOverrideArray = tintOverride
+      ? new Float32Array([tintOverride.r, tintOverride.g, tintOverride.b])
+      : null;
+
+    const collisionMode =
+      placement.collisionMode ?? options.collisionMode ?? null;
+    const isSolid =
+      typeof placement.isSolid === 'boolean'
+        ? placement.isSolid
+        : collisionMode === 'solid';
+    const isSoft =
+      typeof placement.isSoft === 'boolean'
+        ? placement.isSoft
+        : collisionMode === 'soft';
+    const destructible =
+      typeof placement.destructible === 'boolean'
+        ? placement.destructible
+        : typeof options.destructible === 'boolean'
+        ? options.destructible
+        : null;
+
+    const payloadSource = {
+      key: placement.key ?? placement.coordinateKey ?? null,
+      coordinateKey: placement.coordinateKey ?? null,
+      type,
+      biomeId: biome?.id ?? null,
+      matrix: matrixArray,
+      position: new Float32Array([x, y, z]),
+      scale: scaleArray,
+      visualScale: visualScaleArray,
+      visualOffset: visualOffsetArray,
+      paletteColor: paletteColorArray,
+      tintColor: tintColorArray,
+      tintOverride: tintOverrideArray,
+      destructible,
+      collisionMode,
+      isSolid,
+      isSoft,
+      isDecoration: placement.isDecoration === true,
+      sourceObjectId: placement.sourceObjectId ?? options.sourceObjectId ?? null,
+      voxelIndex: placement.voxelIndex ?? options.voxelIndex ?? null,
+      prototypeKey: placement.prototypeKey ?? null,
+      prototypeLocalKey: placement.prototypeLocalKey ?? null,
+      metadata: placement.metadata ?? options.metadata ?? null,
+    };
+
+    const payload = serializeInstancedEntry(payloadSource);
+    if (typeof destructible === 'boolean') {
+      placement.destructible = destructible;
+    }
+    placement.payload = payload;
+    return payload;
+  };
+
   const refreshInstancedEntryPayload = (entry) => {
     if (!entry) {
       return null;
     }
-    entry.payload = serializeInstancedEntry(entry);
+    if (
+      entry.matrix &&
+      entry.position &&
+      entry.scale &&
+      entry.visualScale &&
+      entry.visualOffset
+    ) {
+      entry.payload = serializeInstancedEntry(entry);
+      return entry;
+    }
+    entry.payload = createSerializedPlacementPayload(entry);
     return entry;
   };
 
@@ -1877,29 +2065,70 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     return entry;
   };
 
+  const createLeanPlacementRecord = (placement) => {
+    const payload = createSerializedPlacementPayload(placement);
+    if (!payload) {
+      return null;
+    }
+    const type = payload.type ?? placement.type ?? null;
+    if (!type) {
+      return null;
+    }
+    return {
+      key: payload.key ?? placement.key ?? placement.coordinateKey ?? null,
+      coordinateKey: payload.coordinateKey ?? placement.coordinateKey ?? null,
+      type,
+      biomeId: payload.biomeId ?? placement.biome?.id ?? null,
+      collisionMode: payload.collisionMode ?? placement.collisionMode ?? null,
+      isSolid:
+        typeof payload.isSolid === 'boolean'
+          ? payload.isSolid
+          : placement.isSolid ?? false,
+      isSoft:
+        typeof payload.isSoft === 'boolean'
+          ? payload.isSoft
+          : placement.isSoft ?? false,
+      destructible:
+        typeof payload.destructible === 'boolean'
+          ? payload.destructible
+          : typeof placement.destructible === 'boolean'
+          ? placement.destructible
+          : null,
+      payload,
+    };
+  };
+
   const populateOccupancyFromPlacements = () => {
     const typeCounts = new Map();
+    const entriesByType = new Map();
 
     blockPlacements.forEach((placement, placementIndex) => {
       if (!placement || placement.removed) {
         return;
       }
 
-      const entry = registerInstancedPlacement(placement);
-      if (!entry) {
+      const record = createLeanPlacementRecord(placement);
+      if (!record) {
         return;
       }
 
-      typeCounts.set(entry.type, (typeCounts.get(entry.type) ?? 0) + 1);
+      typeCounts.set(record.type, (typeCounts.get(record.type) ?? 0) + 1);
 
       const local = assignLocalGridPosition(placement);
-      if (!local) {
-        return;
+      if (local) {
+        const occupancyIndex = toIndex(local.x, local.y, local.z);
+        occupancyPlacements[occupancyIndex] = placementIndex;
+        occupancyTypes[occupancyIndex] = getTypeId(record.type);
+        placement.gridIndex = occupancyIndex;
       }
 
-      const occupancyIndex = toIndex(local.x, local.y, local.z);
-      occupancyPlacements[occupancyIndex] = placementIndex;
-      occupancyTypes[occupancyIndex] = getTypeId(entry.type);
+      let entries = entriesByType.get(record.type);
+      if (!entries) {
+        entries = [];
+        entriesByType.set(record.type, entries);
+      }
+      placement.index = entries.length;
+      entries.push(record);
     });
 
     typeCounts.forEach((count, type) => {
@@ -1908,7 +2137,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     });
 
     typeData.clear();
-    instancedData.forEach((entries, type) => {
+    entriesByType.forEach((entries, type) => {
       const capacity = typeCapacities.get(type) ?? entries.length;
       typeData.set(type, {
         entries,
