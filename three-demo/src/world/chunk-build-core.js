@@ -75,6 +75,366 @@ const toPlainColorArray = (value) => {
   return array.length === 0 ? null : array;
 };
 
+const toMapEntries = (source) => {
+  if (!source) {
+    return [];
+  }
+  if (source instanceof Map) {
+    return Array.from(source.entries());
+  }
+  if (Array.isArray(source)) {
+    return source;
+  }
+  if (typeof source === 'object') {
+    return Object.entries(source);
+  }
+  return [];
+};
+
+const serializeFluidBlockKeys = (source) => {
+  const result = [];
+  normalizeArraySource(source).forEach((entry) => {
+    if (Array.isArray(entry) && entry[0]) {
+      result.push(String(entry[0]));
+    } else if (typeof entry === 'string') {
+      result.push(entry);
+    } else if (entry && typeof entry === 'object') {
+      if (typeof entry.key === 'string') {
+        result.push(entry.key);
+      } else if (typeof entry.coordinateKey === 'string') {
+        result.push(entry.coordinateKey);
+      }
+    }
+  });
+  return result;
+};
+
+const serializeWaterColumns = (source) => {
+  const entries = toMapEntries(source);
+  if (entries.length === 0) {
+    return {
+      keys: [],
+      bottomY: new Float32Array(0),
+      surfaceY: new Float32Array(0),
+    };
+  }
+  const keys = new Array(entries.length);
+  const bottomY = new Float32Array(entries.length);
+  const surfaceY = new Float32Array(entries.length);
+  entries.forEach(([key, bounds], index) => {
+    keys[index] = key ?? null;
+    const bottomValue = Number.isFinite(bounds?.bottomY) ? bounds.bottomY : 0;
+    const surfaceValue = Number.isFinite(bounds?.surfaceY) ? bounds.surfaceY : 0;
+    bottomY[index] = bottomValue;
+    surfaceY[index] = surfaceValue;
+  });
+  return { keys, bottomY, surfaceY };
+};
+
+const toUint32Array = (values) => {
+  if (!values) {
+    return new Uint32Array(0);
+  }
+  if (ArrayBuffer.isView(values) && !(values instanceof DataView)) {
+    return new Uint32Array(values);
+  }
+  if (Array.isArray(values)) {
+    return new Uint32Array(values.map((value) => (Number.isFinite(value) ? value : 0)));
+  }
+  if (values instanceof Set) {
+    return new Uint32Array(Array.from(values).map((value) => (Number.isFinite(value) ? value : 0)));
+  }
+  return new Uint32Array(0);
+};
+
+const serializeFluidColumnsByType = (source) => {
+  const entries = toMapEntries(source);
+  return entries
+    .map(([type, columnsSource]) => {
+      if (!type) {
+        return null;
+      }
+      const columnEntries =
+        columnsSource instanceof Map
+          ? Array.from(columnsSource.values())
+          : Array.isArray(columnsSource)
+          ? columnsSource
+          : columnsSource && typeof columnsSource === 'object'
+          ? Object.values(columnsSource)
+          : [];
+      const count = columnEntries.length;
+      const keys = new Array(count);
+      const positionsX = new Float32Array(count);
+      const positionsZ = new Float32Array(count);
+      const minY = new Float32Array(count);
+      const maxY = new Float32Array(count);
+      const depth = new Float32Array(count);
+      const colors = new Float32Array(count * 3);
+      const flowDirection = new Float32Array(count * 2);
+      const flowStrength = new Float32Array(count);
+      const foamAmount = new Float32Array(count);
+      const shoreline = new Float32Array(count);
+      const exposed = new Uint8Array(count);
+      const metadata = new Array(count);
+      columnEntries.forEach((column, index) => {
+        if (!column) {
+          keys[index] = null;
+          metadata[index] = null;
+          return;
+        }
+        const key = column.key ?? `${Math.round(column.x ?? 0)}|${Math.round(column.z ?? 0)}`;
+        keys[index] = key;
+        positionsX[index] = Number.isFinite(column.x) ? column.x : 0;
+        positionsZ[index] = Number.isFinite(column.z) ? column.z : 0;
+        const minValue = Number.isFinite(column.minY)
+          ? column.minY
+          : Number.isFinite(column.bottomY)
+          ? column.bottomY
+          : 0;
+        const maxValue = Number.isFinite(column.maxY)
+          ? column.maxY
+          : Number.isFinite(column.surfaceY)
+          ? column.surfaceY
+          : minValue;
+        minY[index] = minValue;
+        maxY[index] = maxValue;
+        depth[index] = Number.isFinite(column.depth)
+          ? column.depth
+          : Math.max(0, maxValue - minValue);
+        const colorArray = toPlainColorArray(column.color) ?? [0, 0, 0];
+        colors[index * 3 + 0] = Number.isFinite(colorArray[0]) ? colorArray[0] : 0;
+        colors[index * 3 + 1] = Number.isFinite(colorArray[1]) ? colorArray[1] : 0;
+        colors[index * 3 + 2] = Number.isFinite(colorArray[2]) ? colorArray[2] : 0;
+        const flowDir = column.flowDirection ?? { x: 0, y: 0 };
+        flowDirection[index * 2 + 0] = Number.isFinite(flowDir.x) ? flowDir.x : 0;
+        flowDirection[index * 2 + 1] = Number.isFinite(flowDir.y) ? flowDir.y : 0;
+        flowStrength[index] = Number.isFinite(column.flowStrength)
+          ? column.flowStrength
+          : 0;
+        foamAmount[index] = Number.isFinite(column.foamAmount)
+          ? column.foamAmount
+          : 0;
+        shoreline[index] = Number.isFinite(column.shoreline)
+          ? column.shoreline
+          : 0;
+        exposed[index] = column.isExposed ? 1 : 0;
+        metadata[index] = normalizeSerializable({
+          biome: column.biome ?? null,
+          lifecycleCues:
+            column.lifecycleCues instanceof Set
+              ? Array.from(column.lifecycleCues)
+              : column.lifecycleCues ?? null,
+          auroraIntensitySum: column.auroraIntensitySum ?? null,
+          auroraIntensitySamples: column.auroraIntensitySamples ?? null,
+          glowBiasSum: column.glowBiasSum ?? null,
+          glowBiasSamples: column.glowBiasSamples ?? null,
+          pulseRateSum: column.pulseRateSum ?? null,
+          pulseRateSamples: column.pulseRateSamples ?? null,
+          ridgeStrengthSum: column.ridgeStrengthSum ?? null,
+          ridgeStrengthSamples: column.ridgeStrengthSamples ?? null,
+          orientationVector: column.orientationVector ?? null,
+          orientationSamples: column.orientationSamples ?? null,
+          flowDirectionHint: column.flowDirectionHint ?? null,
+          flowDirectionHintSamples: column.flowDirectionHintSamples ?? null,
+          flowStrengthHintSum: column.flowStrengthHintSum ?? null,
+          flowStrengthHintSamples: column.flowStrengthHintSamples ?? null,
+          foamHint: column.foamHint ?? null,
+          localAuroraIntensity: column.localAuroraIntensity ?? null,
+          localAuroraGlow: column.localAuroraGlow ?? null,
+          localPulseRate: column.localPulseRate ?? null,
+          ridgeStrength: column.ridgeStrength ?? null,
+          ribbonOrientation: column.ribbonOrientation ?? null,
+          ribbonVector: column.ribbonVector ?? null,
+          ribbonSegments: column.ribbonSegments ?? null,
+          ribbonSpan: column.ribbonSpan ?? null,
+          ribbonHeight: column.ribbonHeight ?? null,
+        });
+      });
+      return {
+        type,
+        keys,
+        positions: {
+          x: positionsX,
+          z: positionsZ,
+        },
+        minY,
+        maxY,
+        depth,
+        colors,
+        flowDirection,
+        flowStrength,
+        foamAmount,
+        shoreline,
+        exposed,
+        metadata,
+      };
+    })
+    .filter(Boolean);
+};
+
+const serializeFluidSurfaces = (surfaces, columnRecords) => {
+  const exposedColumnsByType = new Map();
+  columnRecords.forEach((record) => {
+    if (!record || !record.type) {
+      return;
+    }
+    const columnKeys = [];
+    const exposed = record.exposed ?? [];
+    const { keys } = record;
+    for (let i = 0; i < keys.length; i += 1) {
+      if (exposed[i] === 1) {
+        columnKeys.push(keys[i]);
+      }
+    }
+    exposedColumnsByType.set(record.type, columnKeys);
+  });
+  const iterate = Array.isArray(surfaces) ? surfaces : [];
+  return iterate
+    .map((surface) => {
+      if (!surface) {
+        return null;
+      }
+      const surfaceType = surface.userData?.type ?? surface.type ?? null;
+      if (typeof surfaceType !== 'string') {
+        return null;
+      }
+      const normalizedType = surfaceType.startsWith('fluid:')
+        ? surfaceType.slice('fluid:'.length)
+        : surfaceType;
+      const cues = surface.userData?.lifecycleCues;
+      return {
+        type: normalizedType,
+        columnKeys: (exposedColumnsByType.get(normalizedType) ?? []).slice(),
+        lifecycleCues: Array.isArray(cues)
+          ? cues.map((cue) => String(cue))
+          : [],
+        auroraIntensity: Number.isFinite(surface.userData?.auroraIntensity)
+          ? surface.userData.auroraIntensity
+          : null,
+        ribbonOrientation: Number.isFinite(surface.userData?.ribbonOrientation)
+          ? surface.userData.ribbonOrientation
+          : null,
+      };
+    })
+    .filter(Boolean);
+};
+
+const serializeDecorationBatches = (instancedSource, decorationData) => {
+  const entries = toMapEntries(instancedSource);
+  const dataMap = decorationData instanceof Map ? decorationData : null;
+  return entries.map(([type, value]) => {
+    const entryArray = Array.isArray(value)
+      ? value
+      : value instanceof Map
+      ? Array.from(value.values())
+      : [];
+    const serializedEntries = entryArray.map((entry) =>
+      normalizeSerializable(entry?.payload ?? serializeInstancedEntry(entry)),
+    );
+    const capacityCandidate = dataMap?.get(type)?.capacity ?? entryArray.length;
+    const entryKeys = entryArray
+      .map((entry) => (entry?.key ? String(entry.key) : null))
+      .filter(Boolean);
+    return {
+      type,
+      capacity: Number.isFinite(capacityCandidate) ? capacityCandidate : entryArray.length,
+      entryKeys,
+      entries: serializedEntries,
+    };
+  });
+};
+
+const serializeDecorationGroups = (source) =>
+  toMapEntries(source)
+    .map(([key, metadata]) => {
+      if (!metadata) {
+        return null;
+      }
+      const groupKey = metadata.key ?? key ?? null;
+      if (!groupKey) {
+        return null;
+      }
+      return {
+        key: groupKey,
+        type: metadata.type ?? null,
+        owner: metadata.owner ?? null,
+        destructible:
+          typeof metadata.destructible === 'boolean'
+            ? metadata.destructible
+            : metadata.destructible ?? true,
+        entryIndices: toUint32Array(metadata.instanceIndices),
+      };
+    })
+    .filter((record) => record && record.key && record.type);
+
+const serializeDecorationOwnerIndex = (source) => {
+  const result = {};
+  if (!source) {
+    return result;
+  }
+  if (source instanceof Map) {
+    source.forEach((groups, owner) => {
+      if (groups instanceof Map) {
+        result[owner] = Array.from(groups.keys()).map((key) => String(key));
+      } else if (groups instanceof Set) {
+        result[owner] = Array.from(groups).map((key) => String(key));
+      } else if (Array.isArray(groups)) {
+        result[owner] = groups.map((key) => String(key));
+      }
+    });
+    return result;
+  }
+  if (typeof source === 'object') {
+    Object.entries(source).forEach(([owner, groups]) => {
+      if (groups instanceof Map) {
+        result[owner] = Array.from(groups.keys()).map((key) => String(key));
+      } else if (groups instanceof Set) {
+        result[owner] = Array.from(groups).map((key) => String(key));
+      } else if (Array.isArray(groups)) {
+        result[owner] = groups.map((key) => String(key));
+      }
+    });
+  }
+  return result;
+};
+
+const serializeDecorationTypeIndex = (source) => {
+  const result = {};
+  if (!source) {
+    return result;
+  }
+  if (source instanceof Map) {
+    source.forEach((groups, type) => {
+      if (groups instanceof Set) {
+        result[type] = Array.from(groups)
+          .map((metadata) => metadata?.key ?? null)
+          .filter(Boolean)
+          .map((key) => String(key));
+      } else if (groups instanceof Map) {
+        result[type] = Array.from(groups.keys()).map((key) => String(key));
+      } else if (Array.isArray(groups)) {
+        result[type] = groups.map((key) => String(key));
+      }
+    });
+    return result;
+  }
+  if (typeof source === 'object') {
+    Object.entries(source).forEach(([type, groups]) => {
+      if (groups instanceof Set) {
+        result[type] = Array.from(groups)
+          .map((metadata) => metadata?.key ?? null)
+          .filter(Boolean)
+          .map((key) => String(key));
+      } else if (groups instanceof Map) {
+        result[type] = Array.from(groups.keys()).map((key) => String(key));
+      } else if (Array.isArray(groups)) {
+        result[type] = groups.map((key) => String(key));
+      }
+    });
+  }
+  return result;
+};
+
 const normalizeSerializable = (value) => {
   if (value === null || value === undefined) {
     return null;
@@ -584,6 +944,26 @@ export const buildChunkPayload = ({
     byType: Object.fromEntries(typeEntries),
   };
 
+  const fluidColumnRecords = serializeFluidColumnsByType(
+    engine.fluidColumnsByType,
+  );
+  const fluids = {
+    blockKeys: serializeFluidBlockKeys(engine.fluidBlockKeys),
+    waterColumns: serializeWaterColumns(engine.waterColumnMetadata),
+    columnsByType: fluidColumnRecords,
+    surfaces: serializeFluidSurfaces(engine.fluidSurfaces, fluidColumnRecords),
+  };
+
+  const decorations = {
+    batches: serializeDecorationBatches(
+      engine.decorationInstancedData,
+      engine.decorationData,
+    ),
+    groups: serializeDecorationGroups(engine.decorationGroups),
+    ownerIndex: serializeDecorationOwnerIndex(engine.decorationOwnerIndex),
+    typeIndex: serializeDecorationTypeIndex(engine.decorationTypeIndex),
+  };
+
   return {
     chunkX,
     chunkZ,
@@ -605,6 +985,8 @@ export const buildChunkPayload = ({
     biomes: extractBiomePayload(engine),
     typeMetadata: extractTypeMetadata(engine),
     prototypeInstances: extractPrototypeInstances(engine),
+    fluids,
+    decorations,
   };
 };
 
