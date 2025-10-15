@@ -60,8 +60,8 @@ test('solid interior voxels do not materialize instanced entries', () => {
     assert.equal(surfaceEntry.isVisible, true, 'surface entry should be marked visible');
 
     assert.ok(
-      chunk.solidBlockKeys.has(interiorKey),
-      'interior coordinate should still be tracked as a solid block',
+      !chunk.solidBlockKeys.has(interiorKey),
+      'occluded interior coordinates should not remain in solidBlockKeys',
     );
     assert.ok(
       !chunk.blockLookup.has(interiorKey),
