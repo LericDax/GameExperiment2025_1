@@ -1832,6 +1832,135 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
 
   let cachedChunkPayload = null;
   let busy = false;
+  let payloadPrepared = false;
+
+  const ensureOccupancyArrays = () => {
+    if (!Number.isFinite(occupancyMinY)) {
+      const fallback = Math.floor(worldOptions.waterLevel ?? 0);
+      occupancyMinY = Number.isFinite(occupancyMinY) ? occupancyMinY : fallback;
+    }
+    if (!Number.isFinite(occupancyMaxY)) {
+      occupancyMaxY = Number.isFinite(occupancyMinY) ? occupancyMinY : 0;
+    }
+
+    occupancyWidth = chunkSize;
+    occupancyDepth = chunkSize;
+    occupancyHeight = Math.max(1, occupancyMaxY - occupancyMinY + 1);
+    occupancyArea = occupancyWidth * occupancyDepth;
+
+    occupancyTypes = new Uint16Array(occupancyArea * occupancyHeight);
+    occupancyPlacements = new Int32Array(occupancyArea * occupancyHeight);
+    occupancyPlacements.fill(-1);
+    fluidOccupancy = new Uint8Array(occupancyArea * occupancyHeight);
+  };
+
+  const registerInstancedPlacement = (placement) => {
+    const entry = materializePlacement(placement);
+    if (!entry) {
+      return null;
+    }
+
+    let entries = instancedData.get(entry.type);
+    if (!entries) {
+      entries = [];
+      instancedData.set(entry.type, entries);
+    }
+
+    placement.index = entries.length;
+    entries.push(entry);
+
+    blockLookup.set(entry.key, entry);
+    if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+      blockLookup.set(entry.coordinateKey, entry);
+    }
+
+    return entry;
+  };
+
+  const populateOccupancyFromPlacements = () => {
+    const typeCounts = new Map();
+
+    blockPlacements.forEach((placement, placementIndex) => {
+      if (!placement || placement.removed) {
+        return;
+      }
+
+      const entry = registerInstancedPlacement(placement);
+      if (!entry) {
+        return;
+      }
+
+      typeCounts.set(entry.type, (typeCounts.get(entry.type) ?? 0) + 1);
+
+      const local = assignLocalGridPosition(placement);
+      if (!local) {
+        return;
+      }
+
+      const occupancyIndex = toIndex(local.x, local.y, local.z);
+      occupancyPlacements[occupancyIndex] = placementIndex;
+      occupancyTypes[occupancyIndex] = getTypeId(entry.type);
+    });
+
+    typeCounts.forEach((count, type) => {
+      const previous = typeCapacities.get(type) ?? 0;
+      typeCapacities.set(type, Math.max(previous, count));
+    });
+
+    typeData.clear();
+    instancedData.forEach((entries, type) => {
+      const capacity = typeCapacities.get(type) ?? entries.length;
+      typeData.set(type, {
+        entries,
+        mesh: null,
+        tintAttribute: null,
+        capacity: Math.max(1, capacity),
+      });
+    });
+  };
+
+  const populateFluidOccupancy = () => {
+    const keys = ensureFluidKeysArray();
+    if (!keys || keys.length === 0) {
+      return;
+    }
+    keys.forEach((key) => {
+      const coords = parseBlockKey(key);
+      if (!coords) {
+        return;
+      }
+      const localX = Math.round(coords.x - minX);
+      const localZ = Math.round(coords.z - minZ);
+      const localY = Math.round(coords.y) - occupancyMinY;
+      if (
+        localX < 0 ||
+        localX >= occupancyWidth ||
+        localZ < 0 ||
+        localZ >= occupancyDepth ||
+        localY < 0 ||
+        localY >= occupancyHeight
+      ) {
+        return;
+      }
+      const index = toIndex(localX, localY, localZ);
+      fluidOccupancy[index] = 1;
+    });
+  };
+
+  const prepareEngineForPayload = () => {
+    if (payloadPrepared) {
+      return;
+    }
+    payloadPrepared = true;
+
+    instancedData.clear();
+    blockLookup.clear();
+
+    ensureOccupancyArrays();
+    populateOccupancyFromPlacements();
+    populateFluidOccupancy();
+    buildFluidSurfaces();
+  };
 
   const step = (maxColumns = Number.POSITIVE_INFINITY) => {
     if (stepState.stage === 'readyForFinalize') {
@@ -1870,6 +1999,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
 
     busy = true;
     try {
+      prepareEngineForPayload();
       cachedChunkPayload = buildChunkPayload({
         chunkX,
         chunkZ,
