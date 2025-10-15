@@ -18,7 +18,10 @@ import {
   cloneDecorationOptions,
   createDecorationMeshBatches,
 } from './voxel-object-decoration-mesh.js';
-import { serializeInstancedEntry } from './chunk-payload-serializers.js';
+import {
+  serializeInstancedEntry,
+  deserializeInstancedEntry,
+} from './chunk-payload-serializers.js';
 import { buildChunkPayload, chunkWorldBounds } from './chunk-build-core.js';
 import { resolveBiomeTintMultiplier } from './color-utils.js';
 import { worldOptions, applyWorldOptions } from './world-settings.js';
@@ -2372,18 +2375,191 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       group.add(surface);
     });
     group.name = `chunk_${chunkX}_${chunkZ}`;
-    const totalSamples = chunkSize * chunkSize;
-    const biomes = Array.from(biomePresence.values()).map(({ biome, samples }) => ({
-      id: biome.id,
-      label: biome.label,
-      weight: samples / totalSamples,
-      shader: {
-        fogColor: `#${biome.shader.fogColor.getHexString()}`,
-        tintColor: `#${biome.shader.tintColor.getHexString()}`,
-        tintStrength: biome.shader.tintStrength,
+
+    const chunkPayload = buildChunkPayload({
+      chunkX,
+      chunkZ,
+      worldOptions,
+      engine: {
+        blockPlacements,
+        fluidBlockKeys,
+        typeCapacities,
+        typeData,
+        biomePresence,
+        prototypeInstances,
       },
-    }));
+    });
+
+    const biomePayload = Array.isArray(chunkPayload.biomes)
+      ? chunkPayload.biomes
+      : [];
+    const totalSamples = biomePayload.reduce((sum, entry) => {
+      const samples = Number.isFinite(entry?.samples) ? entry.samples : 0;
+      return sum + samples;
+    }, 0);
+    const colorScratch = new THREE.Color(0, 0, 0);
+    const colorArrayToHex = (array) => {
+      if (!Array.isArray(array)) {
+        return '#000000';
+      }
+      const [r = 0, g = 0, b = 0] = array;
+      colorScratch.setRGB(
+        Number.isFinite(r) ? r : 0,
+        Number.isFinite(g) ? g : 0,
+        Number.isFinite(b) ? b : 0,
+      );
+      return `#${colorScratch.getHexString()}`;
+    };
+    const biomes = biomePayload.map((entry) => {
+      const samples = Number.isFinite(entry?.samples) ? entry.samples : 0;
+      const shader = entry?.shader ?? {};
+      return {
+        id: entry?.id ?? null,
+        label: entry?.label ?? null,
+        weight:
+          totalSamples > 0
+            ? samples / totalSamples
+            : Number.isFinite(entry?.weight)
+            ? entry.weight
+            : 0,
+        shader: {
+          fogColor: colorArrayToHex(shader.fogColor),
+          tintColor: colorArrayToHex(shader.tintColor),
+          tintStrength: Number.isFinite(shader.tintStrength)
+            ? shader.tintStrength
+            : 1,
+        },
+      };
+    });
     group.userData.biomes = biomes;
+
+    const typeMetadataArray = Array.isArray(chunkPayload.typeMetadata)
+      ? chunkPayload.typeMetadata
+      : [];
+    const entryPayloadLookup = new Map();
+    typeMetadataArray.forEach((metadata) => {
+      if (!metadata || typeof metadata !== 'object') {
+        return;
+      }
+      const type = metadata.type ?? null;
+      const entryKeys = Array.isArray(metadata.entryKeys)
+        ? metadata.entryKeys
+        : [];
+      const entryPayloads = Array.isArray(metadata.entryPayloads)
+        ? metadata.entryPayloads
+        : [];
+      entryKeys.forEach((key, index) => {
+        if (!key) {
+          return;
+        }
+        entryPayloadLookup.set(String(key), {
+          type,
+          payload: entryPayloads[index] ?? null,
+        });
+      });
+    });
+
+    const findEntryByKey = (key, typeHint = null) => {
+      if (!key) {
+        return null;
+      }
+      const normalizedKey = String(key);
+      let entry = blockLookup.get(normalizedKey);
+      if (entry) {
+        return entry;
+      }
+      const searchTypeRecord = (typeKey) => {
+        if (!typeKey || !(typeData instanceof Map)) {
+          return null;
+        }
+        const record = typeData.get(typeKey);
+        if (!record) {
+          return null;
+        }
+        const entries = Array.isArray(record.entries) ? record.entries : [];
+        return (
+          entries.find((candidate) => candidate?.key === normalizedKey) ?? null
+        );
+      };
+      if (typeHint) {
+        entry = searchTypeRecord(typeHint);
+        if (entry) {
+          blockLookup.set(normalizedKey, entry);
+          if (entry.coordinateKey && entry.coordinateKey !== normalizedKey) {
+            blockLookup.set(entry.coordinateKey, entry);
+          }
+          return entry;
+        }
+      }
+      if (typeData instanceof Map) {
+        for (const [, record] of typeData.entries()) {
+          const entries = Array.isArray(record?.entries) ? record.entries : [];
+          entry = entries.find((candidate) => candidate?.key === normalizedKey);
+          if (entry) {
+            blockLookup.set(normalizedKey, entry);
+            if (entry.coordinateKey && entry.coordinateKey !== normalizedKey) {
+              blockLookup.set(entry.coordinateKey, entry);
+            }
+            return entry;
+          }
+        }
+      }
+      const payloadInfo = entryPayloadLookup.get(normalizedKey);
+      if (payloadInfo?.payload) {
+        const hydrated = deserializeInstancedEntry(payloadInfo.payload, THREE);
+        if (hydrated) {
+          hydrated.mesh = null;
+          hydrated.tintAttribute = null;
+          hydrated.index = -1;
+          blockLookup.set(normalizedKey, hydrated);
+          if (hydrated.coordinateKey && hydrated.coordinateKey !== normalizedKey) {
+            blockLookup.set(hydrated.coordinateKey, hydrated);
+          }
+          return hydrated;
+        }
+      }
+      return null;
+    };
+
+    const prototypePayload = Array.isArray(chunkPayload.prototypeInstances)
+      ? chunkPayload.prototypeInstances
+      : [];
+    prototypeInstances.clear();
+    prototypePayload.forEach((instanceRecord) => {
+      if (!instanceRecord || !instanceRecord.key) {
+        return;
+      }
+      const blockEntries = [];
+      const blocks = Array.isArray(instanceRecord.blockEntries)
+        ? instanceRecord.blockEntries
+        : [];
+      blocks.forEach((blockEntry) => {
+        if (!blockEntry) {
+          return;
+        }
+        const entryKey = blockEntry.entryKey ?? null;
+        const typeHint = blockEntry.type ?? null;
+        const entry = findEntryByKey(entryKey, typeHint);
+        if (!entry) {
+          return;
+        }
+        if (!entry.prototypeKey) {
+          entry.prototypeKey = instanceRecord.key;
+        }
+        blockEntries.push({
+          type: typeHint ?? entry.type ?? null,
+          entry,
+        });
+      });
+      prototypeInstances.set(instanceRecord.key, {
+        key: instanceRecord.key,
+        prototypeId: instanceRecord.prototypeId ?? null,
+        blockEntries,
+        decorationKeys: Array.isArray(instanceRecord.decorationKeys)
+          ? instanceRecord.decorationKeys.slice()
+          : [],
+      });
+    });
     stepState.stage = 'finalized';
     const finalCacheStats = getTerrainSampleCacheStats();
     recordChunkSamplingProfile({
