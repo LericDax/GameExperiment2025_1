@@ -193,6 +193,7 @@ export function createChunkManager({
   const prototypeRemovalGuards = new Set();
   const chunkDisposalQueue = [];
   const scheduledChunkDisposals = new Set();
+  const raycastTargets = new Set();
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   const eventListeners = new Map();
   const defaultDisposalBudget = resolveBudget(maxDisposalsPerUpdate, 1);
@@ -502,6 +503,30 @@ export function createChunkManager({
     });
   }
 
+  function isRaycastTargetMesh(mesh) {
+    if (!mesh?.isInstancedMesh) {
+      return false;
+    }
+    const type = mesh.userData?.type;
+    if (typeof type !== 'string') {
+      return false;
+    }
+    return !type.startsWith('fluid:');
+  }
+
+  function trackRaycastTarget(mesh) {
+    if (isRaycastTargetMesh(mesh)) {
+      raycastTargets.add(mesh);
+    }
+  }
+
+  function untrackRaycastTarget(mesh) {
+    if (!mesh) {
+      return;
+    }
+    raycastTargets.delete(mesh);
+  }
+
   function ensureTypeRecord(chunk, type) {
     if (!chunk || !type) {
       return null;
@@ -532,6 +557,7 @@ export function createChunkManager({
     mesh.userData = mesh.userData || {};
     mesh.userData.chunkKey = chunkKey(chunk.chunkX, chunk.chunkZ);
     chunk.group?.add(mesh);
+    trackRaycastTarget(mesh);
     record = {
       entries: [],
       mesh,
@@ -553,6 +579,7 @@ export function createChunkManager({
       const map = new Map();
       Object.entries(chunk.decorationData).forEach(([key, value]) => {
         map.set(key, value);
+        trackRaycastTarget(value?.mesh);
       });
       chunk.decorationData = map;
       return map;
@@ -1084,15 +1111,16 @@ export function createChunkManager({
 
     chunk.group.frustumCulled = false;
     applyChunkBounds(chunk);
-    chunk.group.children.forEach((child) => {
-      if (!child.isInstancedMesh) {
+    chunk.group.traverse((child) => {
+      if (!child?.isInstancedMesh) {
         return;
       }
-      const { type } = child.userData;
+      const { type } = child.userData || {};
       if (!type) {
         return;
       }
       child.userData.chunkKey = key;
+      trackRaycastTarget(child);
     });
     (chunk.fluidSurfaces ?? []).forEach((surface) => {
       surface.userData = surface.userData || {};
@@ -1365,6 +1393,7 @@ export function createChunkManager({
     }
 
     instancedMeshes.forEach((mesh) => {
+      untrackRaycastTarget(mesh);
       disposeInstancedMesh(mesh);
       mesh.parent?.remove(mesh);
     });
@@ -1862,6 +1891,7 @@ export function createChunkManager({
     queueDirty = false;
     lastCenterKey = null;
     clearTerrainSampleCache();
+    raycastTargets.clear();
   }
 
   function setViewDistance(distance) {
@@ -1888,6 +1918,10 @@ export function createChunkManager({
 
   function getRetentionDistance() {
     return retentionDistance;
+  }
+
+  function getRaycastTargets() {
+    return Array.from(raycastTargets);
   }
 
   function preloadAround(position, distance, options = {}) {
@@ -2680,6 +2714,7 @@ export function createChunkManager({
     setRetentionDistance,
     getViewDistance,
     getRetentionDistance,
+    getRaycastTargets,
     ...(debugSnapshot ? { debugSnapshot } : {}),
   };
 }

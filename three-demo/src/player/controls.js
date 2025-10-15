@@ -1298,8 +1298,17 @@ export function createPlayerControls({
       return;
     }
 
+    const raycastTargets =
+      typeof chunkManager.getRaycastTargets === 'function'
+        ? chunkManager.getRaycastTargets()
+        : [];
+    if (!Array.isArray(raycastTargets) || raycastTargets.length === 0) {
+      decayAttack(delta);
+      return;
+    }
+
     attackRay.setFromCamera(aimVector, camera);
-    const intersections = attackRay.intersectObjects(scene.children, true);
+    const intersections = attackRay.intersectObjects(raycastTargets, true);
     let blockInfo = null;
     for (const intersection of intersections) {
       if (!intersection.object?.isInstancedMesh) {
