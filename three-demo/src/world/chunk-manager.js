@@ -407,6 +407,8 @@ export function createChunkManager({
           }
         }
 
+        const wasUnlimited = entry.unlimited === true;
+
         if (done) {
           finalizePendingEntry(entry);
         } else if (entry.unlimited || entry.pendingBudget > 0) {
@@ -415,7 +417,12 @@ export function createChunkManager({
         }
 
         if (chunkJobQueue.length > 0) {
-          await waitForNextJobSlice();
+          const hasUnlimitedPending =
+            wasUnlimited ||
+            chunkJobQueue.some((queuedEntry) => queuedEntry?.unlimited);
+          if (!hasUnlimitedPending) {
+            await waitForNextJobSlice();
+          }
         }
       }
     } catch (error) {
@@ -440,14 +447,13 @@ export function createChunkManager({
       return null;
     }
     const promise = ensurePendingEntryPromise(entry);
-    const normalizedBudget = Math.max(1, Math.floor(Number(budget) || 0) || 1);
+    const normalizedBudget = unlimited
+      ? Number.POSITIVE_INFINITY
+      : Math.max(1, Math.floor(Number(budget) || 0) || 1);
     if (unlimited) {
       entry.unlimited = true;
       entry.pendingBudget = Number.POSITIVE_INFINITY;
-      entry.stepHint = Math.max(
-        Math.max(entry.stepHint || 0, normalizedBudget),
-        defaultPreloadBurst,
-      );
+      entry.stepHint = Number.POSITIVE_INFINITY;
     } else if (!entry.unlimited) {
       const previousBudget = Number.isFinite(entry.pendingBudget)
         ? entry.pendingBudget
