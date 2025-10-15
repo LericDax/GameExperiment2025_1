@@ -266,7 +266,7 @@ export function registerDeveloperCommands({
     return next;
   };
 
-  function attemptTeleportToBiomeColumn(baseX, baseZ) {
+  async function attemptTeleportToBiomeColumn(baseX, baseZ) {
     const waterLevel = resolveWaterLevel();
     for (const offset of biomeTeleportOffsets) {
       const columnX = baseX + offset.dx;
@@ -282,7 +282,7 @@ export function registerDeveloperCommands({
           y: baseHeight + altitude,
           z: columnZ + 0.5,
         };
-        const moved = playerControls.setPosition(target);
+        const moved = await playerControls.setPosition(target);
         if (moved) {
           const position = playerControls.getPosition();
           return { position, column: { x: columnX, z: columnZ } };
@@ -1254,7 +1254,10 @@ export function registerDeveloperCommands({
           );
         }
 
-        const landing = attemptTeleportToBiomeColumn(searchResult.x, searchResult.z);
+        const landing = await attemptTeleportToBiomeColumn(
+          searchResult.x,
+          searchResult.z,
+        );
         if (!landing) {
           throw new Error('Unable to find a safe landing spot near the target biome.');
         }
@@ -1281,7 +1284,7 @@ export function registerDeveloperCommands({
       const x = parseCoordinate(args[0], 'X coordinate');
       const y = parseCoordinate(args[1], 'Y coordinate');
       const z = parseCoordinate(args[2], 'Z coordinate');
-      const moved = playerControls.setPosition({ x, y, z });
+      const moved = await playerControls.setPosition({ x, y, z });
       if (!moved) {
         throw new Error('Unable to move to target position — location is obstructed.');
       }

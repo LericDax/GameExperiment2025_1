@@ -441,6 +441,7 @@ try {
   chunkManager.setRetentionDistance(4)
 
   chunkManager.update(playerControls.getPosition(), { camera, force: true })
+  await chunkManager.flush()
 
   updateHud(playerControls.getState())
 
@@ -606,7 +607,7 @@ if (!initializationError) {
 
   window.addEventListener('beforeunload', () => {
     playerControls.dispose()
-    chunkManager.dispose()
+    void chunkManager.dispose()
     musicSystem?.dispose()
     particleSystem?.dispose()
     weatherManager?.dispose?.()

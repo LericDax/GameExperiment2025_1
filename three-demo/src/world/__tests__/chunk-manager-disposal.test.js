@@ -49,7 +49,7 @@ function createBlockMaterials() {
   return { registry, createdMaterials };
 }
 
-test('queued chunk disposal flushes when forcing updates', () => {
+test('queued chunk disposal flushes when forcing updates', async () => {
   const scene = new THREE.Scene();
   const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
   const manager = createChunkManager({
@@ -69,6 +69,7 @@ test('queued chunk disposal flushes when forcing updates', () => {
       maxPreload: 0,
       force: true,
     });
+    await manager.flush();
 
     assert.ok(
       scene.getObjectByName('chunk_0_0'),
@@ -102,6 +103,7 @@ test('queued chunk disposal flushes when forcing updates', () => {
       maxPreload: 0,
       force: true,
     });
+    await manager.flush();
 
     assert.ok(
       !scene.getObjectByName('chunk_0_0'),
@@ -112,14 +114,14 @@ test('queued chunk disposal flushes when forcing updates', () => {
       'new center chunk should remain loaded after forced disposal',
     );
   } finally {
-    manager.dispose();
+    await manager.dispose();
     createdMaterials.forEach((material) => {
       material.dispose?.();
     });
   }
 });
 
-test('chunk disposal releases instanced geometries', () => {
+test('chunk disposal releases instanced geometries', async () => {
   const originalDispose = THREE.BufferGeometry.prototype.dispose;
   const disposedGeometries = new Set();
   THREE.BufferGeometry.prototype.dispose = function patchedDispose(...args) {
@@ -146,6 +148,7 @@ test('chunk disposal releases instanced geometries', () => {
       maxPreload: 0,
       force: true,
     });
+    await manager.flush();
 
     const chunkGroup = scene.getObjectByName('chunk_0_0');
     assert.ok(chunkGroup, 'expected the origin chunk to load immediately');
@@ -180,6 +183,7 @@ test('chunk disposal releases instanced geometries', () => {
       maxPreload: 0,
       force: true,
     });
+    await manager.flush();
 
     assert.ok(
       !scene.getObjectByName('chunk_0_0'),
@@ -203,7 +207,7 @@ test('chunk disposal releases instanced geometries', () => {
     });
   } finally {
     THREE.BufferGeometry.prototype.dispose = originalDispose;
-    manager.dispose();
+    await manager.dispose();
     createdMaterials.forEach((material) => {
       material.dispose?.();
     });

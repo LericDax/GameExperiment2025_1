@@ -94,7 +94,7 @@ test('createChunkBuildTask completes after multiple incremental steps', () => {
   }
 });
 
-test('preload queue preserves partial tasks until forced to drain', () => {
+test('preload queue preserves partial tasks until forced to drain', async () => {
   const origin = new THREE.Vector3(0, 0, 0);
   const createdManagers = [];
   const createdMaterials = [];
@@ -123,6 +123,7 @@ test('preload queue preserves partial tasks until forced to drain', () => {
     maxPreload: 0,
     force: true,
   });
+  await manager.flush();
 
   assert.ok(
     scene.getObjectByName('chunk_0_0'),
@@ -146,6 +147,7 @@ test('preload queue preserves partial tasks until forced to drain', () => {
     maxPreload: 0,
     force: true,
   });
+  await manager.flush();
 
   assert.ok(
     scene.getObjectByName('chunk_1_0'),
@@ -160,6 +162,7 @@ test('preload queue preserves partial tasks until forced to drain', () => {
     maxPreload: 0,
     force: true,
   });
+  await infiniteManager.flush();
 
   infiniteManager.update(origin, {
     viewDistance: 0,
@@ -186,6 +189,7 @@ test('preload queue preserves partial tasks until forced to drain', () => {
     retainDistance: 1,
     maxPreload: Number.POSITIVE_INFINITY,
   });
+  await infiniteManager.flush();
 
   neighborChunkNames.forEach((name) => {
     assert.ok(
@@ -198,14 +202,60 @@ test('preload queue preserves partial tasks until forced to drain', () => {
     const instance = createdManagers.pop();
     const materials = createdMaterials.pop();
     try {
-      instance.dispose();
+      await instance.dispose();
     } finally {
       materials?.createdMaterials?.forEach((material) => material.dispose?.());
     }
   }
 });
 
-test('urgent preload entries finish within a few scheduler ticks', () => {
+test('flush resolves pending chunk jobs asynchronously', async () => {
+  const origin = new THREE.Vector3(0, 0, 0);
+  const scene = new THREE.Scene();
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const manager = createChunkManager({
+    scene,
+    blockMaterials,
+    viewDistance: 0,
+    retainDistance: 0,
+    maxPreloadPerUpdate: 1,
+    maxDisposalsPerUpdate: 0,
+  });
+
+  try {
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreload: 0,
+      force: true,
+    });
+    await manager.flush();
+
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: 1,
+      maxPreload: 0,
+    });
+
+    const pendingFlush = manager.flush();
+    assert.ok(
+      !scene.getObjectByName('chunk_1_0'),
+      'neighbor chunk should remain pending before awaiting flush',
+    );
+
+    await pendingFlush;
+
+    assert.ok(
+      scene.getObjectByName('chunk_1_0'),
+      'expected flush to resolve and finalize the pending neighbor chunk',
+    );
+  } finally {
+    await manager.dispose();
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
+test('urgent preload entries finish within a few scheduler ticks', async () => {
   const origin = new THREE.Vector3(0, 0, 0);
   const scene = new THREE.Scene();
   const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
@@ -225,6 +275,7 @@ test('urgent preload entries finish within a few scheduler ticks', () => {
       maxPreload: 0,
       force: true,
     });
+    await manager.flush();
 
     const backlogRadius = 3;
     manager.update(origin, {
@@ -262,6 +313,12 @@ test('urgent preload entries finish within a few scheduler ticks', () => {
         retainDistance: backlogRadius,
         maxPreload: 8,
       });
+      // Allow the asynchronous job pump to run between scheduler ticks.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    if (!scene.getObjectByName(targetChunkName)) {
+      await manager.flush();
     }
 
     assert.ok(
@@ -278,7 +335,7 @@ test('urgent preload entries finish within a few scheduler ticks', () => {
       'non-urgent backlog entries should remain pending while the urgent chunk finishes',
     );
   } finally {
-    manager.dispose();
+    await manager.dispose();
     createdMaterials.forEach((material) => material.dispose?.());
   }
 });
