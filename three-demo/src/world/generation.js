@@ -18,6 +18,7 @@ import {
   cloneDecorationOptions,
   createDecorationMeshBatches,
 } from './voxel-object-decoration-mesh.js';
+import { serializeInstancedEntry } from './chunk-payload-serializers.js';
 import { resolveBiomeTintMultiplier } from './color-utils.js';
 import { worldOptions, applyWorldOptions } from './world-settings.js';
 import { configureSectorObjectPlanner } from './sector-object-planner.js';
@@ -643,6 +644,14 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     hasBoundData = true;
   };
 
+  const refreshInstancedEntryPayload = (entry) => {
+    if (!entry) {
+      return null;
+    }
+    entry.payload = serializeInstancedEntry(entry);
+    return entry;
+  };
+
   const createInstancedEntry = (type, x, y, z, biome, options = {}) => {
     const scaleVector = resolveScaleVector(options.scale);
     const visualScaleVector = resolveScaleVector(
@@ -718,7 +727,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       paletteBlend.setRGB(1, 1, 1);
     }
 
-    return {
+    const entry = {
       key,
       coordinateKey,
       matrix: matrix.clone(),
@@ -737,6 +746,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       metadata: options.metadata ?? null,
       tintOverride,
     };
+    return refreshInstancedEntryPayload(entry);
   };
 
   const addBlock = (type, x, y, z, biome, options = {}) => {
@@ -1093,6 +1103,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     }
     decorationInstancedData.get(type).push(entry);
     entry.isDecoration = true;
+    refreshInstancedEntryPayload(entry);
     return entry;
   };
 
@@ -1246,6 +1257,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       if (entry) {
         entry.prototypeKey = instanceKey;
         entry.prototypeLocalKey = block.key ?? `voxel-${index}`;
+        refreshInstancedEntryPayload(entry);
         record.blockEntries.push({ type: block.type, entry });
       }
     });
@@ -1289,6 +1301,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       if (entry) {
         entry.prototypeKey = instanceKey;
         record.decorationKeys.push(entry.key);
+        refreshInstancedEntryPayload(entry);
       }
     });
 
@@ -1397,6 +1410,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
         entry.destructible = typeof entry.destructible === 'boolean'
           ? entry.destructible
           : metadata.destructible;
+        refreshInstancedEntryPayload(entry);
         blockLookup.set(entry.key, entry);
         if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
           blockLookup.set(entry.coordinateKey, entry);
@@ -1688,6 +1702,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       typeof placement.destructible === 'boolean'
         ? placement.destructible
         : entryData.destructible;
+    refreshInstancedEntryPayload(placement);
     return placement;
   };
 
