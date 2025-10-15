@@ -256,6 +256,12 @@ export function createChunkManager({
     currentViewDistance,
     normalizeDistance(initialRetainDistance, currentViewDistance + 1),
   );
+  let lastFiniteViewDistance = Number.isFinite(currentViewDistance)
+    ? currentViewDistance
+    : 1;
+  let lastFiniteRetentionDistance = Number.isFinite(retentionDistance)
+    ? retentionDistance
+    : Math.max(lastFiniteViewDistance, 1);
   const preloadQueue = [];
   const pendingPreloadEntries = new Map();
   let queueDirty = false;
@@ -1754,12 +1760,29 @@ export function createChunkManager({
     currentViewDistance = desiredViewDistance;
     retentionDistance = desiredRetention;
 
-    const finiteView = Number.isFinite(currentViewDistance)
-      ? currentViewDistance
-      : 0;
-    const finiteRetention = Number.isFinite(retentionDistance)
-      ? retentionDistance
-      : finiteView;
+    if (Number.isFinite(currentViewDistance)) {
+      lastFiniteViewDistance = Math.max(
+        0,
+        Math.floor(currentViewDistance),
+      );
+    }
+
+    if (Number.isFinite(retentionDistance)) {
+      lastFiniteRetentionDistance = Math.max(
+        lastFiniteViewDistance,
+        Math.floor(retentionDistance),
+      );
+    }
+
+    const fallbackViewDistance = Number.isFinite(currentViewDistance)
+      ? Math.max(0, Math.floor(currentViewDistance))
+      : lastFiniteViewDistance;
+    const finiteView = Math.max(0, fallbackViewDistance);
+
+    const fallbackRetentionDistance = Number.isFinite(retentionDistance)
+      ? Math.max(finiteView, Math.floor(retentionDistance))
+      : Math.max(finiteView, lastFiniteRetentionDistance);
+    const finiteRetention = Math.max(finiteView, fallbackRetentionDistance);
 
     if (
       retentionChanged &&
@@ -1861,7 +1884,7 @@ export function createChunkManager({
 
     const normalizedPreloadBudget =
       preloadBudget === Number.POSITIVE_INFINITY
-        ? Math.max(1, defaultPreloadBurst)
+        ? Number.POSITIVE_INFINITY
         : preloadBudget;
 
     const shouldProcessPreload =
@@ -1896,6 +1919,9 @@ export function createChunkManager({
 
   function setViewDistance(distance) {
     currentViewDistance = normalizeDistance(distance, currentViewDistance);
+    if (Number.isFinite(currentViewDistance)) {
+      lastFiniteViewDistance = Math.max(0, Math.floor(currentViewDistance));
+    }
     if (
       retentionDistance !== Number.POSITIVE_INFINITY &&
       currentViewDistance > retentionDistance
@@ -1910,6 +1936,12 @@ export function createChunkManager({
     }
     const desired = normalizeDistance(distance, retentionDistance);
     retentionDistance = Math.max(currentViewDistance, desired);
+    if (Number.isFinite(retentionDistance)) {
+      lastFiniteRetentionDistance = Math.max(
+        lastFiniteViewDistance,
+        Math.floor(retentionDistance),
+      );
+    }
   }
 
   function getViewDistance() {
