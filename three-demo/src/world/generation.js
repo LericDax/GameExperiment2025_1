@@ -22,7 +22,8 @@ import {
   serializeInstancedEntry,
   deserializeInstancedEntry,
 } from './chunk-payload-serializers.js';
-import { buildChunkPayload, chunkWorldBounds } from './chunk-build-core.js';
+import { chunkWorldBounds } from './chunk-build-core.js';
+import { buildChunkPayload } from './world/chunk-build-core.js';
 import { resolveBiomeTintMultiplier } from './color-utils.js';
 import { worldOptions, applyWorldOptions } from './world-settings.js';
 import { configureSectorObjectPlanner } from './sector-object-planner.js';
@@ -1806,231 +1807,73 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     return fluidKeysArray;
   };
 
+  const createEnginePayload = () => ({
+    blockPlacements,
+    fluidBlockKeys,
+    fluidColumnsByType,
+    waterColumnMetadata,
+    fluidSurfaces,
+    decorationInstancedData,
+    decorationGroups,
+    decorationOwnerIndex,
+    decorationTypeIndex,
+    decorationData,
+    typeCapacities,
+    typeData,
+    biomePresence,
+    prototypeInstances,
+  });
+
   const stepState = {
     stage: 'columns',
-    columnIndex: 0,
-    assignIndex: 0,
-    fluidOccupancyIndex: 0,
-    exposureIndex: 0,
-    exposureInitialized: false,
+    processedColumns: 0,
   };
 
+  let cachedChunkPayload = null;
+  let busy = false;
+
   const step = (maxColumns = Number.POSITIVE_INFINITY) => {
+    if (stepState.stage === 'readyForFinalize') {
+      return { done: true, processed: 0 };
+    }
     const limit =
       Number.isFinite(maxColumns) && maxColumns >= 0
-        ? maxColumns
+        ? Math.floor(maxColumns)
         : Number.POSITIVE_INFINITY;
-    let processed = 0;
-
-    while (processed < limit && stepState.stage !== 'readyForFinalize') {
-      if (stepState.stage === 'columns') {
-        const remainingColumns = totalColumns - stepState.columnIndex;
-        if (remainingColumns <= 0) {
-          stepState.stage = 'prepareOccupancy';
-          continue;
-        }
-        const batch = Math.min(limit - processed, remainingColumns);
-        for (let i = 0; i < batch; i += 1) {
-          processColumnAtIndex(stepState.columnIndex);
-          stepState.columnIndex += 1;
-        }
-        processed += batch;
-        if (stepState.columnIndex >= totalColumns) {
-          stepState.stage = 'prepareOccupancy';
-        }
-        continue;
-      }
-
-      if (stepState.stage === 'prepareOccupancy') {
-        if (occupancyMinY === Number.POSITIVE_INFINITY) {
-          occupancyMinY = Math.floor(waterLevel ?? 0);
-          occupancyMaxY = occupancyMinY;
-        }
-        occupancyWidth = chunkSize;
-        occupancyDepth = chunkSize;
-        occupancyHeight = Math.max(1, occupancyMaxY - occupancyMinY + 1);
-        occupancyArea = occupancyWidth * occupancyDepth;
-        const volume = occupancyArea * occupancyHeight;
-        occupancyTypes = new Uint16Array(volume);
-        occupancyPlacements = new Int32Array(volume);
-        occupancyPlacements.fill(-1);
-        fluidOccupancy = new Uint8Array(volume);
-        stepState.stage = 'assignLocalPositions';
-        continue;
-      }
-
-      if (stepState.stage === 'assignLocalPositions') {
-        const remaining = blockPlacements.length - stepState.assignIndex;
-        if (remaining <= 0) {
-          stepState.stage = 'markFluidOccupancy';
-          continue;
-        }
-        const batch = Math.min(limit - processed, remaining);
-        for (let i = 0; i < batch; i += 1) {
-          const placementIndex = stepState.assignIndex++;
-          const placement = blockPlacements[placementIndex];
-          if (!placement || placement.removed) {
-            continue;
-          }
-          const local = assignLocalGridPosition(placement);
-          if (!local) {
-            continue;
-          }
-          const index = toIndex(local.x, local.y, local.z);
-          occupancyTypes[index] = getTypeId(placement.type);
-          occupancyPlacements[index] = placementIndex;
-          placement.gridIndex = index;
-        }
-        processed += batch;
-        continue;
-      }
-
-      if (stepState.stage === 'markFluidOccupancy') {
-        const keys = ensureFluidKeysArray();
-        const remaining = keys.length - stepState.fluidOccupancyIndex;
-        if (remaining <= 0) {
-          stepState.stage = 'exposure';
-          continue;
-        }
-        const batch = Math.min(limit - processed, remaining);
-        for (let i = 0; i < batch; i += 1) {
-          const key = keys[stepState.fluidOccupancyIndex++];
-          const coords = parseBlockKey(key);
-          if (!coords) {
-            continue;
-          }
-          const lx = Math.round(coords.x - minX);
-          const lz = Math.round(coords.z - minZ);
-          const ly = Math.round(coords.y) - occupancyMinY;
-          if (
-            lx < 0 ||
-            lx >= occupancyWidth ||
-            lz < 0 ||
-            lz >= occupancyDepth ||
-            ly < 0 ||
-            ly >= occupancyHeight
-          ) {
-            continue;
-          }
-          const index = toIndex(lx, ly, lz);
-          fluidOccupancy[index] = 1;
-        }
-        processed += batch;
-        continue;
-      }
-
-      if (stepState.stage === 'exposure') {
-        const remaining = blockPlacements.length - stepState.exposureIndex;
-        if (!stepState.exposureInitialized) {
-          const meshingMode = getMeshingDebugMode();
-          stepState.legacyMeshing = meshingMode === 'legacy';
-          stepState.exposureInitialized = true;
-        }
-        if (remaining <= 0) {
-          stepState.stage = 'readyForFinalize';
-          continue;
-        }
-        const batch = Math.min(limit - processed, remaining);
-        for (let i = 0; i < batch; i += 1) {
-          const placementIndex = stepState.exposureIndex++;
-          const placement = blockPlacements[placementIndex];
-          if (!placement || placement.removed) {
-            continue;
-          }
-
-          const occluding =
-            typeof placement.isOccluding === 'boolean'
-              ? placement.isOccluding
-              : isBlockOccluding(placement, blockMaterials);
-          placement.isOccluding = occluding;
-          if (!occluding && placement.coordinateKey) {
-            solidBlockKeys.delete(placement.coordinateKey);
-          }
-
-          const local = placement.gridPosition;
-          let exposed = stepState.legacyMeshing;
-          if (!local) {
-            exposed = true;
-          } else if (!exposed) {
-            for (let j = 0; j < neighborOffsets3D.length; j += 1) {
-              const offset = neighborOffsets3D[j];
-              const nx = local.x + offset.dx;
-              const ny = local.y + offset.dy;
-              const nz = local.z + offset.dz;
-              if (
-                nx < 0 ||
-                nx >= occupancyWidth ||
-                nz < 0 ||
-                nz >= occupancyDepth ||
-                ny < 0 ||
-                ny >= occupancyHeight
-              ) {
-                exposed = true;
-                break;
-              }
-              const neighborIndex = toIndex(nx, ny, nz);
-              const neighborPlacementIndex = occupancyPlacements[neighborIndex];
-              if (neighborPlacementIndex < 0) {
-                if (fluidOccupancy[neighborIndex] === 1) {
-                  exposed = true;
-                  break;
-                }
-                exposed = true;
-                break;
-              }
-              const neighborPlacement = blockPlacements[neighborPlacementIndex];
-              if (!neighborPlacement || neighborPlacement === placement) {
-                continue;
-              }
-              const neighborOccluding =
-                typeof neighborPlacement.isOccluding === 'boolean'
-                  ? neighborPlacement.isOccluding
-                  : isBlockOccluding(neighborPlacement, blockMaterials);
-              if (!neighborOccluding) {
-                exposed = true;
-                break;
-              }
-            }
-          }
-
-          if (exposed) {
-            const entry = materializePlacement(placement);
-            if (!entry) {
-              continue;
-            }
-            if (!instancedData.has(entry.type)) {
-              instancedData.set(entry.type, []);
-            }
-            const typeEntries = instancedData.get(entry.type);
-            typeEntries.push(entry);
-            const nextCount = typeEntries.length;
-            typeCapacities.set(
-              entry.type,
-              Math.max(typeCapacities.get(entry.type) ?? 0, nextCount),
-            );
-            blockLookup.set(entry.key, entry);
-            if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
-              blockLookup.set(entry.coordinateKey, entry);
-            }
-          } else {
-            placement.index = -1;
-            placement.mesh = null;
-            placement.tintAttribute = null;
-            if (placement.coordinateKey) {
-              solidBlockKeys.delete(placement.coordinateKey);
-              softBlockKeys.delete(placement.coordinateKey);
-            }
-          }
-          placement.isVisible = exposed;
-        }
-        processed += batch;
-        continue;
-      }
-
-      stepState.stage = 'readyForFinalize';
+    if (limit <= 0) {
+      return { done: false, processed: 0 };
     }
 
-    return { done: stepState.stage === 'readyForFinalize', processed };
+    const remainingColumns = Math.max(0, totalColumns - stepState.processedColumns);
+    const stepProcessed = Math.min(limit, remainingColumns);
+    stepState.processedColumns += stepProcessed;
+
+    if (stepState.processedColumns < totalColumns) {
+      return { done: false, processed: stepProcessed };
+    }
+
+    if (cachedChunkPayload) {
+      stepState.stage = 'readyForFinalize';
+      return { done: true, processed: stepProcessed };
+    }
+
+    if (busy) {
+      return { done: false, processed: 0 };
+    }
+
+    busy = true;
+    try {
+      cachedChunkPayload = buildChunkPayload({
+        chunkX,
+        chunkZ,
+        engine: createEnginePayload(),
+        worldOptions,
+      });
+      stepState.stage = 'readyForFinalize';
+      return { done: true, processed: stepProcessed };
+    } finally {
+      busy = false;
+    }
   };
 
   const buildFluidSurfaces = () => {
@@ -2372,27 +2215,15 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       serializationGroup.add(surface);
     });
 
-    const chunkPayload = buildChunkPayload({
-      chunkX,
-      chunkZ,
-      worldOptions,
-      engine: {
-        blockPlacements,
-        fluidBlockKeys,
-        fluidColumnsByType,
-        waterColumnMetadata,
-        fluidSurfaces,
-        decorationInstancedData,
-        decorationGroups,
-        decorationOwnerIndex,
-        decorationTypeIndex,
-        decorationData,
-        typeCapacities,
-        typeData,
-        biomePresence,
-        prototypeInstances,
-      },
-    });
+    const chunkPayload =
+      cachedChunkPayload ??
+      buildChunkPayload({
+        chunkX,
+        chunkZ,
+        worldOptions,
+        engine: createEnginePayload(),
+      });
+    cachedChunkPayload = chunkPayload;
 
     const rehydrateFluidState = (payload = {}) => {
       const blockKeySet = new Set();
