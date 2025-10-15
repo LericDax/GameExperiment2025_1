@@ -1847,7 +1847,13 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
 
     const remainingColumns = Math.max(0, totalColumns - stepState.processedColumns);
     const stepProcessed = Math.min(limit, remainingColumns);
-    stepState.processedColumns += stepProcessed;
+    if (stepProcessed > 0) {
+      const startIndex = stepState.processedColumns;
+      for (let offset = 0; offset < stepProcessed; offset += 1) {
+        processColumnAtIndex(startIndex + offset);
+      }
+      stepState.processedColumns += stepProcessed;
+    }
 
     if (stepState.processedColumns < totalColumns) {
       return { done: false, processed: stepProcessed };
