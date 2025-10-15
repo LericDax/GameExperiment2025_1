@@ -1,5 +1,5 @@
-const DEFAULT_MATRIX4 = Object.freeze(new Float32Array(16).fill(0));
-const DEFAULT_VECTOR3 = Object.freeze(new Float32Array([0, 0, 0]));
+const DEFAULT_MATRIX4 = Object.freeze(Array(16).fill(0));
+const DEFAULT_VECTOR3 = Object.freeze([0, 0, 0]);
 
 const isTypedArray = (value) => ArrayBuffer.isView(value) && !(value instanceof DataView);
 
