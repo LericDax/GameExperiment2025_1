@@ -115,6 +115,16 @@ During world bootstrap the chunk manager now emits a `first-chunk-meshed` event 
 
 QA can tail this log in automated or headless runs when validating TFMS regressions—the marker guarantees the terrain pipeline completed at least one full mesh pass before subsequent diagnostics run. 【F:three-demo/src/main.js†L235-L247】
 
+## Voxel object placement diagnostics
+
+Verbose logging for the voxel object placement pipeline is disabled by default so worker-driven preload tests stay lightweight. To enable the logs, set the Vite env flag before building or running the dev server:
+
+```bash
+VITE_DEBUG_VOXEL_PLACEMENT=true npm run dev
+```
+
+You can also toggle the same behavior at runtime (including in tests) by assigning `globalThis.__ENABLE_VOXEL_OBJECT_DEBUG__ = true`. Any truthy override enables the logs in both the main thread and the workers that share the placement module.
+
 ## Building for Production
 To create an optimized build via Vite:
 
