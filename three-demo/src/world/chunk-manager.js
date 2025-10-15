@@ -411,6 +411,7 @@ export function createChunkManager({
     metadata.inflight = false;
     metadata.payload = null;
     metadata.buffers = [];
+    entry.workerPayload = null;
   }
 
   function computeChunkBoundsFromPayload(entry, payload) {
@@ -494,9 +495,9 @@ export function createChunkManager({
     };
   }
 
-  function finalizeWorkerChunk(entry) {
-    const metadata = entry?.metadata;
-    const payload = metadata?.payload;
+  function finalizeWorkerChunk(entry, workerPayload = null) {
+    const payload =
+      workerPayload?.payload ?? entry?.metadata?.payload ?? null;
     if (!payload) {
       throw new Error('Chunk worker payload unavailable.');
     }
@@ -541,7 +542,12 @@ export function createChunkManager({
       prototypeInstances: meshResult.prototypeInstances,
       bounds: computeChunkBoundsFromPayload(entry, payload),
     };
-    metadata.payload = null;
+    if (entry?.metadata) {
+      entry.metadata.payload = null;
+    }
+    if (workerPayload) {
+      workerPayload.payload = null;
+    }
     return chunk;
   }
 
@@ -600,7 +606,12 @@ export function createChunkManager({
       }
 
       if (done) {
-        metadata.payload = data.payload ?? null;
+        const payload = data.payload ?? null;
+        entry.workerPayload = {
+          payload,
+          metadata: data.metadata ?? null,
+        };
+        metadata.payload = payload;
         finalizePendingEntry(entry);
         return;
       }
@@ -651,10 +662,14 @@ export function createChunkManager({
     }
     pendingPreloadEntries.delete(entry.key);
     try {
-      const chunk =
-        entry.metadata?.mode === 'worker'
-          ? finalizeWorkerChunk(entry)
-          : entry.task.finalize();
+      let chunk;
+      if (entry.workerPayload) {
+        chunk = finalizeWorkerChunk(entry, entry.workerPayload);
+      } else if (entry.metadata?.mode === 'worker') {
+        chunk = finalizeWorkerChunk(entry);
+      } else {
+        chunk = entry.task.finalize();
+      }
       registerGeneratedChunk(chunk);
       entry.resolve?.(chunk);
     } catch (error) {
@@ -665,6 +680,7 @@ export function createChunkManager({
       entry.metadata.payload = null;
       entry.metadata = null;
     }
+    entry.workerPayload = null;
   }
 
   function cancelPendingEntry(entry, { resolveWith = null } = {}) {
@@ -688,6 +704,7 @@ export function createChunkManager({
       entry.metadata.inflight = false;
       entry.metadata.payload = null;
     }
+    entry.workerPayload = null;
     const queueIndex = preloadQueue.indexOf(entry);
     if (queueIndex >= 0) {
       preloadQueue.splice(queueIndex, 1);
@@ -2200,6 +2217,7 @@ export function createChunkManager({
       cancelled: false,
       stepHint: defaultPreloadBurst,
       metadata: null,
+      workerPayload: null,
     };
     entry.metadata = createChunkJobMetadata(entry);
     pendingPreloadEntries.set(key, entry);
