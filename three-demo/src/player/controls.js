@@ -91,6 +91,7 @@ export function createPlayerControls({
   const cameraForward = new THREE.Vector3();
   const cameraRight = new THREE.Vector3();
   const cameraUp = new THREE.Vector3(0, 1, 0);
+  const movementDirection = new THREE.Vector3();
   const movementStep = new THREE.Vector3();
   const attemptPosition = new THREE.Vector3();
   const axisAttempt = new THREE.Vector3();
@@ -1113,11 +1114,11 @@ export function createPlayerControls({
       markStateDirty();
     }
 
-    const direction = new THREE.Vector3();
-    direction.z = Number(forward) - Number(backward);
-    direction.x = Number(right) - Number(left);
-    if (direction.lengthSq() > 0) {
-      direction.normalize();
+    movementDirection.set(0, 0, 0);
+    movementDirection.z = Number(forward) - Number(backward);
+    movementDirection.x = Number(right) - Number(left);
+    if (movementDirection.lengthSq() > 0) {
+      movementDirection.normalize();
 
       controls.getDirection(cameraForward);
       cameraForward.y = 0;
@@ -1136,8 +1137,8 @@ export function createPlayerControls({
 
       movementStep
         .copy(cameraForward)
-        .multiplyScalar(direction.z)
-        .addScaledVector(cameraRight, direction.x);
+        .multiplyScalar(movementDirection.z)
+        .addScaledVector(cameraRight, movementDirection.x);
 
       if (movementStep.lengthSq() > 0) {
         movementStep.normalize();
