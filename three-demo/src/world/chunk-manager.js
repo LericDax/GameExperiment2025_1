@@ -145,6 +145,29 @@ function normalizeWaterColumnBounds(bounds) {
 
 let chunkBuildWorkerInstance = null;
 let chunkBuildWorkerFailed = false;
+let chunkBuildWorkerFactoryOverride = null;
+
+function disposeCurrentChunkBuildWorker() {
+  if (!chunkBuildWorkerInstance) {
+    return;
+  }
+  try {
+    chunkBuildWorkerInstance.terminate?.();
+  } catch (error) {
+    console.warn('[chunk-manager] Failed to dispose chunk build worker', error);
+  }
+  chunkBuildWorkerInstance = null;
+}
+
+export function __setChunkBuildWorkerFactoryForTest(factory) {
+  disposeCurrentChunkBuildWorker();
+  chunkBuildWorkerFailed = false;
+  chunkBuildWorkerFactoryOverride = typeof factory === 'function' ? factory : null;
+}
+
+export function __resetChunkBuildWorkerFactoryForTest() {
+  __setChunkBuildWorkerFactoryForTest(null);
+}
 
 const enableChunkBuildWorker = (() => {
   if (
@@ -180,6 +203,9 @@ const enableChunkBuildWorker = (() => {
 })();
 
 function shouldUseChunkBuildWorker() {
+  if (chunkBuildWorkerFactoryOverride) {
+    return true;
+  }
   if (!enableChunkBuildWorker) {
     return false;
   }
@@ -200,7 +226,8 @@ function ensureChunkBuildWorkerInstance() {
     return chunkBuildWorkerInstance;
   }
   try {
-    chunkBuildWorkerInstance = createChunkBuildWorker();
+    const workerFactory = chunkBuildWorkerFactoryOverride ?? createChunkBuildWorker;
+    chunkBuildWorkerInstance = workerFactory();
   } catch (error) {
     chunkBuildWorkerFailed = true;
     chunkBuildWorkerInstance = null;
@@ -3430,7 +3457,7 @@ export function createChunkManager({
     }
   }
 
-  return {
+  const managerApi = {
     update,
     dispose,
     flush,
@@ -3450,6 +3477,28 @@ export function createChunkManager({
     getRaycastTargets,
     ...(debugSnapshot ? { debugSnapshot } : {}),
   };
+
+  Object.defineProperty(managerApi, '__getPendingEntryForTest', {
+    value: (key) => {
+      if (key == null) {
+        return null;
+      }
+      return pendingPreloadEntries.get(String(key)) ?? null;
+    },
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__getLoadedChunkForTest', {
+    value: (key) => {
+      if (key == null) {
+        return null;
+      }
+      return loadedChunks.get(String(key)) ?? null;
+    },
+    enumerable: false,
+  });
+
+  return managerApi;
 }
 
 export function chunkIndexFromWorld(x, z) {
