@@ -1882,16 +1882,22 @@ export function createChunkManager({
       return;
     }
 
-    const normalizedPreloadBudget =
-      preloadBudget === Number.POSITIVE_INFINITY
-        ? Number.POSITIVE_INFINITY
-        : preloadBudget;
+    const hasUnlimitedPreload =
+      preloadBudget === Number.POSITIVE_INFINITY;
+    const normalizedPreloadBudget = hasUnlimitedPreload
+      ? Number.POSITIVE_INFINITY
+      : preloadBudget;
 
-    const shouldProcessPreload =
-      normalizedPreloadBudget > 0 || urgentPreloadBoost > 0;
+    const shouldProcessPreload = hasUnlimitedPreload
+      ? queueHasWork
+      : normalizedPreloadBudget > 0 || urgentPreloadBoost > 0;
 
     if (shouldProcessPreload) {
-      processPreloadQueue(normalizedPreloadBudget);
+      processPreloadQueue(
+        hasUnlimitedPreload
+          ? Number.POSITIVE_INFINITY
+          : normalizedPreloadBudget,
+      );
     }
 
     flushChunkDisposals();
@@ -1983,7 +1989,9 @@ export function createChunkManager({
       desiredBudget === 0 ? maxPreloadPerUpdate * 2 : desiredBudget;
     const minimumBurst = Math.max(1, defaultPreloadBurst * 2);
     let normalizedBudget = effectiveBudget;
-    if (!Number.isFinite(normalizedBudget) || normalizedBudget <= 0) {
+    if (normalizedBudget === Number.POSITIVE_INFINITY) {
+      normalizedBudget = Number.POSITIVE_INFINITY;
+    } else if (!Number.isFinite(normalizedBudget) || normalizedBudget <= 0) {
       normalizedBudget = minimumBurst;
     } else {
       normalizedBudget = Math.max(normalizedBudget, minimumBurst);
