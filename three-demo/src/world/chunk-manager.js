@@ -723,6 +723,33 @@ export function createChunkManager({
     return group.hiddenEntries;
   }
 
+  function resolveChunkKeySet(
+    chunk,
+    property,
+    { createIfMissing = false } = {},
+  ) {
+    if (!chunk) {
+      return null;
+    }
+    const current = chunk[property];
+    if (current instanceof Set) {
+      return current;
+    }
+    if (current === undefined || current === null) {
+      if (!createIfMissing) {
+        return null;
+      }
+      const next = new Set();
+      chunk[property] = next;
+      return next;
+    }
+    const iterable =
+      current && typeof current[Symbol.iterator] === 'function' ? current : [];
+    const next = new Set(iterable);
+    chunk[property] = next;
+    return next;
+  }
+
   function addEntryToChunkMesh(chunk, entry) {
     if (!chunk || !entry) {
       return;
@@ -802,13 +829,49 @@ export function createChunkManager({
     }
     entry.mesh = mesh;
     entry.tintAttribute = tintAttribute;
+    const coordinateKey = entry.coordinateKey ?? entry.key;
+    if (coordinateKey) {
+      if (entry.isSolid) {
+        const chunkSolidKeys = resolveChunkKeySet(chunk, 'solidBlockKeys', {
+          createIfMissing: true,
+        });
+        chunkSolidKeys?.add(coordinateKey);
+        solidBlocks.add(coordinateKey);
+      }
+      if (entry.collisionMode === 'soft') {
+        const chunkSoftKeys = resolveChunkKeySet(chunk, 'softBlockKeys', {
+          createIfMissing: true,
+        });
+        chunkSoftKeys?.add(coordinateKey);
+        softBlocks.add(coordinateKey);
+      }
+    }
   }
 
   function removeEntryFromChunkMesh(chunk, entry, { preserveMetadata = false } = {}) {
+    const coordinateKey = entry?.coordinateKey ?? entry?.key;
+    const removeCollisionKeys = () => {
+      if (!chunk || !entry || !coordinateKey) {
+        return;
+      }
+      if (entry.isSolid) {
+        const chunkSolidKeys = resolveChunkKeySet(chunk, 'solidBlockKeys');
+        chunkSolidKeys?.delete(coordinateKey);
+        solidBlocks.delete(coordinateKey);
+      }
+      if (entry.collisionMode === 'soft') {
+        const chunkSoftKeys = resolveChunkKeySet(chunk, 'softBlockKeys');
+        chunkSoftKeys?.delete(coordinateKey);
+        softBlocks.delete(coordinateKey);
+      }
+    };
     if (!chunk || !entry || !chunk.typeData) {
-      entry.index = -1;
-      entry.mesh = null;
-      entry.tintAttribute = null;
+      if (entry) {
+        entry.index = -1;
+        entry.mesh = null;
+        entry.tintAttribute = null;
+      }
+      removeCollisionKeys();
       return;
     }
     if (entry.isDecoration) {
@@ -820,6 +883,7 @@ export function createChunkManager({
         if (!preserveMetadata) {
           entry.isHidden = false;
         }
+        removeCollisionKeys();
         return;
       }
       const { entries, mesh, tintAttribute } = record;
@@ -839,6 +903,7 @@ export function createChunkManager({
             }
           }
         }
+        removeCollisionKeys();
         return;
       }
       const lastIndex = entries.length - 1;
@@ -898,6 +963,7 @@ export function createChunkManager({
       entry.mesh = null;
       entry.tintAttribute = null;
       entry.isHidden = preserveMetadata;
+      removeCollisionKeys();
       return;
     }
     const record = chunk.typeData.get(entry.type);
@@ -905,6 +971,7 @@ export function createChunkManager({
       entry.index = -1;
       entry.mesh = null;
       entry.tintAttribute = null;
+      removeCollisionKeys();
       return;
     }
     const { entries, mesh, tintAttribute } = record;
@@ -913,6 +980,7 @@ export function createChunkManager({
       entry.index = -1;
       entry.mesh = null;
       entry.tintAttribute = null;
+      removeCollisionKeys();
       return;
     }
     const lastIndex = entries.length - 1;
@@ -939,6 +1007,7 @@ export function createChunkManager({
     entry.mesh = null;
     entry.tintAttribute = null;
     entry.isHidden = false;
+    removeCollisionKeys();
   }
 
   function computeBlockVisibility(chunk, entry) {

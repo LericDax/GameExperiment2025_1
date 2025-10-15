@@ -2006,6 +2006,10 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
             placement.index = -1;
             placement.mesh = null;
             placement.tintAttribute = null;
+            if (placement.coordinateKey) {
+              solidBlockKeys.delete(placement.coordinateKey);
+              softBlockKeys.delete(placement.coordinateKey);
+            }
           }
           placement.isVisible = exposed;
         }
