@@ -440,6 +440,7 @@ export function createChunkManager({
     metadata.payload = null;
     metadata.buffers = [];
     entry.workerPayload = null;
+    entry.task?.setRequiresWorkerPayload?.(false);
   }
 
   function computeChunkBoundsFromPayload(entry, payload) {
@@ -697,6 +698,7 @@ export function createChunkManager({
         chunk = entry.task.finalize();
       }
       registerGeneratedChunk(chunk);
+      entry.task?.releaseCachedPayload?.();
       entry.resolve?.(chunk);
     } catch (error) {
       entry.reject?.(error);
@@ -752,6 +754,7 @@ export function createChunkManager({
         );
       }
     }
+    entry.task?.releaseCachedPayload?.();
   }
 
   async function runChunkJobPump() {
@@ -2228,11 +2231,7 @@ export function createChunkManager({
       chunkZ,
       priority,
       urgent: Boolean(urgent),
-      task: createChunkBuildTask({
-        chunkX,
-        chunkZ,
-        blockMaterials,
-      }),
+      task: null,
       pendingBudget: 0,
       promise: null,
       resolve: null,
@@ -2246,6 +2245,12 @@ export function createChunkManager({
       workerPayload: null,
     };
     entry.metadata = createChunkJobMetadata(entry);
+    entry.task = createChunkBuildTask({
+      chunkX,
+      chunkZ,
+      blockMaterials,
+      requireWorkerPayload: entry.metadata?.mode === 'worker',
+    });
     pendingPreloadEntries.set(key, entry);
     preloadQueue.push(entry);
     queueDirty = true;
