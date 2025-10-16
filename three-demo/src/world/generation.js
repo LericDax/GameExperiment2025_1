@@ -2791,15 +2791,23 @@ export function createChunkBuildTask({
         derivedCollisionKeys.occludedEntries?.size ||
         occludedKeys.size > 0
       ) {
-        const removalTargets =
+        const occludedEntries =
           derivedCollisionKeys.occludedEntries ?? new Set();
-        const keysToDelete = [];
         blockLookup.forEach((entry, key) => {
-          if (occludedKeys.has(key) || removalTargets.has(entry)) {
-            keysToDelete.push(key);
+          if (!entry || (!occludedKeys.has(key) && !occludedEntries.has(entry))) {
+            if (entry) {
+              entry.isVisible = true;
+            }
+            return;
+          }
+          entry.isVisible = false;
+        });
+      } else {
+        blockLookup.forEach((entry) => {
+          if (entry) {
+            entry.isVisible = true;
           }
         });
-        keysToDelete.forEach((key) => blockLookup.delete(key));
       }
       pruneOccludedInstancedEntries({
         typeData,
@@ -2960,15 +2968,23 @@ export function createChunkBuildTask({
         derivedCollisionKeys.occludedEntries?.size ||
         occludedKeys.size > 0
       ) {
-        const removalTargets =
+        const occludedEntries =
           derivedCollisionKeys.occludedEntries ?? new Set();
-        const keysToDelete = [];
         blockLookup.forEach((entry, key) => {
-          if (occludedKeys.has(key) || removalTargets.has(entry)) {
-            keysToDelete.push(key);
+          if (!entry || (!occludedKeys.has(key) && !occludedEntries.has(entry))) {
+            if (entry) {
+              entry.isVisible = true;
+            }
+            return;
+          }
+          entry.isVisible = false;
+        });
+      } else {
+        blockLookup.forEach((entry) => {
+          if (entry) {
+            entry.isVisible = true;
           }
         });
-        keysToDelete.forEach((key) => blockLookup.delete(key));
       }
       pruneOccludedInstancedEntries({
         typeData,
