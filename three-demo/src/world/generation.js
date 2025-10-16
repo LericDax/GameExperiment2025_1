@@ -25,6 +25,7 @@ import {
 import { chunkWorldBounds } from './chunk-build-core.js';
 import { buildChunkPayload } from './world/chunk-build-core.js';
 import { finalizeChunkMeshes } from './finalize-chunk-meshes.js';
+import { deriveCollisionKeySetsFromMesh } from './collision-key-utils.js';
 import { resolveBiomeTintMultiplier } from './color-utils.js';
 import { worldOptions, applyWorldOptions } from './world-settings.js';
 import { configureSectorObjectPlanner } from './sector-object-planner.js';
@@ -2738,6 +2739,31 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     meshResult.blockLookup.forEach((entry, key) => {
       blockLookup.set(key, entry);
     });
+
+    const derivedCollisionKeys = deriveCollisionKeySetsFromMesh({
+      typeData,
+      blockLookup,
+      blockMaterials,
+    });
+    const occludedKeys = new Set(derivedCollisionKeys.occludedCoordinates ?? []);
+    if (derivedCollisionKeys.occludedEntries?.size || occludedKeys.size > 0) {
+      const removalTargets = derivedCollisionKeys.occludedEntries ?? new Set();
+      const keysToDelete = [];
+      blockLookup.forEach((entry, key) => {
+        if (occludedKeys.has(key) || removalTargets.has(entry)) {
+          keysToDelete.push(key);
+        }
+      });
+      keysToDelete.forEach((key) => blockLookup.delete(key));
+    }
+    solidBlockKeys.clear();
+    derivedCollisionKeys.solidBlockKeys.forEach((key) =>
+      solidBlockKeys.add(key),
+    );
+    softBlockKeys.clear();
+    derivedCollisionKeys.softBlockKeys.forEach((key) =>
+      softBlockKeys.add(key),
+    );
 
     fluidBlockKeys.clear();
     meshResult.fluidBlockKeys.forEach((key) => fluidBlockKeys.add(key));
