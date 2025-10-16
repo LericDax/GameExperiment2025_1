@@ -134,8 +134,10 @@ const camera = new THREE.PerspectiveCamera(
 )
 camera.position.set(0, 25, 30)
 
+const getTargetPixelRatio = () => Math.min(window.devicePixelRatio ?? 1, 1.5)
+
 const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setPixelRatio(window.devicePixelRatio)
+renderer.setPixelRatio(getTargetPixelRatio())
 renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.outputColorSpace = THREE.SRGBColorSpace
 renderer.shadowMap.enabled = true
