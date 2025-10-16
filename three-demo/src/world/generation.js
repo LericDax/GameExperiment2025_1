@@ -395,9 +395,15 @@ function addCloud(addBlock, x, y, z) {
   blocks.forEach(([dx, dy, dz]) => addBlock('cloud', x + dx, y + dy, z + dz, null));
 }
 
-export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
+export function createChunkBuildTask({
+  chunkX,
+  chunkZ,
+  blockMaterials,
+  requireWorkerPayload = false,
+}) {
   const THREE = ensureThree();
   const engine = ensureTerrainEngine();
+  let needsWorkerPayload = Boolean(requireWorkerPayload);
   const instancedData = new Map();
   const decorationInstancedData = new Map();
   const decorationData = new Map();
@@ -2023,6 +2029,22 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
   let busy = false;
   let payloadPrepared = false;
 
+  const releaseCachedPayload = () => {
+    cachedChunkPayload = null;
+    payloadPrepared = false;
+  };
+
+  const setRequiresWorkerPayload = (value) => {
+    const next = Boolean(value);
+    if (needsWorkerPayload === next) {
+      return;
+    }
+    needsWorkerPayload = next;
+    if (!needsWorkerPayload) {
+      releaseCachedPayload();
+    }
+  };
+
   const ensureOccupancyArrays = () => {
     if (!Number.isFinite(occupancyMinY)) {
       const fallback = Math.floor(worldOptions.waterLevel ?? 0);
@@ -2360,29 +2382,35 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       return { done: false, processed: stepProcessed };
     }
 
-    if (cachedChunkPayload) {
-      stepState.stage = 'readyForFinalize';
-      return { done: true, processed: stepProcessed };
+    if (needsWorkerPayload) {
+      if (cachedChunkPayload) {
+        stepState.stage = 'readyForFinalize';
+        return { done: true, processed: stepProcessed };
+      }
+
+      if (busy) {
+        return { done: false, processed: 0 };
+      }
+
+      busy = true;
+      try {
+        prepareEngineForPayload();
+        cachedChunkPayload = buildChunkPayload({
+          chunkX,
+          chunkZ,
+          engine: createEnginePayload(),
+          worldOptions,
+          includeBlockPlacements: true,
+        });
+        stepState.stage = 'readyForFinalize';
+        return { done: true, processed: stepProcessed };
+      } finally {
+        busy = false;
+      }
     }
 
-    if (busy) {
-      return { done: false, processed: 0 };
-    }
-
-    busy = true;
-    try {
-      prepareEngineForPayload();
-      cachedChunkPayload = buildChunkPayload({
-        chunkX,
-        chunkZ,
-        engine: createEnginePayload(),
-        worldOptions,
-      });
-      stepState.stage = 'readyForFinalize';
-      return { done: true, processed: stepProcessed };
-    } finally {
-      busy = false;
-    }
+    stepState.stage = 'readyForFinalize';
+    return { done: true, processed: stepProcessed };
   };
 
   const buildFluidSurfaces = () => {
@@ -2713,111 +2741,297 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     if (stepState.stage === 'finalized') {
       throw new Error('Chunk already finalized');
     }
-    if (!cachedChunkPayload) {
+    if (needsWorkerPayload && !cachedChunkPayload) {
       throw new Error('Chunk payload not available for finalize.');
     }
 
-    const chunkPayload = cachedChunkPayload;
-    const meshResult = finalizeChunkMeshes(chunkPayload, blockMaterials, THREE);
+    let group = null;
+    let chunkBiomes = [];
 
-    typeData.forEach((record) => {
-      if (record?.mesh?.parent) {
-        record.mesh.parent.remove(record.mesh);
-      }
-    });
-    typeData.clear();
-    typeCapacities.clear();
-    meshResult.typeData.forEach((record, type) => {
-      typeData.set(type, record);
-      typeCapacities.set(
-        type,
-        Number.isFinite(record?.capacity) ? record.capacity : record.entries?.length ?? 0,
+    if (needsWorkerPayload) {
+      const chunkPayload = cachedChunkPayload;
+      const meshResult = finalizeChunkMeshes(
+        chunkPayload,
+        blockMaterials,
+        THREE,
       );
-    });
 
-    blockLookup.clear();
-    meshResult.blockLookup.forEach((entry, key) => {
-      blockLookup.set(key, entry);
-    });
-
-    const derivedCollisionKeys = deriveCollisionKeySetsFromMesh({
-      typeData,
-      blockLookup,
-      blockMaterials,
-    });
-    const occludedKeys = new Set(derivedCollisionKeys.occludedCoordinates ?? []);
-    if (derivedCollisionKeys.occludedEntries?.size || occludedKeys.size > 0) {
-      const removalTargets = derivedCollisionKeys.occludedEntries ?? new Set();
-      const keysToDelete = [];
-      blockLookup.forEach((entry, key) => {
-        if (occludedKeys.has(key) || removalTargets.has(entry)) {
-          keysToDelete.push(key);
+      typeData.forEach((record) => {
+        if (record?.mesh?.parent) {
+          record.mesh.parent.remove(record.mesh);
         }
       });
-      keysToDelete.forEach((key) => blockLookup.delete(key));
-    }
-    solidBlockKeys.clear();
-    derivedCollisionKeys.solidBlockKeys.forEach((key) =>
-      solidBlockKeys.add(key),
-    );
-    softBlockKeys.clear();
-    derivedCollisionKeys.softBlockKeys.forEach((key) =>
-      softBlockKeys.add(key),
-    );
+      typeData.clear();
+      typeCapacities.clear();
+      meshResult.typeData.forEach((record, type) => {
+        typeData.set(type, record);
+        typeCapacities.set(
+          type,
+          Number.isFinite(record?.capacity)
+            ? record.capacity
+            : record.entries?.length ?? 0,
+        );
+      });
 
-    fluidBlockKeys.clear();
-    meshResult.fluidBlockKeys.forEach((key) => fluidBlockKeys.add(key));
+      blockLookup.clear();
+      meshResult.blockLookup.forEach((entry, key) => {
+        blockLookup.set(key, entry);
+      });
 
-    waterColumnMetadata.clear();
-    meshResult.waterColumns.forEach((value, key) => {
-      waterColumnMetadata.set(key, value);
-    });
-
-    fluidColumnsByType.clear();
-    meshResult.fluidColumnsByType.forEach((columns, type) => {
-      fluidColumnsByType.set(type, columns);
-    });
-
-    fluidSurfaces.length = 0;
-    meshResult.fluidSurfaces.forEach((surface) => {
-      fluidSurfaces.push(surface);
-    });
-
-    decorationData.forEach((record) => {
-      if (record?.mesh?.parent) {
-        record.mesh.parent.remove(record.mesh);
+      const derivedCollisionKeys = deriveCollisionKeySetsFromMesh({
+        typeData,
+        blockLookup,
+        blockMaterials,
+      });
+      const occludedKeys = new Set(
+        derivedCollisionKeys.occludedCoordinates ?? [],
+      );
+      if (
+        derivedCollisionKeys.occludedEntries?.size ||
+        occludedKeys.size > 0
+      ) {
+        const removalTargets =
+          derivedCollisionKeys.occludedEntries ?? new Set();
+        const keysToDelete = [];
+        blockLookup.forEach((entry, key) => {
+          if (occludedKeys.has(key) || removalTargets.has(entry)) {
+            keysToDelete.push(key);
+          }
+        });
+        keysToDelete.forEach((key) => blockLookup.delete(key));
       }
-    });
-    decorationData.clear();
-    decorationGroups.clear();
-    decorationOwnerIndex.clear();
-    decorationTypeIndex.clear();
-    decorationInstancedData.clear();
-    meshResult.decorationData.forEach((record, type) => {
-      decorationData.set(type, record);
-      decorationInstancedData.set(type, record.entries);
-    });
-    meshResult.decorationGroups.forEach((metadata, key) => {
-      decorationGroups.set(key, metadata);
-    });
-    meshResult.decorationOwnerIndex.forEach((groups, owner) => {
-      decorationOwnerIndex.set(owner, groups);
-    });
-    meshResult.decorationTypeIndex.forEach((groups, type) => {
-      decorationTypeIndex.set(type, groups);
-    });
+      solidBlockKeys.clear();
+      derivedCollisionKeys.solidBlockKeys.forEach((key) =>
+        solidBlockKeys.add(key),
+      );
+      softBlockKeys.clear();
+      derivedCollisionKeys.softBlockKeys.forEach((key) =>
+        softBlockKeys.add(key),
+      );
 
-    prototypeInstances.clear();
-    meshResult.prototypeInstances.forEach((record, key) => {
-      prototypeInstances.set(key, record);
-    });
+      fluidBlockKeys.clear();
+      meshResult.fluidBlockKeys.forEach((key) => fluidBlockKeys.add(key));
 
-    const group = meshResult.chunkGroup;
+      waterColumnMetadata.clear();
+      meshResult.waterColumns.forEach((value, key) => {
+        waterColumnMetadata.set(key, value);
+      });
+
+      fluidColumnsByType.clear();
+      meshResult.fluidColumnsByType.forEach((columns, type) => {
+        fluidColumnsByType.set(type, columns);
+      });
+
+      fluidSurfaces.length = 0;
+      meshResult.fluidSurfaces.forEach((surface) => {
+        fluidSurfaces.push(surface);
+      });
+
+      decorationData.forEach((record) => {
+        if (record?.mesh?.parent) {
+          record.mesh.parent.remove(record.mesh);
+        }
+      });
+      decorationData.clear();
+      decorationGroups.clear();
+      decorationOwnerIndex.clear();
+      decorationTypeIndex.clear();
+      decorationInstancedData.clear();
+      meshResult.decorationData.forEach((record, type) => {
+        decorationData.set(type, record);
+        decorationInstancedData.set(type, record.entries);
+      });
+      meshResult.decorationGroups.forEach((metadata, key) => {
+        decorationGroups.set(key, metadata);
+      });
+      meshResult.decorationOwnerIndex.forEach((groups, owner) => {
+        decorationOwnerIndex.set(owner, groups);
+      });
+      meshResult.decorationTypeIndex.forEach((groups, type) => {
+        decorationTypeIndex.set(type, groups);
+      });
+
+      prototypeInstances.clear();
+      meshResult.prototypeInstances.forEach((record, key) => {
+        prototypeInstances.set(key, record);
+      });
+
+      group = meshResult.chunkGroup;
+      chunkBiomes = meshResult.biomes;
+    } else {
+      buildFluidSurfaces();
+
+      group = new THREE.Group();
+      group.name = `chunk_${chunkX}_${chunkZ}`;
+
+      blockLookup.clear();
+      typeData.clear();
+
+      const entriesByType = new Map();
+      blockPlacements.forEach((placement) => {
+        if (!placement || placement.removed) {
+          return;
+        }
+        const entry = materializePlacement(placement);
+        if (!entry) {
+          return;
+        }
+        entry.isSolid = placement.isSolid === true;
+        entry.isSoft = placement.isSoft === true;
+        entry.collisionMode = placement.collisionMode ?? entry.collisionMode;
+        entry.metadata = placement.metadata ?? entry.metadata ?? null;
+        entry.gridIndex = placement.gridIndex ?? entry.gridIndex ?? -1;
+        entry.gridPosition = placement.gridPosition ?? entry.gridPosition ?? null;
+        entry.isVisible = placement.isVisible === true ? true : undefined;
+        entry.removed = false;
+        if (entry.key) {
+          blockLookup.set(entry.key, entry);
+        }
+        if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+          blockLookup.set(entry.coordinateKey, entry);
+        }
+        let entries = entriesByType.get(entry.type);
+        if (!entries) {
+          entries = [];
+          entriesByType.set(entry.type, entries);
+        }
+        entry.index = entries.length;
+        entries.push(entry);
+      });
+
+      entriesByType.forEach((entries, type) => {
+        const capacity = Math.max(
+          1,
+          entries.length,
+          typeCapacities.get(type) ?? 0,
+        );
+        const { mesh, tintAttribute } = buildInstancedMesh(entries, type, {
+          capacity,
+        });
+        mesh.count = entries.length;
+        mesh.instanceMatrix.needsUpdate = entries.length > 0;
+        if (tintAttribute) {
+          tintAttribute.needsUpdate = entries.length > 0;
+        }
+        typeCapacities.set(type, capacity);
+        typeData.set(type, { entries, mesh, tintAttribute, capacity });
+        group.add(mesh);
+      });
+
+      decorationData.forEach((record) => {
+        if (record?.mesh?.parent) {
+          record.mesh.parent.remove(record.mesh);
+        }
+      });
+      decorationData.clear();
+      decorationGroups.clear();
+      decorationOwnerIndex.clear();
+      decorationTypeIndex.clear();
+      decorationInstancedData.forEach((entries, type) => {
+        addDecorationMesh(group, type, entries);
+      });
+
+      fluidSurfaces.forEach((surface) => {
+        if (!surface) {
+          return;
+        }
+        if (!surface.parent) {
+          group.add(surface);
+        }
+      });
+
+      const derivedCollisionKeys = deriveCollisionKeySetsFromMesh({
+        typeData,
+        blockLookup,
+        blockMaterials,
+      });
+      const occludedKeys = new Set(
+        derivedCollisionKeys.occludedCoordinates ?? [],
+      );
+      if (
+        derivedCollisionKeys.occludedEntries?.size ||
+        occludedKeys.size > 0
+      ) {
+        const removalTargets =
+          derivedCollisionKeys.occludedEntries ?? new Set();
+        const keysToDelete = [];
+        blockLookup.forEach((entry, key) => {
+          if (occludedKeys.has(key) || removalTargets.has(entry)) {
+            keysToDelete.push(key);
+          }
+        });
+        keysToDelete.forEach((key) => blockLookup.delete(key));
+      }
+      solidBlockKeys.clear();
+      derivedCollisionKeys.solidBlockKeys.forEach((key) =>
+        solidBlockKeys.add(key),
+      );
+      softBlockKeys.clear();
+      derivedCollisionKeys.softBlockKeys.forEach((key) =>
+        softBlockKeys.add(key),
+      );
+
+      const biomeEntries = Array.from(biomePresence.values());
+      const totalSamples = biomeEntries.reduce((sum, entry) => {
+        const samples = Number.isFinite(entry?.samples) ? entry.samples : 0;
+        return sum + samples;
+      }, 0);
+      const colorScratch = new THREE.Color(0, 0, 0);
+      const toHex = (value) => {
+        if (!value) {
+          return '#000000';
+        }
+        if (typeof value === 'string') {
+          return value;
+        }
+        if (value instanceof THREE.Color) {
+          return `#${value.getHexString()}`;
+        }
+        if (Array.isArray(value)) {
+          const [r = 0, g = 0, b = 0] = value;
+          colorScratch.setRGB(
+            Number.isFinite(r) ? r : 0,
+            Number.isFinite(g) ? g : 0,
+            Number.isFinite(b) ? b : 0,
+          );
+          return `#${colorScratch.getHexString()}`;
+        }
+        if (
+          typeof value === 'object' &&
+          Number.isFinite(value.r) &&
+          Number.isFinite(value.g) &&
+          Number.isFinite(value.b)
+        ) {
+          colorScratch.setRGB(value.r, value.g, value.b);
+          return `#${colorScratch.getHexString()}`;
+        }
+        return '#000000';
+      };
+      chunkBiomes = biomeEntries.map((entry) => {
+        const biome = entry?.biome ?? null;
+        const samples = Number.isFinite(entry?.samples) ? entry.samples : 0;
+        const shader = biome?.shader ?? {};
+        return {
+          id: biome?.id ?? null,
+          label: biome?.label ?? null,
+          weight: totalSamples > 0 ? samples / totalSamples : 0,
+          shader: {
+            fogColor: toHex(shader.fogColor),
+            tintColor: toHex(shader.tintColor),
+            tintStrength: Number.isFinite(shader.tintStrength)
+              ? shader.tintStrength
+              : 1,
+          },
+        };
+      });
+    }
+
     group.name = `chunk_${chunkX}_${chunkZ}`;
     group.userData = group.userData || {};
-    const biomes = meshResult.biomes;
-    group.userData.biomes = biomes;
+    group.userData.biomes = chunkBiomes;
+
     stepState.stage = 'finalized';
+    releaseCachedPayload();
     const finalCacheStats = getTerrainSampleCacheStats();
     recordChunkSamplingProfile({
       chunkX,
@@ -2844,7 +3058,7 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
       decorationGroups,
       decorationOwnerIndex,
       decorationTypeIndex,
-      biomes,
+      biomes: chunkBiomes,
       prototypeInstances,
       bounds: (() => {
         if (!hasBoundData) {
@@ -2870,7 +3084,12 @@ export function createChunkBuildTask({ chunkX, chunkZ, blockMaterials }) {
     };
   };
 
-  return { step, finalize };
+  return {
+    step,
+    finalize,
+    setRequiresWorkerPayload,
+    releaseCachedPayload,
+  };
 }
 
 export function generateChunk(blockMaterials, chunkX, chunkZ) {

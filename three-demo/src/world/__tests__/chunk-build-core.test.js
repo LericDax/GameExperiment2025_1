@@ -240,6 +240,7 @@ test('buildChunkPayload normalizes occupancy, fluid, and decoration payloads', (
     chunkZ,
     engine,
     worldOptions,
+    includeBlockPlacements: true,
   });
 
   const { occupancy } = payload;
@@ -459,4 +460,46 @@ test('buildChunkPayload normalizes occupancy, fluid, and decoration payloads', (
   assert.deepStrictEqual(payload.decorations.typeIndex, {
     flora: ['group-a', 'group-b'],
   });
+});
+
+test('buildChunkPayload omits block placements unless requested', () => {
+  const chunkX = 0;
+  const chunkZ = 0;
+  const worldOptions = { chunkSize: 16, waterLevel: 0 };
+  const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ, worldOptions);
+
+  const engine = {
+    blockPlacements: [
+      {
+        type: 'vox:test',
+        position: { x: minX + 1, y: 2, z: minZ + 1 },
+        collisionMode: 'solid',
+        payload: { foo: 'bar' },
+      },
+    ],
+    fluidBlockKeys: [],
+    waterColumnMetadata: new Map(),
+    fluidColumnsByType: new Map(),
+    fluidSurfaces: [],
+    decorationInstancedData: new Map(),
+    decorationGroups: new Map(),
+    decorationOwnerIndex: new Map(),
+    decorationTypeIndex: new Map(),
+    decorationData: new Map(),
+    typeCapacities: new Map(),
+    typeData: new Map(),
+    biomePresence: new Map(),
+    prototypeInstances: new Map(),
+  };
+
+  const payload = buildChunkPayload({
+    chunkX,
+    chunkZ,
+    engine,
+    worldOptions,
+  });
+
+  assert.strictEqual(payload.blockPlacements, null);
+  assert.ok(Array.isArray(payload.occupancy?.solidCoordinates));
+  assert.strictEqual(typeof payload.occupancy?.coordinateIndex, 'object');
 });

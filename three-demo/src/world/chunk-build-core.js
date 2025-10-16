@@ -769,6 +769,7 @@ export const buildChunkPayload = ({
   chunkZ,
   engine,
   worldOptions,
+  includeBlockPlacements = false,
 }) => {
   if (!engine || typeof engine !== 'object') {
     throw new Error('buildChunkPayload requires an engine payload.');
@@ -832,7 +833,7 @@ export const buildChunkPayload = ({
   const solidCoordinates = [];
   const softCoordinates = [];
   const placementIndexByCoordinate = {};
-  const blockPlacements = [];
+  const blockPlacements = includeBlockPlacements ? [] : null;
 
   const normalizedFluidKeys = normalizeArraySource(engine.fluidBlockKeys);
 
@@ -892,26 +893,27 @@ export const buildChunkPayload = ({
       softCoordinates.push(coordinateKey);
     }
 
-    const payload = placement.payload ?? serializeInstancedEntry(placement);
+    if (includeBlockPlacements && blockPlacements) {
+      const payload = placement.payload ?? serializeInstancedEntry(placement);
+      const gridPosition = serializeGridPosition(placement.gridPosition);
+      const gridIndex = Number.isInteger(placement.gridIndex)
+        ? placement.gridIndex
+        : -1;
 
-    const gridPosition = serializeGridPosition(placement.gridPosition);
-    const gridIndex = Number.isInteger(placement.gridIndex)
-      ? placement.gridIndex
-      : -1;
-
-    blockPlacements.push({
-      index,
-      key: placement.key ?? null,
-      coordinateKey: coordinateKey ?? null,
-      type: placement.type ?? null,
-      collisionMode: placement.collisionMode ?? null,
-      isSolid,
-      isSoft,
-      isVisible: placement.isVisible === true,
-      gridIndex,
-      gridPosition,
-      payload,
-    });
+      blockPlacements.push({
+        index,
+        key: placement.key ?? null,
+        coordinateKey: coordinateKey ?? null,
+        type: placement.type ?? null,
+        collisionMode: placement.collisionMode ?? null,
+        isSolid,
+        isSoft,
+        isVisible: placement.isVisible === true,
+        gridIndex,
+        gridPosition,
+        payload,
+      });
+    }
 
     if (!position) {
       return;
@@ -967,7 +969,7 @@ export const buildChunkPayload = ({
   return {
     chunkX,
     chunkZ,
-    blockPlacements,
+    blockPlacements: includeBlockPlacements ? blockPlacements : null,
     occupancy: {
       minY: occupancyMinY,
       maxY: occupancyMaxY,
