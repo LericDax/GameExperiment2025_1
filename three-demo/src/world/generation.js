@@ -2070,6 +2070,20 @@ export function createChunkBuildTask({
     payloadPrepared = false;
   };
 
+  const exportPayloadSnapshot = () => {
+    if (needsWorkerPayload && cachedChunkPayload) {
+      return cachedChunkPayload;
+    }
+    prepareEngineForPayload();
+    return buildChunkPayload({
+      chunkX,
+      chunkZ,
+      engine: createEnginePayload(),
+      worldOptions,
+      includeBlockPlacements: true,
+    });
+  };
+
   const setRequiresWorkerPayload = (value) => {
     const next = Boolean(value);
     if (needsWorkerPayload === next) {
@@ -3367,6 +3381,7 @@ export function createChunkBuildTask({
     finalize,
     setRequiresWorkerPayload,
     releaseCachedPayload,
+    exportPayloadSnapshot,
   };
 }
 

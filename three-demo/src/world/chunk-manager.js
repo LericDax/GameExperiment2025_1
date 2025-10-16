@@ -10,6 +10,7 @@ import {
 import { finalizeChunkMeshes } from './finalize-chunk-meshes.js';
 import { deriveCollisionKeySetsFromMesh } from './collision-key-utils.js';
 import { pruneOccludedInstancedEntries } from './instanced-occlusion-utils.js';
+import { serializeInstancedEntry } from './chunk-payload-serializers.js';
 import {
   createFluidSurface,
   disposeFluidSurface,
@@ -279,6 +280,7 @@ export function createChunkManager({
   maxPreloadPerUpdate = 2,
   maxDisposalsPerUpdate = 1,
   maxActivationsPerUpdate = 2,
+  payloadCacheSize = 32,
 }) {
   const loadedChunks = new Map();
   const solidBlocks = new Set();
@@ -369,6 +371,93 @@ export function createChunkManager({
   const chunkBuildWorker = ensureChunkBuildWorkerInstance();
   const workerEnabled = Boolean(chunkBuildWorker);
   const workerDisposables = [];
+  const payloadCache = new Map();
+  const normalizeCacheCapacity = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return 0;
+    }
+    return Math.max(0, Math.floor(numeric));
+  };
+  const computeGenerationSignature = () => {
+    const terrain = worldConfig.terrain ?? {};
+    const terrainSignature = JSON.stringify({
+      baseHeight: terrain.baseHeight ?? null,
+      maxHeight: terrain.maxHeight ?? null,
+      primaryFrequency: terrain.primaryFrequency ?? null,
+      primaryAmplitude: terrain.primaryAmplitude ?? null,
+      detailFrequency: terrain.detailFrequency ?? null,
+      detailAmplitude: terrain.detailAmplitude ?? null,
+      ridgeFrequency: terrain.ridgeFrequency ?? null,
+      ridgeStrength: terrain.ridgeStrength ?? null,
+      climateHeightInfluence: terrain.climateHeightInfluence ?? null,
+      shoreSlopeBias: terrain.shoreSlopeBias ?? null,
+      tfms: terrain.tfms ? { ...terrain.tfms } : null,
+    });
+    const biomeSignature = JSON.stringify(worldConfig.biomes ?? {});
+    return [
+      worldConfig.chunkSize,
+      worldConfig.baseHeight,
+      worldConfig.maxHeight,
+      worldConfig.waterLevel,
+      terrainSignature,
+      biomeSignature,
+    ].join('|');
+  };
+  let payloadCacheCapacity = normalizeCacheCapacity(payloadCacheSize);
+  let lastCacheSeedHash = worldConfig.seedHash;
+  let lastCacheSignature = computeGenerationSignature();
+
+  const clearPayloadCacheEntries = () => {
+    payloadCache.clear();
+  };
+
+  const ensureCacheCapacityLimit = () => {
+    if (payloadCacheCapacity <= 0) {
+      clearPayloadCacheEntries();
+      return;
+    }
+    while (payloadCache.size > payloadCacheCapacity) {
+      const oldestKey = payloadCache.keys().next().value;
+      if (oldestKey === undefined) {
+        break;
+      }
+      payloadCache.delete(oldestKey);
+    }
+  };
+
+  const setCachedPayload = (key, payload) => {
+    if (!key || !payloadCacheCapacity) {
+      return;
+    }
+    payloadCache.delete(key);
+    payloadCache.set(key, payload);
+    ensureCacheCapacityLimit();
+  };
+
+  const takeCachedPayload = (key) => {
+    if (!key || !payloadCache.has(key)) {
+      return null;
+    }
+    const value = payloadCache.get(key);
+    payloadCache.delete(key);
+    return value ?? null;
+  };
+
+  const refreshCacheForWorldChange = () => {
+    const currentSeed = worldConfig.seedHash;
+    if (currentSeed !== lastCacheSeedHash) {
+      lastCacheSeedHash = currentSeed;
+      lastCacheSignature = computeGenerationSignature();
+      clearPayloadCacheEntries();
+      return;
+    }
+    const signature = computeGenerationSignature();
+    if (signature !== lastCacheSignature) {
+      lastCacheSignature = signature;
+      clearPayloadCacheEntries();
+    }
+  };
   let lastCenterChunkX = 0;
   let lastCenterChunkZ = 0;
   let hasLastCenter = false;
@@ -530,6 +619,217 @@ export function createChunkManager({
       maxY: maxY + 0.5,
       minZ: minZ - 0.5,
       maxZ: maxZ + 0.5,
+    };
+  }
+
+  function toUint32Array(source) {
+    if (source instanceof Uint32Array) {
+      return new Uint32Array(source);
+    }
+    if (ArrayBuffer.isView(source)) {
+      return new Uint32Array(source);
+    }
+    if (Array.isArray(source)) {
+      return new Uint32Array(
+        source.map((value) => (Number.isFinite(value) ? value : 0)),
+      );
+    }
+    if (source instanceof Set) {
+      return new Uint32Array(
+        Array.from(source).map((value) => (Number.isFinite(value) ? value : 0)),
+      );
+    }
+    return new Uint32Array(0);
+  }
+
+  function serializeDecorationMetadataFromChunk(chunk) {
+    if (!chunk) {
+      return {
+        batches: [],
+        groups: [],
+        ownerIndex: {},
+        typeIndex: {},
+      };
+    }
+
+    const normalizeDecorationSource = (source) => {
+      if (source instanceof Map) {
+        return Array.from(source.entries());
+      }
+      if (source && typeof source === 'object') {
+        return Object.entries(source);
+      }
+      return [];
+    };
+
+    const batches = normalizeDecorationSource(chunk.decorationData).map(
+      ([type, record]) => {
+        if (!type || !record) {
+          return null;
+        }
+        const entries = Array.isArray(record.entries) ? record.entries : [];
+        const serializedEntries = entries.map((entry) =>
+          serializeInstancedEntry(entry ?? entry?.payload ?? null),
+        );
+        const entryKeys = entries
+          .map((entry) => (entry?.key ? String(entry.key) : null))
+          .filter(Boolean);
+        const capacityCandidate = Number.isFinite(record.capacity)
+          ? record.capacity
+          : Number.isFinite(record.mesh?.userData?.capacity)
+          ? record.mesh.userData.capacity
+          : entries.length;
+        return {
+          type,
+          capacity:
+            Number.isFinite(capacityCandidate) && capacityCandidate >= 0
+              ? capacityCandidate
+              : entries.length,
+          entryKeys,
+          entries: serializedEntries,
+        };
+      },
+    ).filter(Boolean);
+
+    const groups = normalizeDecorationSource(chunk.decorationGroups)
+      .map(([key, metadata]) => {
+        if (!metadata) {
+          return null;
+        }
+        const groupKey = metadata.key ?? key ?? null;
+        if (!groupKey || !metadata.type) {
+          return null;
+        }
+        const indicesSource = metadata.instanceIndices ?? [];
+        const entryIndices = toUint32Array(
+          ArrayBuffer.isView(indicesSource) || Array.isArray(indicesSource)
+            ? indicesSource
+            : indicesSource instanceof Set
+            ? Array.from(indicesSource)
+            : [],
+        );
+        return {
+          key: String(groupKey),
+          type: metadata.type,
+          owner:
+            metadata.owner !== undefined ? metadata.owner ?? null : null,
+          destructible:
+            typeof metadata.destructible === 'boolean'
+              ? metadata.destructible
+              : metadata.destructible ?? true,
+          entryIndices,
+        };
+      })
+      .filter(Boolean);
+
+    const ownerIndex = {};
+    if (chunk.decorationOwnerIndex instanceof Map) {
+      chunk.decorationOwnerIndex.forEach((groups, owner) => {
+        const keys = groups instanceof Map
+          ? Array.from(groups.keys())
+          : groups instanceof Set
+          ? Array.from(groups)
+          : Array.isArray(groups)
+          ? groups.slice()
+          : [];
+        if (keys.length > 0) {
+          ownerIndex[owner] = keys.map((value) => String(value));
+        }
+      });
+    } else if (chunk.decorationOwnerIndex && typeof chunk.decorationOwnerIndex === 'object') {
+      Object.entries(chunk.decorationOwnerIndex).forEach(([owner, groups]) => {
+        const keys = Array.isArray(groups)
+          ? groups.slice()
+          : groups instanceof Set
+          ? Array.from(groups)
+          : groups instanceof Map
+          ? Array.from(groups.keys())
+          : [];
+        if (keys.length > 0) {
+          ownerIndex[owner] = keys.map((value) => String(value));
+        }
+      });
+    }
+
+    const typeIndex = {};
+    if (chunk.decorationTypeIndex instanceof Map) {
+      chunk.decorationTypeIndex.forEach((groups, type) => {
+        let keys = [];
+        if (groups instanceof Set) {
+          keys = Array.from(groups)
+            .map((metadata) => metadata?.key ?? null)
+            .filter(Boolean);
+        } else if (groups instanceof Map) {
+          keys = Array.from(groups.keys());
+        } else if (Array.isArray(groups)) {
+          keys = groups.slice();
+        }
+        if (keys.length > 0) {
+          typeIndex[type] = keys.map((value) => String(value));
+        }
+      });
+    } else if (chunk.decorationTypeIndex && typeof chunk.decorationTypeIndex === 'object') {
+      Object.entries(chunk.decorationTypeIndex).forEach(([type, groups]) => {
+        let keys = [];
+        if (groups instanceof Set) {
+          keys = Array.from(groups)
+            .map((metadata) => metadata?.key ?? null)
+            .filter(Boolean);
+        } else if (groups instanceof Map) {
+          keys = Array.from(groups.keys());
+        } else if (Array.isArray(groups)) {
+          keys = groups.slice();
+        }
+        if (keys.length > 0) {
+          typeIndex[type] = keys.map((value) => String(value));
+        }
+      });
+    }
+
+    return { batches, groups, ownerIndex, typeIndex };
+  }
+
+  function hexStringToColorArray(value) {
+    if (typeof value !== 'string' || value.length === 0) {
+      return null;
+    }
+    const color = new THREE.Color(value);
+    return new Float32Array([color.r, color.g, color.b]);
+  }
+
+  function serializeBiomePayloadFromChunk(chunk, fallbackBiomes = []) {
+    if (!chunk || !Array.isArray(chunk.biomes) || chunk.biomes.length === 0) {
+      return fallbackBiomes;
+    }
+    return chunk.biomes.map((biome) => {
+      const shader = biome?.shader ?? {};
+      return {
+        id: biome?.id ?? null,
+        label: biome?.label ?? null,
+        weight: Number.isFinite(biome?.weight) ? biome.weight : 0,
+        samples: Number.isFinite(biome?.weight) ? biome.weight : 0,
+        shader: {
+          fogColor: hexStringToColorArray(shader.fogColor),
+          tintColor: hexStringToColorArray(shader.tintColor),
+          tintStrength: Number.isFinite(shader.tintStrength)
+            ? shader.tintStrength
+            : 1,
+        },
+      };
+    });
+  }
+
+  function buildCachePayloadFromChunk(chunk) {
+    if (!chunk?.__cachePayload) {
+      return null;
+    }
+    const basePayload = chunk.__cachePayload;
+    const decorations = serializeDecorationMetadataFromChunk(chunk);
+    const biomes = serializeBiomePayloadFromChunk(chunk, basePayload.biomes);
+    return {
+      ...basePayload,
+      decorations,
+      biomes,
     };
   }
 
@@ -897,6 +1197,14 @@ export function createChunkManager({
     }
     pendingPreloadEntries.delete(entry.key);
     try {
+      let payloadForCache = null;
+      if (entry.workerPayload?.payload) {
+        payloadForCache = entry.workerPayload.payload;
+      } else if (entry.metadata?.payload) {
+        payloadForCache = entry.metadata.payload;
+      } else if (entry.task?.exportPayloadSnapshot) {
+        payloadForCache = entry.task.exportPayloadSnapshot();
+      }
       let chunk;
       if (entry.workerPayload) {
         chunk = finalizeWorkerChunk(entry, entry.workerPayload);
@@ -904,6 +1212,9 @@ export function createChunkManager({
         chunk = finalizeWorkerChunk(entry);
       } else {
         chunk = entry.task.finalize();
+      }
+      if (chunk && payloadForCache) {
+        chunk.__cachePayload = payloadForCache;
       }
       const pendingRecord = {
         key: entry.key,
@@ -2289,6 +2600,17 @@ export function createChunkManager({
       return;
     }
 
+    refreshCacheForWorldChange();
+    if (payloadCacheCapacity > 0) {
+      const cachePayload = buildCachePayloadFromChunk(chunk);
+      if (cachePayload) {
+        setCachedPayload(key, { payload: cachePayload });
+      }
+    }
+    if (chunk.__cachePayload) {
+      chunk.__cachePayload = null;
+    }
+
     invalidateTerrainSamplesForChunk({
       chunkX: chunk.chunkX,
       chunkZ: chunk.chunkZ,
@@ -2434,6 +2756,8 @@ export function createChunkManager({
       return;
     }
 
+    refreshCacheForWorldChange();
+
     const { urgent = false } = options;
     const dx = chunkX - centerChunkX;
     const dz = chunkZ - centerChunkZ;
@@ -2455,6 +2779,45 @@ export function createChunkManager({
         queueDirty = true;
       }
       return existing;
+    }
+
+    if (payloadCacheCapacity > 0) {
+      const cachedEntry = takeCachedPayload(key);
+      if (cachedEntry?.payload) {
+        const entry = {
+          key,
+          chunkX,
+          chunkZ,
+          priority,
+          urgent: Boolean(urgent),
+          task: null,
+          pendingBudget: 0,
+          promise: null,
+          resolve: null,
+          reject: null,
+          active: false,
+          unlimited: false,
+          finalized: true,
+          cancelled: false,
+          stepHint: defaultPreloadBurst,
+          metadata: { mode: 'cache', inflight: false, payload: cachedEntry.payload },
+          workerPayload: { payload: cachedEntry.payload },
+          pendingChunk: null,
+        };
+        ensurePendingEntryPromise(entry);
+        const chunk = finalizeWorkerChunk(entry, entry.workerPayload);
+        if (chunk) {
+          chunk.__cachePayload = cachedEntry.payload;
+          const pendingRecord = {
+            key: entry.key,
+            chunk,
+            entry,
+          };
+          entry.pendingChunk = pendingRecord;
+          enqueuePendingActivation(pendingRecord);
+        }
+        return entry;
+      }
     }
 
     const entry = {
@@ -2612,6 +2975,8 @@ export function createChunkManager({
     if (!position) {
       return;
     }
+
+    refreshCacheForWorldChange();
 
     const centerChunkX = worldToChunk(position.x);
     const centerChunkZ = worldToChunk(position.z);
@@ -2884,6 +3249,7 @@ export function createChunkManager({
     hasLastCenter = false;
     clearTerrainSampleCache();
     raycastTargets.clear();
+    clearPayloadCacheEntries();
     while (workerDisposables.length > 0) {
       const disposeListener = workerDisposables.pop();
       try {
