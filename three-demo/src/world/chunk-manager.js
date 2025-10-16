@@ -278,6 +278,7 @@ export function createChunkManager({
   retainDistance: initialRetainDistance,
   maxPreloadPerUpdate = 2,
   maxDisposalsPerUpdate = 1,
+  maxActivationsPerUpdate = 2,
 }) {
   const loadedChunks = new Map();
   const solidBlocks = new Set();
@@ -292,6 +293,7 @@ export function createChunkManager({
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   const eventListeners = new Map();
   const defaultDisposalBudget = resolveBudget(maxDisposalsPerUpdate, 1);
+  const defaultActivationBudget = resolveBudget(maxActivationsPerUpdate, 2);
   const defaultPreloadBurst = (() => {
     const numeric = Number(maxPreloadPerUpdate);
     if (!Number.isFinite(numeric) || numeric <= 0) {
@@ -359,12 +361,20 @@ export function createChunkManager({
     : Math.max(lastFiniteViewDistance, 1);
   const preloadQueue = [];
   const pendingPreloadEntries = new Map();
+  const pendingActivations = [];
+  const pendingActivationByKey = new Map();
   const chunkJobQueue = [];
   let chunkJobPumpActive = false;
   let chunkJobPumpPromise = null;
   const chunkBuildWorker = ensureChunkBuildWorkerInstance();
   const workerEnabled = Boolean(chunkBuildWorker);
   const workerDisposables = [];
+  let lastCenterChunkX = 0;
+  let lastCenterChunkZ = 0;
+  let hasLastCenter = false;
+  let lastFiniteViewRadius = Number.isFinite(currentViewDistance)
+    ? Math.max(0, Math.floor(currentViewDistance))
+    : Math.max(0, Math.floor(lastFiniteViewDistance));
 
   function waitForNextJobSlice(timeout = 16) {
     return new Promise((resolve) => {
@@ -686,6 +696,193 @@ export function createChunkManager({
     return entry.promise;
   }
 
+  function releasePendingChunkResources(chunk) {
+    if (!chunk) {
+      return;
+    }
+    if (chunk.group?.traverse) {
+      chunk.group.traverse((child) => {
+        if (!child) {
+          return;
+        }
+        if (child.isInstancedMesh) {
+          disposeInstancedMesh(child);
+          return;
+        }
+        if (child.isMesh) {
+          child.geometry?.dispose?.();
+        }
+        const material = child.material;
+        if (Array.isArray(material)) {
+          material.forEach((mat) => mat?.dispose?.());
+        } else {
+          material?.dispose?.();
+        }
+      });
+    }
+    chunk.group?.clear?.();
+    chunk.group = null;
+
+    (chunk.fluidSurfaces ?? []).forEach((surface) => {
+      surface.geometry?.dispose?.();
+      disposeFluidSurface(surface);
+    });
+
+    if (chunk.typeData instanceof Map) {
+      chunk.typeData.forEach((record) => {
+        if (!record) {
+          return;
+        }
+        if (Array.isArray(record.entries)) {
+          record.entries.forEach((entry) => {
+            if (!entry) {
+              return;
+            }
+            entry.mesh = null;
+            entry.tintAttribute = null;
+            entry.index = -1;
+          });
+          record.entries.length = 0;
+        }
+        releaseTintAttribute(record.tintAttribute);
+        record.mesh = null;
+        record.tintAttribute = null;
+      });
+      chunk.typeData.clear();
+    }
+    chunk.typeData = null;
+
+    const disposeDecorationRecord = (record) => {
+      if (!record) {
+        return;
+      }
+      if (Array.isArray(record.entries)) {
+        record.entries.forEach((entry) => {
+          if (!entry) {
+            return;
+          }
+          entry.mesh = null;
+          entry.tintAttribute = null;
+        });
+        record.entries.length = 0;
+      }
+      releaseTintAttribute(record.tintAttribute);
+      record.mesh = null;
+      record.tintAttribute = null;
+    };
+
+    if (chunk.decorationData instanceof Map) {
+      chunk.decorationData.forEach(disposeDecorationRecord);
+      chunk.decorationData.clear();
+    } else if (chunk.decorationData && typeof chunk.decorationData === 'object') {
+      Object.values(chunk.decorationData).forEach(disposeDecorationRecord);
+    }
+    chunk.decorationData = null;
+    if (chunk.decorationGroups instanceof Map) {
+      chunk.decorationGroups.clear();
+    }
+    chunk.decorationGroups = null;
+    if (chunk.decorationTypeIndex instanceof Map) {
+      chunk.decorationTypeIndex.clear();
+    }
+    chunk.decorationTypeIndex = null;
+    if (chunk.decorationOwnerIndex instanceof Map) {
+      chunk.decorationOwnerIndex.clear();
+    }
+    chunk.decorationOwnerIndex = null;
+  }
+
+  function activatePendingChunkRecord(record) {
+    if (!record) {
+      return;
+    }
+    const { entry, chunk } = record;
+    if (!entry || !chunk) {
+      record.entry = null;
+      record.chunk = null;
+      return;
+    }
+    try {
+      registerGeneratedChunk(chunk);
+      entry.resolve?.(chunk);
+    } catch (error) {
+      entry.reject?.(error);
+    }
+    entry.pendingChunk = null;
+    entry.resolve = null;
+    entry.reject = null;
+    record.entry = null;
+    record.chunk = null;
+  }
+
+  function dropPendingActivation(key, { disposeChunk = false, settle = false } = {}) {
+    if (!key) {
+      return;
+    }
+    const record = pendingActivationByKey.get(key);
+    if (!record) {
+      return;
+    }
+    pendingActivationByKey.delete(key);
+    const index = pendingActivations.indexOf(record);
+    if (index >= 0) {
+      pendingActivations.splice(index, 1);
+    }
+    if (settle && record.entry) {
+      record.entry.resolve?.(null);
+      record.entry.reject = null;
+      record.entry.resolve = null;
+    }
+    if (record.entry) {
+      record.entry.pendingChunk = null;
+    }
+    if (disposeChunk) {
+      releasePendingChunkResources(record.chunk);
+    }
+    record.entry = null;
+    record.chunk = null;
+  }
+
+  function enqueuePendingActivation(record) {
+    if (!record || !record.key) {
+      return;
+    }
+    if (pendingActivationByKey.has(record.key)) {
+      dropPendingActivation(record.key, { disposeChunk: true, settle: true });
+    }
+    pendingActivationByKey.set(record.key, record);
+    pendingActivations.push(record);
+  }
+
+  function processPendingActivations(limit = defaultActivationBudget) {
+    if (pendingActivations.length === 0) {
+      return 0;
+    }
+
+    const unlimited = !Number.isFinite(limit);
+    let budget = unlimited
+      ? pendingActivations.length
+      : Math.max(0, Math.floor(limit));
+    let processed = 0;
+
+    while (pendingActivations.length > 0 && (unlimited || processed < budget)) {
+      const record = pendingActivations.shift();
+      if (!record) {
+        continue;
+      }
+      pendingActivationByKey.delete(record.key);
+      if (!record.entry || !record.chunk) {
+        record.entry = null;
+        record.chunk = null;
+        continue;
+      }
+      activatePendingChunkRecord(record);
+      processed += 1;
+    }
+
+    return processed;
+  }
+
   function finalizePendingEntry(entry) {
     if (!entry || entry.finalized) {
       return;
@@ -708,9 +905,29 @@ export function createChunkManager({
       } else {
         chunk = entry.task.finalize();
       }
-      registerGeneratedChunk(chunk);
+      const pendingRecord = {
+        key: entry.key,
+        chunk,
+        entry,
+      };
+      entry.pendingChunk = pendingRecord;
       entry.task?.releaseCachedPayload?.();
-      entry.resolve?.(chunk);
+      const shouldDeferActivation = (() => {
+        if (!hasLastCenter) {
+          return false;
+        }
+        const distanceX = Math.abs(entry.chunkX - lastCenterChunkX);
+        const distanceZ = Math.abs(entry.chunkZ - lastCenterChunkZ);
+        return (
+          Number.isFinite(lastFiniteViewRadius) &&
+          (distanceX > lastFiniteViewRadius || distanceZ > lastFiniteViewRadius)
+        );
+      })();
+      if (shouldDeferActivation) {
+        enqueuePendingActivation(pendingRecord);
+      } else {
+        activatePendingChunkRecord(pendingRecord);
+      }
     } catch (error) {
       entry.reject?.(error);
     }
@@ -744,6 +961,7 @@ export function createChunkManager({
       entry.metadata.payload = null;
     }
     entry.workerPayload = null;
+    entry.pendingChunk = null;
     const queueIndex = preloadQueue.indexOf(entry);
     if (queueIndex >= 0) {
       preloadQueue.splice(queueIndex, 1);
@@ -2061,6 +2279,7 @@ export function createChunkManager({
 
   function disposeChunk(key) {
     cancelChunkDisposal(key);
+    dropPendingActivation(key, { disposeChunk: true, settle: true });
     const pendingEntry = pendingPreloadEntries.get(key);
     if (pendingEntry) {
       cancelPendingEntry(pendingEntry);
@@ -2256,6 +2475,7 @@ export function createChunkManager({
       stepHint: defaultPreloadBurst,
       metadata: null,
       workerPayload: null,
+      pendingChunk: null,
     };
     entry.metadata = createChunkJobMetadata(entry);
     entry.task = createChunkBuildTask({
@@ -2422,6 +2642,10 @@ export function createChunkManager({
       options.maxDisposals,
       defaultDisposalBudget,
     );
+    const activationBudget = resolveBudget(
+      options.maxActivations,
+      defaultActivationBudget,
+    );
     const force = Boolean(options.force);
 
     const centerChanged = centerKey !== lastCenterKey;
@@ -2429,6 +2653,7 @@ export function createChunkManager({
     const retentionChanged = desiredRetention !== retentionDistance;
     const queueHasWork = preloadQueue.length > 0;
     const disposalQueueHasWork = chunkDisposalQueue.length > 0;
+    const activationQueueHasWork = pendingActivations.length > 0;
 
     const flushChunkDisposals = (overrideBudget = disposalBudget) => {
       if (force && overrideBudget === 0) {
@@ -2446,7 +2671,8 @@ export function createChunkManager({
       !viewChanged &&
       !retentionChanged &&
       !queueHasWork &&
-      !disposalQueueHasWork
+      !disposalQueueHasWork &&
+      !activationQueueHasWork
     ) {
 
       if (shouldUpdateVisibility) {
@@ -2482,6 +2708,11 @@ export function createChunkManager({
       ? Math.max(finiteView, Math.floor(retentionDistance))
       : Math.max(finiteView, lastFiniteRetentionDistance);
     const finiteRetention = Math.max(finiteView, fallbackRetentionDistance);
+
+    lastCenterChunkX = centerChunkX;
+    lastCenterChunkZ = centerChunkZ;
+    hasLastCenter = true;
+    lastFiniteViewRadius = finiteView;
 
     if (
       retentionChanged &&
@@ -2602,6 +2833,8 @@ export function createChunkManager({
       }
     }
 
+    processPendingActivations(activationBudget);
+
     flushChunkDisposals();
 
 
@@ -2628,6 +2861,7 @@ export function createChunkManager({
         console.error('[chunk-manager] chunk job pump failed during flush', error);
       }
     }
+    processPendingActivations(Number.POSITIVE_INFINITY);
     if (includeDisposals) {
       processChunkDisposalQueue(Number.POSITIVE_INFINITY);
     }
@@ -2635,6 +2869,11 @@ export function createChunkManager({
 
   async function dispose() {
     await flush({ includeDisposals: true });
+    Array.from(pendingActivationByKey.keys()).forEach((key) => {
+      dropPendingActivation(key, { disposeChunk: true, settle: true });
+    });
+    pendingActivations.length = 0;
+    pendingActivationByKey.clear();
     chunkDisposalQueue.length = 0;
     scheduledChunkDisposals.clear();
     Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
@@ -2642,6 +2881,7 @@ export function createChunkManager({
     pendingPreloadEntries.clear();
     queueDirty = false;
     lastCenterKey = null;
+    hasLastCenter = false;
     clearTerrainSampleCache();
     raycastTargets.clear();
     while (workerDisposables.length > 0) {
