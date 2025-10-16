@@ -2859,6 +2859,9 @@ export function createChunkBuildTask({
       group = meshResult.chunkGroup;
       chunkBiomes = meshResult.biomes;
     } else {
+      ensureOccupancyArrays();
+      populateOccupancyFromPlacements();
+      populateFluidOccupancy();
       buildFluidSurfaces();
 
       group = new THREE.Group();
