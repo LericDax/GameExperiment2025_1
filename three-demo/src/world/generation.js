@@ -26,6 +26,7 @@ import { chunkWorldBounds } from './chunk-build-core.js';
 import { buildChunkPayload } from './world/chunk-build-core.js';
 import { finalizeChunkMeshes } from './finalize-chunk-meshes.js';
 import { deriveCollisionKeySetsFromMesh } from './collision-key-utils.js';
+import { pruneOccludedInstancedEntries } from './instanced-occlusion-utils.js';
 import { resolveBiomeTintMultiplier } from './color-utils.js';
 import { worldOptions, applyWorldOptions } from './world-settings.js';
 import { configureSectorObjectPlanner } from './sector-object-planner.js';
@@ -2800,6 +2801,10 @@ export function createChunkBuildTask({
         });
         keysToDelete.forEach((key) => blockLookup.delete(key));
       }
+      pruneOccludedInstancedEntries({
+        typeData,
+        occludedEntries: derivedCollisionKeys.occludedEntries,
+      });
       solidBlockKeys.clear();
       derivedCollisionKeys.solidBlockKeys.forEach((key) =>
         solidBlockKeys.add(key),
@@ -2965,6 +2970,10 @@ export function createChunkBuildTask({
         });
         keysToDelete.forEach((key) => blockLookup.delete(key));
       }
+      pruneOccludedInstancedEntries({
+        typeData,
+        occludedEntries: derivedCollisionKeys.occludedEntries,
+      });
       solidBlockKeys.clear();
       derivedCollisionKeys.solidBlockKeys.forEach((key) =>
         solidBlockKeys.add(key),
