@@ -794,6 +794,13 @@ export function createChunkBuildTask({
         ? options.destructible
         : null;
 
+    const normalizedVisibility =
+      placement.isVisible === true
+        ? true
+        : placement.isVisible === false
+        ? false
+        : null;
+
     const payloadSource = {
       key: placement.key ?? placement.coordinateKey ?? null,
       coordinateKey: placement.coordinateKey ?? null,
@@ -817,6 +824,7 @@ export function createChunkBuildTask({
       prototypeKey: placement.prototypeKey ?? null,
       prototypeLocalKey: placement.prototypeLocalKey ?? null,
       metadata: placement.metadata ?? options.metadata ?? null,
+      isVisible: normalizedVisibility,
     };
 
     const payload = serializeInstancedEntry(payloadSource);
@@ -1796,6 +1804,33 @@ export function createChunkBuildTask({
 
   const toIndex = (lx, ly, lz) => ly * occupancyArea + lz * occupancyWidth + lx;
 
+  const fromIndex = (index) => {
+    if (
+      !Number.isInteger(index) ||
+      index < 0 ||
+      occupancyArea <= 0 ||
+      occupancyWidth <= 0 ||
+      occupancyDepth <= 0
+    ) {
+      return null;
+    }
+    const localY = Math.floor(index / occupancyArea);
+    const areaRemainder = index - localY * occupancyArea;
+    const localZ = Math.floor(areaRemainder / occupancyWidth);
+    const localX = areaRemainder - localZ * occupancyWidth;
+    if (
+      localX < 0 ||
+      localX >= occupancyWidth ||
+      localZ < 0 ||
+      localZ >= occupancyDepth ||
+      localY < 0 ||
+      localY >= occupancyHeight
+    ) {
+      return null;
+    }
+    return { x: localX, y: localY, z: localZ };
+  };
+
   const parseBlockKey = (key) => {
     if (!key || typeof key !== 'string') {
       return null;
@@ -2182,8 +2217,19 @@ export function createChunkBuildTask({
       Array.isArray(existingPayload.position) &&
       Array.isArray(existingPayload.scale);
 
+    const visibilityValue =
+      placement.isVisible === true
+        ? true
+        : placement.isVisible === false
+        ? false
+        : existingPayload?.isVisible === true
+        ? true
+        : existingPayload?.isVisible === false
+        ? false
+        : null;
+
     const leanPayload = isAlreadyPlain
-      ? existingPayload
+      ? { ...existingPayload, isVisible: visibilityValue }
       : {
           key,
           coordinateKey,
@@ -2207,6 +2253,7 @@ export function createChunkBuildTask({
           prototypeKey: payloadSource.prototypeKey ?? null,
           prototypeLocalKey: payloadSource.prototypeLocalKey ?? null,
           metadata: payloadSource.metadata ?? null,
+          isVisible: visibilityValue,
         };
 
     placement.payload = leanPayload;
@@ -2214,7 +2261,8 @@ export function createChunkBuildTask({
     placement.mesh = null;
     placement.tintAttribute = null;
     placement.index = index ?? -1;
-    placement.isVisible = false;
+    placement.isVisible =
+      visibilityValue === null ? placement.isVisible === true : visibilityValue;
 
     return {
       key,
@@ -2247,6 +2295,14 @@ export function createChunkBuildTask({
       isDecoration: leanPayload.isDecoration,
       materialized: false,
       placementIndex: index ?? -1,
+      isVisible:
+        visibilityValue === null
+          ? placement.isVisible === true
+            ? true
+            : placement.isVisible === false
+            ? false
+            : undefined
+          : visibilityValue,
     };
   };
 
@@ -2278,7 +2334,15 @@ export function createChunkBuildTask({
       record.index = -1;
       record.mesh = null;
       record.tintAttribute = null;
-      record.isVisible = false;
+      const normalizedVisibility = record.isVisible === true;
+      record.isVisible = normalizedVisibility;
+      if (record.payload && typeof record.payload === 'object') {
+        record.payload.isVisible = normalizedVisibility;
+      }
+      placement.isVisible = normalizedVisibility;
+      if (placement.payload && typeof placement.payload === 'object') {
+        placement.payload.isVisible = normalizedVisibility;
+      }
 
       let entries = entriesByType.get(record.type);
       if (!entries) {
@@ -2342,6 +2406,137 @@ export function createChunkBuildTask({
     });
   };
 
+  const applyOccupancyVisibility = () => {
+    if (
+      !occupancyPlacements ||
+      occupancyPlacements.length === 0 ||
+      !(typeData instanceof Map)
+    ) {
+      return;
+    }
+
+    const processedPlacements = new Set();
+
+    const setEntryVisibility = (entry, placement, exposed) => {
+      const normalized = exposed === true;
+      if (entry) {
+        entry.isVisible = normalized;
+        if (entry.payload && typeof entry.payload === 'object') {
+          entry.payload.isVisible = normalized;
+        }
+      }
+      if (placement) {
+        placement.isVisible = normalized;
+        if (placement.payload && typeof placement.payload === 'object') {
+          placement.payload.isVisible = normalized;
+        }
+        processedPlacements.add(placement);
+      }
+    };
+
+    const resolveGridPosition = (entry, placement) => {
+      if (entry?.gridPosition) {
+        return entry.gridPosition;
+      }
+      if (placement?.gridPosition) {
+        return placement.gridPosition;
+      }
+      const candidateIndex = Number.isInteger(entry?.gridIndex)
+        ? entry.gridIndex
+        : Number.isInteger(placement?.gridIndex)
+        ? placement.gridIndex
+        : -1;
+      if (!Number.isInteger(candidateIndex) || candidateIndex < 0) {
+        return null;
+      }
+      const decoded = fromIndex(candidateIndex);
+      if (!decoded) {
+        return null;
+      }
+      if (entry) {
+        entry.gridIndex = candidateIndex;
+        entry.gridPosition = entry.gridPosition ?? {
+          x: decoded.x,
+          y: decoded.y,
+          z: decoded.z,
+        };
+      }
+      if (placement) {
+        placement.gridIndex = candidateIndex;
+        placement.gridPosition = placement.gridPosition ?? {
+          x: decoded.x,
+          y: decoded.y,
+          z: decoded.z,
+        };
+      }
+      return decoded;
+    };
+
+    typeData.forEach((record) => {
+      if (!record || !Array.isArray(record.entries)) {
+        return;
+      }
+
+      record.entries.forEach((entry) => {
+        if (!entry) {
+          return;
+        }
+        const placementIndex = Number.isInteger(entry.placementIndex)
+          ? entry.placementIndex
+          : -1;
+        const placement =
+          placementIndex >= 0 ? blockPlacements[placementIndex] ?? null : null;
+
+        const local = resolveGridPosition(entry, placement);
+        if (!local) {
+          setEntryVisibility(entry, placement, true);
+          return;
+        }
+
+        let exposed = false;
+        for (let i = 0; i < neighborOffsets3D.length; i += 1) {
+          const offset = neighborOffsets3D[i];
+          const neighborX = local.x + offset.dx;
+          const neighborY = local.y + offset.dy;
+          const neighborZ = local.z + offset.dz;
+
+          if (
+            neighborX < 0 ||
+            neighborX >= occupancyWidth ||
+            neighborZ < 0 ||
+            neighborZ >= occupancyDepth ||
+            neighborY < 0 ||
+            neighborY >= occupancyHeight
+          ) {
+            exposed = true;
+            break;
+          }
+
+          const neighborIndex = toIndex(neighborX, neighborY, neighborZ);
+          if (fluidOccupancy && fluidOccupancy[neighborIndex] === 1) {
+            exposed = true;
+            break;
+          }
+
+          const neighborPlacementIndex = occupancyPlacements[neighborIndex];
+          if (neighborPlacementIndex < 0) {
+            exposed = true;
+            break;
+          }
+        }
+
+        setEntryVisibility(entry, placement, exposed);
+      });
+    });
+
+    blockPlacements.forEach((placement) => {
+      if (!placement || placement.removed || processedPlacements.has(placement)) {
+        return;
+      }
+      setEntryVisibility(null, placement, true);
+    });
+  };
+
   const prepareEngineForPayload = () => {
     if (payloadPrepared) {
       return;
@@ -2354,6 +2549,7 @@ export function createChunkBuildTask({
     ensureOccupancyArrays();
     populateOccupancyFromPlacements();
     populateFluidOccupancy();
+    applyOccupancyVisibility();
     buildFluidSurfaces();
   };
 
@@ -2797,15 +2993,24 @@ export function createChunkBuildTask({
           if (!entry || (!occludedKeys.has(key) && !occludedEntries.has(entry))) {
             if (entry) {
               entry.isVisible = true;
+              if (entry.payload && typeof entry.payload === 'object') {
+                entry.payload.isVisible = true;
+              }
             }
             return;
           }
           entry.isVisible = false;
+          if (entry.payload && typeof entry.payload === 'object') {
+            entry.payload.isVisible = false;
+          }
         });
       } else {
         blockLookup.forEach((entry) => {
           if (entry) {
             entry.isVisible = true;
+            if (entry.payload && typeof entry.payload === 'object') {
+              entry.payload.isVisible = true;
+            }
           }
         });
       }
@@ -2875,6 +3080,7 @@ export function createChunkBuildTask({
       ensureOccupancyArrays();
       populateOccupancyFromPlacements();
       populateFluidOccupancy();
+      applyOccupancyVisibility();
       buildFluidSurfaces();
 
       group = new THREE.Group();
@@ -2898,7 +3104,18 @@ export function createChunkBuildTask({
         entry.metadata = placement.metadata ?? entry.metadata ?? null;
         entry.gridIndex = placement.gridIndex ?? entry.gridIndex ?? -1;
         entry.gridPosition = placement.gridPosition ?? entry.gridPosition ?? null;
-        entry.isVisible = placement.isVisible === true ? true : undefined;
+        const placementVisibility =
+          placement.isVisible === true
+            ? true
+            : placement.isVisible === false
+            ? false
+            : undefined;
+        entry.isVisible = placementVisibility;
+        if (typeof placementVisibility === 'boolean' && entry.payload) {
+          if (typeof entry.payload === 'object') {
+            entry.payload.isVisible = placementVisibility;
+          }
+        }
         entry.removed = false;
         if (entry.key) {
           blockLookup.set(entry.key, entry);
@@ -2921,16 +3138,40 @@ export function createChunkBuildTask({
           entries.length,
           typeCapacities.get(type) ?? 0,
         );
-        const { mesh, tintAttribute } = buildInstancedMesh(entries, type, {
+        const visibleEntries = [];
+        entries.forEach((entry) => {
+          if (!entry) {
+            return;
+          }
+          const normalizedVisibility = entry.isVisible === false ? false : true;
+          entry.isVisible = normalizedVisibility;
+          if (entry.payload && typeof entry.payload === 'object') {
+            entry.payload.isVisible = normalizedVisibility;
+          }
+          if (!normalizedVisibility) {
+            entry.index = -1;
+            entry.mesh = null;
+            entry.tintAttribute = null;
+            return;
+          }
+          visibleEntries.push(entry);
+        });
+        const { mesh, tintAttribute } = buildInstancedMesh(visibleEntries, type, {
           capacity,
         });
-        mesh.count = entries.length;
-        mesh.instanceMatrix.needsUpdate = entries.length > 0;
+        mesh.count = visibleEntries.length;
+        mesh.instanceMatrix.needsUpdate = visibleEntries.length > 0;
         if (tintAttribute) {
-          tintAttribute.needsUpdate = entries.length > 0;
+          tintAttribute.needsUpdate = visibleEntries.length > 0;
         }
         typeCapacities.set(type, capacity);
-        typeData.set(type, { entries, mesh, tintAttribute, capacity });
+        typeData.set(type, {
+          entries: visibleEntries,
+          allEntries: entries,
+          mesh,
+          tintAttribute,
+          capacity,
+        });
         group.add(mesh);
       });
 
@@ -2974,15 +3215,24 @@ export function createChunkBuildTask({
           if (!entry || (!occludedKeys.has(key) && !occludedEntries.has(entry))) {
             if (entry) {
               entry.isVisible = true;
+              if (entry.payload && typeof entry.payload === 'object') {
+                entry.payload.isVisible = true;
+              }
             }
             return;
           }
           entry.isVisible = false;
+          if (entry.payload && typeof entry.payload === 'object') {
+            entry.payload.isVisible = false;
+          }
         });
       } else {
         blockLookup.forEach((entry) => {
           if (entry) {
             entry.isVisible = true;
+            if (entry.payload && typeof entry.payload === 'object') {
+              entry.payload.isVisible = true;
+            }
           }
         });
       }

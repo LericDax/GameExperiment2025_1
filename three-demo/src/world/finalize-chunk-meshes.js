@@ -65,6 +65,25 @@ export const finalizeChunkMeshes = (payload, blockMaterials, THREE) => {
       }
     });
 
+    const visibleEntries = [];
+    entries.forEach((entry) => {
+      if (!entry) {
+        return;
+      }
+      const normalizedVisibility = entry.isVisible === false ? false : true;
+      entry.isVisible = normalizedVisibility;
+      if (entry.payload && typeof entry.payload === 'object') {
+        entry.payload.isVisible = normalizedVisibility;
+      }
+      if (!normalizedVisibility) {
+        entry.index = -1;
+        entry.mesh = null;
+        entry.tintAttribute = null;
+        return;
+      }
+      visibleEntries.push(entry);
+    });
+
     entryKeys.forEach((key, index) => {
       if (!key) {
         return;
@@ -79,18 +98,19 @@ export const finalizeChunkMeshes = (payload, blockMaterials, THREE) => {
       THREE,
       blockMaterials,
       type,
-      entries,
+      entries: visibleEntries,
       capacity: effectiveCapacity,
     });
 
-    mesh.count = entries.length;
-    mesh.instanceMatrix.needsUpdate = entries.length > 0;
+    mesh.count = visibleEntries.length;
+    mesh.instanceMatrix.needsUpdate = visibleEntries.length > 0;
     if (tintAttribute) {
-      tintAttribute.needsUpdate = entries.length > 0;
+      tintAttribute.needsUpdate = visibleEntries.length > 0;
     }
 
     typeData.set(type, {
-      entries,
+      entries: visibleEntries,
+      allEntries: entries,
       mesh,
       tintAttribute,
       capacity: effectiveCapacity,

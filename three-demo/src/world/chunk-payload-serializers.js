@@ -214,6 +214,7 @@ export const serializeInstancedEntry = (entry) => {
       typeof entry.isSolid === 'boolean' ? entry.isSolid : entry.isSolid ?? null,
     isSoft: typeof entry.isSoft === 'boolean' ? entry.isSoft : entry.isSoft ?? null,
     isDecoration: entry.isDecoration === true,
+    isVisible: typeof entry.isVisible === 'boolean' ? entry.isVisible : null,
     sourceObjectId: entry.sourceObjectId ?? null,
     voxelIndex: entry.voxelIndex ?? null,
     prototypeKey: entry.prototypeKey ?? null,
@@ -247,6 +248,12 @@ export const deserializeInstancedEntry = (payload, THREE) => {
     isSolid: typeof payload.isSolid === 'boolean' ? payload.isSolid : null,
     isSoft: typeof payload.isSoft === 'boolean' ? payload.isSoft : null,
     isDecoration: payload.isDecoration === true,
+    isVisible:
+      typeof payload.isVisible === 'boolean'
+        ? payload.isVisible
+        : payload.isVisible === null
+        ? null
+        : undefined,
     sourceObjectId: payload.sourceObjectId ?? null,
     voxelIndex: payload.voxelIndex ?? null,
     prototypeKey: payload.prototypeKey ?? null,
