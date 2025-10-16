@@ -537,14 +537,22 @@ export function createChunkManager({
     });
     const occludedKeys = new Set(derivedCollisionKeys.occludedCoordinates ?? []);
     if (derivedCollisionKeys.occludedEntries?.size || occludedKeys.size > 0) {
-      const removalTargets = derivedCollisionKeys.occludedEntries ?? new Set();
-      const keysToDelete = [];
+      const occludedEntries = derivedCollisionKeys.occludedEntries ?? new Set();
       meshResult.blockLookup.forEach((entry, key) => {
-        if (occludedKeys.has(key) || removalTargets.has(entry)) {
-          keysToDelete.push(key);
+        if (!entry || (!occludedKeys.has(key) && !occludedEntries.has(entry))) {
+          if (entry) {
+            entry.isVisible = true;
+          }
+          return;
+        }
+        entry.isVisible = false;
+      });
+    } else if (meshResult.blockLookup?.forEach) {
+      meshResult.blockLookup.forEach((entry) => {
+        if (entry) {
+          entry.isVisible = true;
         }
       });
-      keysToDelete.forEach((key) => meshResult.blockLookup.delete(key));
     }
     pruneOccludedInstancedEntries({
       typeData: meshResult.typeData,
@@ -1453,6 +1461,7 @@ export function createChunkManager({
       entry.mesh = mesh;
       entry.tintAttribute = tintAttribute;
       entry.isHidden = false;
+      entry.isVisible = true;
       const group = resolveDecorationGroup(chunk, entry);
       if (group && Array.isArray(group.instanceIndices)) {
         if (!group.instanceIndices.includes(index)) {
@@ -1495,6 +1504,7 @@ export function createChunkManager({
     }
     entry.mesh = mesh;
     entry.tintAttribute = tintAttribute;
+    entry.isVisible = true;
     const coordinateKey = entry.coordinateKey ?? entry.key;
     if (coordinateKey) {
       if (entry.isSolid) {

@@ -114,6 +114,7 @@ export const deriveCollisionKeySetsFromMesh = ({
     if (isEntryFullyOccluded(entry, coordinates, blockLookup, blockMaterials)) {
       occludedCoordinates.add(coordinateKey);
       if (entry) {
+        entry.isVisible = false;
         occludedEntries.add(entry);
       }
       return;
@@ -122,7 +123,7 @@ export const deriveCollisionKeySetsFromMesh = ({
       return;
     }
     processedCoordinates.add(coordinateKey);
-    if (entry && typeof entry === 'object' && typeof entry.isVisible !== 'boolean') {
+    if (entry && typeof entry === 'object') {
       entry.isVisible = true;
     }
     const collisionMode = resolveCollisionMode(entry);
