@@ -9,6 +9,7 @@ import {
 } from './generation.js';
 import { finalizeChunkMeshes } from './finalize-chunk-meshes.js';
 import { deriveCollisionKeySetsFromMesh } from './collision-key-utils.js';
+import { pruneOccludedInstancedEntries } from './instanced-occlusion-utils.js';
 import {
   createFluidSurface,
   disposeFluidSurface,
@@ -545,6 +546,10 @@ export function createChunkManager({
       });
       keysToDelete.forEach((key) => meshResult.blockLookup.delete(key));
     }
+    pruneOccludedInstancedEntries({
+      typeData: meshResult.typeData,
+      occludedEntries: derivedCollisionKeys.occludedEntries,
+    });
 
     const chunk = {
       chunkX: entry.chunkX,
