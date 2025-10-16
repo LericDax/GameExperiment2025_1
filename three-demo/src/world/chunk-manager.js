@@ -171,16 +171,11 @@ export function __resetChunkBuildWorkerFactoryForTest() {
 }
 
 const enableChunkBuildWorker = (() => {
-  if (
-    typeof globalThis !== 'undefined' &&
-    globalThis.__ENABLE_CHUNK_WORKER__ === true
-  ) {
+  const globalScope = typeof globalThis !== 'undefined' ? globalThis : null;
+  if (globalScope?.__ENABLE_CHUNK_WORKER__ === true) {
     return true;
   }
-  if (
-    typeof globalThis !== 'undefined' &&
-    globalThis.__DISABLE_CHUNK_WORKER__ === true
-  ) {
+  if (globalScope?.__DISABLE_CHUNK_WORKER__ === true) {
     return false;
   }
   if (typeof import.meta !== 'undefined' && import.meta?.env) {
@@ -200,7 +195,10 @@ const enableChunkBuildWorker = (() => {
       return flag;
     }
   }
-  return false;
+  // Default to the worker path when the environment supports Worker and the
+  // host has not explicitly opted out. This keeps chunk generation off the
+  // main thread for typical browser builds.
+  return typeof Worker !== 'undefined';
 })();
 
 function shouldUseChunkBuildWorker() {
