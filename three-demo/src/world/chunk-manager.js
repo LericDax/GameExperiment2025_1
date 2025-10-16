@@ -8,6 +8,7 @@ import {
   isBlockOccluding,
 } from './generation.js';
 import { finalizeChunkMeshes } from './finalize-chunk-meshes.js';
+import { deriveCollisionKeySetsFromMesh } from './collision-key-utils.js';
 import {
   createFluidSurface,
   disposeFluidSurface,
@@ -529,31 +530,29 @@ export function createChunkManager({
       throw new Error('Chunk worker payload unavailable.');
     }
     const meshResult = finalizeChunkMeshes(payload, blockMaterials, THREE);
-    const toCoordinateSet = (source) => {
-      if (!source) {
-        return new Set();
-      }
-      if (source instanceof Set) {
-        return new Set(source);
-      }
-      if (Array.isArray(source)) {
-        return new Set(source.map((key) => String(key)));
-      }
-      if (typeof source === 'object') {
-        return new Set(Object.keys(source));
-      }
-      return new Set();
-    };
-    const occupancy = payload.occupancy ?? {};
-    const solidBlockKeys = toCoordinateSet(occupancy.solidCoordinates);
-    const softBlockKeys = toCoordinateSet(occupancy.softCoordinates);
+    const derivedCollisionKeys = deriveCollisionKeySetsFromMesh({
+      typeData: meshResult.typeData,
+      blockLookup: meshResult.blockLookup,
+      blockMaterials,
+    });
+    const occludedKeys = new Set(derivedCollisionKeys.occludedCoordinates ?? []);
+    if (derivedCollisionKeys.occludedEntries?.size || occludedKeys.size > 0) {
+      const removalTargets = derivedCollisionKeys.occludedEntries ?? new Set();
+      const keysToDelete = [];
+      meshResult.blockLookup.forEach((entry, key) => {
+        if (occludedKeys.has(key) || removalTargets.has(entry)) {
+          keysToDelete.push(key);
+        }
+      });
+      keysToDelete.forEach((key) => meshResult.blockLookup.delete(key));
+    }
 
     const chunk = {
       chunkX: entry.chunkX,
       chunkZ: entry.chunkZ,
       group: meshResult.chunkGroup,
-      solidBlockKeys,
-      softBlockKeys,
+      solidBlockKeys: derivedCollisionKeys.solidBlockKeys,
+      softBlockKeys: derivedCollisionKeys.softBlockKeys,
       typeCapacities: meshResult.typeCapacities,
       waterColumns: meshResult.waterColumns,
       fluidColumnsByType: meshResult.fluidColumnsByType,
