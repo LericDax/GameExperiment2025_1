@@ -853,11 +853,27 @@ export function createChunkManager({
     });
   }
 
-  function buildCachePayloadFromChunk(chunk) {
-    if (!chunk?.__cachePayload) {
+  function buildCachePayloadFromChunk(chunk, keyOverride = null) {
+    if (!chunk) {
       return null;
     }
-    const basePayload = chunk.__cachePayload;
+    let basePayload = chunk.__cachePayload ?? null;
+    if (!basePayload) {
+      const cacheKey = (() => {
+        if (keyOverride) {
+          return keyOverride;
+        }
+        const hasCoords =
+          typeof chunk.chunkX === 'number' && typeof chunk.chunkZ === 'number';
+        return hasCoords ? chunkKey(chunk.chunkX, chunk.chunkZ) : null;
+      })();
+      if (cacheKey && payloadCache.has(cacheKey)) {
+        basePayload = payloadCache.get(cacheKey)?.payload ?? null;
+      }
+    }
+    if (!basePayload) {
+      return null;
+    }
     const decorations = serializeDecorationMetadataFromChunk(chunk);
     const biomes = serializeBiomePayloadFromChunk(chunk, basePayload.biomes);
     const detailLevel = normalizeDetailLevel(
@@ -2642,6 +2658,21 @@ export function createChunkManager({
       registerDecorationGroup(key, group, chunk);
     });
     loadedChunks.set(key, chunk);
+
+    if (chunk.__cachePayload) {
+      if (payloadCacheCapacity > 0) {
+        const cachePayload = buildCachePayloadFromChunk(chunk, key);
+        if (cachePayload) {
+          setCachedPayload(key, {
+            payload: cachePayload,
+            detailLevel: normalizeDetailLevel(
+              chunk.detailLevel ?? cachePayload.detailLevel,
+            ),
+          });
+        }
+      }
+      chunk.__cachePayload = null;
+    }
   }
 
   function ensureChunk(chunkX, chunkZ, options = {}) {
@@ -2747,7 +2778,7 @@ export function createChunkManager({
 
     refreshCacheForWorldChange();
     if (payloadCacheCapacity > 0) {
-      const cachePayload = buildCachePayloadFromChunk(chunk);
+      const cachePayload = buildCachePayloadFromChunk(chunk, key);
       if (cachePayload) {
         setCachedPayload(key, {
           payload: cachePayload,
