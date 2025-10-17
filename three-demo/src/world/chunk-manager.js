@@ -518,12 +518,8 @@ export function createChunkManager({
       }
 
       if (!hasExplicitTimeout || !Number.isFinite(numericTimeout) || numericTimeout <= 0) {
-        if (typeof queueMicrotask === 'function') {
-          queueMicrotask(resolve);
-          return;
-        }
-        if (typeof Promise === 'function' && typeof Promise.resolve === 'function') {
-          Promise.resolve().then(resolve);
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(() => resolve());
           return;
         }
         if (typeof setTimeout === 'function') {
@@ -534,6 +530,15 @@ export function createChunkManager({
 
       if (typeof setTimeout === 'function') {
         setTimeout(resolve, Math.max(0, normalizedTimeout ?? 0));
+        return;
+      }
+
+      if (typeof queueMicrotask === 'function') {
+        queueMicrotask(resolve);
+        return;
+      }
+      if (typeof Promise === 'function' && typeof Promise.resolve === 'function') {
+        Promise.resolve().then(resolve);
         return;
       }
 
