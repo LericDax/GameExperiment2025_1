@@ -413,13 +413,19 @@ const createBuilder = (options = {}) => {
     }
     try {
       ensureGenerationEnvironment(options.worldOptions);
-      task = createChunkBuildTask({
+      const taskOptions = {
         chunkX: Number.isFinite(options.chunkX) ? options.chunkX : 0,
         chunkZ: Number.isFinite(options.chunkZ) ? options.chunkZ : 0,
         blockMaterials: options.blockMaterials,
         detailLevel: options.detailLevel ?? 'core',
         requireWorkerPayload: true,
-      });
+      };
+      if (options.includeBlockPlacements !== undefined) {
+        taskOptions.includeBlockPlacementsInPayload = Boolean(
+          options.includeBlockPlacements,
+        );
+      }
+      task = createChunkBuildTask(taskOptions);
       task.setRequiresWorkerPayload?.(true);
     } catch (error) {
       errorInfo = serializeError(error);

@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildChunkPayload, chunkWorldBounds } from '../chunk-build-core.js';
+import {
+  buildChunkPayload,
+  chunkWorldBounds,
+  MAX_OCCUPANCY_COORDINATE_SNAPSHOT,
+} from '../chunk-build-core.js';
 
 const coordinateKey = (x, y, z) => `${Math.round(x)}|${Math.round(y)}|${Math.round(z)}`;
 
@@ -502,4 +506,57 @@ test('buildChunkPayload omits block placements unless requested', () => {
   assert.strictEqual(payload.blockPlacements, null);
   assert.ok(Array.isArray(payload.occupancy?.solidCoordinates));
   assert.strictEqual(typeof payload.occupancy?.coordinateIndex, 'object');
+});
+
+test('buildChunkPayload caps occupancy snapshot height', () => {
+  const chunkX = 0;
+  const chunkZ = 0;
+  const worldOptions = { chunkSize: 16, waterLevel: 10 };
+  const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ, worldOptions);
+
+  const placements = [];
+  for (let i = 0; i < 4; i += 1) {
+    placements.push({
+      type: 'vox:test',
+      position: { x: minX + i, y: -5000 - i, z: minZ + i },
+      collisionMode: 'solid',
+    });
+    placements.push({
+      type: 'vox:test',
+      position: { x: minX + i, y: 8000 + i, z: minZ + i },
+      collisionMode: 'solid',
+    });
+  }
+
+  const engine = {
+    blockPlacements: placements,
+    fluidBlockKeys: [],
+    waterColumnMetadata: new Map(),
+    fluidColumnsByType: new Map(),
+    fluidSurfaces: [],
+    decorationInstancedData: new Map(),
+    decorationGroups: new Map(),
+    decorationOwnerIndex: new Map(),
+    decorationTypeIndex: new Map(),
+    decorationData: new Map(),
+    typeCapacities: new Map(),
+    typeData: new Map(),
+    biomePresence: new Map(),
+    prototypeInstances: new Map(),
+  };
+
+  const payload = buildChunkPayload({ chunkX, chunkZ, engine, worldOptions });
+  const { occupancy } = payload;
+
+  assert.strictEqual(occupancy.height, MAX_OCCUPANCY_COORDINATE_SNAPSHOT);
+  const expectedMin = Math.round(worldOptions.waterLevel) - Math.floor(MAX_OCCUPANCY_COORDINATE_SNAPSHOT / 2);
+  const expectedMax = expectedMin + MAX_OCCUPANCY_COORDINATE_SNAPSHOT - 1;
+  assert.strictEqual(occupancy.minY, expectedMin);
+  assert.strictEqual(occupancy.maxY, expectedMax);
+
+  const occupancyArea = occupancy.width * occupancy.depth;
+  const expectedVolume = occupancyArea * occupancy.height;
+  assert.strictEqual(occupancy.types.length, expectedVolume);
+  assert.strictEqual(occupancy.placements.length, expectedVolume);
+  assert.strictEqual(occupancy.fluid.length, expectedVolume);
 });
