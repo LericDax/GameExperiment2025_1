@@ -282,6 +282,10 @@ export function createChunkManager({
   maxDisposalsPerUpdate = 1,
   maxActivationsPerUpdate = 2,
   payloadCacheSize = 0,
+  // Additional chunk radius allowed beyond the retention distance before
+  // disposal kicks in. This gives callers a way to keep edge chunks alive
+  // a little longer (or indefinitely with Infinity) to hide visual pops.
+  disposalMargin = 0,
 }) {
   const loadedChunks = new Map();
   const solidBlocks = new Set();
@@ -372,6 +376,7 @@ export function createChunkManager({
   const chunkBuildWorker = ensureChunkBuildWorkerInstance();
   const workerEnabled = Boolean(chunkBuildWorker);
   const workerDisposables = [];
+  const retentionDisposalMargin = normalizeDistance(disposalMargin, 0);
   const DETAIL_LEVEL_CORE = 'core';
   const DETAIL_LEVEL_RETENTION = 'retention';
   const DETAIL_LEVELS = [DETAIL_LEVEL_RETENTION, DETAIL_LEVEL_CORE];
@@ -3483,7 +3488,16 @@ export function createChunkManager({
       });
     }
 
-    prunePreloadQueue(centerChunkX, centerChunkZ, finiteRetention);
+    const disposalMarginValue = Number.isFinite(retentionDisposalMargin)
+      ? retentionDisposalMargin
+      : Number.POSITIVE_INFINITY;
+    const retentionRadiusWithMargin =
+      disposalMarginValue === Number.POSITIVE_INFINITY ||
+      !Number.isFinite(finiteRetention)
+        ? Number.POSITIVE_INFINITY
+        : finiteRetention + disposalMarginValue;
+
+    prunePreloadQueue(centerChunkX, centerChunkZ, retentionRadiusWithMargin);
 
     const guaranteeRadius = Math.min(finiteView, 1);
 
@@ -3556,7 +3570,10 @@ export function createChunkManager({
           : Number.parseInt(key.split('|')[1], 10);
       const distanceX = Math.abs(chunkX - centerChunkX);
       const distanceZ = Math.abs(chunkZ - centerChunkZ);
-      if (distanceX > finiteRetention || distanceZ > finiteRetention) {
+      if (
+        distanceX > retentionRadiusWithMargin ||
+        distanceZ > retentionRadiusWithMargin
+      ) {
         queueChunkForDisposal(key);
       } else {
         cancelChunkDisposal(key);
