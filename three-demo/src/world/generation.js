@@ -401,10 +401,13 @@ export function createChunkBuildTask({
   chunkZ,
   blockMaterials,
   requireWorkerPayload = false,
+  detailLevel = 'core',
 }) {
   const THREE = ensureThree();
   const engine = ensureTerrainEngine();
   let needsWorkerPayload = Boolean(requireWorkerPayload);
+  const detailMode = detailLevel === 'retention' ? 'retention' : 'core';
+  const isLowDetail = detailMode !== 'core';
   const instancedData = new Map();
   const decorationInstancedData = new Map();
   const decorationData = new Map();
@@ -2564,7 +2567,9 @@ export function createChunkBuildTask({
     populateOccupancyFromPlacements();
     populateFluidOccupancy();
     applyOccupancyVisibility();
-    buildFluidSurfaces();
+    if (!isLowDetail) {
+      buildFluidSurfaces();
+    }
   };
 
   const step = (maxColumns = Number.POSITIVE_INFINITY) => {
@@ -3198,48 +3203,78 @@ export function createChunkBuildTask({
       decorationGroups.clear();
       decorationOwnerIndex.clear();
       decorationTypeIndex.clear();
-      decorationInstancedData.forEach((entries, type) => {
-        addDecorationMesh(group, type, entries);
-      });
+      if (!isLowDetail) {
+        decorationInstancedData.forEach((entries, type) => {
+          addDecorationMesh(group, type, entries);
+        });
+      }
 
-      fluidSurfaces.forEach((surface) => {
-        if (!surface) {
-          return;
-        }
-        if (!surface.parent) {
-          group.add(surface);
-        }
-      });
+      if (!isLowDetail) {
+        fluidSurfaces.forEach((surface) => {
+          if (!surface) {
+            return;
+          }
+          if (!surface.parent) {
+            group.add(surface);
+          }
+        });
+      }
 
-      const derivedCollisionKeys = deriveCollisionKeySetsFromMesh({
-        typeData,
-        blockLookup,
-        blockMaterials,
-      });
-      const occludedKeys = new Set(
-        derivedCollisionKeys.occludedCoordinates ?? [],
-      );
-      if (
-        derivedCollisionKeys.occludedEntries?.size ||
-        occludedKeys.size > 0
-      ) {
-        const occludedEntries =
-          derivedCollisionKeys.occludedEntries ?? new Set();
-        blockLookup.forEach((entry, key) => {
-          if (!entry || (!occludedKeys.has(key) && !occludedEntries.has(entry))) {
+      if (!isLowDetail) {
+        const derivedCollisionKeys = deriveCollisionKeySetsFromMesh({
+          typeData,
+          blockLookup,
+          blockMaterials,
+        });
+        const occludedKeys = new Set(
+          derivedCollisionKeys.occludedCoordinates ?? [],
+        );
+        if (
+          derivedCollisionKeys.occludedEntries?.size ||
+          occludedKeys.size > 0
+        ) {
+          const occludedEntries =
+            derivedCollisionKeys.occludedEntries ?? new Set();
+          blockLookup.forEach((entry, key) => {
+            if (
+              !entry ||
+              (!occludedKeys.has(key) && !occludedEntries.has(entry))
+            ) {
+              if (entry) {
+                entry.isVisible = true;
+                if (entry.payload && typeof entry.payload === 'object') {
+                  entry.payload.isVisible = true;
+                }
+              }
+              return;
+            }
+            entry.isVisible = false;
+            if (entry.payload && typeof entry.payload === 'object') {
+              entry.payload.isVisible = false;
+            }
+          });
+        } else {
+          blockLookup.forEach((entry) => {
             if (entry) {
               entry.isVisible = true;
               if (entry.payload && typeof entry.payload === 'object') {
                 entry.payload.isVisible = true;
               }
             }
-            return;
-          }
-          entry.isVisible = false;
-          if (entry.payload && typeof entry.payload === 'object') {
-            entry.payload.isVisible = false;
-          }
+          });
+        }
+        pruneOccludedInstancedEntries({
+          typeData,
+          occludedEntries: derivedCollisionKeys.occludedEntries,
         });
+        solidBlockKeys.clear();
+        derivedCollisionKeys.solidBlockKeys.forEach((key) =>
+          solidBlockKeys.add(key),
+        );
+        softBlockKeys.clear();
+        derivedCollisionKeys.softBlockKeys.forEach((key) =>
+          softBlockKeys.add(key),
+        );
       } else {
         blockLookup.forEach((entry) => {
           if (entry) {
@@ -3250,18 +3285,6 @@ export function createChunkBuildTask({
           }
         });
       }
-      pruneOccludedInstancedEntries({
-        typeData,
-        occludedEntries: derivedCollisionKeys.occludedEntries,
-      });
-      solidBlockKeys.clear();
-      derivedCollisionKeys.solidBlockKeys.forEach((key) =>
-        solidBlockKeys.add(key),
-      );
-      softBlockKeys.clear();
-      derivedCollisionKeys.softBlockKeys.forEach((key) =>
-        softBlockKeys.add(key),
-      );
 
       const biomeEntries = Array.from(biomePresence.values());
       const totalSamples = biomeEntries.reduce((sum, entry) => {
@@ -3352,6 +3375,7 @@ export function createChunkBuildTask({
       decorationTypeIndex,
       biomes: chunkBiomes,
       prototypeInstances,
+      detailLevel: detailMode,
       bounds: (() => {
         if (!hasBoundData) {
           const halfSize = chunkSize / 2;

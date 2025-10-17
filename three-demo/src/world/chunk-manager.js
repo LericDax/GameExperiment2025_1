@@ -371,6 +371,25 @@ export function createChunkManager({
   const chunkBuildWorker = ensureChunkBuildWorkerInstance();
   const workerEnabled = Boolean(chunkBuildWorker);
   const workerDisposables = [];
+  const DETAIL_LEVEL_CORE = 'core';
+  const DETAIL_LEVEL_RETENTION = 'retention';
+  const DETAIL_LEVELS = [DETAIL_LEVEL_RETENTION, DETAIL_LEVEL_CORE];
+  const normalizeDetailLevel = (value) => {
+    if (value === DETAIL_LEVEL_RETENTION || value === DETAIL_LEVEL_CORE) {
+      return value;
+    }
+    return DETAIL_LEVEL_CORE;
+  };
+  const detailLevelRank = (value) =>
+    DETAIL_LEVELS.indexOf(normalizeDetailLevel(value));
+  const resolveDetailLevelForDistance = (maxDistance, finiteViewRadius) => {
+    if (!Number.isFinite(finiteViewRadius)) {
+      return DETAIL_LEVEL_CORE;
+    }
+    return maxDistance <= finiteViewRadius
+      ? DETAIL_LEVEL_CORE
+      : DETAIL_LEVEL_RETENTION;
+  };
   const payloadCache = new Map();
   const normalizeCacheCapacity = (value) => {
     const numeric = Number(value);
@@ -426,12 +445,19 @@ export function createChunkManager({
     }
   };
 
-  const setCachedPayload = (key, payload) => {
-    if (!key || !payloadCacheCapacity) {
+  const setCachedPayload = (key, cachedEntry) => {
+    if (!key || !payloadCacheCapacity || !cachedEntry) {
       return;
     }
+    const normalizedDetail = normalizeDetailLevel(
+      cachedEntry.detailLevel ?? cachedEntry.payload?.detailLevel,
+    );
+    const normalizedEntry = {
+      payload: cachedEntry.payload ?? null,
+      detailLevel: normalizedDetail,
+    };
     payloadCache.delete(key);
-    payloadCache.set(key, payload);
+    payloadCache.set(key, normalizedEntry);
     ensureCacheCapacityLimit();
   };
 
@@ -441,7 +467,15 @@ export function createChunkManager({
     }
     const value = payloadCache.get(key);
     payloadCache.delete(key);
-    return value ?? null;
+    if (!value) {
+      return null;
+    }
+    return {
+      payload: value.payload ?? null,
+      detailLevel: normalizeDetailLevel(
+        value.detailLevel ?? value.payload?.detailLevel,
+      ),
+    };
   };
 
   const refreshCacheForWorldChange = () => {
@@ -826,10 +860,14 @@ export function createChunkManager({
     const basePayload = chunk.__cachePayload;
     const decorations = serializeDecorationMetadataFromChunk(chunk);
     const biomes = serializeBiomePayloadFromChunk(chunk, basePayload.biomes);
+    const detailLevel = normalizeDetailLevel(
+      chunk.detailLevel ?? basePayload.detailLevel,
+    );
     return {
       ...basePayload,
       decorations,
       biomes,
+      detailLevel,
     };
   }
 
@@ -1154,6 +1192,70 @@ export function createChunkManager({
     pendingActivations.push(record);
   }
 
+  function computeRequiredDetailForChunk(chunkX, chunkZ) {
+    if (!hasLastCenter) {
+      return DETAIL_LEVEL_CORE;
+    }
+    const dx = Math.abs(chunkX - lastCenterChunkX);
+    const dz = Math.abs(chunkZ - lastCenterChunkZ);
+    const maxDistance = Math.max(dx, dz);
+    return resolveDetailLevelForDistance(maxDistance, lastFiniteViewRadius);
+  }
+
+  function upgradePendingChunkRecord(record, targetDetailLevel) {
+    const normalizedTarget = normalizeDetailLevel(targetDetailLevel);
+    if (!record) {
+      return false;
+    }
+    const { entry } = record;
+    if (!entry) {
+      return false;
+    }
+    try {
+      if (record.chunk) {
+        releasePendingChunkResources(record.chunk);
+      }
+      const upgradeTask = createChunkBuildTask({
+        chunkX: entry.chunkX,
+        chunkZ: entry.chunkZ,
+        blockMaterials,
+        detailLevel: normalizedTarget,
+      });
+      let done = false;
+      while (!done) {
+        const stepResult = upgradeTask.step(Number.POSITIVE_INFINITY);
+        if (!stepResult) {
+          break;
+        }
+        done = stepResult.done === true;
+      }
+      let payloadForCache = null;
+      if (typeof upgradeTask.exportPayloadSnapshot === 'function') {
+        payloadForCache = upgradeTask.exportPayloadSnapshot();
+      }
+      const upgradedChunk = upgradeTask.finalize();
+      if (payloadForCache) {
+        payloadForCache.detailLevel = normalizedTarget;
+        upgradedChunk.__cachePayload = payloadForCache;
+      }
+      upgradedChunk.detailLevel = normalizedTarget;
+      upgradedChunk.desiredDetailLevel = normalizedTarget;
+      if (upgradedChunk.__cachePayload) {
+        upgradedChunk.__cachePayload.detailLevel = normalizedTarget;
+      }
+      record.chunk = upgradedChunk;
+      entry.detailLevel = normalizedTarget;
+      entry.desiredDetailLevel = normalizedTarget;
+      entry.workerPayload = null;
+      entry.metadata = null;
+      entry.task = null;
+      return true;
+    } catch (error) {
+      console.error('[chunk-manager] Failed to upgrade chunk detail', error);
+      return false;
+    }
+  }
+
   function processPendingActivations(limit = defaultActivationBudget) {
     if (pendingActivations.length === 0) {
       return 0;
@@ -1164,18 +1266,49 @@ export function createChunkManager({
       ? pendingActivations.length
       : Math.max(0, Math.floor(limit));
     let processed = 0;
+    const initialLength = pendingActivations.length;
 
-    while (pendingActivations.length > 0 && (unlimited || processed < budget)) {
+    for (let i = 0; i < initialLength; i += 1) {
+      if (!unlimited && processed >= budget) {
+        break;
+      }
       const record = pendingActivations.shift();
       if (!record) {
         continue;
       }
       pendingActivationByKey.delete(record.key);
-      if (!record.entry || !record.chunk) {
+      const { entry, chunk } = record;
+      if (!entry || !chunk) {
         record.entry = null;
         record.chunk = null;
         continue;
       }
+
+      const requiredDetail = computeRequiredDetailForChunk(
+        chunk.chunkX,
+        chunk.chunkZ,
+      );
+      if (
+        detailLevelRank(requiredDetail) <=
+        detailLevelRank(DETAIL_LEVEL_RETENTION)
+      ) {
+        pendingActivationByKey.set(record.key, record);
+        pendingActivations.push(record);
+        continue;
+      }
+
+      const chunkDetail = normalizeDetailLevel(chunk.detailLevel);
+      if (detailLevelRank(chunkDetail) < detailLevelRank(requiredDetail)) {
+        const upgraded = upgradePendingChunkRecord(record, requiredDetail);
+        if (!upgraded) {
+          pendingActivationByKey.set(record.key, record);
+          pendingActivations.push(record);
+          continue;
+        }
+      }
+
+      record.chunk.detailLevel = normalizeDetailLevel(requiredDetail);
+      record.chunk.desiredDetailLevel = record.chunk.detailLevel;
       activatePendingChunkRecord(record);
       processed += 1;
     }
@@ -1214,7 +1347,12 @@ export function createChunkManager({
         chunk = entry.task.finalize();
       }
       if (chunk && payloadForCache) {
+        payloadForCache.detailLevel = entry.detailLevel;
         chunk.__cachePayload = payloadForCache;
+      }
+      if (chunk) {
+        chunk.detailLevel = entry.detailLevel;
+        chunk.desiredDetailLevel = entry.desiredDetailLevel;
       }
       const pendingRecord = {
         key: entry.key,
@@ -2521,10 +2659,17 @@ export function createChunkManager({
     if (!entry) {
       entry = schedulePreload(chunkX, chunkZ, centerChunkX, centerChunkZ, {
         urgent: true,
+        detailLevel: DETAIL_LEVEL_CORE,
       });
     } else if (!entry.urgent) {
       entry.urgent = true;
       queueDirty = true;
+    }
+
+    if (
+      detailLevelRank(entry.desiredDetailLevel) < detailLevelRank(DETAIL_LEVEL_CORE)
+    ) {
+      entry.desiredDetailLevel = DETAIL_LEVEL_CORE;
     }
 
     if (!entry) {
@@ -2604,7 +2749,10 @@ export function createChunkManager({
     if (payloadCacheCapacity > 0) {
       const cachePayload = buildCachePayloadFromChunk(chunk);
       if (cachePayload) {
-        setCachedPayload(key, { payload: cachePayload });
+        setCachedPayload(key, {
+          payload: cachePayload,
+          detailLevel: chunk.detailLevel,
+        });
       }
     }
     if (chunk.__cachePayload) {
@@ -2759,6 +2907,7 @@ export function createChunkManager({
     refreshCacheForWorldChange();
 
     const { urgent = false } = options;
+    const requestedDetailLevel = normalizeDetailLevel(options.detailLevel);
     const dx = chunkX - centerChunkX;
     const dz = chunkZ - centerChunkZ;
     const priority = dx * dx + dz * dz;
@@ -2775,6 +2924,13 @@ export function createChunkManager({
         existing.urgent = nextUrgent;
         changed = true;
       }
+      if (
+        detailLevelRank(requestedDetailLevel) >
+        detailLevelRank(existing.desiredDetailLevel)
+      ) {
+        existing.desiredDetailLevel = requestedDetailLevel;
+        changed = true;
+      }
       if (changed) {
         queueDirty = true;
       }
@@ -2784,6 +2940,11 @@ export function createChunkManager({
     if (payloadCacheCapacity > 0) {
       const cachedEntry = takeCachedPayload(key);
       if (cachedEntry?.payload) {
+        const cachedDetail = normalizeDetailLevel(cachedEntry.detailLevel);
+        const desiredDetail =
+          detailLevelRank(cachedDetail) >= detailLevelRank(requestedDetailLevel)
+            ? cachedDetail
+            : requestedDetailLevel;
         const entry = {
           key,
           chunkX,
@@ -2800,6 +2961,8 @@ export function createChunkManager({
           finalized: true,
           cancelled: false,
           stepHint: defaultPreloadBurst,
+          detailLevel: cachedDetail,
+          desiredDetailLevel: desiredDetail,
           metadata: { mode: 'cache', inflight: false, payload: cachedEntry.payload },
           workerPayload: { payload: cachedEntry.payload },
           pendingChunk: null,
@@ -2807,7 +2970,12 @@ export function createChunkManager({
         ensurePendingEntryPromise(entry);
         const chunk = finalizeWorkerChunk(entry, entry.workerPayload);
         if (chunk) {
+          chunk.detailLevel = entry.detailLevel;
+          chunk.desiredDetailLevel = entry.desiredDetailLevel;
           chunk.__cachePayload = cachedEntry.payload;
+          if (chunk.__cachePayload) {
+            chunk.__cachePayload.detailLevel = entry.detailLevel;
+          }
           const pendingRecord = {
             key: entry.key,
             chunk,
@@ -2836,6 +3004,8 @@ export function createChunkManager({
       finalized: false,
       cancelled: false,
       stepHint: defaultPreloadBurst,
+      detailLevel: requestedDetailLevel,
+      desiredDetailLevel: requestedDetailLevel,
       metadata: null,
       workerPayload: null,
       pendingChunk: null,
@@ -2846,6 +3016,7 @@ export function createChunkManager({
       chunkZ,
       blockMaterials,
       requireWorkerPayload: entry.metadata?.mode === 'worker',
+      detailLevel: entry.detailLevel,
     });
     pendingPreloadEntries.set(key, entry);
     preloadQueue.push(entry);
@@ -3114,12 +3285,19 @@ export function createChunkManager({
           if (maxDistance <= guaranteeRadius) {
             continue;
           }
+          const detailLevel = resolveDetailLevelForDistance(
+            maxDistance,
+            finiteView,
+          );
           schedulePreload(
             centerChunkX + dx,
             centerChunkZ + dz,
             centerChunkX,
             centerChunkZ,
-            { urgent: true },
+            {
+              urgent: detailLevel === DETAIL_LEVEL_CORE,
+              detailLevel,
+            },
           );
         }
       }
@@ -3132,11 +3310,16 @@ export function createChunkManager({
           if (maxDistance <= finiteView) {
             continue;
           }
+          const detailLevel = resolveDetailLevelForDistance(
+            maxDistance,
+            finiteView,
+          );
           schedulePreload(
             centerChunkX + dx,
             centerChunkZ + dz,
             centerChunkX,
             centerChunkZ,
+            { detailLevel },
           );
         }
       }
