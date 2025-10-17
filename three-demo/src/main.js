@@ -442,8 +442,7 @@ try {
   chunkManager.setViewDistance(3)
   chunkManager.setRetentionDistance(4)
 
-  chunkManager.update(playerControls.getPosition(), { camera, force: true })
-  await chunkManager.flush()
+  chunkManager.update(playerControls.getPosition(), { camera })
 
   updateHud(playerControls.getState())
 
