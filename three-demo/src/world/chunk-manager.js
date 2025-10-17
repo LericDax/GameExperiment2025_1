@@ -281,7 +281,7 @@ export function createChunkManager({
   maxPreloadPerUpdate = 2,
   maxDisposalsPerUpdate = 1,
   maxActivationsPerUpdate = 2,
-  payloadCacheSize = 32,
+  payloadCacheSize = 0,
 }) {
   const loadedChunks = new Map();
   const solidBlocks = new Set();
@@ -861,6 +861,102 @@ export function createChunkManager({
     });
   }
 
+  const toCoordinateArray = (source) => {
+    if (!source) {
+      return [];
+    }
+    if (Array.isArray(source)) {
+      return source.map((value) => String(value));
+    }
+    if (ArrayBuffer.isView(source)) {
+      return Array.from(source, (value) => String(value));
+    }
+    if (source instanceof Set) {
+      return Array.from(source, (value) => String(value));
+    }
+    if (source instanceof Map) {
+      return Array.from(source.keys(), (value) => String(value));
+    }
+    if (typeof source === 'object') {
+      return Object.keys(source);
+    }
+    return [];
+  };
+
+  const normalizeCoordinateIndex = (source) => {
+    if (!source || typeof source !== 'object') {
+      return {};
+    }
+    if (source instanceof Map) {
+      const normalized = {};
+      source.forEach((value, key) => {
+        normalized[String(key)] = value;
+      });
+      return normalized;
+    }
+    if (Array.isArray(source) || ArrayBuffer.isView(source)) {
+      return {};
+    }
+    return { ...source };
+  };
+
+  const normalizeNumericField = (value) =>
+    Number.isFinite(value) ? value : Number.isFinite(Number(value)) ? Number(value) : null;
+
+  const createLeanOccupancySnapshot = (source) => {
+    if (!source || typeof source !== 'object') {
+      return null;
+    }
+    const occupancy = {
+      minY: normalizeNumericField(source.minY),
+      maxY: normalizeNumericField(source.maxY),
+      width: normalizeNumericField(source.width),
+      depth: normalizeNumericField(source.depth),
+      height: normalizeNumericField(source.height),
+    };
+    const solidCoordinates = toCoordinateArray(source.solidCoordinates);
+    if (solidCoordinates.length > 0) {
+      occupancy.solidCoordinates = solidCoordinates;
+    }
+    const softCoordinates = toCoordinateArray(source.softCoordinates);
+    if (softCoordinates.length > 0) {
+      occupancy.softCoordinates = softCoordinates;
+    }
+    const coordinateIndex = normalizeCoordinateIndex(source.coordinateIndex);
+    if (Object.keys(coordinateIndex).length > 0) {
+      occupancy.coordinateIndex = coordinateIndex;
+    }
+    return occupancy;
+  };
+
+  const createLeanCachePayload = (basePayload) => {
+    if (!basePayload || typeof basePayload !== 'object') {
+      return null;
+    }
+    const leanPayload = {
+      ...basePayload,
+    };
+
+    if ('blockPlacements' in leanPayload) {
+      leanPayload.blockPlacements = null;
+    }
+
+    if ('buffers' in leanPayload) {
+      delete leanPayload.buffers;
+    }
+
+    if (basePayload.occupancy && typeof basePayload.occupancy === 'object') {
+      const occupancySnapshot = createLeanOccupancySnapshot(basePayload.occupancy);
+      if (occupancySnapshot) {
+        leanPayload.occupancy = occupancySnapshot;
+      } else {
+        delete leanPayload.occupancy;
+      }
+    }
+
+    return leanPayload;
+  };
+
   function buildCachePayloadFromChunk(chunk, keyOverride = null) {
     if (!chunk) {
       return null;
@@ -882,13 +978,17 @@ export function createChunkManager({
     if (!basePayload) {
       return null;
     }
+    const leanPayload = createLeanCachePayload(basePayload);
+    if (!leanPayload) {
+      return null;
+    }
     const decorations = serializeDecorationMetadataFromChunk(chunk);
-    const biomes = serializeBiomePayloadFromChunk(chunk, basePayload.biomes);
+    const biomes = serializeBiomePayloadFromChunk(chunk, leanPayload.biomes);
     const detailLevel = normalizeDetailLevel(
       chunk.detailLevel ?? basePayload.detailLevel,
     );
     return {
-      ...basePayload,
+      ...leanPayload,
       decorations,
       biomes,
       detailLevel,
@@ -4385,6 +4485,16 @@ export function createChunkManager({
       }
       return loadedChunks.get(String(key)) ?? null;
     },
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__getPayloadCacheSnapshotForTest', {
+    value: () =>
+      Array.from(payloadCache.entries()).map(([key, entry]) => ({
+        key,
+        detailLevel: entry?.detailLevel ?? null,
+        payload: entry?.payload ?? null,
+      })),
     enumerable: false,
   });
 
