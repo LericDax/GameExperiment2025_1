@@ -1,5 +1,6 @@
 import { getWorldOptions } from '../world/world-settings.js';
 import { computeFluidContactPoints } from '../rendering/particle-system.js';
+import { ChunkManagerEvents } from '../world/chunk-manager.js';
 import {
   createWaterBubbleBurst,
   createWaterSplashBurst,
@@ -102,6 +103,8 @@ export function createPlayerControls({
   let jumpRequested = false;
   let verticalVelocity = 0;
   let isGrounded = false;
+  let terrainReady = Boolean(chunkManager?.solidBlocks?.size > 0);
+  let terrainReadyListenerDisposer = null;
   const playerEyeHeight = 1.7;
   const playerHeight = 1.8;
   const playerRadius = 0.35;
@@ -261,6 +264,17 @@ export function createPlayerControls({
   };
   let statusTimer = Number.POSITIVE_INFINITY;
   let maxDownwardSpeed = 0;
+  if (chunkManager?.events?.addEventListener) {
+    terrainReadyListenerDisposer = chunkManager.events.addEventListener(
+      ChunkManagerEvents.FIRST_CHUNK_MESHED,
+      () => {
+        terrainReady = true;
+        verticalVelocity = 0;
+        maxDownwardSpeed = 0;
+        attemptCollisionRescue('spawn');
+      },
+    );
+  }
   let stateDirty = true;
   const defaultStatusMessage = playerState.statusMessage;
   let collisionRescueFailureMessage = null;
@@ -1018,6 +1032,11 @@ export function createPlayerControls({
       return;
     }
 
+    if (!terrainReady) {
+      pushState();
+      return;
+    }
+
     const columnKey = `${Math.round(position.x)}|${Math.round(position.z)}`;
     const feetY = position.y - playerEyeHeight;
     const headY = position.y;
@@ -1515,6 +1534,7 @@ export function createPlayerControls({
     POINTER_LOCK_ERROR_EVENTS.forEach((eventName) =>
       pointerLockDocument.removeEventListener(eventName, handlePointerLockError)
     );
+    terrainReadyListenerDisposer?.();
     clearLockAttemptTimer();
     scene.remove(damageOverlayMesh);
     damageOverlayMesh.geometry.dispose();
