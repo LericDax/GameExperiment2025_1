@@ -1,4 +1,6 @@
-import { buildChunkPayload } from '../chunk-build-core.js';
+import * as THREE from 'three';
+import { createChunkBuildTask, initializeWorldGeneration } from '../generation.js';
+import { initializeFluidRegistry } from '../fluids/fluid-registry.js';
 
 const builders = new Map();
 const activeBuilderKeys = new Set();
@@ -241,6 +243,61 @@ const collectTransferableCandidates = (value, target = []) => {
   return target;
 };
 
+let worldInitialized = false;
+let lastWorldOptionsSignature = null;
+
+const ensureGenerationEnvironment = (worldOptions = {}) => {
+  const signature = JSON.stringify(worldOptions ?? {});
+  if (!worldInitialized || signature !== lastWorldOptionsSignature) {
+    initializeWorldGeneration({ THREE, worldOptions });
+    initializeFluidRegistry({ THREE });
+    worldInitialized = true;
+    lastWorldOptionsSignature = signature;
+  }
+};
+
+const rehydrateBlockMaterialRecord = (value = {}) => {
+  const transparent = value?.transparent === true;
+  const depthWrite = value?.depthWrite !== false;
+  const opacity = Number.isFinite(value?.opacity) ? value.opacity : 1;
+  const userData = ensurePlainObject(value?.userData);
+  return {
+    transparent,
+    depthWrite,
+    opacity,
+    userData,
+  };
+};
+
+const rehydrateBlockMaterials = (serialized = {}) => {
+  const entries = ensurePlainObject(serialized);
+  const fallback = rehydrateBlockMaterialRecord(entries.__defaults);
+  const registry = {};
+  Object.entries(entries).forEach(([key, value]) => {
+    if (key === '__defaults') {
+      return;
+    }
+    if (!value || typeof value !== 'object') {
+      return;
+    }
+    registry[key] = rehydrateBlockMaterialRecord(value);
+  });
+  return new Proxy(registry, {
+    get(target, property) {
+      if (typeof property === 'string') {
+        if (Object.prototype.hasOwnProperty.call(target, property)) {
+          return target[property];
+        }
+        return fallback;
+      }
+      return target[property];
+    },
+    set() {
+      return false;
+    },
+  });
+};
+
 const normalizeStartOptions = (payload = {}) => {
   const chunkX = normalizeChunkCoordinate(payload, 'x');
   const chunkZ = normalizeChunkCoordinate(payload, 'z');
@@ -284,6 +341,20 @@ const normalizeStartOptions = (payload = {}) => {
     }
   }
 
+  const blockMaterialCandidates = [
+    payload.blockMaterials,
+    payload.options?.blockMaterials,
+    payload.options?.builder?.blockMaterials,
+  ];
+  let blockMaterials = {};
+  for (let i = 0; i < blockMaterialCandidates.length; i += 1) {
+    const candidate = blockMaterialCandidates[i];
+    if (candidate && typeof candidate === 'object') {
+      blockMaterials = candidate;
+      break;
+    }
+  }
+
   const engineCandidates = [
     payload.engine,
     payload.options?.engine,
@@ -320,6 +391,7 @@ const normalizeStartOptions = (payload = {}) => {
   normalized.chunkZ = Number.isFinite(chunkZ) ? chunkZ : 0;
   normalized.detailLevel = detailLevel;
   normalized.worldOptions = ensurePlainObject(worldOptions);
+  normalized.blockMaterials = rehydrateBlockMaterials(blockMaterials);
   if (engine) {
     normalized.engine = engine;
   }
@@ -330,15 +402,38 @@ const normalizeStartOptions = (payload = {}) => {
 };
 
 const createBuilder = (options = {}) => {
-  const totalWorkUnits = 1;
-  let processedUnits = 0;
+  let task = null;
   let done = false;
   let payload = null;
   let errorInfo = null;
 
-  const runBuild = () => {
+  const ensureTask = () => {
+    if (task || done) {
+      return;
+    }
     try {
-      payload = buildChunkPayload(options);
+      ensureGenerationEnvironment(options.worldOptions);
+      task = createChunkBuildTask({
+        chunkX: Number.isFinite(options.chunkX) ? options.chunkX : 0,
+        chunkZ: Number.isFinite(options.chunkZ) ? options.chunkZ : 0,
+        blockMaterials: options.blockMaterials,
+        detailLevel: options.detailLevel ?? 'core',
+        requireWorkerPayload: true,
+      });
+      task.setRequiresWorkerPayload?.(true);
+    } catch (error) {
+      errorInfo = serializeError(error);
+      done = true;
+      task = null;
+    }
+  };
+
+  const finalizePayload = () => {
+    if (!task || payload !== null) {
+      return;
+    }
+    try {
+      payload = task.exportPayloadSnapshot();
     } catch (error) {
       errorInfo = serializeError(error);
       payload = null;
@@ -354,22 +449,40 @@ const createBuilder = (options = {}) => {
       if (normalizedBudget <= 0) {
         return { processed: 0, done: false };
       }
-      const remaining = Math.max(0, totalWorkUnits - processedUnits);
-      if (remaining === 0) {
+
+      ensureTask();
+      if (!task) {
         done = true;
         return { processed: 0, done: true };
       }
-      const processed = Math.min(remaining, normalizedBudget);
-      processedUnits += processed;
-      if (processedUnits >= totalWorkUnits) {
-        runBuild();
+
+      try {
+        const result = task.step(normalizedBudget) ?? {};
+        const processed = Math.max(0, Number(result.processed) || 0);
+        done = result.done === true;
+        if (done) {
+          finalizePayload();
+        }
+        return { processed, done };
+      } catch (error) {
+        errorInfo = serializeError(error);
         done = true;
+        payload = null;
+        return { processed: 0, done: true };
       }
-      return { processed, done };
     },
     takePayload() {
+      finalizePayload();
       const result = payload;
       payload = null;
+      try {
+        task?.releaseCachedPayload?.();
+      } catch (error) {
+        if (!errorInfo) {
+          errorInfo = serializeError(error);
+        }
+      }
+      task = null;
       return result;
     },
     takeError() {
@@ -378,9 +491,14 @@ const createBuilder = (options = {}) => {
       return error;
     },
     cancel() {
-      done = true;
+      try {
+        task?.releaseCachedPayload?.();
+      } catch (error) {
+        errorInfo = serializeError(error);
+      }
+      task = null;
       payload = null;
-      errorInfo = null;
+      done = true;
     },
     isDone() {
       return done;

@@ -193,7 +193,7 @@ test('chunk manager posts worker start payloads before steps', async () => {
     assert.equal(startMessage.key, '0|0');
     assert.deepEqual(
       Object.keys(startMessage.payload).sort(),
-      ['chunkX', 'chunkZ', 'detailLevel', 'worldOptions'],
+      ['blockMaterials', 'chunkX', 'chunkZ', 'detailLevel', 'worldOptions'],
     );
     assert.equal(startMessage.payload.chunkX, 0);
     assert.equal(startMessage.payload.chunkZ, 0);
@@ -220,16 +220,58 @@ test('chunk manager posts worker start payloads before steps', async () => {
       'world options payload should omit non-serializable functions',
     );
 
+    const serializedMaterials = startMessage.payload.blockMaterials;
+    assert.equal(Object.getPrototypeOf(serializedMaterials), Object.prototype);
+    assert.deepEqual(serializedMaterials.__defaults, {
+      transparent: false,
+      opacity: 1,
+      depthWrite: true,
+      userData: {},
+    });
+    assert.ok(
+      Object.values(serializedMaterials).every((entry) =>
+        entry && typeof entry === 'object' && Object.values(entry).every((value) => typeof value !== 'function'),
+      ),
+      'block material payload should omit non-serializable functions',
+    );
+
     assert.equal(typeof stepMessage.budget, 'number');
     assert.ok(stepMessage.budget > 0, 'step budget should be positive');
 
-    // Signal an error to trigger the fallback path and allow local cleanup to proceed.
+    const task = generationModule.createChunkBuildTask({
+      chunkX: startMessage.payload.chunkX,
+      chunkZ: startMessage.payload.chunkZ,
+      blockMaterials,
+      requireWorkerPayload: true,
+      detailLevel: startMessage.payload.detailLevel,
+    });
+    let taskDone = false;
+    while (!taskDone) {
+      const result = task.step(Number.POSITIVE_INFINITY);
+      taskDone = result?.done === true;
+    }
+    const workerPayload = task.exportPayloadSnapshot();
+    task.releaseCachedPayload?.();
+
     worker.emit('message', {
       key: startMessage.key,
-      error: { message: 'synthetic worker error' },
       processed: stepMessage.budget,
-      done: false,
+      done: true,
+      payload: workerPayload,
     });
+
+    await waitForCondition(() =>
+      Boolean(manager?.__getLoadedChunkForTest?.(startMessage.key)),
+    );
+
+    assert.ok(
+      !worker.messages.some((entry) => entry?.type === 'cancel'),
+      'worker job should complete without receiving a cancel message',
+    );
+
+    const loadedChunk = manager.__getLoadedChunkForTest(startMessage.key);
+    assert.ok(loadedChunk, 'expected worker-built chunk to load successfully');
+    assert.equal(loadedChunk.detailLevel, 'core');
     await manager.flush();
   } finally {
     await manager?.dispose?.();

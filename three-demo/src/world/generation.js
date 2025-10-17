@@ -535,11 +535,71 @@ const sanitizeSerializableForWorker = (value, seen = new WeakSet()) => {
   return result;
 };
 
+const DEFAULT_WORKER_BLOCK_MATERIAL = Object.freeze({
+  transparent: false,
+  opacity: 1,
+  depthWrite: true,
+  userData: {},
+});
+
 const sanitizeWorldOptionsForWorker = (options = worldOptions) => {
   if (!options || typeof options !== 'object') {
     return {};
   }
   return sanitizeSerializableForWorker(options);
+};
+
+const sanitizeBlockMaterialRecordForWorker = (material = null) => {
+  const transparent = material?.transparent === true;
+  const depthWrite = material?.depthWrite !== false;
+  const opacity = Number.isFinite(material?.opacity) ? material.opacity : 1;
+  const userData = sanitizeSerializableForWorker(material?.userData ?? {});
+  const normalizedUserData =
+    userData && typeof userData === 'object' ? userData : {};
+  return {
+    transparent,
+    opacity,
+    depthWrite,
+    userData: normalizedUserData,
+  };
+};
+
+const sanitizeBlockMaterialsForWorker = (materials) => {
+  const sanitized = {
+    __defaults: sanitizeBlockMaterialRecordForWorker(
+      DEFAULT_WORKER_BLOCK_MATERIAL,
+    ),
+  };
+  if (!materials || typeof materials !== 'object') {
+    return sanitized;
+  }
+
+  const registerEntry = (key, material) => {
+    if (typeof key !== 'string' || key.length === 0) {
+      return;
+    }
+    sanitized[key] = sanitizeBlockMaterialRecordForWorker(material);
+  };
+
+  if (materials instanceof Map) {
+    materials.forEach((material, key) => {
+      registerEntry(key, material);
+    });
+    return sanitized;
+  }
+
+  if (Array.isArray(materials)) {
+    materials.forEach((material, index) => {
+      registerEntry(String(index), material);
+    });
+    return sanitized;
+  }
+
+  Object.keys(materials).forEach((key) => {
+    registerEntry(key, materials[key]);
+  });
+
+  return sanitized;
 };
 
 /**
@@ -553,12 +613,14 @@ const sanitizeWorldOptionsForWorker = (options = worldOptions) => {
  * @param {number} params.chunkZ Chunk coordinate on the Z axis.
  * @param {'core'|'retention'} [params.detailLevel='core'] Requested detail level.
  * @param {Object} [params.worldOptions=worldOptions] Source world configuration.
+ * @param {Object} [params.blockMaterials] Block material registry used for occlusion.
  * @param {Object} [params.engine] Optional precomputed engine payload for worker use.
  * @returns {{
  *   chunkX: number,
  *   chunkZ: number,
  *   detailLevel: 'core'|'retention',
  *   worldOptions: Object,
+ *   blockMaterials: Object,
  *   engine?: Object,
  * }} Plain worker payload schema.
  */
@@ -567,6 +629,7 @@ export function createChunkWorkerStartPayload({
   chunkZ = 0,
   detailLevel = DETAIL_LEVEL_CORE,
   worldOptions: optionsOverride = worldOptions,
+  blockMaterials: blockMaterialsOverride = null,
   engine = null,
 } = {}) {
   const payload = {
@@ -574,6 +637,7 @@ export function createChunkWorkerStartPayload({
     chunkZ: Number.isFinite(chunkZ) ? chunkZ : 0,
     detailLevel: normalizeDetailMode(detailLevel),
     worldOptions: sanitizeWorldOptionsForWorker(optionsOverride),
+    blockMaterials: sanitizeBlockMaterialsForWorker(blockMaterialsOverride),
   };
   if (engine) {
     payload.engine = sanitizeSerializableForWorker(engine);
