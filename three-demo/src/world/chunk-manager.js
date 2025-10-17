@@ -2913,6 +2913,55 @@ export function createChunkManager({
     const priority = dx * dx + dz * dz;
 
     const existing = pendingPreloadEntries.get(key);
+    const pendingActivationRecord =
+      pendingActivationByKey.get(key) ?? existing?.pendingChunk ?? null;
+
+    if (!existing && pendingActivationRecord) {
+      const pendingEntry = pendingActivationRecord.entry ?? null;
+      const nextUrgent = Boolean(urgent);
+      let reprioritize = false;
+      if (pendingEntry) {
+        if (typeof pendingEntry.priority === 'number') {
+          pendingEntry.priority = priority;
+        }
+        if (nextUrgent && !pendingEntry.urgent) {
+          pendingEntry.urgent = true;
+          reprioritize = true;
+        }
+        if (
+          detailLevelRank(pendingEntry.desiredDetailLevel) <
+          detailLevelRank(requestedDetailLevel)
+        ) {
+          pendingEntry.desiredDetailLevel = requestedDetailLevel;
+          if (pendingActivationRecord.chunk) {
+            pendingActivationRecord.chunk.desiredDetailLevel =
+              requestedDetailLevel;
+          }
+          reprioritize = true;
+        }
+      }
+
+      if (reprioritize) {
+        const index = pendingActivations.indexOf(pendingActivationRecord);
+        if (index > 0) {
+          pendingActivations.splice(index, 1);
+          pendingActivations.unshift(pendingActivationRecord);
+        } else if (index === -1) {
+          pendingActivations.unshift(pendingActivationRecord);
+        }
+      }
+
+      if (!pendingActivationRecord.__warnedRequeueWhileDeferred) {
+        console.warn(
+          '[chunk-manager] Ignoring preload request for deferred chunk',
+          key,
+        );
+        pendingActivationRecord.__warnedRequeueWhileDeferred = true;
+      }
+
+      return pendingEntry;
+    }
+
     if (existing) {
       let changed = false;
       if (existing.priority !== priority) {
