@@ -556,6 +556,7 @@ export function createChunkManager({
         chunkZ: entry?.chunkZ ?? 0,
         detailLevel: requestedDetailLevel,
         worldOptions: worldConfig,
+        blockMaterials,
       });
       metadata.controller = createWorkerJobController(entry.key, metadata);
       if (!metadata.controller) {
@@ -1413,7 +1414,7 @@ export function createChunkManager({
         chunk.chunkZ,
       );
       if (
-        detailLevelRank(requiredDetail) <=
+        detailLevelRank(requiredDetail) <
         detailLevelRank(DETAIL_LEVEL_RETENTION)
       ) {
         pendingActivationByKey.set(record.key, record);
