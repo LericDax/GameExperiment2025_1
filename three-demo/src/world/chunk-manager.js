@@ -500,16 +500,43 @@ export function createChunkManager({
     ? Math.max(0, Math.floor(currentViewDistance))
     : Math.max(0, Math.floor(lastFiniteViewDistance));
 
-  function waitForNextJobSlice(timeout = 16) {
+  function waitForNextJobSlice(timeout) {
+    const hasExplicitTimeout = arguments.length > 0;
+    const numericTimeout = Number(timeout);
+    const normalizedTimeout = Number.isFinite(numericTimeout)
+      ? Math.max(0, numericTimeout)
+      : undefined;
+
     return new Promise((resolve) => {
       if (typeof requestIdleCallback === 'function') {
-        requestIdleCallback(() => resolve(), { timeout });
+        if (hasExplicitTimeout && normalizedTimeout !== undefined) {
+          requestIdleCallback(() => resolve(), { timeout: normalizedTimeout });
+        } else {
+          requestIdleCallback(() => resolve());
+        }
         return;
       }
+
+      if (!hasExplicitTimeout || !Number.isFinite(numericTimeout) || numericTimeout <= 0) {
+        if (typeof queueMicrotask === 'function') {
+          queueMicrotask(resolve);
+          return;
+        }
+        if (typeof Promise === 'function' && typeof Promise.resolve === 'function') {
+          Promise.resolve().then(resolve);
+          return;
+        }
+        if (typeof setTimeout === 'function') {
+          setTimeout(resolve, 0);
+          return;
+        }
+      }
+
       if (typeof setTimeout === 'function') {
-        setTimeout(resolve, Math.max(0, timeout));
+        setTimeout(resolve, Math.max(0, normalizedTimeout ?? 0));
         return;
       }
+
       resolve();
     });
   }
@@ -1636,6 +1663,7 @@ export function createChunkManager({
                   wasUnlimited ||
                   chunkJobQueue.some((queuedEntry) => queuedEntry?.unlimited);
                 if (!hasUnlimitedPending) {
+                  // Yield immediately so browsers without requestIdleCallback still pace frames.
                   await waitForNextJobSlice();
                 }
               }
@@ -1679,6 +1707,7 @@ export function createChunkManager({
             wasUnlimited ||
             chunkJobQueue.some((queuedEntry) => queuedEntry?.unlimited);
           if (!hasUnlimitedPending) {
+            // Yield immediately so browsers without requestIdleCallback still pace frames.
             await waitForNextJobSlice();
           }
         }
