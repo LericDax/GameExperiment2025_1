@@ -396,6 +396,191 @@ function addCloud(addBlock, x, y, z) {
   blocks.forEach(([dx, dy, dz]) => addBlock('cloud', x + dx, y + dy, z + dz, null));
 }
 
+const DETAIL_LEVEL_CORE = 'core';
+const DETAIL_LEVEL_RETENTION = 'retention';
+
+const normalizeDetailMode = (detailLevel) =>
+  detailLevel === DETAIL_LEVEL_RETENTION ? DETAIL_LEVEL_RETENTION : DETAIL_LEVEL_CORE;
+
+const sanitizeSerializableForWorker = (value, seen = new WeakSet()) => {
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === 'number' ||
+    typeof value === 'string' ||
+    typeof value === 'boolean'
+  ) {
+    return value ?? null;
+  }
+
+  if (typeof value === 'function') {
+    return undefined;
+  }
+
+  if (typeof value === 'object') {
+    if (seen.has(value)) {
+      return undefined;
+    }
+    seen.add(value);
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    if (typeof value.slice === 'function') {
+      return value.slice();
+    }
+    return new value.constructor(value);
+  }
+
+  if (value instanceof ArrayBuffer) {
+    return value.slice(0);
+  }
+
+  if (Array.isArray(value)) {
+    const result = [];
+    value.forEach((entry) => {
+      const sanitized = sanitizeSerializableForWorker(entry, seen);
+      if (sanitized !== undefined) {
+        result.push(sanitized);
+      }
+    });
+    return result;
+  }
+
+  if (value instanceof Map) {
+    const map = new Map();
+    value.forEach((entry, key) => {
+      const sanitized = sanitizeSerializableForWorker(entry, seen);
+      if (sanitized !== undefined) {
+        map.set(key, sanitized);
+      }
+    });
+    return map;
+  }
+
+  if (value instanceof Set) {
+    const set = new Set();
+    value.forEach((entry) => {
+      const sanitized = sanitizeSerializableForWorker(entry, seen);
+      if (sanitized !== undefined) {
+        set.add(sanitized);
+      }
+    });
+    return set;
+  }
+
+  if (value?.isColor) {
+    return {
+      r: Number.isFinite(value.r) ? value.r : 0,
+      g: Number.isFinite(value.g) ? value.g : 0,
+      b: Number.isFinite(value.b) ? value.b : 0,
+    };
+  }
+
+  if (value?.isVector3) {
+    return {
+      x: Number.isFinite(value.x) ? value.x : 0,
+      y: Number.isFinite(value.y) ? value.y : 0,
+      z: Number.isFinite(value.z) ? value.z : 0,
+    };
+  }
+
+  if (value?.isEuler) {
+    return {
+      x: Number.isFinite(value.x) ? value.x : 0,
+      y: Number.isFinite(value.y) ? value.y : 0,
+      z: Number.isFinite(value.z) ? value.z : 0,
+      order: typeof value.order === 'string' ? value.order : 'XYZ',
+    };
+  }
+
+  if (value?.isQuaternion) {
+    return {
+      x: Number.isFinite(value.x) ? value.x : 0,
+      y: Number.isFinite(value.y) ? value.y : 0,
+      z: Number.isFinite(value.z) ? value.z : 0,
+      w: Number.isFinite(value.w) ? value.w : 1,
+    };
+  }
+
+  if (value?.isMatrix4 && typeof value.toArray === 'function') {
+    const elements = new Array(16).fill(0);
+    value.toArray(elements, 0);
+    return { elements };
+  }
+
+  if (value?.isMesh || value?.isObject3D) {
+    const userData = sanitizeSerializableForWorker(value.userData ?? {}, seen);
+    const payload = {
+      type: typeof value.type === 'string' ? value.type : 'Object3D',
+    };
+    if (typeof value.name === 'string' && value.name.length > 0) {
+      payload.name = value.name;
+    }
+    if (userData && typeof userData === 'object') {
+      payload.userData = userData;
+    }
+    return payload;
+  }
+
+  const result = {};
+  Object.entries(value).forEach(([key, entry]) => {
+    if (typeof entry === 'function') {
+      return;
+    }
+    const sanitized = sanitizeSerializableForWorker(entry, seen);
+    if (sanitized !== undefined) {
+      result[key] = sanitized;
+    }
+  });
+  return result;
+};
+
+const sanitizeWorldOptionsForWorker = (options = worldOptions) => {
+  if (!options || typeof options !== 'object') {
+    return {};
+  }
+  return sanitizeSerializableForWorker(options);
+};
+
+/**
+ * Constructs a structured-clone-friendly payload that chunk workers can use
+ * to initialize a build task. The payload includes spatial coordinates,
+ * the requested detail level, and sanitized world configuration details such
+ * as terrain parameters and seed values.
+ *
+ * @param {Object} params
+ * @param {number} params.chunkX Chunk coordinate on the X axis.
+ * @param {number} params.chunkZ Chunk coordinate on the Z axis.
+ * @param {'core'|'retention'} [params.detailLevel='core'] Requested detail level.
+ * @param {Object} [params.worldOptions=worldOptions] Source world configuration.
+ * @param {Object} [params.engine] Optional precomputed engine payload for worker use.
+ * @returns {{
+ *   chunkX: number,
+ *   chunkZ: number,
+ *   detailLevel: 'core'|'retention',
+ *   worldOptions: Object,
+ *   engine?: Object,
+ * }} Plain worker payload schema.
+ */
+export function createChunkWorkerStartPayload({
+  chunkX = 0,
+  chunkZ = 0,
+  detailLevel = DETAIL_LEVEL_CORE,
+  worldOptions: optionsOverride = worldOptions,
+  engine = null,
+} = {}) {
+  const payload = {
+    chunkX: Number.isFinite(chunkX) ? chunkX : 0,
+    chunkZ: Number.isFinite(chunkZ) ? chunkZ : 0,
+    detailLevel: normalizeDetailMode(detailLevel),
+    worldOptions: sanitizeWorldOptionsForWorker(optionsOverride),
+  };
+  if (engine) {
+    payload.engine = sanitizeSerializableForWorker(engine);
+  }
+  return payload;
+}
+
 export function createChunkBuildTask({
   chunkX,
   chunkZ,
@@ -406,7 +591,7 @@ export function createChunkBuildTask({
   const THREE = ensureThree();
   const engine = ensureTerrainEngine();
   let needsWorkerPayload = Boolean(requireWorkerPayload);
-  const detailMode = detailLevel === 'retention' ? 'retention' : 'core';
+  const detailMode = normalizeDetailMode(detailLevel);
   const isLowDetail = detailMode !== 'core';
   const instancedData = new Map();
   const decorationInstancedData = new Map();

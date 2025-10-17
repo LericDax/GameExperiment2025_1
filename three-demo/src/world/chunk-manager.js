@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import {
   createChunkBuildTask,
+  createChunkWorkerStartPayload,
   getWorldOptions,
   buildInstancedBlockMesh,
   makeBlockKey,
@@ -547,6 +548,12 @@ export function createChunkManager({
       startPayload: null,
     };
     if (metadata.mode === 'worker') {
+      metadata.startPayload = createChunkWorkerStartPayload({
+        chunkX: entry?.chunkX ?? 0,
+        chunkZ: entry?.chunkZ ?? 0,
+        detailLevel: entry?.detailLevel ?? DETAIL_LEVEL_CORE,
+        worldOptions: worldConfig,
+      });
       metadata.controller = createWorkerJobController(entry.key, metadata);
       if (!metadata.controller) {
         metadata.mode = 'local';
@@ -1498,7 +1505,10 @@ export function createChunkManager({
             fallbackChunkJobToLocal(entry);
           } else {
             if (!metadata.started) {
-              if (metadata.startPayload) {
+              if (
+                metadata.startPayload &&
+                Object.prototype.hasOwnProperty.call(metadata.startPayload, 'engine')
+              ) {
                 try {
                   controller.start(metadata.startPayload);
                   metadata.started = true;
