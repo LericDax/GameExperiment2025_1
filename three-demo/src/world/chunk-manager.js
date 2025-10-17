@@ -548,17 +548,18 @@ export function createChunkManager({
       startPayload: null,
     };
     if (metadata.mode === 'worker') {
+      const requestedDetailLevel = normalizeDetailLevel(
+        entry?.detailLevel ?? entry?.desiredDetailLevel ?? DETAIL_LEVEL_CORE,
+      );
       metadata.startPayload = createChunkWorkerStartPayload({
         chunkX: entry?.chunkX ?? 0,
         chunkZ: entry?.chunkZ ?? 0,
-        detailLevel: entry?.detailLevel ?? DETAIL_LEVEL_CORE,
+        detailLevel: requestedDetailLevel,
         worldOptions: worldConfig,
       });
       metadata.controller = createWorkerJobController(entry.key, metadata);
       if (!metadata.controller) {
         metadata.mode = 'local';
-      } else if (metadata.startPayload == null) {
-        metadata.started = true;
       }
     }
     return metadata;
@@ -1505,22 +1506,15 @@ export function createChunkManager({
             fallbackChunkJobToLocal(entry);
           } else {
             if (!metadata.started) {
-              if (
-                metadata.startPayload &&
-                Object.prototype.hasOwnProperty.call(metadata.startPayload, 'engine')
-              ) {
-                try {
-                  controller.start(metadata.startPayload);
-                  metadata.started = true;
-                } catch (error) {
-                  console.warn(
-                    `[chunk-manager] Failed to start worker job ${entry.key}`,
-                    error,
-                  );
-                  fallbackChunkJobToLocal(entry);
-                }
-              } else {
+              try {
+                controller.start(metadata.startPayload ?? {});
                 metadata.started = true;
+              } catch (error) {
+                console.warn(
+                  `[chunk-manager] Failed to start worker job ${entry.key}`,
+                  error,
+                );
+                fallbackChunkJobToLocal(entry);
               }
             }
             if (metadata.mode === 'worker') {
