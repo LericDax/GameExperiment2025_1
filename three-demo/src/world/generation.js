@@ -22,7 +22,10 @@ import {
   serializeInstancedEntry,
   deserializeInstancedEntry,
 } from './chunk-payload-serializers.js';
-import { chunkWorldBounds } from './chunk-build-core.js';
+import {
+  chunkWorldBounds,
+  MAX_OCCUPANCY_COORDINATE_SNAPSHOT,
+} from './chunk-build-core.js';
 import { buildChunkPayload } from './world/chunk-build-core.js';
 import { finalizeChunkMeshes } from './finalize-chunk-meshes.js';
 import { deriveCollisionKeySetsFromMesh } from './collision-key-utils.js';
@@ -651,6 +654,7 @@ export function createChunkBuildTask({
   blockMaterials,
   requireWorkerPayload = false,
   detailLevel = 'core',
+  includeBlockPlacementsInPayload = requireWorkerPayload,
 }) {
   const THREE = ensureThree();
   const engine = ensureTerrainEngine();
@@ -2332,7 +2336,7 @@ export function createChunkBuildTask({
       chunkZ,
       engine: createEnginePayload(),
       worldOptions,
-      includeBlockPlacements: true,
+      includeBlockPlacements: includeBlockPlacementsInPayload,
     });
   };
 
@@ -2354,6 +2358,26 @@ export function createChunkBuildTask({
     }
     if (!Number.isFinite(occupancyMaxY)) {
       occupancyMaxY = Number.isFinite(occupancyMinY) ? occupancyMinY : 0;
+    }
+
+    const occupancySpan = occupancyMaxY - occupancyMinY + 1;
+    if (occupancySpan > MAX_OCCUPANCY_COORDINATE_SNAPSHOT) {
+      const reference = Number.isFinite(worldOptions?.waterLevel)
+        ? Math.round(worldOptions.waterLevel)
+        : Math.round(occupancyMinY + occupancySpan / 2);
+      const halfWindow = Math.floor(MAX_OCCUPANCY_COORDINATE_SNAPSHOT / 2);
+      let desiredMin = reference - halfWindow;
+      let desiredMax = desiredMin + MAX_OCCUPANCY_COORDINATE_SNAPSHOT - 1;
+      if (desiredMin < occupancyMinY) {
+        desiredMin = occupancyMinY;
+        desiredMax = desiredMin + MAX_OCCUPANCY_COORDINATE_SNAPSHOT - 1;
+      }
+      if (desiredMax > occupancyMaxY) {
+        desiredMax = occupancyMaxY;
+        desiredMin = desiredMax - MAX_OCCUPANCY_COORDINATE_SNAPSHOT + 1;
+      }
+      occupancyMinY = desiredMin;
+      occupancyMaxY = desiredMax;
     }
 
     occupancyWidth = chunkSize;
@@ -2865,7 +2889,7 @@ export function createChunkBuildTask({
           chunkZ,
           engine: createEnginePayload(),
           worldOptions,
-          includeBlockPlacements: true,
+          includeBlockPlacements: includeBlockPlacementsInPayload,
         });
         stepState.stage = 'readyForFinalize';
         return { done: true, processed: stepProcessed };

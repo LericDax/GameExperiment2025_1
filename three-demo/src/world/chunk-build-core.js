@@ -1,6 +1,8 @@
 import { serializeInstancedEntry } from './chunk-payload-serializers.js';
 
 const DEFAULT_CHUNK_SIZE = 16;
+export const MAX_OCCUPANCY_COORDINATE_SNAPSHOT = 4096;
+export const MAX_COORDINATE_INDEX_ENTRIES = 8192;
 
 const isTypedArray = (value) =>
   ArrayBuffer.isView(value) && !(value instanceof DataView);
@@ -807,6 +809,26 @@ export const buildChunkPayload = ({
     occupancyMaxY = occupancyMinY;
   }
 
+  const occupancySpan = occupancyMaxY - occupancyMinY + 1;
+  if (occupancySpan > MAX_OCCUPANCY_COORDINATE_SNAPSHOT) {
+    const centerReference = Number.isFinite(waterLevel)
+      ? Math.round(waterLevel)
+      : Math.round(occupancyMinY + occupancySpan / 2);
+    const halfWindow = Math.floor(MAX_OCCUPANCY_COORDINATE_SNAPSHOT / 2);
+    let desiredMin = centerReference - halfWindow;
+    let desiredMax = desiredMin + MAX_OCCUPANCY_COORDINATE_SNAPSHOT - 1;
+    if (desiredMin < occupancyMinY) {
+      desiredMin = occupancyMinY;
+      desiredMax = desiredMin + MAX_OCCUPANCY_COORDINATE_SNAPSHOT - 1;
+    }
+    if (desiredMax > occupancyMaxY) {
+      desiredMax = occupancyMaxY;
+      desiredMin = desiredMax - MAX_OCCUPANCY_COORDINATE_SNAPSHOT + 1;
+    }
+    occupancyMinY = desiredMin;
+    occupancyMaxY = desiredMax;
+  }
+
   const occupancyWidth = chunkSize;
   const occupancyDepth = chunkSize;
   const occupancyHeight = Math.max(1, occupancyMaxY - occupancyMinY + 1);
@@ -833,6 +855,40 @@ export const buildChunkPayload = ({
   const solidCoordinates = [];
   const softCoordinates = [];
   const placementIndexByCoordinate = {};
+  let coordinateIndexCount = 0;
+  let solidCoordinateCount = 0;
+  let softCoordinateCount = 0;
+
+  const setCoordinateIndex = (key, value) => {
+    if (!key) {
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(placementIndexByCoordinate, key)) {
+      placementIndexByCoordinate[key] = value;
+      return;
+    }
+    if (coordinateIndexCount >= MAX_COORDINATE_INDEX_ENTRIES) {
+      return;
+    }
+    placementIndexByCoordinate[key] = value;
+    coordinateIndexCount += 1;
+  };
+
+  const pushSolidCoordinate = (key) => {
+    if (!key || solidCoordinateCount >= MAX_COORDINATE_INDEX_ENTRIES) {
+      return;
+    }
+    solidCoordinates.push(key);
+    solidCoordinateCount += 1;
+  };
+
+  const pushSoftCoordinate = (key) => {
+    if (!key || softCoordinateCount >= MAX_COORDINATE_INDEX_ENTRIES) {
+      return;
+    }
+    softCoordinates.push(key);
+    softCoordinateCount += 1;
+  };
   const blockPlacements = includeBlockPlacements ? [] : null;
 
   const normalizedFluidKeys = normalizeArraySource(engine.fluidBlockKeys);
@@ -878,7 +934,7 @@ export const buildChunkPayload = ({
     const position = resolvePlacementPosition(placement);
     const coordinateKey = normalizeCoordinateKey(placement, position);
     if (coordinateKey) {
-      placementIndexByCoordinate[coordinateKey] = index;
+      setCoordinateIndex(coordinateKey, index);
     }
 
     const isSolid =
@@ -887,10 +943,10 @@ export const buildChunkPayload = ({
       placement.isSoft === true || placement.collisionMode === 'soft';
 
     if (isSolid && coordinateKey) {
-      solidCoordinates.push(coordinateKey);
+      pushSolidCoordinate(coordinateKey);
     }
     if (isSoft && coordinateKey) {
-      softCoordinates.push(coordinateKey);
+      pushSoftCoordinate(coordinateKey);
     }
 
     if (includeBlockPlacements && blockPlacements) {
