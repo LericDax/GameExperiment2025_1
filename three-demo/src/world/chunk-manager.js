@@ -28,7 +28,12 @@ import {
   createChunkStoreQueue,
   DEFAULT_CHUNK_STORE_TIMEOUT_MS,
 } from './persist/chunk-store-queue.js';
-import { mergeSnapshotWithJournals } from './persist/snapshot.ts';
+import {
+  DEFAULT_COMPACTION_THRESHOLDS,
+  mergeSnapshotWithJournals,
+  shouldCompactJournal,
+} from './persist/snapshot.ts';
+import { encodeJournalOps, JournalOpId } from './persist/journal.ts';
 
 export const ChunkManagerEvents = Object.freeze({
   FIRST_CHUNK_MESHED: 'first-chunk-meshed',
@@ -703,6 +708,15 @@ export function createChunkManager({
   const pendingActivations = [];
   const pendingActivationByKey = new Map();
   const chunkJobQueue = [];
+  const dirtyChunks = new Set();
+  const chunkJournalQueues = new Map();
+  const chunkPersistenceState = new Map();
+  const chunksPendingCompaction = new Set();
+  let autosaveTimer = null;
+  let autosaveRunning = false;
+  let compactionTimer = null;
+  let compactionRunning = false;
+  let nextJournalTick = Math.max(1, Math.floor(Date.now()));
   const chunkPersistenceQueue = (() => {
     if (providedChunkPersistenceQueue === null) {
       return null;
@@ -797,6 +811,378 @@ export function createChunkManager({
   const clearPayloadCacheEntries = () => {
     payloadCache.clear();
   };
+
+  const AUTOSAVE_INTERVAL_MS = 750;
+  const COMPACTION_INTERVAL_MS = 2000;
+
+  function ensureJournalQueue(key) {
+    if (!key) {
+      return [];
+    }
+    let queue = chunkJournalQueues.get(key);
+    if (!queue) {
+      queue = [];
+      chunkJournalQueues.set(key, queue);
+    }
+    return queue;
+  }
+
+  function initializeChunkPersistenceState(
+    key,
+    chunk,
+    payload,
+    persistenceResult,
+  ) {
+    if (!key || !chunk) {
+      return;
+    }
+
+    const occupancy = payload?.occupancy ?? null;
+    const chunkSize = Number.isFinite(worldConfig.chunkSize)
+      ? Math.max(1, Math.floor(worldConfig.chunkSize))
+      : 16;
+    const minY = Number.isFinite(occupancy?.minY)
+      ? Math.floor(occupancy.minY)
+      : 0;
+    const maxY = Number.isFinite(occupancy?.maxY)
+      ? Math.floor(occupancy.maxY)
+      : minY;
+    const sizeX = Number.isFinite(occupancy?.width)
+      ? Math.max(1, Math.floor(occupancy.width))
+      : chunkSize;
+    const sizeZ = Number.isFinite(occupancy?.depth)
+      ? Math.max(1, Math.floor(occupancy.depth))
+      : chunkSize;
+    const derivedHeight = Number.isFinite(occupancy?.height)
+      ? Math.max(1, Math.floor(occupancy.height))
+      : Math.max(1, maxY - minY + 1);
+    const fallbackHeight = Number.isFinite(worldConfig.maxHeight)
+      ? Math.max(1, Math.floor(worldConfig.maxHeight))
+      : chunkSize;
+    const sizeY = Math.max(1, derivedHeight || fallbackHeight);
+
+    const typeEntries = Array.isArray(payload?.typeIndex?.entries)
+      ? payload.typeIndex.entries
+      : [];
+    const typeIds = new Map();
+    typeEntries.forEach((entry) => {
+      const type = entry?.type ?? null;
+      const id = Number.isFinite(entry?.id) ? Math.floor(entry.id) : null;
+      if (type && id !== null) {
+        typeIds.set(type, id);
+      }
+    });
+
+    const stats = {
+      entries: Math.max(0, Math.floor(persistenceResult?.journalStats?.entries ?? 0)),
+      bytes: Math.max(0, Math.floor(persistenceResult?.journalStats?.bytes ?? 0)),
+    };
+
+    const snapshot =
+      persistenceResult?.mergedSnapshot ??
+      persistenceResult?.snapshot ??
+      null;
+
+    chunkPersistenceState.set(key, {
+      minY,
+      sizeX,
+      sizeY,
+      sizeZ,
+      typeIds,
+      snapshot,
+      stats,
+      needsCompaction: false,
+    });
+    ensureJournalQueue(key);
+  }
+
+  function markChunkDirty(key) {
+    if (!key) {
+      return;
+    }
+    dirtyChunks.add(key);
+    scheduleAutosaveTimer();
+  }
+
+  function enqueueJournalOpsForChunk(key, ops) {
+    if (!key || !Array.isArray(ops) || ops.length === 0) {
+      return;
+    }
+    if (!chunkPersistenceState.has(key)) {
+      return;
+    }
+    const queue = ensureJournalQueue(key);
+    ops.forEach((op) => {
+      if (op) {
+        queue.push(op);
+      }
+    });
+    if (queue.length > 0) {
+      markChunkDirty(key);
+    }
+  }
+
+  function createBlockRemovalJournalOp(chunk, entry) {
+    if (!chunk || !entry) {
+      return null;
+    }
+    const key = chunkKey(chunk.chunkX ?? 0, chunk.chunkZ ?? 0);
+    const state = chunkPersistenceState.get(key);
+    if (!state) {
+      return null;
+    }
+
+    let localX = null;
+    let localY = null;
+    let localZ = null;
+
+    if (entry.gridPosition) {
+      localX = Math.round(entry.gridPosition.x);
+      localY = Math.round(entry.gridPosition.y);
+      localZ = Math.round(entry.gridPosition.z);
+    } else if (entry.position) {
+      const halfSize = worldConfig.chunkSize / 2;
+      const originX = chunk.chunkX * worldConfig.chunkSize - halfSize;
+      const originZ = chunk.chunkZ * worldConfig.chunkSize - halfSize;
+      localX = Math.round(entry.position.x - originX);
+      localZ = Math.round(entry.position.z - originZ);
+      localY = Math.round(entry.position.y) - state.minY;
+    } else if (entry.coordinateKey) {
+      const coords = parseBlockCoordinateKey(entry.coordinateKey);
+      if (coords) {
+        const halfSize = worldConfig.chunkSize / 2;
+        const originX = chunk.chunkX * worldConfig.chunkSize - halfSize;
+        const originZ = chunk.chunkZ * worldConfig.chunkSize - halfSize;
+        localX = Math.round(coords.x - originX);
+        localZ = Math.round(coords.z - originZ);
+        localY = Math.round(coords.y) - state.minY;
+      }
+    }
+
+    if (
+      localX === null ||
+      localY === null ||
+      localZ === null ||
+      !Number.isFinite(localX) ||
+      !Number.isFinite(localY) ||
+      !Number.isFinite(localZ)
+    ) {
+      return null;
+    }
+
+    if (
+      localX < 0 ||
+      localX >= state.sizeX ||
+      localZ < 0 ||
+      localZ >= state.sizeZ ||
+      localY < 0 ||
+      localY >= state.sizeY
+    ) {
+      return null;
+    }
+
+    return {
+      id: JournalOpId.VOXEL_RECT,
+      origin: { x: localX, y: localY, z: localZ },
+      size: { x: 1, y: 1, z: 1 },
+      block: 0,
+    };
+  }
+
+  async function flushChunkJournal(key, chunkOverride = null) {
+    if (!key) {
+      return;
+    }
+    const queue = chunkJournalQueues.get(key);
+    if (!queue || queue.length === 0) {
+      dirtyChunks.delete(key);
+      return;
+    }
+    const ops = queue.splice(0);
+    if (ops.length === 0) {
+      dirtyChunks.delete(key);
+      return;
+    }
+    const payload = encodeJournalOps(ops);
+    if (!(payload instanceof Uint8Array) || payload.byteLength === 0) {
+      dirtyChunks.delete(key);
+      chunkJournalQueues.set(key, []);
+      return;
+    }
+
+    const chunk = chunkOverride ?? loadedChunks.get(key);
+    const storeKey = chunk
+      ? {
+          cx: Number.isFinite(chunk.chunkX) ? chunk.chunkX : 0,
+          cy: 0,
+          cz: Number.isFinite(chunk.chunkZ) ? chunk.chunkZ : 0,
+        }
+      : { cx: 0, cy: 0, cz: 0 };
+
+    try {
+      await enqueueChunkPersistenceJob(key, () => {
+        if (!chunkPersistenceQueue || typeof chunkPersistenceQueue.enqueueSave !== 'function') {
+          return Promise.resolve();
+        }
+        return chunkPersistenceQueue.enqueueSave({
+          key: storeKey,
+          chunkKey: key,
+          detailLevel: chunk?.detailLevel ?? DETAIL_LEVEL_CORE,
+          type: 'journal',
+          payload,
+          tick: nextJournalTick++,
+          timeoutMs: chunkPersistenceTimeoutMs,
+        });
+      });
+
+      const state = chunkPersistenceState.get(key);
+      if (state) {
+        state.stats.entries += ops.length;
+        state.stats.bytes += payload.byteLength;
+        try {
+          const mergeResult = mergeSnapshotWithJournals(
+            state.snapshot,
+            [payload],
+            { sizeX: state.sizeX, sizeY: state.sizeY, sizeZ: state.sizeZ },
+          );
+          if (mergeResult?.payload) {
+            state.snapshot = mergeResult.payload;
+          }
+        } catch (error) {
+          console.warn('[chunk-manager] Failed to merge journal payload into snapshot', error);
+        }
+        if (shouldCompactJournal(state.stats, DEFAULT_COMPACTION_THRESHOLDS)) {
+          state.needsCompaction = true;
+          chunksPendingCompaction.add(key);
+          scheduleCompactionTimer();
+        }
+      }
+
+      chunkJournalQueues.set(key, []);
+      dirtyChunks.delete(key);
+    } catch (error) {
+      console.warn('[chunk-manager] chunk persistence journal save failed', error);
+      const existing = chunkJournalQueues.get(key) ?? [];
+      chunkJournalQueues.set(key, [...ops, ...existing]);
+      dirtyChunks.add(key);
+      scheduleAutosaveTimer();
+    }
+  }
+
+  async function runAutosavePass() {
+    if (autosaveRunning) {
+      return;
+    }
+    autosaveRunning = true;
+    try {
+      const maxPerPass = Math.max(1, defaultPreloadBurst);
+      let processed = 0;
+      while (dirtyChunks.size > 0 && processed < maxPerPass) {
+        if (chunkJobQueue.length > 0 || chunkJobPumpActive) {
+          await waitForNextJobSlice(8);
+          processed = 0;
+          continue;
+        }
+        const iterator = dirtyChunks.values().next();
+        if (iterator.done) {
+          break;
+        }
+        const key = iterator.value;
+        await flushChunkJournal(key);
+        processed += 1;
+        await waitForNextJobSlice(1);
+      }
+    } finally {
+      autosaveRunning = false;
+      if (dirtyChunks.size > 0) {
+        scheduleAutosaveTimer();
+      }
+    }
+  }
+
+  function scheduleAutosaveTimer() {
+    if (dirtyChunks.size === 0) {
+      return;
+    }
+    if (autosaveTimer !== null || autosaveRunning) {
+      return;
+    }
+    autosaveTimer = setTimeout(() => {
+      autosaveTimer = null;
+      void runAutosavePass();
+    }, AUTOSAVE_INTERVAL_MS);
+  }
+
+  async function runCompactionPass() {
+    if (compactionRunning) {
+      return;
+    }
+    compactionRunning = true;
+    try {
+      for (const key of Array.from(chunksPendingCompaction)) {
+        const state = chunkPersistenceState.get(key);
+        if (!state || !state.needsCompaction) {
+          chunksPendingCompaction.delete(key);
+          continue;
+        }
+        const chunk = loadedChunks.get(key);
+        if (!chunk || !state.snapshot || state.snapshot.byteLength === 0) {
+          state.needsCompaction = false;
+          chunksPendingCompaction.delete(key);
+          continue;
+        }
+        if (chunkJobQueue.length > 0 || chunkJobPumpActive) {
+          await waitForNextJobSlice(8);
+        }
+        try {
+          await enqueueChunkPersistenceJob(key, () => {
+            if (!chunkPersistenceQueue || typeof chunkPersistenceQueue.enqueueSave !== 'function') {
+              return Promise.resolve();
+            }
+            return chunkPersistenceQueue.enqueueSave({
+              key: {
+                cx: Number.isFinite(chunk.chunkX) ? chunk.chunkX : 0,
+                cy: 0,
+                cz: Number.isFinite(chunk.chunkZ) ? chunk.chunkZ : 0,
+              },
+              chunkKey: key,
+              detailLevel: chunk.detailLevel ?? DETAIL_LEVEL_CORE,
+              type: 'snapshot',
+              payload: state.snapshot,
+              timeoutMs: chunkPersistenceTimeoutMs,
+            });
+          });
+          state.stats.entries = 0;
+          state.stats.bytes = 0;
+          state.needsCompaction = false;
+          chunksPendingCompaction.delete(key);
+        } catch (error) {
+          console.warn('[chunk-manager] chunk persistence compaction failed', error);
+          scheduleCompactionTimer();
+          break;
+        }
+        await waitForNextJobSlice(1);
+      }
+    } finally {
+      compactionRunning = false;
+      if (Array.from(chunkPersistenceState.values()).some((state) => state?.needsCompaction)) {
+        scheduleCompactionTimer();
+      }
+    }
+  }
+
+  function scheduleCompactionTimer() {
+    if (chunksPendingCompaction.size === 0) {
+      return;
+    }
+    if (compactionTimer !== null || compactionRunning) {
+      return;
+    }
+    compactionTimer = setTimeout(() => {
+      compactionTimer = null;
+      void runCompactionPass();
+    }, COMPACTION_INTERVAL_MS);
+  }
 
   const ensureCacheCapacityLimit = () => {
     if (payloadCacheCapacity <= 0) {
@@ -1982,6 +2368,7 @@ export function createChunkManager({
       if (chunk) {
         chunk.detailLevel = entry.detailLevel;
         chunk.desiredDetailLevel = entry.desiredDetailLevel;
+        chunk.__persistenceResult = entry.persistenceResult ?? null;
       }
       const pendingRecord = {
         key: entry.key,
@@ -3235,6 +3622,14 @@ export function createChunkManager({
       return;
     }
 
+    initializeChunkPersistenceState(
+      key,
+      chunk,
+      chunk.__cachePayload ?? null,
+      chunk.__persistenceResult ?? null,
+    );
+    chunk.__persistenceResult = null;
+
     chunk.group.frustumCulled = false;
     applyChunkBounds(chunk);
     chunk.group.traverse((child) => {
@@ -3466,6 +3861,30 @@ export function createChunkManager({
     const chunk = loadedChunks.get(key);
     if (!chunk) {
       return;
+    }
+
+    const pendingJournalOps = chunkJournalQueues.get(key) ?? [];
+    const pendingFlush =
+      pendingJournalOps.length > 0
+        ? flushChunkJournal(key, chunk).catch((error) => {
+            console.warn(
+              '[chunk-manager] Failed to flush chunk journal before disposal',
+              error,
+            );
+          })
+        : null;
+    if (pendingFlush) {
+      pendingFlush.finally(() => {
+        chunkJournalQueues.delete(key);
+        chunkPersistenceState.delete(key);
+        chunksPendingCompaction.delete(key);
+        dirtyChunks.delete(key);
+      });
+    } else {
+      chunkJournalQueues.delete(key);
+      chunkPersistenceState.delete(key);
+      chunksPendingCompaction.delete(key);
+      dirtyChunks.delete(key);
     }
 
     if (
@@ -4264,6 +4683,18 @@ export function createChunkManager({
         console.warn('[chunk-manager] Failed to dispose worker listener', error);
       }
     }
+    dirtyChunks.clear();
+    chunkJournalQueues.clear();
+    chunkPersistenceState.clear();
+    chunksPendingCompaction.clear();
+    if (autosaveTimer !== null) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+    }
+    if (compactionTimer !== null) {
+      clearTimeout(compactionTimer);
+      compactionTimer = null;
+    }
     chunkPersistenceJobs.clear();
     chunkPersistenceQueue?.dispose?.();
   }
@@ -4631,6 +5062,16 @@ export function createChunkManager({
     chunkVisibilityBuckets.forEach(({ chunk: targetChunk, positions }) => {
       refreshBlockVisibility(targetChunk, positions);
     });
+
+    if (removedEntries.length > 0) {
+      const key = chunkKey(chunk.chunkX ?? 0, chunk.chunkZ ?? 0);
+      const journalOps = removedEntries
+        .map((entry) => createBlockRemovalJournalOp(chunk, entry))
+        .filter(Boolean);
+      if (journalOps.length > 0) {
+        enqueueJournalOpsForChunk(key, journalOps);
+      }
+    }
 
     return removedEntries;
   }
@@ -5136,6 +5577,49 @@ export function createChunkManager({
         detailLevel: entry?.detailLevel ?? null,
         payload: entry?.payload ?? null,
       })),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__getChunkPersistenceStateForTest', {
+    value: (key) => {
+      if (key == null) {
+        return null;
+      }
+      return chunkPersistenceState.get(String(key)) ?? null;
+    },
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__runAutosavePassForTest', {
+    value: () => runAutosavePass(),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__runCompactionPassForTest', {
+    value: () => runCompactionPass(),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__markChunkForCompactionForTest', {
+    value: (key, snapshotOverride = null) => {
+      if (key == null) {
+        return false;
+      }
+      const normalizedKey = String(key);
+      const state = chunkPersistenceState.get(normalizedKey);
+      if (!state) {
+        return false;
+      }
+      if (snapshotOverride instanceof Uint8Array && snapshotOverride.byteLength > 0) {
+        state.snapshot = snapshotOverride;
+      }
+      if (!(state.snapshot instanceof Uint8Array) || state.snapshot.byteLength === 0) {
+        return false;
+      }
+      state.needsCompaction = true;
+      chunksPendingCompaction.add(normalizedKey);
+      return true;
+    },
     enumerable: false,
   });
 
