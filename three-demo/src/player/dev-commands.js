@@ -2829,4 +2829,285 @@ export function registerDeveloperCommands({
       }
     },
   });
+
+  const chunkSize = (() => {
+    const candidates = [
+      worldConfig?.chunk?.size,
+      worldConfig?.chunkSize,
+    ];
+    for (const candidate of candidates) {
+      const numeric = Number(candidate);
+      if (Number.isFinite(numeric) && numeric > 0) {
+        return Math.max(1, Math.floor(numeric));
+      }
+    }
+    return 48;
+  })();
+  const halfChunkSize = chunkSize / 2;
+
+  const getChunkCoordinatesFromPosition = (position) => {
+    const source = position ?? playerControls.getPosition();
+    return {
+      chunkX: Math.floor((source.x + halfChunkSize) / chunkSize),
+      chunkZ: Math.floor((source.z + halfChunkSize) / chunkSize),
+    };
+  };
+
+  const getCurrentChunkCoordinates = () =>
+    getChunkCoordinatesFromPosition(playerControls.getPosition());
+
+  const formatChunkKey = (chunkX, chunkZ) => `${chunkX}|${chunkZ}`;
+
+  const getPersistenceStateForChunk = (chunkX, chunkZ) => {
+    if (typeof chunkManager.__getChunkPersistenceStateForTest !== 'function') {
+      return null;
+    }
+    return (
+      chunkManager.__getChunkPersistenceStateForTest(
+        formatChunkKey(chunkX, chunkZ),
+      ) ?? null
+    );
+  };
+
+  const describePersistenceState = (chunkX, chunkZ, state) => {
+    if (!state) {
+      return `Chunk ${chunkX}|${chunkZ}: no tracked persistence state.`;
+    }
+    const snapshotBytes =
+      state.snapshot instanceof Uint8Array ? state.snapshot.byteLength : 0;
+    const entryCount = Number.isFinite(state.stats?.entries)
+      ? state.stats.entries
+      : 0;
+    const entryBytes = Number.isFinite(state.stats?.bytes)
+      ? state.stats.bytes
+      : 0;
+    const typeCount =
+      state.typeIds instanceof Map ? state.typeIds.size : 0;
+    return `Chunk ${chunkX}|${chunkZ}: snapshot=${snapshotBytes} bytes, journal entries=${entryCount} (${entryBytes} bytes), minY=${state.minY}, dimensions=${state.sizeX}×${state.sizeY}×${state.sizeZ}, types=${typeCount}, needsCompaction=${
+      state.needsCompaction ? 'yes' : 'no'
+    }.`;
+  };
+
+  const parseChunkTargetArgs = (
+    args,
+    { requireKeyword = false, keyword = 'chunk' } = {},
+  ) => {
+    let index = 0;
+    if (requireKeyword) {
+      const token = args[index]?.toLowerCase();
+      if (token !== keyword) {
+        throw new Error(
+          `Specify "${keyword}" followed by chunk coordinates or omit coordinates to target your current chunk.`,
+        );
+      }
+      index += 1;
+    }
+    const remaining = args.length - index;
+    if (remaining === 0) {
+      return getCurrentChunkCoordinates();
+    }
+    if (remaining < 2) {
+      throw new Error(
+        'Provide chunk coordinates as <chunkX> <chunkZ> or omit them to use your current chunk.',
+      );
+    }
+    const chunkX = Number.parseInt(args[index], 10);
+    const chunkZ = Number.parseInt(args[index + 1], 10);
+    if (!Number.isFinite(chunkX) || !Number.isFinite(chunkZ)) {
+      throw new Error('Chunk coordinates must be finite integers.');
+    }
+    return { chunkX: Math.floor(chunkX), chunkZ: Math.floor(chunkZ) };
+  };
+
+  const createChunkCenterPosition = (chunkX, chunkZ) => {
+    const playerPosition = playerControls.getPosition();
+    return new THREE.Vector3(
+      chunkX * chunkSize,
+      playerPosition?.y ?? 0,
+      chunkZ * chunkSize,
+    );
+  };
+
+  const flushPersistenceJobs = async () => {
+    if (typeof chunkManager.flush === 'function') {
+      await chunkManager.flush({ includeDisposals: false });
+    }
+  };
+
+  registerCommand({
+    name: 'persist',
+    description:
+      'Summarize the persistence queue and the chunk under the player.',
+    usage: '/persist',
+    handler: ({ info, success }) => {
+      if (typeof chunkManager.__getChunkPersistenceStateForTest !== 'function') {
+        throw new Error('Chunk persistence diagnostics are unavailable.');
+      }
+      if (typeof chunkManager.__getChunkPersistenceJobCountForTest === 'function') {
+        const jobCount = chunkManager.__getChunkPersistenceJobCountForTest();
+        const pumpActive =
+          typeof chunkManager.__isChunkJobPumpActiveForTest === 'function'
+            ? chunkManager.__isChunkJobPumpActiveForTest()
+            : null;
+        info(
+          `[persist] Pending jobs: ${jobCount}. Job pump ${
+            pumpActive ? 'active' : 'idle'
+          }.`,
+        );
+      } else {
+        info('[persist] Persistence job counters are unavailable.');
+      }
+      const { chunkX, chunkZ } = getCurrentChunkCoordinates();
+      const state = getPersistenceStateForChunk(chunkX, chunkZ);
+      info(describePersistenceState(chunkX, chunkZ, state));
+      success('Reported persistence status.');
+    },
+  });
+
+  registerCommand({
+    name: 'save',
+    description: 'Force an immediate chunk persistence autosave pass.',
+    usage: '/save',
+    handler: async ({ info, success }) => {
+      if (typeof chunkManager.__runAutosavePassForTest !== 'function') {
+        throw new Error('Manual autosave is unavailable in this build.');
+      }
+      await chunkManager.__runAutosavePassForTest();
+      await flushPersistenceJobs();
+      const { chunkX, chunkZ } = getCurrentChunkCoordinates();
+      const state = getPersistenceStateForChunk(chunkX, chunkZ);
+      info(describePersistenceState(chunkX, chunkZ, state));
+      success('Autosave pass completed.');
+    },
+  });
+
+  registerCommand({
+    name: 'load',
+    description:
+      'Preload a chunk and wait for its persistence payload to resolve.',
+    usage: '/load [chunkX] [chunkZ]',
+    handler: async ({ args, info, warn, success }) => {
+      if (typeof chunkManager.preloadAround !== 'function') {
+        throw new Error('Chunk manager does not expose manual preload controls.');
+      }
+      const { chunkX, chunkZ } = parseChunkTargetArgs(args);
+      const chunkKey = formatChunkKey(chunkX, chunkZ);
+      const targetPosition = createChunkCenterPosition(chunkX, chunkZ);
+      chunkManager.preloadAround(targetPosition, 0, {
+        maxPreload: Number.POSITIVE_INFINITY,
+        force: true,
+      });
+      await flushPersistenceJobs();
+      const state = getPersistenceStateForChunk(chunkX, chunkZ);
+      if (!state) {
+        warn(
+          `Chunk ${chunkKey} has no tracked persistence state yet. It may still be generating.`,
+        );
+      } else {
+        info(describePersistenceState(chunkX, chunkZ, state));
+      }
+      success(`Load request for chunk ${chunkKey} settled.`);
+    },
+  });
+
+  registerCommand({
+    name: 'inspect',
+    description: 'Inspect tracked persistence metadata for a chunk.',
+    usage: '/inspect chunk [chunkX] [chunkZ]',
+    handler: ({ args, info, warn, success }) => {
+      if (typeof chunkManager.__getChunkPersistenceStateForTest !== 'function') {
+        throw new Error('Chunk persistence inspection is unavailable.');
+      }
+      const { chunkX, chunkZ } = parseChunkTargetArgs(args, {
+        requireKeyword: true,
+      });
+      const chunkKey = formatChunkKey(chunkX, chunkZ);
+      const state = getPersistenceStateForChunk(chunkX, chunkZ);
+      info(describePersistenceState(chunkX, chunkZ, state));
+      if (state?.typeIds instanceof Map && state.typeIds.size > 0) {
+        const typeSummary = Array.from(state.typeIds.entries())
+          .map(([type, id]) => `${type}:${id}`)
+          .join(', ');
+        info(`  type ids: ${typeSummary}`);
+      }
+      if (!state) {
+        warn(
+          `Chunk ${chunkKey} is not tracking persistence metadata yet. Load it first to populate state.`,
+        );
+      }
+      success(`Chunk ${chunkKey} inspected.`);
+    },
+  });
+
+  registerCommand({
+    name: 'wipe',
+    description: 'Clear locally tracked persistence state for a chunk.',
+    usage: '/wipe chunk [chunkX] [chunkZ]',
+    handler: ({ args, info, warn, success }) => {
+      if (typeof chunkManager.__getChunkPersistenceStateForTest !== 'function') {
+        throw new Error('Chunk persistence wipe controls are unavailable.');
+      }
+      const { chunkX, chunkZ } = parseChunkTargetArgs(args, {
+        requireKeyword: true,
+      });
+      const chunkKey = formatChunkKey(chunkX, chunkZ);
+      const state = getPersistenceStateForChunk(chunkX, chunkZ);
+      if (!state) {
+        warn(`Chunk ${chunkKey} has no tracked persistence state to wipe.`);
+        return;
+      }
+      state.snapshot = null;
+      if (state.stats) {
+        state.stats.entries = 0;
+        state.stats.bytes = 0;
+      }
+      state.needsCompaction = false;
+      if (state.typeIds instanceof Map) {
+        state.typeIds.clear();
+      }
+      const loadedChunk =
+        typeof chunkManager.__getLoadedChunkForTest === 'function'
+          ? chunkManager.__getLoadedChunkForTest(chunkKey)
+          : null;
+      if (loadedChunk) {
+        loadedChunk.__persistenceResult = null;
+        loadedChunk.__cachePayload = null;
+      }
+      info(
+        `Cleared local persistence metadata for chunk ${chunkKey}. Stored data will refresh on the next autosave or snapshot.`,
+      );
+      success(`Chunk ${chunkKey} persistence state wiped.`);
+    },
+  });
+
+  registerCommand({
+    name: 'snapshot',
+    description: 'Immediately persist a snapshot for a chunk.',
+    usage: '/snapshot now [chunkX] [chunkZ]',
+    handler: async ({ args, info, warn, success }) => {
+      if (args.length === 0 || args[0].toLowerCase() !== 'now') {
+        throw new Error('Usage: /snapshot now [chunkX] [chunkZ]');
+      }
+      if (
+        typeof chunkManager.__markChunkForCompactionForTest !== 'function' ||
+        typeof chunkManager.__runCompactionPassForTest !== 'function'
+      ) {
+        throw new Error('Manual snapshot controls are unavailable.');
+      }
+      const { chunkX, chunkZ } = parseChunkTargetArgs(args.slice(1));
+      const chunkKey = formatChunkKey(chunkX, chunkZ);
+      const marked = chunkManager.__markChunkForCompactionForTest(chunkKey);
+      if (!marked) {
+        warn(
+          `Chunk ${chunkKey} does not have a snapshot payload to persist yet. Generate or load the chunk before retrying.`,
+        );
+        return;
+      }
+      await chunkManager.__runCompactionPassForTest();
+      await flushPersistenceJobs();
+      const state = getPersistenceStateForChunk(chunkX, chunkZ);
+      info(describePersistenceState(chunkX, chunkZ, state));
+      success(`Snapshot persisted for chunk ${chunkKey}.`);
+    },
+  });
 }
