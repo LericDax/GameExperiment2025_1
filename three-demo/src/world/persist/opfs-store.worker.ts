@@ -5,6 +5,13 @@ import {
   shouldCompactJournal,
 } from './snapshot.ts';
 
+import {
+  CHUNK_STORE_HANDSHAKE_REQUEST,
+  CHUNK_STORE_HANDSHAKE_RESPONSE,
+  type ChunkStoreHandshakeRequest,
+  type ChunkStoreHandshakeResponse,
+} from './chunk-store-worker-protocol.ts';
+
 const ctx: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope;
 
 interface ChunkKey {
@@ -60,6 +67,8 @@ interface RemoveRequest extends WorkerRequestBase<'remove'> {
 
 type WorkerRequest = InitRequest | LoadRequest | CommitRequest | RemoveRequest;
 
+type IncomingMessage = WorkerRequest | ChunkStoreHandshakeRequest;
+
 type WorkerResponse =
   | { id: number; result: unknown }
   | { id: number; error: { message: string; stack?: string } };
@@ -112,9 +121,21 @@ let config: ActiveConfiguration | null = null;
 const regionCache = new Map<string, RegionContext>();
 
 ctx.addEventListener('message', async (event) => {
-  const data = event.data as WorkerRequest;
+  const data = event.data as IncomingMessage;
 
   if (!data || typeof data !== 'object') {
+    return;
+  }
+
+  if ('type' in data) {
+    if (data.type === CHUNK_STORE_HANDSHAKE_REQUEST) {
+      const supportsSharedArrayBuffer =
+        typeof SharedArrayBuffer === 'function' && !!data.supportsSharedArrayBuffer;
+      ctx.postMessage({
+        type: CHUNK_STORE_HANDSHAKE_RESPONSE,
+        supportsSharedArrayBuffer,
+      } satisfies ChunkStoreHandshakeResponse);
+    }
     return;
   }
 

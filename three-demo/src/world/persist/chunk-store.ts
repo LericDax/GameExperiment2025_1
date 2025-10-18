@@ -1,5 +1,6 @@
 import type { ChunkKey, ChunkStore, SaveOp } from './chunk-store.d.ts';
 import type { RegionCompatibility } from './world-index';
+import { createWorkerRequestQueue, type WorkerRequestQueue } from './worker-queue.ts';
 
 export interface CreateChunkStoreOptions {
   worldId: string;
@@ -17,16 +18,6 @@ interface WorkerCommitOp {
 }
 
 type WorkerMethod = 'init' | 'loadSnapshot' | 'loadJournal' | 'commit' | 'remove';
-
-type WorkerRequest = {
-  id: number;
-  method: WorkerMethod;
-  params: unknown;
-};
-
-type WorkerResponse =
-  | { id: number; result: unknown }
-  | { id: number; error: { message: string; stack?: string } };
 
 interface OpfsInitParams {
   worldId: string;
@@ -48,12 +39,7 @@ export async function createChunkStore(options: CreateChunkStoreOptions): Promis
 class OpfsChunkStore implements ChunkStore {
   private readonly worker: Worker;
 
-  private readonly pending = new Map<
-    number,
-    { resolve: (value: any) => void; reject: (reason: unknown) => void }
-  >();
-
-  private messageId = 0;
+  private readonly queue: Promise<WorkerRequestQueue>;
 
   private readonly initParams: OpfsInitParams;
 
@@ -62,42 +48,7 @@ class OpfsChunkStore implements ChunkStore {
       type: 'module',
     });
 
-    this.worker.addEventListener('message', (event) => {
-      const message = event.data as WorkerResponse;
-      if (!message || typeof message !== 'object' || typeof message.id !== 'number') {
-        return;
-      }
-
-      const pending = this.pending.get(message.id);
-      if (!pending) {
-        return;
-      }
-
-      this.pending.delete(message.id);
-
-      if ('error' in message) {
-        const error = message.error;
-        const err = new Error(error?.message ?? 'Worker error');
-        if (error?.stack) {
-          err.stack = error.stack;
-        }
-        pending.reject(err);
-        return;
-      }
-
-      pending.resolve(message.result);
-    });
-
-    const errorHandler = (event: ErrorEvent | MessageEvent) => {
-      const reason = event instanceof ErrorEvent ? event.error ?? event.message : event.data;
-      for (const pending of this.pending.values()) {
-        pending.reject(reason);
-      }
-      this.pending.clear();
-    };
-
-    this.worker.addEventListener('error', errorHandler);
-    this.worker.addEventListener('messageerror', errorHandler);
+    this.queue = createWorkerRequestQueue(this.worker);
 
     this.initParams = {
       worldId: options.worldId,
@@ -156,16 +107,7 @@ class OpfsChunkStore implements ChunkStore {
   }
 
   private call<T = unknown>(method: WorkerMethod, params: unknown, transfer: Transferable[] = []): Promise<T> {
-    const id = ++this.messageId;
-    return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      try {
-        this.worker.postMessage({ id, method, params } satisfies WorkerRequest, transfer);
-      } catch (error) {
-        this.pending.delete(id);
-        reject(error);
-      }
-    });
+    return this.queue.then((queue) => queue.enqueue<T>(method, params, transfer));
   }
 }
 
