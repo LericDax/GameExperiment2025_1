@@ -223,8 +223,8 @@ function cloneEntity(entity: JournalEntity): JournalEntity {
   } satisfies JournalEntity;
 }
 
-function normalizeEntity(id: string, entity: JournalEntity | null | undefined): JournalEntity {
-  if (!entity) {
+function normalizeEntity(id: string, entity: unknown): JournalEntity {
+  if (entity == null) {
     return {
       id,
       type: '',
@@ -232,28 +232,34 @@ function normalizeEntity(id: string, entity: JournalEntity | null | undefined): 
       state: null,
     } satisfies JournalEntity;
   }
-  const normalizedId = typeof entity.id === 'string' && entity.id.length > 0 ? entity.id : id;
+  const candidate = entity as Partial<JournalEntity>;
+  const normalizedId =
+    typeof candidate.id === 'string' && candidate.id.length > 0 ? candidate.id : id;
   if (!normalizedId) {
     throw new Error('Journal entity is missing an id');
   }
+  const positionCandidate = candidate.position as
+    | Partial<JournalEntity['position']>
+    | undefined;
+  const stateCandidate = (candidate as { state?: unknown }).state;
   return {
     id: normalizedId,
-    type: typeof entity.type === 'string' ? entity.type : '',
+    type: typeof candidate.type === 'string' ? candidate.type : '',
     position: {
-      x: Number.isFinite(entity.position?.x) ? entity.position.x : 0,
-      y: Number.isFinite(entity.position?.y) ? entity.position.y : 0,
-      z: Number.isFinite(entity.position?.z) ? entity.position.z : 0,
+      x: Number.isFinite(positionCandidate?.x) ? Number(positionCandidate!.x) : 0,
+      y: Number.isFinite(positionCandidate?.y) ? Number(positionCandidate!.y) : 0,
+      z: Number.isFinite(positionCandidate?.z) ? Number(positionCandidate!.z) : 0,
     },
-    state: entity.state ?? null,
+    state: stateCandidate ?? null,
   } satisfies JournalEntity;
 }
 
 function normalizeEntities(
   source:
-    | Map<string, JournalEntity>
-    | Iterable<JournalEntity>
-    | Record<string, JournalEntity>
-    | Array<[string, JournalEntity]>
+    | Map<string, unknown>
+    | Iterable<unknown>
+    | Record<string, unknown>
+    | Array<[string, unknown]>
     | undefined,
 ): Map<string, JournalEntity> {
   const result = new Map<string, JournalEntity>();
@@ -281,9 +287,10 @@ function normalizeEntities(
         return;
       }
       if (typeof entry === 'object' && entry && 'id' in entry) {
-        const id = String((entry as JournalEntity).id);
+        const rawId = (entry as { id?: unknown }).id;
+        const id = typeof rawId === 'string' ? rawId : '';
         if (id.length > 0) {
-          result.set(id, normalizeEntity(id, entry as JournalEntity));
+          result.set(id, normalizeEntity(id, entry));
         }
       }
     });
