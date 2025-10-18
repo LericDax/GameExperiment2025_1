@@ -1,3 +1,10 @@
+import { countJournalOps } from './journal.ts';
+import {
+  DEFAULT_COMPACTION_THRESHOLDS,
+  mergeSnapshotWithJournals,
+  shouldCompactJournal,
+} from './snapshot.ts';
+
 const ctx: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope;
 
 interface ChunkKey {
@@ -224,6 +231,7 @@ async function handleCommit(ops: WorkerCommitOp[]): Promise<void> {
   }
 
   const touchedRegions = new Set<RegionContext>();
+  const compactionTargets = new Map<RegionContext, Set<string>>();
   const now = new Date().toISOString();
 
   for (const op of ops) {
@@ -244,16 +252,37 @@ async function handleCommit(ops: WorkerCommitOp[]): Promise<void> {
         break;
       }
       case 'journal': {
+        const opCount = countJournalOps(payload);
         const newLength = await appendJournal(region, chunkId, payload, op.tick);
-        updateChunkMetadata(region, chunkId, (meta) => ({
+        const updatedMeta = updateChunkMetadata(region, chunkId, (meta) => ({
           ...meta,
-          journalEntries: meta.journalEntries + 1,
+          journalEntries: meta.journalEntries + opCount,
           journalSize: newLength,
           lastJournalTick: op.tick,
           updatedAt: now,
         }));
+        if (
+          shouldCompactJournal(
+            { entries: updatedMeta.journalEntries, bytes: updatedMeta.journalSize },
+            DEFAULT_COMPACTION_THRESHOLDS,
+          )
+        ) {
+          let targets = compactionTargets.get(region);
+          if (!targets) {
+            targets = new Set<string>();
+            compactionTargets.set(region, targets);
+          }
+          targets.add(chunkId);
+        }
         break;
       }
+    }
+  }
+
+  for (const [region, chunkIds] of compactionTargets) {
+    for (const chunkId of chunkIds) {
+      await compactChunk(region, chunkId, now);
+      touchedRegions.add(region);
     }
   }
 
@@ -261,6 +290,73 @@ async function handleCommit(ops: WorkerCommitOp[]): Promise<void> {
     region.metadata.updatedAt = now;
     await writeRegionMetadata(region);
   }
+}
+
+async function compactChunk(region: RegionContext, chunkId: string, timestamp: string): Promise<void> {
+  const filename = `${chunkId}.bin`;
+  let journalBuffer: Uint8Array;
+
+  try {
+    const journalHandle = await region.journalsDir.getFileHandle(filename);
+    const journalFile = await journalHandle.getFile();
+    journalBuffer = new Uint8Array(await journalFile.arrayBuffer());
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return;
+    }
+    throw error;
+  }
+
+  if (journalBuffer.byteLength === 0) {
+    await removeIfExists(region.journalsDir, filename);
+    updateChunkMetadata(region, chunkId, (meta) => ({
+      ...meta,
+      journalEntries: 0,
+      journalSize: 0,
+      lastJournalTick: null,
+      updatedAt: timestamp,
+    }));
+    return;
+  }
+
+  const journalPayloads = decodeJournal(journalBuffer);
+  if (journalPayloads.length === 0) {
+    await removeIfExists(region.journalsDir, filename);
+    updateChunkMetadata(region, chunkId, (meta) => ({
+      ...meta,
+      journalEntries: 0,
+      journalSize: 0,
+      lastJournalTick: null,
+      updatedAt: timestamp,
+    }));
+    return;
+  }
+
+  let baseSnapshot: Uint8Array | null = null;
+  try {
+    const snapshotHandle = await region.snapshotsDir.getFileHandle(filename);
+    const snapshotFile = await snapshotHandle.getFile();
+    const snapshotBuffer = new Uint8Array(await snapshotFile.arrayBuffer());
+    baseSnapshot = decodeSnapshot(snapshotBuffer);
+  } catch (error) {
+    if (!isNotFoundError(error)) {
+      throw error;
+    }
+  }
+
+  const { payload } = mergeSnapshotWithJournals(baseSnapshot, journalPayloads);
+  await writeSnapshot(region, chunkId, payload);
+  await removeIfExists(region.journalsDir, filename);
+
+  updateChunkMetadata(region, chunkId, (meta) => ({
+    ...meta,
+    hasSnapshot: true,
+    snapshotSize: payload.byteLength,
+    journalEntries: 0,
+    journalSize: 0,
+    lastJournalTick: null,
+    updatedAt: timestamp,
+  }));
 }
 
 async function handleRemove(key: ChunkKey): Promise<void> {
@@ -526,7 +622,7 @@ function updateChunkMetadata(
   region: RegionContext,
   chunkId: string,
   updater: (meta: RegionChunkMetadata) => RegionChunkMetadata,
-): void {
+): RegionChunkMetadata {
   const existing =
     region.metadata.chunks[chunkId] ??
     ({
@@ -537,7 +633,9 @@ function updateChunkMetadata(
       journalSize: 0,
       updatedAt: new Date().toISOString(),
     } satisfies RegionChunkMetadata);
-  region.metadata.chunks[chunkId] = updater(existing);
+  const next = updater(existing);
+  region.metadata.chunks[chunkId] = next;
+  return next;
 }
 
 const CRC_TABLE = new Uint32Array(256);
