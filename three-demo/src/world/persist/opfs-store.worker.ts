@@ -4,6 +4,11 @@ import {
   mergeSnapshotWithJournals,
   shouldCompactJournal,
 } from './snapshot.ts';
+import {
+  ChunkIoQueueProcessor,
+  type ChunkIoJobResultMessage,
+  type QueueConfiguration,
+} from './opfs-queue-runner.ts';
 
 import {
   CHUNK_STORE_HANDSHAKE_REQUEST,
@@ -13,6 +18,9 @@ import {
 } from './chunk-store-worker-protocol.ts';
 
 const ctx: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope;
+
+const REGISTER_QUEUE_PAYLOAD = 'registerQueuePayload';
+const RELEASE_QUEUE_PAYLOAD = 'releaseQueuePayload';
 
 interface ChunkKey {
   cx: number;
@@ -42,11 +50,23 @@ interface WorkerRequestBase<M extends WorkerRequestMethod> {
   method: M;
 }
 
+interface RegisterQueuePayloadMessage {
+  type: typeof REGISTER_QUEUE_PAYLOAD;
+  ref: number;
+  buffer: ArrayBuffer | SharedArrayBuffer;
+}
+
+interface ReleaseQueuePayloadMessage {
+  type: typeof RELEASE_QUEUE_PAYLOAD;
+  ref: number;
+}
+
 interface InitParams {
   worldId: string;
   compatibility: RegionCompatibility;
   regionSize?: number;
   maxOpenRegions?: number;
+  queue?: QueueConfiguration | null;
 }
 
 interface InitRequest extends WorkerRequestBase<'init'> {
@@ -67,7 +87,11 @@ interface RemoveRequest extends WorkerRequestBase<'remove'> {
 
 type WorkerRequest = InitRequest | LoadRequest | CommitRequest | RemoveRequest;
 
-type IncomingMessage = WorkerRequest | ChunkStoreHandshakeRequest;
+type IncomingMessage =
+  | WorkerRequest
+  | ChunkStoreHandshakeRequest
+  | RegisterQueuePayloadMessage
+  | ReleaseQueuePayloadMessage;
 
 type WorkerResponse =
   | { id: number; result: unknown }
@@ -119,6 +143,22 @@ const DEFAULT_REGION_CACHE_SIZE = 8;
 
 let config: ActiveConfiguration | null = null;
 const regionCache = new Map<string, RegionContext>();
+const queueProcessor = new ChunkIoQueueProcessor({
+  postMessage: (message: ChunkIoJobResultMessage, transfer?: Transferable[]) => {
+    if (transfer && transfer.length > 0) {
+      try {
+        ctx.postMessage(message, transfer);
+        return;
+      } catch (error) {
+        console.warn('[opfs-worker] Falling back to structured clone for queue result', error);
+      }
+    }
+    ctx.postMessage(message);
+  },
+  loadSnapshot: (key) => handleLoadSnapshot(key),
+  loadJournal: (key) => handleLoadJournal(key),
+  commit: (ops) => handleCommit(ops),
+});
 
 ctx.addEventListener('message', async (event) => {
   const data = event.data as IncomingMessage;
@@ -128,13 +168,28 @@ ctx.addEventListener('message', async (event) => {
   }
 
   if ('type' in data) {
-    if (data.type === CHUNK_STORE_HANDSHAKE_REQUEST) {
-      const supportsSharedArrayBuffer =
-        typeof SharedArrayBuffer === 'function' && !!data.supportsSharedArrayBuffer;
-      ctx.postMessage({
-        type: CHUNK_STORE_HANDSHAKE_RESPONSE,
-        supportsSharedArrayBuffer,
-      } satisfies ChunkStoreHandshakeResponse);
+    switch (data.type) {
+      case CHUNK_STORE_HANDSHAKE_REQUEST: {
+        const supportsSharedArrayBuffer =
+          typeof SharedArrayBuffer === 'function' && !!data.supportsSharedArrayBuffer;
+        ctx.postMessage({
+          type: CHUNK_STORE_HANDSHAKE_RESPONSE,
+          supportsSharedArrayBuffer,
+        } satisfies ChunkStoreHandshakeResponse);
+        break;
+      }
+      case REGISTER_QUEUE_PAYLOAD:
+        try {
+          queueProcessor.registerPayload(data.ref, data.buffer);
+        } catch (error) {
+          console.error('[opfs-worker] Failed to register queue payload', error);
+        }
+        break;
+      case RELEASE_QUEUE_PAYLOAD:
+        queueProcessor.releasePayload(data.ref);
+        break;
+      default:
+        break;
     }
     return;
   }
@@ -208,6 +263,7 @@ async function handleInit(params: InitParams): Promise<null> {
     regionsDir,
   };
   regionCache.clear();
+  queueProcessor.configure(params.queue ?? null);
 
   return null;
 }
