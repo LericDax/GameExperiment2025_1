@@ -28,6 +28,7 @@ import {
   createChunkStoreQueue,
   DEFAULT_CHUNK_STORE_TIMEOUT_MS,
 } from './persist/chunk-store-queue.js';
+import { mergeSnapshotWithJournals } from './persist/snapshot.ts';
 
 export const ChunkManagerEvents = Object.freeze({
   FIRST_CHUNK_MESHED: 'first-chunk-meshed',
@@ -203,6 +204,190 @@ function updateEntryPersistenceMetadata(entry, { stateOverride } = {}) {
   persistenceDescriptor.transferables = transferables;
   metadata.startPersistence = persistenceDescriptor;
   metadata.buffers = transferables;
+}
+
+function cloneByteArray(source) {
+  if (!source) {
+    return null;
+  }
+  if (source instanceof Uint8Array) {
+    return source.slice();
+  }
+  if (source instanceof ArrayBuffer) {
+    return new Uint8Array(source).slice();
+  }
+  if (ArrayBuffer.isView(source)) {
+    return new Uint8Array(source.buffer, source.byteOffset, source.byteLength).slice();
+  }
+  return null;
+}
+
+function normalizeJournalPayloads(journals) {
+  if (!Array.isArray(journals)) {
+    return [];
+  }
+  const normalized = [];
+  journals.forEach((entry) => {
+    const clone = cloneByteArray(entry);
+    if (clone && clone.byteLength > 0) {
+      normalized.push(clone);
+    }
+  });
+  return normalized;
+}
+
+function materializeVoxelField(snapshotBuffer, journalBuffers) {
+  if (!snapshotBuffer || snapshotBuffer.byteLength === 0) {
+    return null;
+  }
+  if (!Array.isArray(journalBuffers) || journalBuffers.length === 0) {
+    return null;
+  }
+  try {
+    const mergeResult = mergeSnapshotWithJournals(snapshotBuffer, journalBuffers);
+    return {
+      voxelField: mergeResult.state ?? null,
+      mergedSnapshot: mergeResult.payload ?? null,
+      journalOps: mergeResult.journalOps ?? 0,
+      journalBytes: mergeResult.journalBytes ?? 0,
+    };
+  } catch (error) {
+    console.warn('[chunk-manager] Failed to merge chunk snapshot with journals.', error);
+    return null;
+  }
+}
+
+function applyVoxelFieldToPayload(payload, voxelField, metadata = null) {
+  if (!payload || !voxelField) {
+    return null;
+  }
+  const occupancy = payload.occupancy;
+  if (!occupancy) {
+    return null;
+  }
+  const { width, height, depth, types } = occupancy;
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    !Number.isFinite(depth) ||
+    width !== voxelField.sizeX ||
+    height !== voxelField.sizeY ||
+    depth !== voxelField.sizeZ
+  ) {
+    return null;
+  }
+  if (!(voxelField.blocks instanceof Uint16Array)) {
+    return null;
+  }
+  const blockCount = voxelField.blocks.length;
+  if (blockCount !== width * height * depth) {
+    return null;
+  }
+  if (types instanceof Uint16Array && types.length === blockCount) {
+    types.set(voxelField.blocks);
+  } else {
+    occupancy.types = new Uint16Array(voxelField.blocks);
+  }
+  if (metadata && typeof metadata === 'object') {
+    if (Number.isFinite(metadata.minY)) {
+      occupancy.minY = Math.floor(metadata.minY);
+    }
+    if (Number.isFinite(metadata.maxY)) {
+      occupancy.maxY = Math.floor(metadata.maxY);
+    }
+  }
+  return payload;
+}
+
+function buildPersistenceResult(entry, { snapshot, journals, metadata, mergeInfo }) {
+  let payload = null;
+  let fallback = true;
+  try {
+    if (entry?.task?.exportPayloadSnapshot) {
+      payload = entry.task.exportPayloadSnapshot();
+    }
+  } catch (error) {
+    console.warn('[chunk-manager] Failed to materialize fallback chunk payload.', error);
+    payload = null;
+  }
+
+  if (payload && mergeInfo?.voxelField) {
+    const applied = applyVoxelFieldToPayload(payload, mergeInfo.voxelField, metadata);
+    if (applied) {
+      payload = applied;
+      fallback = false;
+    }
+  }
+
+  return {
+    snapshot,
+    journals,
+    metadata: metadata ?? null,
+    payload: payload ?? null,
+    fallback,
+    voxelField: mergeInfo?.voxelField ?? null,
+    mergedSnapshot: mergeInfo?.mergedSnapshot ?? null,
+    journalStats: mergeInfo
+      ? { entries: mergeInfo.journalOps ?? 0, bytes: mergeInfo.journalBytes ?? 0 }
+      : null,
+  };
+}
+
+function normalizePersistenceResultForEntry(entry, rawResult) {
+  if (!rawResult || typeof rawResult !== 'object') {
+    return buildPersistenceResult(entry, {
+      snapshot: null,
+      journals: [],
+      metadata: null,
+      mergeInfo: null,
+    });
+  }
+
+  let container = rawResult;
+  if (
+    Object.prototype.hasOwnProperty.call(container, 'result') &&
+    container.result &&
+    typeof container.result === 'object'
+  ) {
+    container = container.result;
+  }
+
+  const directPayload = container?.payload;
+  if (directPayload && typeof directPayload === 'object' && !Array.isArray(directPayload)) {
+    const hasSnapshotFields =
+      Object.prototype.hasOwnProperty.call(directPayload, 'snapshot') ||
+      Object.prototype.hasOwnProperty.call(directPayload, 'journals') ||
+      Object.prototype.hasOwnProperty.call(directPayload, 'baseSnapshot');
+    if (!hasSnapshotFields) {
+      return {
+        snapshot: null,
+        journals: [],
+        metadata: container?.metadata ?? rawResult?.metadata ?? null,
+        payload: directPayload,
+        fallback: false,
+        voxelField: null,
+        mergedSnapshot: null,
+        journalStats: null,
+      };
+    }
+    container = { ...container, ...directPayload };
+  }
+
+  const metadata = container?.metadata ?? rawResult?.metadata ?? null;
+  const snapshotSource =
+    container?.snapshot ?? container?.baseSnapshot ?? rawResult?.snapshot ?? rawResult?.baseSnapshot ?? null;
+  const snapshot = cloneByteArray(snapshotSource);
+  const journals = normalizeJournalPayloads(
+    container?.journals ?? container?.journal ?? rawResult?.journals ?? rawResult?.journal ?? [],
+  );
+  const mergeInfo = snapshot && journals.length > 0 ? materializeVoxelField(snapshot, journals) : null;
+
+  return buildPersistenceResult(entry, {
+    snapshot,
+    journals,
+    metadata,
+    mergeInfo,
+  });
 }
 
 function ensureWaterColumnMap(source) {
@@ -1451,15 +1636,17 @@ export function createChunkManager({
         chunkKey: entry.key,
         detailLevel: entry.detailLevel,
         timeoutMs: chunkPersistenceTimeoutMs,
+        request: { snapshot: true, journals: true },
       }),
     );
     entry.persistencePromise = loadPromise
       .then((result) => {
+        const normalizedResult = normalizePersistenceResultForEntry(entry, result);
         entry.persistenceState = 'ready';
-        entry.persistenceResult = result ?? null;
+        entry.persistenceResult = normalizedResult;
         entry.persistenceError = null;
         updateEntryPersistenceMetadata(entry, { stateOverride: 'ready' });
-        return result ?? null;
+        return normalizedResult;
       })
       .catch((error) => {
         entry.persistenceState = 'failed';
