@@ -30,6 +30,8 @@ const {
   createChunkManager,
   __setChunkBuildWorkerFactoryForTest,
   __resetChunkBuildWorkerFactoryForTest,
+  __setChunkPersistenceQueueFactoryForTest,
+  __resetChunkPersistenceQueueFactoryForTest,
 } = await import('../chunk-manager.js');
 
 function createBlockMaterials() {
@@ -148,11 +150,52 @@ class FakeChunkBuildWorker {
   }
 }
 
+class FakeChunkPersistenceQueue {
+  constructor() {
+    this.loadJobs = [];
+    this.saveJobs = [];
+  }
+
+  enqueueLoad(job = {}) {
+    return new Promise((resolve, reject) => {
+      this.loadJobs.push({ job, resolve, reject });
+    });
+  }
+
+  enqueueSave(job = {}) {
+    this.saveJobs.push(job);
+    return Promise.resolve();
+  }
+
+  resolveNextLoad(value = null) {
+    const record = this.loadJobs.shift();
+    if (!record) {
+      throw new Error('No pending load job to resolve.');
+    }
+    record.resolve(value);
+  }
+
+  rejectNextLoad(error) {
+    const record = this.loadJobs.shift();
+    if (!record) {
+      throw new Error('No pending load job to reject.');
+    }
+    record.reject(error);
+  }
+
+  dispose() {
+    this.loadJobs.length = 0;
+    this.saveJobs.length = 0;
+  }
+}
+
 test('chunk manager posts worker start payloads before steps', async () => {
   const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
   const scene = new THREE.Scene();
   const worker = new FakeChunkBuildWorker();
+  const persistenceQueue = new FakeChunkPersistenceQueue();
   __setChunkBuildWorkerFactoryForTest(() => worker);
+  __setChunkPersistenceQueueFactoryForTest(() => persistenceQueue);
 
   let manager;
   try {
@@ -171,6 +214,16 @@ test('chunk manager posts worker start payloads before steps', async () => {
       retainDistance: 0,
       maxPreload: 1,
     });
+
+    await waitForCondition(() => persistenceQueue.loadJobs.length > 0);
+
+    assert.equal(
+      worker.messages.some((entry) => entry?.type === 'start'),
+      false,
+      'worker should not receive start message before persistence resolves',
+    );
+
+    persistenceQueue.resolveNextLoad();
 
     await waitForCondition(
       () =>
@@ -275,6 +328,8 @@ test('chunk manager posts worker start payloads before steps', async () => {
     await manager.flush();
   } finally {
     await manager?.dispose?.();
+    persistenceQueue.dispose();
+    __resetChunkPersistenceQueueFactoryForTest();
     __resetChunkBuildWorkerFactoryForTest();
     createdMaterials.forEach((material) => material.dispose?.());
   }

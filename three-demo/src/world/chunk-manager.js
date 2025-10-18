@@ -24,6 +24,10 @@ import {
   clearTerrainSampleCache,
 } from './terrain-sample-cache.js';
 import { createChunkBuildWorker } from './workers/chunk-build.worker.js';
+import {
+  createChunkStoreQueue,
+  DEFAULT_CHUNK_STORE_TIMEOUT_MS,
+} from './persist/chunk-store-queue.js';
 
 export const ChunkManagerEvents = Object.freeze({
   FIRST_CHUNK_MESHED: 'first-chunk-meshed',
@@ -150,6 +154,7 @@ function normalizeWaterColumnBounds(bounds) {
 let chunkBuildWorkerInstance = null;
 let chunkBuildWorkerFailed = false;
 let chunkBuildWorkerFactoryOverride = null;
+let chunkPersistenceQueueFactoryOverride = null;
 
 function disposeCurrentChunkBuildWorker() {
   if (!chunkBuildWorkerInstance) {
@@ -171,6 +176,15 @@ export function __setChunkBuildWorkerFactoryForTest(factory) {
 
 export function __resetChunkBuildWorkerFactoryForTest() {
   __setChunkBuildWorkerFactoryForTest(null);
+}
+
+export function __setChunkPersistenceQueueFactoryForTest(factory) {
+  chunkPersistenceQueueFactoryOverride =
+    typeof factory === 'function' ? factory : null;
+}
+
+export function __resetChunkPersistenceQueueFactoryForTest() {
+  __setChunkPersistenceQueueFactoryForTest(null);
 }
 
 const enableChunkBuildWorker = (() => {
@@ -286,6 +300,8 @@ export function createChunkManager({
   // disposal kicks in. This gives callers a way to keep edge chunks alive
   // a little longer (or indefinitely with Infinity) to hide visual pops.
   disposalMargin = 0,
+  chunkPersistenceQueue: providedChunkPersistenceQueue = undefined,
+  chunkPersistenceTimeout = DEFAULT_CHUNK_STORE_TIMEOUT_MS,
 }) {
   const loadedChunks = new Map();
   const solidBlocks = new Set();
@@ -371,6 +387,35 @@ export function createChunkManager({
   const pendingActivations = [];
   const pendingActivationByKey = new Map();
   const chunkJobQueue = [];
+  const chunkPersistenceQueue = (() => {
+    if (providedChunkPersistenceQueue === null) {
+      return null;
+    }
+    if (providedChunkPersistenceQueue !== undefined) {
+      return providedChunkPersistenceQueue;
+    }
+    const factory = chunkPersistenceQueueFactoryOverride ?? createChunkStoreQueue;
+    if (typeof factory !== 'function') {
+      return null;
+    }
+    try {
+      return factory();
+    } catch (error) {
+      console.warn('[chunk-manager] Failed to create chunk persistence queue', error);
+      return null;
+    }
+  })();
+  const chunkPersistenceTimeoutMs = (() => {
+    if (chunkPersistenceTimeout === Number.POSITIVE_INFINITY) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const numeric = Number(chunkPersistenceTimeout);
+    if (!Number.isFinite(numeric) || numeric < 0) {
+      return DEFAULT_CHUNK_STORE_TIMEOUT_MS;
+    }
+    return Math.floor(numeric);
+  })();
+  const chunkPersistenceJobs = new Map();
   let chunkJobPumpActive = false;
   let chunkJobPumpPromise = null;
   const chunkBuildWorker = ensureChunkBuildWorkerInstance();
@@ -1196,6 +1241,70 @@ export function createChunkManager({
     return entry.promise;
   }
 
+  function enqueueChunkPersistenceJob(key, jobFactory) {
+    if (!key || typeof jobFactory !== 'function') {
+      return Promise.resolve(null);
+    }
+    const previous = chunkPersistenceJobs.get(key) ?? Promise.resolve();
+    const next = previous.catch(() => null).then(jobFactory);
+    chunkPersistenceJobs.set(key, next);
+    next
+      .catch(() => {})
+      .finally(() => {
+        const current = chunkPersistenceJobs.get(key);
+        if (current === next) {
+          chunkPersistenceJobs.delete(key);
+        }
+      });
+    return next;
+  }
+
+  function ensureChunkPersistenceForEntry(entry) {
+    if (!entry) {
+      return Promise.resolve(null);
+    }
+    if (!chunkPersistenceQueue || typeof chunkPersistenceQueue.enqueueLoad !== 'function') {
+      entry.persistenceState = 'ready';
+      return Promise.resolve(null);
+    }
+    if (entry.persistenceState === 'ready' || entry.persistenceState === 'failed') {
+      return entry.persistencePromise ?? Promise.resolve(entry.persistenceResult ?? null);
+    }
+    if (entry.persistenceState === 'pending') {
+      return entry.persistencePromise ?? Promise.resolve(null);
+    }
+    entry.persistenceState = 'pending';
+    const storeKey = {
+      cx: Number.isFinite(entry.chunkX) ? entry.chunkX : 0,
+      cy: 0,
+      cz: Number.isFinite(entry.chunkZ) ? entry.chunkZ : 0,
+    };
+    const loadPromise = enqueueChunkPersistenceJob(entry.key, () =>
+      chunkPersistenceQueue.enqueueLoad({
+        key: storeKey,
+        chunkKey: entry.key,
+        detailLevel: entry.detailLevel,
+        timeoutMs: chunkPersistenceTimeoutMs,
+      }),
+    );
+    entry.persistencePromise = loadPromise
+      .then((result) => {
+        entry.persistenceState = 'ready';
+        entry.persistenceResult = result ?? null;
+        return result ?? null;
+      })
+      .catch((error) => {
+        entry.persistenceState = 'failed';
+        entry.persistenceError = error;
+        return null;
+      })
+      .finally(() => {
+        entry.persistencePromise = null;
+      });
+    loadPromise.catch(() => {});
+    return entry.persistencePromise;
+  }
+
   function releasePendingChunkResources(chunk) {
     if (!chunk) {
       return;
@@ -1739,6 +1848,17 @@ export function createChunkManager({
     return chunkJobPumpPromise;
   }
 
+  function scheduleChunkJobEntry(entry) {
+    if (!entry || entry.finalized || entry.cancelled) {
+      return;
+    }
+    if (!entry.active) {
+      entry.active = true;
+      chunkJobQueue.push(entry);
+    }
+    ensureChunkJobPump();
+  }
+
   function startChunkJob(entry, { budget = defaultPreloadBurst, unlimited = false } = {}) {
     if (!entry || entry.finalized) {
       return null;
@@ -1758,11 +1878,25 @@ export function createChunkManager({
       entry.pendingBudget = previousBudget + normalizedBudget;
       entry.stepHint = Math.max(entry.stepHint || 0, normalizedBudget);
     }
-    if (!entry.active) {
-      entry.active = true;
-      chunkJobQueue.push(entry);
+    if (!chunkPersistenceQueue) {
+      scheduleChunkJobEntry(entry);
+      return promise;
     }
-    ensureChunkJobPump();
+
+    const persistenceState = entry.persistenceState ?? 'ready';
+    if (persistenceState === 'ready' || persistenceState === 'failed') {
+      scheduleChunkJobEntry(entry);
+      return promise;
+    }
+
+    if (persistenceState === 'idle') {
+      ensureChunkPersistenceForEntry(entry).finally(() => {
+        if (!entry.finalized && !entry.cancelled) {
+          scheduleChunkJobEntry(entry);
+        }
+      });
+    }
+
     return promise;
   }
   let queueDirty = false;
@@ -2920,6 +3054,28 @@ export function createChunkManager({
       return;
     }
 
+    if (
+      chunkPersistenceQueue &&
+      typeof chunkPersistenceQueue.enqueueSave === 'function'
+    ) {
+      const storeKey = {
+        cx: Number.isFinite(chunk.chunkX) ? chunk.chunkX : 0,
+        cy: 0,
+        cz: Number.isFinite(chunk.chunkZ) ? chunk.chunkZ : 0,
+      };
+      enqueueChunkPersistenceJob(key, () =>
+        chunkPersistenceQueue.enqueueSave({
+          key: storeKey,
+          chunkKey: key,
+          detailLevel: chunk.detailLevel ?? DETAIL_LEVEL_CORE,
+          payload: chunk.__cachePayload ?? null,
+          timeoutMs: chunkPersistenceTimeoutMs,
+        }),
+      ).catch((error) => {
+        console.warn('[chunk-manager] chunk persistence save failed', error);
+      });
+    }
+
     refreshCacheForWorldChange();
     if (payloadCacheCapacity > 0) {
       const cachePayload = buildCachePayloadFromChunk(chunk, key);
@@ -3190,6 +3346,10 @@ export function createChunkManager({
           metadata: { mode: 'cache', inflight: false, payload: cachedEntry.payload },
           workerPayload: { payload: cachedEntry.payload },
           pendingChunk: null,
+          persistenceState: 'ready',
+          persistencePromise: null,
+          persistenceResult: cachedEntry.payload ?? null,
+          persistenceError: null,
         };
         ensurePendingEntryPromise(entry);
         const chunk = finalizeWorkerChunk(entry, entry.workerPayload);
@@ -3233,6 +3393,10 @@ export function createChunkManager({
       metadata: null,
       workerPayload: null,
       pendingChunk: null,
+      persistenceState: chunkPersistenceQueue ? 'idle' : 'ready',
+      persistencePromise: null,
+      persistenceResult: null,
+      persistenceError: null,
     };
     entry.metadata = createChunkJobMetadata(entry);
     entry.task = createChunkBuildTask({
@@ -3649,6 +3813,14 @@ export function createChunkManager({
     if (includeDisposals) {
       processChunkDisposalQueue(Number.POSITIVE_INFINITY);
     }
+    if (chunkPersistenceJobs.size > 0) {
+      const pendingJobs = Array.from(chunkPersistenceJobs.values()).map((job) =>
+        job.catch(() => {}),
+      );
+      if (pendingJobs.length > 0) {
+        await Promise.all(pendingJobs);
+      }
+    }
   }
 
   async function dispose() {
@@ -3677,6 +3849,8 @@ export function createChunkManager({
         console.warn('[chunk-manager] Failed to dispose worker listener', error);
       }
     }
+    chunkPersistenceJobs.clear();
+    chunkPersistenceQueue?.dispose?.();
   }
 
   function setViewDistance(distance) {
