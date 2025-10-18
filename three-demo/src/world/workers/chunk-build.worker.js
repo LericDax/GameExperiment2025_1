@@ -222,6 +222,267 @@ const ensurePlainObject = (value) => {
   return value;
 };
 
+const registerTransferable = (value, target) => {
+  if (!value) {
+    return;
+  }
+  if (ArrayBuffer.isView(value)) {
+    target.add(value.buffer);
+    return;
+  }
+  if (value instanceof ArrayBuffer) {
+    target.add(value);
+  }
+};
+
+const normalizeBufferLike = (value) => {
+  if (!value) {
+    return null;
+  }
+  if (ArrayBuffer.isView(value)) {
+    return value;
+  }
+  if (value instanceof ArrayBuffer) {
+    return value;
+  }
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    value.buffer instanceof ArrayBuffer &&
+    typeof value.byteLength === 'number'
+  ) {
+    try {
+      return new Uint8Array(value.buffer, value.byteOffset ?? 0, value.byteLength);
+    } catch (error) {
+      console.warn('[chunk-build.worker] Failed to normalize buffer-like payload', error);
+    }
+  }
+  return null;
+};
+
+const normalizeBufferArray = (source) => {
+  if (!source) {
+    return [];
+  }
+  const entries = Array.isArray(source)
+    ? source
+    : source instanceof Set
+    ? Array.from(source)
+    : [source];
+  const result = [];
+  entries.forEach((entry) => {
+    const normalized = normalizeBufferLike(entry);
+    if (normalized) {
+      result.push(normalized);
+    }
+  });
+  return result;
+};
+
+const extractNumericDescriptor = (source) => {
+  if (source === null || source === undefined) {
+    return null;
+  }
+  if (Number.isFinite(source)) {
+    return source;
+  }
+  if (typeof source === 'string' && source.length > 0) {
+    const parsed = Number(source);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+
+  const numericFields = [
+    'voxelRevision',
+    'voxelVersion',
+    'revision',
+    'version',
+    'tick',
+    'journalTick',
+    'snapshotTick',
+    'timestamp',
+    'updatedAt',
+    'lastUpdatedAt',
+    'expectedRevision',
+    'expectedTick',
+    'targetRevision',
+  ];
+  for (let i = 0; i < numericFields.length; i += 1) {
+    const value = toFiniteNumber(source[numericFields[i]]);
+    if (value !== null) {
+      return value;
+    }
+  }
+
+  const nestedKeys = ['metadata', 'state', 'result'];
+  for (let i = 0; i < nestedKeys.length; i += 1) {
+    const key = nestedKeys[i];
+    if (source[key] && typeof source[key] === 'object') {
+      const nested = extractNumericDescriptor(source[key]);
+      if (nested !== null) {
+        return nested;
+      }
+    }
+  }
+  return null;
+};
+
+const extractVoxelSourceDescriptor = (source) => {
+  if (!source || typeof source !== 'object') {
+    return null;
+  }
+
+  const descriptor = {
+    payload: null,
+    snapshot: null,
+    journals: [],
+    buffers: [],
+    metadata: null,
+    revision: null,
+    expectedRevision: null,
+    transferables: new Set(),
+  };
+
+  if (source.payload && typeof source.payload === 'object') {
+    descriptor.payload = source.payload;
+  }
+
+  const snapshotCandidates = [
+    source.snapshot,
+    source.baseSnapshot,
+    source.snapshotBuffer,
+    source.payload?.snapshot,
+    source.payload?.baseSnapshot,
+    source.payload?.snapshotBuffer,
+  ];
+  for (let i = 0; i < snapshotCandidates.length && !descriptor.snapshot; i += 1) {
+    const normalized = normalizeBufferLike(snapshotCandidates[i]);
+    if (normalized) {
+      descriptor.snapshot = normalized;
+    }
+  }
+
+  const journalCandidates = [
+    source.journals,
+    source.journal,
+    source.payload?.journals,
+    source.payload?.journal,
+  ];
+  journalCandidates.forEach((candidate) => {
+    const normalized = normalizeBufferArray(candidate);
+    if (normalized.length > 0) {
+      normalized.forEach((entry) => descriptor.journals.push(entry));
+    }
+  });
+
+  const bufferCandidates = [source.buffers, source.payload?.buffers];
+  bufferCandidates.forEach((candidate) => {
+    const normalized = normalizeBufferArray(candidate);
+    if (normalized.length > 0) {
+      normalized.forEach((entry) => descriptor.buffers.push(entry));
+    }
+  });
+
+  if (source.metadata && typeof source.metadata === 'object') {
+    descriptor.metadata = source.metadata;
+  } else if (source.payload?.metadata && typeof source.payload.metadata === 'object') {
+    descriptor.metadata = source.payload.metadata;
+  }
+
+  const providedTransferables = normalizeBufferArray(
+    source.transferables ?? source.payload?.transferables ?? null,
+  );
+  providedTransferables.forEach((entry) => {
+    registerTransferable(entry, descriptor.transferables);
+  });
+
+  if (descriptor.snapshot) {
+    registerTransferable(descriptor.snapshot, descriptor.transferables);
+  }
+  descriptor.journals.forEach((entry) => registerTransferable(entry, descriptor.transferables));
+  descriptor.buffers.forEach((entry) => registerTransferable(entry, descriptor.transferables));
+
+  descriptor.revision = extractNumericDescriptor(source);
+  descriptor.expectedRevision = extractNumericDescriptor(
+    source.expectedRevision ?? source.targetRevision ?? null,
+  );
+
+  const hasSnapshot = Boolean(descriptor.snapshot);
+  const hasJournals = descriptor.journals.length > 0;
+  const hasBuffers = descriptor.buffers.length > 0;
+  const hasPayload = descriptor.payload && typeof descriptor.payload === 'object';
+
+  if (!hasSnapshot && !hasJournals && !hasBuffers && !hasPayload) {
+    return null;
+  }
+
+  return descriptor;
+};
+
+const hasVoxelSourceData = (descriptor) => {
+  if (!descriptor || typeof descriptor !== 'object') {
+    return false;
+  }
+  if (descriptor.payload && typeof descriptor.payload === 'object') {
+    return true;
+  }
+  if (descriptor.snapshot) {
+    return true;
+  }
+  if (Array.isArray(descriptor.journals) && descriptor.journals.length > 0) {
+    return true;
+  }
+  if (Array.isArray(descriptor.buffers) && descriptor.buffers.length > 0) {
+    return true;
+  }
+  return false;
+};
+
+const guardLatestVoxelRevision = (resolvedPayload, options = {}, descriptor = {}) => {
+  const expectedCandidates = [
+    options?.voxelRevision,
+    descriptor?.expectedRevision,
+    descriptor?.metadata?.expectedRevision,
+    descriptor?.payload?.expectedRevision,
+  ];
+  let expectedRevision = null;
+  for (let i = 0; i < expectedCandidates.length && expectedRevision === null; i += 1) {
+    expectedRevision = toFiniteNumber(expectedCandidates[i]);
+  }
+  if (expectedRevision === null) {
+    return;
+  }
+
+  const actualCandidates = [
+    descriptor?.revision,
+    descriptor?.payload?.voxelRevision,
+    descriptor?.payload?.revision,
+    descriptor?.payload?.version,
+    descriptor?.metadata?.voxelRevision,
+    descriptor?.metadata?.revision,
+    descriptor?.metadata?.version,
+    resolvedPayload?.voxelRevision,
+    resolvedPayload?.revision,
+    resolvedPayload?.version,
+  ];
+  let actualRevision = null;
+  for (let i = 0; i < actualCandidates.length && actualRevision === null; i += 1) {
+    actualRevision = toFiniteNumber(actualCandidates[i]);
+  }
+  if (actualRevision === null) {
+    return;
+  }
+  if (actualRevision < expectedRevision) {
+    throw new Error(
+      `Received stale voxel payload (expected revision >= ${expectedRevision}, got ${actualRevision}).`,
+    );
+  }
+};
+
 const collectTransferableCandidates = (value, target = []) => {
   if (!value) {
     return target;
@@ -366,6 +627,33 @@ const normalizePersistenceStartInfo = (raw) => {
     }
   }
 
+  const voxelSourceCandidates = [payload, resultValue, container, raw];
+  let voxelSources = null;
+  for (let i = 0; i < voxelSourceCandidates.length && !voxelSources; i += 1) {
+    const descriptor = extractVoxelSourceDescriptor(voxelSourceCandidates[i]);
+    if (descriptor && hasVoxelSourceData(descriptor)) {
+      voxelSources = descriptor;
+    }
+  }
+  if (voxelSources) {
+    if (!voxelSources.metadata && metadata && typeof metadata === 'object') {
+      voxelSources.metadata = metadata;
+    }
+    const descriptorTransfers =
+      voxelSources.transferables instanceof Set
+        ? Array.from(voxelSources.transferables)
+        : Array.isArray(voxelSources.transferables)
+        ? voxelSources.transferables
+        : [];
+    if (descriptorTransfers.length > 0) {
+      descriptorTransfers.forEach((entry) => {
+        if (entry) {
+          transfers.push(entry);
+        }
+      });
+    }
+  }
+
   const shouldBypass =
     stateValue === 'ready' && payload !== null && payload !== undefined;
 
@@ -377,6 +665,7 @@ const normalizePersistenceStartInfo = (raw) => {
     transferables: transfers,
     error: serializedError,
     promise: promise ?? null,
+    voxelSources,
   };
 };
 
@@ -597,10 +886,166 @@ const normalizeStartOptions = (payload = {}) => {
   if (includeBlockPlacements !== null) {
     normalized.includeBlockPlacements = includeBlockPlacements;
   }
+
+  const revisionCandidates = [
+    payload.voxelRevision,
+    payload.voxelVersion,
+    payload.revision,
+    payload.version,
+    payload.tick,
+    payload.expectedRevision,
+    payload.expectedTick,
+    payload.targetRevision,
+  ];
+  for (let i = 0; i < revisionCandidates.length; i += 1) {
+    const value = toFiniteNumber(revisionCandidates[i]);
+    if (value !== null) {
+      normalized.voxelRevision = value;
+      break;
+    }
+  }
+
+  const voxelSources = extractVoxelSourceDescriptor(payload);
+  if (voxelSources && hasVoxelSourceData(voxelSources)) {
+    normalized.voxelSources = voxelSources;
+    if (normalized.voxelRevision === undefined || normalized.voxelRevision === null) {
+      const candidateRevision = toFiniteNumber(voxelSources.revision);
+      if (candidateRevision !== null) {
+        normalized.voxelRevision = candidateRevision;
+      }
+    }
+  }
+
   return normalized;
 };
 
+const createPrebakedVoxelBuilder = (options = {}, descriptor = null) => {
+  let done = false;
+  let payload = null;
+  let errorInfo = null;
+
+  const finalizePayload = () => {
+    if (done && payload !== null) {
+      return;
+    }
+    done = true;
+    try {
+      const transferables = new Set();
+      if (descriptor?.transferables instanceof Set) {
+        descriptor.transferables.forEach((entry) => registerTransferable(entry, transferables));
+      } else if (Array.isArray(descriptor?.transferables)) {
+        descriptor.transferables.forEach((entry) => registerTransferable(entry, transferables));
+      }
+
+      let basePayload = null;
+      if (descriptor?.payload && typeof descriptor.payload === 'object') {
+        basePayload = { ...descriptor.payload };
+      } else {
+        basePayload = {
+          chunkX: Number.isFinite(options.chunkX) ? options.chunkX : 0,
+          chunkZ: Number.isFinite(options.chunkZ) ? options.chunkZ : 0,
+          detailLevel: options.detailLevel ?? 'core',
+          worldOptions: ensurePlainObject(options.worldOptions),
+        };
+      }
+
+      if (descriptor?.metadata && typeof descriptor.metadata === 'object') {
+        basePayload.metadata = descriptor.metadata;
+      }
+
+      const resolvedRevision =
+        toFiniteNumber(descriptor?.revision) ??
+        toFiniteNumber(descriptor?.payload?.voxelRevision) ??
+        toFiniteNumber(descriptor?.payload?.revision) ??
+        toFiniteNumber(descriptor?.metadata?.voxelRevision) ??
+        toFiniteNumber(descriptor?.metadata?.revision);
+      if (resolvedRevision !== null && basePayload.voxelRevision === undefined) {
+        basePayload.voxelRevision = resolvedRevision;
+      }
+      if (
+        (basePayload.voxelRevision === undefined || basePayload.voxelRevision === null) &&
+        toFiniteNumber(options?.voxelRevision) !== null
+      ) {
+        basePayload.voxelRevision = toFiniteNumber(options.voxelRevision);
+      }
+
+      if (
+        descriptor?.snapshot ||
+        (Array.isArray(descriptor?.journals) && descriptor.journals.length > 0)
+      ) {
+        const persistencePayload = {
+          snapshot: descriptor.snapshot ?? null,
+          journals: Array.isArray(descriptor.journals)
+            ? descriptor.journals.map((entry) => entry)
+            : [],
+        };
+        if (descriptor.metadata && typeof descriptor.metadata === 'object') {
+          persistencePayload.metadata = descriptor.metadata;
+        }
+        basePayload.persistence = persistencePayload;
+        basePayload.voxelState = persistencePayload;
+        if (descriptor.snapshot) {
+          registerTransferable(descriptor.snapshot, transferables);
+        }
+        if (Array.isArray(descriptor.journals)) {
+          descriptor.journals.forEach((entry) => registerTransferable(entry, transferables));
+        }
+      }
+
+      if (Array.isArray(descriptor?.buffers) && descriptor.buffers.length > 0) {
+        basePayload.buffers = descriptor.buffers.map((entry) => entry);
+        descriptor.buffers.forEach((entry) => registerTransferable(entry, transferables));
+      }
+
+      const manualTransfers = Array.from(transferables).filter(Boolean);
+      if (manualTransfers.length > 0) {
+        const existing = Array.isArray(basePayload.payloadTransferables)
+          ? basePayload.payloadTransferables.filter(Boolean)
+          : [];
+        basePayload.payloadTransferables = existing.concat(manualTransfers);
+      }
+
+      guardLatestVoxelRevision(basePayload, options, descriptor ?? {});
+
+      payload = basePayload;
+    } catch (error) {
+      errorInfo = serializeError(error);
+      payload = null;
+    }
+  };
+
+  return {
+    step() {
+      if (!done) {
+        finalizePayload();
+      }
+      return { processed: 0, done: true };
+    },
+    takePayload() {
+      finalizePayload();
+      const result = payload;
+      payload = null;
+      return result;
+    },
+    takeError() {
+      const error = errorInfo;
+      errorInfo = null;
+      return error;
+    },
+    cancel() {
+      done = true;
+      payload = null;
+    },
+    isDone() {
+      return done;
+    },
+  };
+};
+
 const createBuilder = (options = {}) => {
+  if (hasVoxelSourceData(options?.voxelSources)) {
+    return createPrebakedVoxelBuilder(options, options.voxelSources);
+  }
   let task = null;
   let done = false;
   let payload = null;
@@ -730,6 +1175,31 @@ const startBuilderForKey = (
       error: null,
       promise: null,
     };
+  const infoVoxelSources = hasVoxelSourceData(info?.voxelSources)
+    ? info.voxelSources
+    : null;
+  const optionVoxelSources = hasVoxelSourceData(normalizedOptions?.voxelSources)
+    ? normalizedOptions.voxelSources
+    : null;
+  const combinedVoxelSources = infoVoxelSources || optionVoxelSources;
+
+  const effectiveOptions = { ...normalizedOptions };
+  if (
+    (effectiveOptions.voxelRevision === undefined ||
+      effectiveOptions.voxelRevision === null) &&
+    combinedVoxelSources
+  ) {
+    const candidateRevision =
+      toFiniteNumber(combinedVoxelSources?.revision) ??
+      toFiniteNumber(combinedVoxelSources?.expectedRevision);
+    if (candidateRevision !== null) {
+      effectiveOptions.voxelRevision = candidateRevision;
+    }
+  }
+  if (combinedVoxelSources && !effectiveOptions.voxelSources) {
+    effectiveOptions.voxelSources = combinedVoxelSources;
+  }
+
   const builder = info.shouldBypass
     ? createPersistenceBuilder({
         payload: info.payload,
@@ -737,7 +1207,9 @@ const startBuilderForKey = (
         transferables: info.transferables,
         error: info.error,
       })
-    : createBuilder(normalizedOptions);
+    : hasVoxelSourceData(combinedVoxelSources)
+    ? createPrebakedVoxelBuilder(effectiveOptions, combinedVoxelSources)
+    : createBuilder(effectiveOptions);
   if (info.error && builder && !builder.__persistenceError) {
     builder.__persistenceError = info.error;
   }
