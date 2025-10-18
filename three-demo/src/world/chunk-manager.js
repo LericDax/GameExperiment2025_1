@@ -74,6 +74,137 @@ function resolveBudget(value, fallback) {
   return 0;
 }
 
+function serializeError(error) {
+  if (!error) {
+    return null;
+  }
+  const message = error?.message ?? String(error);
+  const name = error?.name ?? 'Error';
+  const stack = error?.stack ?? null;
+  return { name, message, stack };
+}
+
+const sharedArrayBufferCtor =
+  typeof SharedArrayBuffer !== 'undefined' ? SharedArrayBuffer : null;
+
+function addTransferableBuffer(buffer, targetSet) {
+  if (!buffer) {
+    return;
+  }
+  if (sharedArrayBufferCtor && buffer instanceof sharedArrayBufferCtor) {
+    return;
+  }
+  if (buffer instanceof ArrayBuffer) {
+    targetSet.add(buffer);
+  }
+}
+
+function scanTransferableCandidate(candidate, targetSet, seen) {
+  if (candidate == null) {
+    return;
+  }
+  if (candidate instanceof ArrayBuffer) {
+    addTransferableBuffer(candidate, targetSet);
+    return;
+  }
+  if (ArrayBuffer.isView(candidate)) {
+    addTransferableBuffer(candidate.buffer, targetSet);
+    return;
+  }
+  if (typeof candidate !== 'object') {
+    return;
+  }
+  if (seen.has(candidate)) {
+    return;
+  }
+  seen.add(candidate);
+  if (Array.isArray(candidate)) {
+    candidate.forEach((value) =>
+      scanTransferableCandidate(value, targetSet, seen),
+    );
+    return;
+  }
+  if (candidate instanceof Set) {
+    candidate.forEach((value) =>
+      scanTransferableCandidate(value, targetSet, seen),
+    );
+    return;
+  }
+  if (candidate instanceof Map) {
+    candidate.forEach((value) =>
+      scanTransferableCandidate(value, targetSet, seen),
+    );
+  }
+}
+
+function extractPersistenceTransferables(result) {
+  if (result == null) {
+    return [];
+  }
+  const buffers = new Set();
+  const seen = new Set();
+  const scan = (candidate) =>
+    scanTransferableCandidate(candidate, buffers, seen);
+
+  if (
+    result instanceof ArrayBuffer ||
+    ArrayBuffer.isView(result) ||
+    Array.isArray(result) ||
+    result instanceof Set
+  ) {
+    scan(result);
+  }
+
+  if (result && typeof result === 'object') {
+    scan(result.transferables);
+    scan(result.payloadTransferables);
+    if ('buffers' in result) {
+      scan(result.buffers);
+    }
+    const payload = result.payload;
+    if (payload && typeof payload === 'object') {
+      scan(payload.transferables);
+      scan(payload.payloadTransferables);
+      if ('buffers' in payload) {
+        scan(payload.buffers);
+      }
+    }
+  }
+
+  return Array.from(buffers);
+}
+
+function updateEntryPersistenceMetadata(entry, { stateOverride } = {}) {
+  if (!entry || !entry.metadata || entry.metadata.mode !== 'worker') {
+    return;
+  }
+  const rawState = stateOverride ?? entry.persistenceState ?? 'ready';
+  const state = rawState === 'idle' ? 'pending' : rawState;
+  const metadata = entry.metadata;
+  const persistenceDescriptor = {
+    state,
+    result: null,
+    transferables: [],
+  };
+  let transferables = [];
+  if (state === 'ready') {
+    const result = entry.persistenceResult ?? null;
+    persistenceDescriptor.result = result;
+    transferables = extractPersistenceTransferables(result);
+  } else if (state === 'failed') {
+    persistenceDescriptor.result = null;
+    const errorInfo = serializeError(entry.persistenceError);
+    if (errorInfo) {
+      persistenceDescriptor.error = errorInfo;
+    }
+  } else {
+    persistenceDescriptor.result = null;
+  }
+  persistenceDescriptor.transferables = transferables;
+  metadata.startPersistence = persistenceDescriptor;
+  metadata.buffers = transferables;
+}
+
 function ensureWaterColumnMap(source) {
   if (!source) {
     return new Map();
@@ -601,14 +732,40 @@ export function createChunkManager({
       return null;
     }
     return {
-      start(payload = {}) {
-        const transferables = Array.isArray(metadata?.buffers)
+      start(options = {}) {
+        let startPayload = options;
+        let startPersistence = metadata?.startPersistence ?? null;
+        let startTransferables = undefined;
+        if (
+          options &&
+          typeof options === 'object' &&
+          (Object.prototype.hasOwnProperty.call(options, 'payload') ||
+            Object.prototype.hasOwnProperty.call(options, 'persistence') ||
+            Object.prototype.hasOwnProperty.call(options, 'transferables'))
+        ) {
+          startPayload = options.payload ?? {};
+          if (options.persistence !== undefined) {
+            startPersistence = options.persistence;
+          }
+          startTransferables = options.transferables;
+        } else {
+          startPayload = startPayload ?? {};
+        }
+
+        const message = {
+          type: 'start',
+          key: entryKey,
+          payload: startPayload ?? {},
+        };
+        if (startPersistence !== undefined && startPersistence !== null) {
+          message.persistence = startPersistence;
+        }
+        const transferables = Array.isArray(startTransferables)
+          ? startTransferables
+          : Array.isArray(metadata?.buffers)
           ? metadata.buffers
           : [];
-        chunkBuildWorker.postMessage(
-          { type: 'start', key: entryKey, payload },
-          transferables,
-        );
+        chunkBuildWorker.postMessage(message, transferables);
       },
       step(budget) {
         chunkBuildWorker.postMessage({ type: 'step', key: entryKey, budget });
@@ -628,8 +785,10 @@ export function createChunkManager({
       inflight: false,
       payload: null,
       startPayload: null,
+      startPersistence: null,
     };
     if (metadata.mode === 'worker') {
+      metadata.startPersistence = { state: 'pending', result: null, transferables: [] };
       const requestedDetailLevel = normalizeDetailLevel(
         entry?.detailLevel ?? entry?.desiredDetailLevel ?? DETAIL_LEVEL_CORE,
       );
@@ -662,6 +821,7 @@ export function createChunkManager({
     metadata.inflight = false;
     metadata.payload = null;
     metadata.buffers = [];
+    metadata.startPersistence = null;
     entry.workerPayload = null;
     entry.task?.setRequiresWorkerPayload?.(false);
   }
@@ -1265,14 +1425,20 @@ export function createChunkManager({
     }
     if (!chunkPersistenceQueue || typeof chunkPersistenceQueue.enqueueLoad !== 'function') {
       entry.persistenceState = 'ready';
+      entry.persistenceResult = null;
+      entry.persistenceError = null;
+      updateEntryPersistenceMetadata(entry, { stateOverride: 'ready' });
       return Promise.resolve(null);
     }
     if (entry.persistenceState === 'ready' || entry.persistenceState === 'failed') {
+      updateEntryPersistenceMetadata(entry);
       return entry.persistencePromise ?? Promise.resolve(entry.persistenceResult ?? null);
     }
     if (entry.persistenceState === 'pending') {
+      updateEntryPersistenceMetadata(entry, { stateOverride: 'pending' });
       return entry.persistencePromise ?? Promise.resolve(null);
     }
+    updateEntryPersistenceMetadata(entry, { stateOverride: 'pending' });
     entry.persistenceState = 'pending';
     const storeKey = {
       cx: Number.isFinite(entry.chunkX) ? entry.chunkX : 0,
@@ -1291,11 +1457,15 @@ export function createChunkManager({
       .then((result) => {
         entry.persistenceState = 'ready';
         entry.persistenceResult = result ?? null;
+        entry.persistenceError = null;
+        updateEntryPersistenceMetadata(entry, { stateOverride: 'ready' });
         return result ?? null;
       })
       .catch((error) => {
         entry.persistenceState = 'failed';
         entry.persistenceError = error;
+        entry.persistenceResult = null;
+        updateEntryPersistenceMetadata(entry, { stateOverride: 'failed' });
         return null;
       })
       .finally(() => {
@@ -1592,6 +1762,7 @@ export function createChunkManager({
       return;
     }
     entry.finalized = true;
+    entry.awaitingPersistenceScheduling = false;
     entry.pendingBudget = 0;
     entry.unlimited = false;
     entry.active = false;
@@ -1648,8 +1819,15 @@ export function createChunkManager({
       } else {
         activatePendingChunkRecord(pendingRecord);
       }
+      entry.resolve?.(pendingRecord.chunk ?? null);
+      entry.resolve = null;
+      entry.reject = null;
+      entry.promise = null;
     } catch (error) {
       entry.reject?.(error);
+      entry.resolve = null;
+      entry.reject = null;
+      entry.promise = null;
     }
     if (entry.metadata) {
       entry.metadata.inflight = false;
@@ -1665,6 +1843,7 @@ export function createChunkManager({
     }
     entry.cancelled = true;
     entry.finalized = true;
+    entry.awaitingPersistenceScheduling = false;
     entry.pendingBudget = 0;
     entry.unlimited = false;
     entry.active = false;
@@ -1753,9 +1932,36 @@ export function createChunkManager({
             fallbackChunkJobToLocal(entry);
           } else {
             if (!metadata.started) {
+              const persistenceState = entry.persistenceState ?? 'ready';
+              if (persistenceState === 'pending' || persistenceState === 'idle') {
+                awaitChunkPersistenceAndReschedule(entry);
+                continue;
+              }
+              updateEntryPersistenceMetadata(entry);
+              const transferables = Array.isArray(metadata.buffers)
+                ? metadata.buffers
+                : [];
+              const basePersistence = metadata.startPersistence ?? {
+                state: persistenceState,
+                result: entry.persistenceResult ?? null,
+                transferables: [],
+              };
+              const startPersistence = {
+                ...basePersistence,
+                transferables,
+              };
               try {
-                controller.start(metadata.startPayload ?? {});
+                controller.start({
+                  payload: metadata.startPayload ?? {},
+                  persistence: startPersistence,
+                  transferables,
+                });
                 metadata.started = true;
+                metadata.buffers = [];
+                metadata.startPersistence = {
+                  ...startPersistence,
+                  transferables: [],
+                };
               } catch (error) {
                 console.warn(
                   `[chunk-manager] Failed to start worker job ${entry.key}`,
@@ -1859,6 +2065,31 @@ export function createChunkManager({
     ensureChunkJobPump();
   }
 
+  function awaitChunkPersistenceAndReschedule(entry) {
+    if (!entry || entry.finalized || entry.cancelled) {
+      return null;
+    }
+    const persistencePromise =
+      entry.persistencePromise ?? ensureChunkPersistenceForEntry(entry);
+    if (!persistencePromise || typeof persistencePromise.finally !== 'function') {
+      if (!entry.finalized && !entry.cancelled) {
+        scheduleChunkJobEntry(entry);
+      }
+      return null;
+    }
+    if (entry.awaitingPersistenceScheduling) {
+      return persistencePromise;
+    }
+    entry.awaitingPersistenceScheduling = true;
+    persistencePromise.finally(() => {
+      entry.awaitingPersistenceScheduling = false;
+      if (!entry.finalized && !entry.cancelled) {
+        scheduleChunkJobEntry(entry);
+      }
+    });
+    return persistencePromise;
+  }
+
   function startChunkJob(entry, { budget = defaultPreloadBurst, unlimited = false } = {}) {
     if (!entry || entry.finalized) {
       return null;
@@ -1889,12 +2120,8 @@ export function createChunkManager({
       return promise;
     }
 
-    if (persistenceState === 'idle') {
-      ensureChunkPersistenceForEntry(entry).finally(() => {
-        if (!entry.finalized && !entry.cancelled) {
-          scheduleChunkJobEntry(entry);
-        }
-      });
+    if (persistenceState === 'idle' || persistenceState === 'pending') {
+      awaitChunkPersistenceAndReschedule(entry);
     }
 
     return promise;
@@ -3399,6 +3626,7 @@ export function createChunkManager({
       persistenceError: null,
     };
     entry.metadata = createChunkJobMetadata(entry);
+    updateEntryPersistenceMetadata(entry);
     entry.task = createChunkBuildTask({
       chunkX,
       chunkZ,
@@ -4721,6 +4949,16 @@ export function createChunkManager({
         detailLevel: entry?.detailLevel ?? null,
         payload: entry?.payload ?? null,
       })),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__getChunkPersistenceJobCountForTest', {
+    value: () => chunkPersistenceJobs.size,
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__isChunkJobPumpActiveForTest', {
+    value: () => chunkJobPumpActive,
     enumerable: false,
   });
 

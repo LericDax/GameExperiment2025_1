@@ -72,6 +72,7 @@ async function waitForCondition(predicate, { timeout = 2000, interval = 5 } = {}
 class FakeChunkBuildWorker {
   constructor(options = {}) {
     this.messages = [];
+    this.transferLists = [];
     this.listeners = new Map();
     this.startedKeys = new Set();
     this.options = options;
@@ -115,8 +116,13 @@ class FakeChunkBuildWorker {
     });
   }
 
-  postMessage(message) {
+  postMessage(message, transferList = []) {
     this.messages.push(message);
+    if (!Array.isArray(transferList)) {
+      this.transferLists.push([]);
+    } else {
+      this.transferLists.push(transferList);
+    }
     const { options } = this;
     const { type, key } = message ?? {};
 
@@ -243,6 +249,22 @@ test('chunk manager posts worker start payloads before steps', async () => {
       'step message should be sent after start message',
     );
 
+    assert.ok(
+      startMessage.persistence && typeof startMessage.persistence === 'object',
+      'start message should include persistence metadata',
+    );
+    assert.equal(startMessage.persistence.state, 'ready');
+    assert.equal(startMessage.persistence.result, null);
+    assert.ok(
+      Array.isArray(startMessage.persistence.transferables),
+      'persistence payload should provide a transferables array',
+    );
+    assert.equal(
+      startMessage.persistence.transferables.length,
+      0,
+      'empty persistence results should not enqueue transfer buffers',
+    );
+
     assert.equal(startMessage.key, '0|0');
     assert.deepEqual(
       Object.keys(startMessage.payload).sort(),
@@ -325,6 +347,119 @@ test('chunk manager posts worker start payloads before steps', async () => {
     const loadedChunk = manager.__getLoadedChunkForTest(startMessage.key);
     assert.ok(loadedChunk, 'expected worker-built chunk to load successfully');
     assert.equal(loadedChunk.detailLevel, 'core');
+    await manager.flush();
+  } finally {
+    await manager?.dispose?.();
+    persistenceQueue.dispose();
+    __resetChunkPersistenceQueueFactoryForTest();
+    __resetChunkBuildWorkerFactoryForTest();
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
+test('chunk manager forwards persistence payload buffers to worker start message', async () => {
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const scene = new THREE.Scene();
+  const worker = new FakeChunkBuildWorker();
+  const persistenceQueue = new FakeChunkPersistenceQueue();
+  __setChunkBuildWorkerFactoryForTest(() => worker);
+  __setChunkPersistenceQueueFactoryForTest(() => persistenceQueue);
+
+  let manager;
+  try {
+    manager = createChunkManager({
+      scene,
+      blockMaterials,
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreloadPerUpdate: 1,
+      maxDisposalsPerUpdate: 0,
+    });
+
+    const origin = new THREE.Vector3(0, 0, 0);
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreload: 1,
+    });
+
+    await waitForCondition(() => persistenceQueue.loadJobs.length > 0);
+
+    const snapshotBuffer = new Uint32Array([1, 2, 3, 4]).buffer;
+    const persistenceResult = {
+      payload: {
+        detailLevel: 'core',
+        occupancy: { solidCoordinates: ['0|0|0'] },
+        buffers: [snapshotBuffer],
+      },
+      metadata: { restored: true },
+    };
+    persistenceQueue.resolveNextLoad(persistenceResult);
+
+    await waitForCondition(() =>
+      worker.messages.some((entry) => entry?.type === 'start'),
+    );
+
+    const startIndex = worker.messages.findIndex(
+      (entry) => entry?.type === 'start',
+    );
+    assert.ok(startIndex >= 0, 'expected worker start message');
+    const startMessage = worker.messages[startIndex];
+    assert.ok(startMessage.persistence, 'start message should include persistence payload');
+    assert.equal(startMessage.persistence.state, 'ready');
+    assert.strictEqual(
+      startMessage.persistence.result,
+      persistenceResult,
+      'persistence result should be passed by reference to the worker message',
+    );
+    assert.strictEqual(
+      startMessage.persistence.result.payload,
+      persistenceResult.payload,
+      'worker should receive persistence payload object',
+    );
+    assert.ok(
+      Array.isArray(startMessage.persistence.transferables),
+      'persistence metadata should include transferables',
+    );
+    assert.equal(
+      startMessage.persistence.transferables.length,
+      1,
+      'expected a single buffer transferable for the snapshot payload',
+    );
+
+    const transferList = worker.transferLists[startIndex] ?? [];
+    assert.equal(
+      transferList.length,
+      1,
+      'worker should receive snapshot buffer in the transfer list',
+    );
+    assert.strictEqual(
+      transferList[0],
+      startMessage.persistence.transferables[0],
+      'transfer list should match persistence transferables',
+    );
+    assert.equal(
+      transferList[0].byteLength,
+      snapshotBuffer.byteLength,
+      'transferred buffer byte length should match the source snapshot buffer',
+    );
+
+    const stepMessage = worker.messages.find((entry) => entry?.type === 'step');
+    assert.ok(stepMessage, 'expected worker to receive a step message after start');
+
+    worker.emit('message', {
+      key: startMessage.key,
+      processed: Number.isFinite(stepMessage?.budget)
+        ? Math.max(1, Math.floor(stepMessage.budget))
+        : 1,
+      done: true,
+      payload: persistenceResult.payload,
+      metadata: persistenceResult.metadata,
+    });
+
+    await waitForCondition(() =>
+      Boolean(manager?.__getLoadedChunkForTest?.(startMessage.key)),
+    );
     await manager.flush();
   } finally {
     await manager?.dispose?.();

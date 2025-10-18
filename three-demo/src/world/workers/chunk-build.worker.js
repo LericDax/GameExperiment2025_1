@@ -4,6 +4,7 @@ import { initializeFluidRegistry } from '../fluids/fluid-registry.js';
 
 const builders = new Map();
 const activeBuilderKeys = new Set();
+const pendingStartRecords = new Map();
 
 const isWorkerScope =
   typeof self !== 'undefined' &&
@@ -241,6 +242,204 @@ const collectTransferableCandidates = (value, target = []) => {
     });
   }
   return target;
+};
+
+const normalizePersistenceStartInfo = (raw) => {
+  if (raw == null) {
+    return {
+      state: 'none',
+      shouldBypass: false,
+      payload: null,
+      metadata: null,
+      transferables: [],
+      error: null,
+      promise: null,
+    };
+  }
+
+  const hasContainerFields =
+    typeof raw === 'object' &&
+    raw !== null &&
+    (Object.prototype.hasOwnProperty.call(raw, 'state') ||
+      Object.prototype.hasOwnProperty.call(raw, 'status') ||
+      Object.prototype.hasOwnProperty.call(raw, 'result') ||
+      Object.prototype.hasOwnProperty.call(raw, 'payload') ||
+      Object.prototype.hasOwnProperty.call(raw, 'metadata') ||
+      Object.prototype.hasOwnProperty.call(raw, 'error') ||
+      Object.prototype.hasOwnProperty.call(raw, 'promise') ||
+      Object.prototype.hasOwnProperty.call(raw, 'transferables') ||
+      Object.prototype.hasOwnProperty.call(raw, 'payloadTransferables'));
+
+  if (
+    typeof raw === 'object' &&
+    raw !== null &&
+    typeof raw.then === 'function' &&
+    !hasContainerFields
+  ) {
+    return {
+      state: 'pending',
+      shouldBypass: false,
+      payload: null,
+      metadata: null,
+      transferables: [],
+      error: null,
+      promise: raw,
+    };
+  }
+
+  const container =
+    raw && typeof raw === 'object' ? raw : Object.create(null);
+
+  let promise = null;
+  const candidatePromises = [
+    container.promise,
+    container.promiseLike,
+    container.resultPromise,
+    container.pending,
+  ];
+  for (let i = 0; i < candidatePromises.length && !promise; i += 1) {
+    const candidate = candidatePromises[i];
+    if (candidate && typeof candidate.then === 'function') {
+      promise = candidate;
+    }
+  }
+  if (!promise && typeof raw === 'object' && raw !== null && typeof raw.then === 'function') {
+    promise = raw;
+  }
+  if (!promise && typeof container.then === 'function') {
+    promise = container;
+  }
+
+  const stateValue =
+    typeof container.state === 'string'
+      ? container.state
+      : typeof container.status === 'string'
+      ? container.status
+      : promise
+      ? 'pending'
+      : 'ready';
+
+  const transfers = [];
+  collectTransferableCandidates(container.transferables, transfers);
+  if (transfers.length === 0) {
+    collectTransferableCandidates(container.payloadTransferables, transfers);
+  }
+
+  let metadata = container.metadata ?? null;
+  const errorInfo = container.error ?? container.errorInfo ?? null;
+  const serializedError = errorInfo ? serializeError(errorInfo) : null;
+
+  let resultValue = null;
+  if (Object.prototype.hasOwnProperty.call(container, 'result')) {
+    resultValue = container.result;
+  } else if (
+    Object.prototype.hasOwnProperty.call(container, 'payload') &&
+    container.payload !== undefined
+  ) {
+    resultValue = container.payload;
+  } else {
+    resultValue = raw;
+  }
+
+  let payload = resultValue;
+  if (resultValue && typeof resultValue === 'object') {
+    if (Object.prototype.hasOwnProperty.call(resultValue, 'payload')) {
+      const innerPayload = resultValue.payload;
+      if (innerPayload !== undefined) {
+        payload = innerPayload;
+      }
+    }
+    if (
+      metadata == null &&
+      Object.prototype.hasOwnProperty.call(resultValue, 'metadata')
+    ) {
+      metadata = resultValue.metadata;
+    }
+    if (transfers.length === 0) {
+      collectTransferableCandidates(resultValue.transferables, transfers);
+      if (transfers.length === 0) {
+        collectTransferableCandidates(
+          resultValue.payloadTransferables,
+          transfers,
+        );
+      }
+    }
+  }
+
+  const shouldBypass =
+    stateValue === 'ready' && payload !== null && payload !== undefined;
+
+  return {
+    state: stateValue,
+    shouldBypass,
+    payload,
+    metadata,
+    transferables: transfers,
+    error: serializedError,
+    promise: promise ?? null,
+  };
+};
+
+const createPersistenceBuilder = ({
+  payload,
+  metadata,
+  transferables,
+  error,
+}) => {
+  let done = false;
+  let storedPayload = payload ?? null;
+  let storedMetadata = metadata ?? null;
+  let storedTransferables = Array.isArray(transferables)
+    ? transferables.filter((entry) => Boolean(entry))
+    : [];
+  const storedError = error ?? null;
+
+  return {
+    step() {
+      if (done) {
+        return { processed: 0, done: true };
+      }
+      done = true;
+      return { processed: 0, done: true };
+    },
+    takePayload() {
+      if (!done) {
+        done = true;
+      }
+      const hasPayload = storedPayload !== null && storedPayload !== undefined;
+      const hasMetadata = storedMetadata !== null && storedMetadata !== undefined;
+      const hasTransferables = storedTransferables.length > 0;
+      if (!hasPayload && !hasMetadata && !hasTransferables) {
+        return null;
+      }
+      const result = {};
+      if (hasMetadata) {
+        result.metadata = storedMetadata;
+      }
+      if (hasPayload) {
+        result.payload = storedPayload;
+      }
+      if (hasTransferables) {
+        result.payloadTransferables = storedTransferables.slice();
+      }
+      storedPayload = null;
+      storedMetadata = null;
+      storedTransferables = [];
+      return result;
+    },
+    takeError() {
+      return storedError;
+    },
+    cancel() {
+      done = true;
+      storedPayload = null;
+      storedMetadata = null;
+      storedTransferables = [];
+    },
+    isDone() {
+      return done;
+    },
+  };
 };
 
 let worldInitialized = false;
@@ -512,7 +711,57 @@ const createBuilder = (options = {}) => {
   };
 };
 
-const handleStartMessage = ({ key, payload }) => {
+const startBuilderForKey = (
+  key,
+  normalizedOptions = {},
+  persistenceInfo = null,
+) => {
+  if (!key) {
+    return;
+  }
+  pendingStartRecords.delete(key);
+  const info =
+    persistenceInfo ?? {
+      state: 'ready',
+      shouldBypass: false,
+      payload: null,
+      metadata: null,
+      transferables: [],
+      error: null,
+      promise: null,
+    };
+  const builder = info.shouldBypass
+    ? createPersistenceBuilder({
+        payload: info.payload,
+        metadata: info.metadata,
+        transferables: info.transferables,
+        error: info.error,
+      })
+    : createBuilder(normalizedOptions);
+  if (info.error && builder && !builder.__persistenceError) {
+    builder.__persistenceError = info.error;
+  }
+  builders.set(key, builder);
+  activeBuilderKeys.add(key);
+};
+
+const settleStartFailure = (key, error) => {
+  builders.delete(key);
+  activeBuilderKeys.delete(key);
+  pendingStartRecords.delete(key);
+  if (!key) {
+    return;
+  }
+  postFromWorker({
+    key,
+    processed: 0,
+    done: true,
+    error: serializeError(error),
+  });
+};
+
+const handleStartMessage = (message) => {
+  const { key, payload, persistence } = message ?? {};
   if (!key) {
     return;
   }
@@ -522,21 +771,92 @@ const handleStartMessage = ({ key, payload }) => {
     builders.delete(key);
     activeBuilderKeys.delete(key);
   }
+  const pendingRecord = pendingStartRecords.get(key);
+  if (pendingRecord) {
+    pendingRecord.cancelled = true;
+    pendingStartRecords.delete(key);
+  }
   try {
-    const normalizedOptions = normalizeStartOptions(payload ?? {});
-    const builder = createBuilder(normalizedOptions);
-    builders.set(key, builder);
-    activeBuilderKeys.add(key);
+    const payloadPersistence = payload?.persistence;
+    const sanitizedPayload =
+      payload && typeof payload === 'object'
+        ? { ...payload, persistence: undefined }
+        : payload;
+    const normalizedOptions = normalizeStartOptions(sanitizedPayload ?? {});
+    const persistenceInfo = normalizePersistenceStartInfo(
+      persistence ?? payloadPersistence ?? null,
+    );
+    if (persistenceInfo.promise && !persistenceInfo.shouldBypass) {
+      const record = {
+        normalizedOptions,
+        cancelled: false,
+      };
+      pendingStartRecords.set(key, record);
+      const resolveWithResult = (result) => {
+        const current = pendingStartRecords.get(key);
+        if (current !== record || current?.cancelled) {
+          return;
+        }
+        let resolvedInfo = null;
+        try {
+          const candidate =
+            result &&
+            typeof result === 'object' &&
+            (Object.prototype.hasOwnProperty.call(result, 'state') ||
+              Object.prototype.hasOwnProperty.call(result, 'status') ||
+              Object.prototype.hasOwnProperty.call(result, 'result') ||
+              Object.prototype.hasOwnProperty.call(result, 'payload') ||
+              Object.prototype.hasOwnProperty.call(result, 'metadata'))
+              ? result
+              : { state: 'ready', result };
+          resolvedInfo = normalizePersistenceStartInfo(candidate);
+        } catch (error) {
+          settleStartFailure(key, error);
+          return;
+        }
+        try {
+          startBuilderForKey(key, normalizedOptions, resolvedInfo);
+        } catch (error) {
+          settleStartFailure(key, error);
+        }
+      };
+
+      Promise.resolve(persistenceInfo.promise)
+        .then((result) => {
+          resolveWithResult(result);
+        })
+        .catch((error) => {
+          const current = pendingStartRecords.get(key);
+          if (current !== record || current?.cancelled) {
+            return;
+          }
+          const fallbackInfo = {
+            state: 'failed',
+            shouldBypass: false,
+            payload: null,
+            metadata: null,
+            transferables: [],
+            error: serializeError(error),
+            promise: null,
+          };
+          try {
+            startBuilderForKey(key, normalizedOptions, fallbackInfo);
+          } catch (startError) {
+            settleStartFailure(key, startError);
+          }
+        })
+        .finally(() => {
+          const current = pendingStartRecords.get(key);
+          if (current === record) {
+            pendingStartRecords.delete(key);
+          }
+        });
+      return;
+    }
+
+    startBuilderForKey(key, normalizedOptions, persistenceInfo);
   } catch (error) {
-    builders.delete(key);
-    activeBuilderKeys.delete(key);
-    const response = {
-      key,
-      processed: 0,
-      done: true,
-      error: serializeError(error),
-    };
-    postFromWorker(response);
+    settleStartFailure(key, error);
   }
 };
 
@@ -579,6 +899,11 @@ const handleStepMessage = (message) => {
   if (done) {
     const rawResult = builder.takePayload();
     const errorInfo = builder.takeError();
+    let persistenceError = null;
+    if (builder && builder.__persistenceError) {
+      persistenceError = builder.__persistenceError;
+      builder.__persistenceError = null;
+    }
     if (rawResult !== null && rawResult !== undefined) {
       let resultPayload = rawResult;
       const manualTransferables = [];
@@ -610,6 +935,8 @@ const handleStepMessage = (message) => {
     }
     if (errorInfo) {
       response.error = errorInfo;
+    } else if (persistenceError) {
+      response.error = persistenceError;
     }
     builders.delete(key);
     activeBuilderKeys.delete(key);
@@ -620,6 +947,10 @@ const handleStepMessage = (message) => {
 const handleCancelMessage = ({ key }) => {
   if (!key) {
     return;
+  }
+  const pendingRecord = pendingStartRecords.get(key);
+  if (pendingRecord) {
+    pendingRecord.cancelled = true;
   }
   const builder = builders.get(key);
   if (!builder) {

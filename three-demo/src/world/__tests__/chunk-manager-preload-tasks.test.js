@@ -50,7 +50,21 @@ const {
   createChunkManager,
   __setChunkBuildWorkerFactoryForTest,
   __resetChunkBuildWorkerFactoryForTest,
+  __setChunkPersistenceQueueFactoryForTest,
+  __resetChunkPersistenceQueueFactoryForTest,
 } = await import('../chunk-manager.js');
+
+const immediatePersistenceQueueFactory = () => ({
+  enqueueLoad: () => Promise.resolve(null),
+  enqueueSave: () => Promise.resolve(null),
+  dispose: () => {},
+});
+
+__setChunkPersistenceQueueFactoryForTest(immediatePersistenceQueueFactory);
+
+test.after(() => {
+  __resetChunkPersistenceQueueFactoryForTest();
+});
 
 function createBlockMaterials() {
   const createdMaterials = new Set();
