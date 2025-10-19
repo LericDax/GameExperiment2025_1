@@ -663,6 +663,7 @@ export function createChunkBuildTask({
   requireWorkerPayload = false,
   detailLevel = 'core',
   includeBlockPlacementsInPayload = requireWorkerPayload,
+  scoutPreviewBuilder = null,
 }) {
   const THREE = ensureThree();
   const engine = ensureTerrainEngine();
@@ -3406,11 +3407,29 @@ export function createChunkBuildTask({
         : buildBiomeSummary();
       const group = new THREE.Group();
       group.name = `chunk_${chunkX}_${chunkZ}_scout`;
-      group.visible = false;
       group.userData = group.userData || {};
       group.userData.biomes = chunkBiomes;
       group.userData.detailLevel = DETAIL_LEVEL_SCOUT;
       group.userData.scoutSummary = heightSummary;
+
+      let previewMesh = null;
+      if (typeof scoutPreviewBuilder === 'function') {
+        try {
+          previewMesh = scoutPreviewBuilder({
+            group,
+            chunkX,
+            chunkZ,
+            chunkSize,
+            summary: heightSummary,
+          });
+        } catch (error) {
+          console.warn(
+            '[worldgen] Failed to build scout preview mesh during finalize',
+            error,
+          );
+        }
+      }
+      group.visible = Boolean(previewMesh);
 
       stepState.stage = 'finalized';
       releaseCachedPayload();
