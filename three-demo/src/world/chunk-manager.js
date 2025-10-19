@@ -762,6 +762,8 @@ export function createChunkManager({
   const raycastTargets = new Set();
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   const eventListeners = new Map();
+  const chunkUpgradeStateByKey = new Map();
+  const activeChunkUpgradeQueue = [];
   const defaultDisposalBudget = resolveBudget(maxDisposalsPerUpdate, 1);
   const defaultActivationBudget = resolveBudget(maxActivationsPerUpdate, 2);
   const defaultPreloadBurst = (() => {
@@ -816,6 +818,19 @@ export function createChunkManager({
     addEventListener,
     removeEventListener,
   };
+  const defaultUpgradeHysteresis = (() => {
+    const upgradeConfig =
+      worldConfig?.chunk && typeof worldConfig.chunk === 'object'
+        ? worldConfig.chunk.upgrade
+        : null;
+    const hysteresisFrames = Number.isFinite(upgradeConfig?.hysteresisFrames)
+      ? Math.max(0, Math.floor(upgradeConfig.hysteresisFrames))
+      : 0;
+    const hysteresisRadius = Number.isFinite(upgradeConfig?.hysteresisRadius)
+      ? Math.max(0, upgradeConfig.hysteresisRadius)
+      : 0;
+    return { frames: hysteresisFrames, radius: hysteresisRadius };
+  })();
   let hasEmittedFirstChunkMeshed = false;
   let lastCenterKey = null;
   let currentViewDistance = normalizeDistance(viewDistance, 1);
@@ -2779,6 +2794,388 @@ export function createChunkManager({
     );
   }
 
+  function resolveUpgradeHysteresisConfig(override) {
+    const candidate =
+      override && typeof override === 'object' ? override : defaultUpgradeHysteresis;
+    const radiusSource = Number.isFinite(candidate?.hysteresisRadius)
+      ? candidate.hysteresisRadius
+      : Number.isFinite(candidate?.radius)
+      ? candidate.radius
+      : defaultUpgradeHysteresis.radius;
+    const framesSource = Number.isFinite(candidate?.hysteresisFrames)
+      ? candidate.hysteresisFrames
+      : Number.isFinite(candidate?.frames)
+      ? candidate.frames
+      : defaultUpgradeHysteresis.frames;
+    return {
+      radius: Math.max(0, radiusSource),
+      frames: Math.max(0, Math.floor(framesSource)),
+    };
+  }
+
+  function ensureChunkUpgradeState(key) {
+    if (!key) {
+      return null;
+    }
+    let state = chunkUpgradeStateByKey.get(key);
+    if (state) {
+      return state;
+    }
+    state = {
+      framesInRange: 0,
+      inProgress: false,
+      entry: null,
+      targetDetail: null,
+    };
+    chunkUpgradeStateByKey.set(key, state);
+    return state;
+  }
+
+  function finalizeChunkUpgradeTask(task, targetDetailLevel) {
+    if (!task) {
+      return null;
+    }
+    const normalizedTarget = normalizeDetailLevel(targetDetailLevel);
+    let payloadForCache = null;
+    if (typeof task.exportPayloadSnapshot === 'function') {
+      payloadForCache = task.exportPayloadSnapshot();
+    }
+    const upgradedChunk = task.finalize();
+    if (!upgradedChunk) {
+      return null;
+    }
+    if (payloadForCache) {
+      payloadForCache.detailLevel = normalizedTarget;
+      upgradedChunk.__cachePayload = payloadForCache;
+    }
+    upgradedChunk.detailLevel = normalizedTarget;
+    upgradedChunk.desiredDetailLevel = normalizedTarget;
+    if (upgradedChunk.__cachePayload) {
+      upgradedChunk.__cachePayload.detailLevel = normalizedTarget;
+    }
+    task.releaseCachedPayload?.();
+    return upgradedChunk;
+  }
+
+  function cancelActiveChunkUpgrade(key, { disposeTask = false } = {}) {
+    if (!key) {
+      return;
+    }
+    const state = chunkUpgradeStateByKey.get(key);
+    if (!state) {
+      return;
+    }
+    if (state.entry) {
+      const queueIndex = activeChunkUpgradeQueue.indexOf(state.entry);
+      if (queueIndex >= 0) {
+        activeChunkUpgradeQueue.splice(queueIndex, 1);
+      }
+      if (disposeTask) {
+        try {
+          state.entry.task?.releaseCachedPayload?.();
+        } catch (error) {
+          console.debug('[chunk-manager] upgrade task release failed', error);
+        }
+      }
+      state.entry = null;
+    }
+    state.inProgress = false;
+    state.targetDetail = null;
+    state.framesInRange = 0;
+  }
+
+  function applyChunkRenderUpgrade({ key, chunk, upgradedChunk }) {
+    if (!key || !chunk || !upgradedChunk) {
+      return false;
+    }
+
+    const previousGroups =
+      chunk.decorationGroups instanceof Map
+        ? Array.from(chunk.decorationGroups.values())
+        : [];
+    previousGroups.forEach((group) => unregisterDecorationGroup(group));
+
+    (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.delete(block));
+    (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.delete(block));
+    if (chunk.waterColumns instanceof Map) {
+      chunk.waterColumns.forEach((_, columnKey) => waterColumns.delete(columnKey));
+    } else if (chunk.waterColumnKeys instanceof Set) {
+      chunk.waterColumnKeys.forEach((columnKey) => waterColumns.delete(columnKey));
+    }
+
+    if (chunk.group?.traverse) {
+      chunk.group.traverse((child) => {
+        if (child?.isInstancedMesh) {
+          untrackRaycastTarget(child);
+        }
+      });
+    }
+    if (chunk.group?.parent) {
+      chunk.group.parent.remove(chunk.group);
+    }
+
+    releasePendingChunkResources(chunk);
+
+    chunk.group = upgradedChunk.group;
+    chunk.solidBlockKeys =
+      upgradedChunk.solidBlockKeys instanceof Set
+        ? upgradedChunk.solidBlockKeys
+        : new Set(upgradedChunk.solidBlockKeys ?? []);
+    chunk.softBlockKeys =
+      upgradedChunk.softBlockKeys instanceof Set
+        ? upgradedChunk.softBlockKeys
+        : new Set(upgradedChunk.softBlockKeys ?? []);
+    chunk.typeCapacities =
+      upgradedChunk.typeCapacities instanceof Map
+        ? upgradedChunk.typeCapacities
+        : new Map(upgradedChunk.typeCapacities ?? []);
+    chunk.blockLookup =
+      upgradedChunk.blockLookup instanceof Map
+        ? upgradedChunk.blockLookup
+        : new Map(upgradedChunk.blockLookup ?? []);
+    chunk.typeData =
+      upgradedChunk.typeData instanceof Map
+        ? upgradedChunk.typeData
+        : new Map(upgradedChunk.typeData ?? []);
+    chunk.decorationData =
+      upgradedChunk.decorationData instanceof Map
+        ? upgradedChunk.decorationData
+        : new Map(upgradedChunk.decorationData ?? []);
+    chunk.biomes = upgradedChunk.biomes ?? chunk.biomes;
+    chunk.prototypeInstances =
+      upgradedChunk.prototypeInstances instanceof Map
+        ? upgradedChunk.prototypeInstances
+        : new Map(upgradedChunk.prototypeInstances ?? []);
+    chunk.bounds = upgradedChunk.bounds ?? chunk.bounds;
+    chunk.scoutSummary = upgradedChunk.scoutSummary ?? chunk.scoutSummary ?? null;
+    chunk.fluidSurfaces = Array.isArray(upgradedChunk.fluidSurfaces)
+      ? upgradedChunk.fluidSurfaces
+      : [];
+
+    const chunkWaterColumnSource =
+      upgradedChunk.waterColumns ?? upgradedChunk.waterColumnKeys ?? null;
+    const chunkWaterColumns = ensureWaterColumnMap(chunkWaterColumnSource);
+    const normalizedWaterColumns = new Map();
+    chunkWaterColumns.forEach((bounds, columnKey) => {
+      const normalized =
+        bounds === null ? null : normalizeWaterColumnBounds(bounds);
+      normalizedWaterColumns.set(columnKey, normalized);
+      waterColumns.set(columnKey, normalized);
+    });
+    chunk.waterColumns = normalizedWaterColumns;
+    chunk.waterColumnKeys = new Set(normalizedWaterColumns.keys());
+
+    if (upgradedChunk.fluidBlockKeys instanceof Set) {
+      chunk.fluidBlockKeys = new Set(upgradedChunk.fluidBlockKeys);
+    } else if (Array.isArray(upgradedChunk.fluidBlockKeys)) {
+      chunk.fluidBlockKeys = new Set(upgradedChunk.fluidBlockKeys);
+    } else if (
+      upgradedChunk.fluidBlockKeys &&
+      typeof upgradedChunk.fluidBlockKeys === 'object'
+    ) {
+      chunk.fluidBlockKeys = new Set(
+        Object.keys(upgradedChunk.fluidBlockKeys).filter(Boolean),
+      );
+    } else {
+      chunk.fluidBlockKeys = new Set();
+    }
+
+    if (upgradedChunk.fluidColumnsByType instanceof Map) {
+      chunk.fluidColumnsByType = new Map(
+        Array.from(upgradedChunk.fluidColumnsByType.entries()).map(
+          ([type, columns]) => [
+            type,
+            columns instanceof Map ? new Map(columns) : new Map(columns ?? []),
+          ],
+        ),
+      );
+    } else if (
+      upgradedChunk.fluidColumnsByType &&
+      typeof upgradedChunk.fluidColumnsByType === 'object'
+    ) {
+      const fluidMap = new Map();
+      Object.entries(upgradedChunk.fluidColumnsByType).forEach(
+        ([type, columns]) => {
+          if (columns instanceof Map) {
+            fluidMap.set(type, new Map(columns));
+          } else if (Array.isArray(columns)) {
+            fluidMap.set(type, new Map(columns));
+          }
+        },
+      );
+      chunk.fluidColumnsByType = fluidMap;
+    } else {
+      chunk.fluidColumnsByType = new Map();
+    }
+
+    const chunkWaterColumnsMap = chunk.fluidColumnsByType.get('water');
+    if (chunkWaterColumnsMap instanceof Map) {
+      chunkWaterColumnsMap.forEach((column, columnKey) => {
+        const normalized = normalizedWaterColumns.get(columnKey);
+        if (!normalized || !column) {
+          return;
+        }
+        column.bottomY = normalized.bottomY;
+        column.minY = Math.min(column.minY ?? normalized.bottomY, normalized.bottomY);
+        column.surfaceY = normalized.surfaceY;
+        column.maxY = Math.max(column.maxY ?? normalized.surfaceY, normalized.surfaceY);
+        column.depth = Math.max(0.05, column.surfaceY - column.bottomY);
+      });
+    }
+
+    chunk.decorationGroups = new Map();
+    chunk.decorationOwnerIndex = new Map();
+    chunk.decorationTypeIndex = new Map();
+    const nextDecorationGroups =
+      upgradedChunk.decorationGroups instanceof Map
+        ? Array.from(upgradedChunk.decorationGroups.values())
+        : [];
+    nextDecorationGroups.forEach((group) => {
+      registerDecorationGroup(key, group, chunk);
+    });
+
+    (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.add(block));
+    (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
+
+    chunk.detailLevel = normalizeDetailLevel(upgradedChunk.detailLevel);
+    chunk.desiredDetailLevel = chunk.detailLevel;
+    chunk.__cachePayload = upgradedChunk.__cachePayload ?? null;
+    if (chunk.__cachePayload) {
+      chunk.__cachePayload.detailLevel = chunk.detailLevel;
+    }
+
+    chunk.group.frustumCulled = false;
+    applyChunkBounds(chunk);
+    chunk.group?.traverse?.((child) => {
+      if (!child?.isInstancedMesh) {
+        return;
+      }
+      const { type } = child.userData || {};
+      if (!type) {
+        return;
+      }
+      child.userData.chunkKey = key;
+      trackRaycastTarget(child);
+    });
+    (chunk.fluidSurfaces ?? []).forEach((surface) => {
+      surface.userData = surface.userData || {};
+      surface.userData.chunkKey = key;
+    });
+    scene.add(chunk.group);
+
+    return true;
+  }
+
+  function scheduleActiveChunkUpgrade({ key, chunk, targetDetailLevel }) {
+    if (!key || !chunk) {
+      return false;
+    }
+    const state = ensureChunkUpgradeState(key);
+    if (!state || state.inProgress) {
+      return false;
+    }
+    const normalizedTarget = normalizeDetailLevel(targetDetailLevel);
+    const task = createChunkBuildTask({
+      chunkX: chunk.chunkX,
+      chunkZ: chunk.chunkZ,
+      blockMaterials,
+      detailLevel: normalizedTarget,
+    });
+    const entry = {
+      key,
+      chunk,
+      chunkX: chunk.chunkX,
+      chunkZ: chunk.chunkZ,
+      targetDetailLevel: normalizedTarget,
+      task,
+    };
+    activeChunkUpgradeQueue.push(entry);
+    state.inProgress = true;
+    state.entry = entry;
+    state.framesInRange = 0;
+    state.targetDetail = normalizedTarget;
+    return true;
+  }
+
+  function finalizeActiveChunkUpgrade(entry) {
+    if (!entry || !entry.task) {
+      return;
+    }
+    const { key, chunk, targetDetailLevel, task } = entry;
+    const state = chunkUpgradeStateByKey.get(key) ?? null;
+    let upgradedChunk = null;
+    try {
+      upgradedChunk = finalizeChunkUpgradeTask(task, targetDetailLevel);
+      if (!upgradedChunk) {
+        cancelActiveChunkUpgrade(key, { disposeTask: true });
+        return;
+      }
+      if (!loadedChunks.has(key) || loadedChunks.get(key) !== chunk) {
+        releasePendingChunkResources(upgradedChunk);
+        cancelActiveChunkUpgrade(key, { disposeTask: false });
+        return;
+      }
+      applyChunkRenderUpgrade({ key, chunk, upgradedChunk });
+    } catch (error) {
+      console.error('[chunk-manager] Failed to finalize chunk upgrade', error);
+      cancelActiveChunkUpgrade(key, { disposeTask: true });
+      return;
+    } finally {
+      if (state) {
+        state.inProgress = false;
+        state.entry = null;
+        state.framesInRange = 0;
+        state.targetDetail = null;
+      }
+    }
+  }
+
+  function processActiveChunkUpgrades(stepBudget = defaultPreloadBurst) {
+    if (activeChunkUpgradeQueue.length === 0) {
+      return;
+    }
+    const unlimited = stepBudget === Number.POSITIVE_INFINITY;
+    const normalizedBudget = unlimited
+      ? Number.POSITIVE_INFINITY
+      : Math.max(1, Math.floor(stepBudget));
+    for (let index = 0; index < activeChunkUpgradeQueue.length; ) {
+      const entry = activeChunkUpgradeQueue[index];
+      if (!entry || !entry.task) {
+        activeChunkUpgradeQueue.splice(index, 1);
+        continue;
+      }
+      const { key, chunk, task } = entry;
+      if (!loadedChunks.has(key) || loadedChunks.get(key) !== chunk) {
+        cancelActiveChunkUpgrade(key, { disposeTask: true });
+        activeChunkUpgradeQueue.splice(index, 1);
+        continue;
+      }
+      let done = false;
+      try {
+        if (unlimited) {
+          do {
+            const result = task.step(normalizedBudget);
+            done = Boolean(result?.done);
+          } while (!done);
+        } else {
+          const result = task.step(normalizedBudget);
+          done = Boolean(result?.done);
+        }
+      } catch (error) {
+        console.error('[chunk-manager] active chunk upgrade failed', error);
+        cancelActiveChunkUpgrade(key, { disposeTask: true });
+        activeChunkUpgradeQueue.splice(index, 1);
+        continue;
+      }
+      if (done) {
+        finalizeActiveChunkUpgrade(entry);
+        activeChunkUpgradeQueue.splice(index, 1);
+      } else {
+        index += 1;
+      }
+    }
+  }
+
   function upgradePendingChunkRecord(record, targetDetailLevel) {
     const normalizedTarget = normalizeDetailLevel(targetDetailLevel);
     if (!record) {
@@ -2806,19 +3203,12 @@ export function createChunkManager({
         }
         done = stepResult.done === true;
       }
-      let payloadForCache = null;
-      if (typeof upgradeTask.exportPayloadSnapshot === 'function') {
-        payloadForCache = upgradeTask.exportPayloadSnapshot();
-      }
-      const upgradedChunk = upgradeTask.finalize();
-      if (payloadForCache) {
-        payloadForCache.detailLevel = normalizedTarget;
-        upgradedChunk.__cachePayload = payloadForCache;
-      }
-      upgradedChunk.detailLevel = normalizedTarget;
-      upgradedChunk.desiredDetailLevel = normalizedTarget;
-      if (upgradedChunk.__cachePayload) {
-        upgradedChunk.__cachePayload.detailLevel = normalizedTarget;
+      const upgradedChunk = finalizeChunkUpgradeTask(
+        upgradeTask,
+        normalizedTarget,
+      );
+      if (!upgradedChunk) {
+        return false;
       }
       record.chunk = upgradedChunk;
       entry.detailLevel = normalizedTarget;
@@ -4419,6 +4809,8 @@ export function createChunkManager({
   function disposeChunk(key) {
     cancelChunkDisposal(key);
     dropPendingActivation(key, { disposeChunk: true, settle: true });
+    cancelActiveChunkUpgrade(key, { disposeTask: true });
+    chunkUpgradeStateByKey.delete(key);
     const pendingEntry = pendingPreloadEntries.get(key);
     if (pendingEntry) {
       cancelPendingEntry(pendingEntry);
@@ -5057,6 +5449,10 @@ export function createChunkManager({
     const centerChunkZ = worldToChunk(position.z);
     const centerKey = chunkKey(centerChunkX, centerChunkZ);
 
+    const upgradeHysteresis = resolveUpgradeHysteresisConfig(
+      options.upgradeHysteresis,
+    );
+
 
     if (options.camera) {
       lastCamera = options.camera;
@@ -5148,6 +5544,10 @@ export function createChunkManager({
       ? Math.max(finiteView, Math.floor(retentionDistance))
       : Math.max(finiteView, lastFiniteRetentionDistance);
     const finiteRetention = Math.max(finiteView, fallbackRetentionDistance);
+
+    const upgradeRadiusThreshold = Number.isFinite(finiteView)
+      ? Math.max(0, finiteView - upgradeHysteresis.radius)
+      : Number.POSITIVE_INFINITY;
 
     lastCenterChunkX = centerChunkX;
     lastCenterChunkZ = centerChunkZ;
@@ -5278,9 +5678,60 @@ export function createChunkManager({
         distanceX > retentionRadiusWithMargin ||
         distanceZ > retentionRadiusWithMargin
       ) {
+        cancelActiveChunkUpgrade(key, { disposeTask: true });
+        chunkUpgradeStateByKey.delete(key);
         queueChunkForDisposal(key);
-      } else {
-        cancelChunkDisposal(key);
+        return;
+      }
+
+      cancelChunkDisposal(key);
+
+      const requiredDetail = computeRequiredDetailForChunk(chunkX, chunkZ);
+      const normalizedRequired = normalizeDetailLevel(requiredDetail);
+      const currentDetail = normalizeDetailLevel(chunk.detailLevel);
+      const currentDesired = normalizeDetailLevel(chunk.desiredDetailLevel);
+      const requiredRank = detailLevelRank(normalizedRequired);
+      const currentRank = detailLevelRank(currentDetail);
+      if (detailLevelRank(currentDesired) !== requiredRank) {
+        chunk.desiredDetailLevel = normalizedRequired;
+      }
+
+      if (requiredRank > currentRank) {
+        const state = ensureChunkUpgradeState(key);
+        if (state) {
+          state.targetDetail = normalizedRequired;
+          const maxDistance = Math.max(distanceX, distanceZ);
+          const withinRadius = maxDistance <= upgradeRadiusThreshold;
+          if (withinRadius) {
+            state.framesInRange += 1;
+          } else {
+            state.framesInRange = 0;
+          }
+          if (!state.inProgress && state.framesInRange >= upgradeHysteresis.frames) {
+            scheduleActiveChunkUpgrade({
+              key,
+              chunk,
+              targetDetailLevel: normalizedRequired,
+            });
+          }
+        }
+        return;
+      }
+
+      const state = chunkUpgradeStateByKey.get(key);
+      if (state) {
+        if (state.inProgress) {
+          const pendingRank = detailLevelRank(
+            normalizeDetailLevel(
+              state.entry?.targetDetailLevel ?? state.targetDetail ?? currentDetail,
+            ),
+          );
+          if (pendingRank > requiredRank) {
+            cancelActiveChunkUpgrade(key, { disposeTask: true });
+          }
+        }
+        state.framesInRange = 0;
+        state.targetDetail = null;
       }
     });
 
@@ -5323,6 +5774,8 @@ export function createChunkManager({
 
     processPendingActivations(activationBudget);
 
+    processActiveChunkUpgrades();
+
     flushChunkDisposals();
 
 
@@ -5348,6 +5801,9 @@ export function createChunkManager({
       } catch (error) {
         console.error('[chunk-manager] chunk job pump failed during flush', error);
       }
+    }
+    if (activeChunkUpgradeQueue.length > 0) {
+      processActiveChunkUpgrades(Number.POSITIVE_INFINITY);
     }
     processPendingActivations(Number.POSITIVE_INFINITY);
     if (includeDisposals) {
@@ -5503,6 +5959,7 @@ export function createChunkManager({
         force || normalizedBudget === Number.POSITIVE_INFINITY
           ? Number.POSITIVE_INFINITY
           : normalizedBudget,
+      upgradeHysteresis: options.upgradeHysteresis,
       force,
     });
     if (updateResult && typeof updateResult.then === 'function') {
