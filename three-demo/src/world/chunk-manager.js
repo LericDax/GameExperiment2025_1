@@ -960,6 +960,10 @@ export function createChunkManager({
   let defaultDisposalBudget = 0;
   let defaultActivationBudget = 0;
   let defaultPreloadBurst = 2;
+  let derivedChunkColumnsPerChunk = 1;
+  let derivedChunkThroughput = 0;
+  let derivedActivationFloor = 0;
+  let derivedDisposalFloor = 0;
 
   const normalizeStreamingBudgetInput = (value) => {
     if (value === Number.POSITIVE_INFINITY) {
@@ -1004,9 +1008,39 @@ export function createChunkManager({
   };
 
   const recomputeStreamingBudgetDefaults = () => {
-    defaultDisposalBudget = resolveBudget(maxDisposalsPerUpdate, 1);
-    defaultActivationBudget = resolveBudget(maxActivationsPerUpdate, 2);
+    const resolvedDisposal = resolveBudget(maxDisposalsPerUpdate, 1);
+    const resolvedActivation = resolveBudget(maxActivationsPerUpdate, 2);
     const numeric = Number(maxPreloadPerUpdate);
+
+    const chunkSizeValue = Number.isFinite(worldConfig?.chunkSize)
+      ? worldConfig.chunkSize
+      : Number(worldConfig?.chunk?.size);
+    const normalizedChunkSize =
+      Number.isFinite(chunkSizeValue) && chunkSizeValue > 0
+        ? Math.max(1, Math.floor(chunkSizeValue))
+        : 48;
+    derivedChunkColumnsPerChunk = Math.max(
+      1,
+      normalizedChunkSize * normalizedChunkSize,
+    );
+
+    if (maxPreloadPerUpdate === Number.POSITIVE_INFINITY) {
+      derivedChunkThroughput = Number.POSITIVE_INFINITY;
+    } else if (!Number.isFinite(numeric) || numeric <= 0) {
+      derivedChunkThroughput = 0;
+    } else {
+      derivedChunkThroughput = Math.max(
+        1,
+        Math.ceil(numeric / derivedChunkColumnsPerChunk),
+      );
+    }
+
+    derivedActivationFloor = derivedChunkThroughput;
+    derivedDisposalFloor = derivedChunkThroughput;
+
+    defaultDisposalBudget = Math.max(resolvedDisposal, derivedDisposalFloor);
+    defaultActivationBudget = Math.max(resolvedActivation, derivedActivationFloor);
+
     if (!Number.isFinite(numeric) || numeric <= 0) {
       defaultPreloadBurst = 2;
     } else {
@@ -7095,6 +7129,24 @@ export function createChunkManager({
           generatedAt: Date.now(),
           chunkCount: chunks.length,
           totalBlocks,
+          streamingBudgets: {
+            configured: {
+              preload: maxPreloadPerUpdate,
+              activation: maxActivationsPerUpdate,
+              disposal: maxDisposalsPerUpdate,
+            },
+            defaults: {
+              preloadBurst: defaultPreloadBurst,
+              activation: defaultActivationBudget,
+              disposal: defaultDisposalBudget,
+            },
+            derived: {
+              chunkColumnsPerChunk: derivedChunkColumnsPerChunk,
+              chunkThroughputPerFrame: derivedChunkThroughput,
+              activationFloor: derivedActivationFloor,
+              disposalFloor: derivedDisposalFloor,
+            },
+          },
           chunks,
         };
       };
@@ -7804,6 +7856,10 @@ export function createChunkManager({
       defaultPreloadBurst,
       defaultActivationBudget,
       defaultDisposalBudget,
+      derivedChunkColumnsPerChunk,
+      derivedChunkThroughput,
+      derivedActivationFloor,
+      derivedDisposalFloor,
     }),
     enumerable: false,
   });
