@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import { chunkIndexFromWorld } from '../world/chunk-manager.js';
 import { listEntityDefinitions } from './entity-registry.js';
 
 function normalizeVector3(input, THREERef) {
@@ -48,6 +49,7 @@ export function createEntityManager({
   const entityMixers = new Map();
   const spawnContexts = new Map();
   const mixers = new Set();
+  const persistentEntities = new Map();
   let nextEntityId = 1;
   let disposed = false;
   let defaultCamera = camera ?? null;
@@ -95,6 +97,45 @@ export function createEntityManager({
       });
       entityTypes.delete(id);
     };
+  }
+
+  function resolveChunkKeyFromMatrix(matrix) {
+    if (!matrix) {
+      return '0|0';
+    }
+    const position = new THREERef.Vector3();
+    position.setFromMatrixPosition(matrix);
+    if (typeof chunkIndexFromWorld === 'function') {
+      const { x, z } = chunkIndexFromWorld(position.x, position.z);
+      return `${x}|${z}`;
+    }
+    return '0|0';
+  }
+
+  function persistEntityRecord(entity, { entityId, typeId, meta }) {
+    if (!entity?.root?.isObject3D) {
+      return false;
+    }
+    if (!chunkManager?.recordEntityPlacement) {
+      return false;
+    }
+    entity.root.updateMatrixWorld();
+    const matrix = entity.root.matrixWorld.clone();
+    const transform = matrix.toArray(new Float32Array(16));
+    const recorded = chunkManager.recordEntityPlacement({
+      id: entityId,
+      typeId,
+      transform,
+      meta: meta ?? null,
+    });
+    if (!recorded) {
+      persistentEntities.delete(entityId);
+      return false;
+    }
+    persistentEntities.set(entityId, {
+      chunkKey: resolveChunkKeyFromMatrix(matrix),
+    });
+    return true;
   }
 
   function buildSpawnContext({ entityId, typeId, position, metadata, userData }) {
@@ -217,6 +258,7 @@ export function createEntityManager({
     entity.root.userData = entity.root.userData || {};
     entity.root.userData.entityId = entityId;
     entity.root.userData.entityTypeId = typeId;
+    entity.root.userData.persistenceId = entityId;
 
     scene.add(entity.root);
     if (options.position) {
@@ -231,6 +273,20 @@ export function createEntityManager({
       entity.onSpawn?.(spawnContext, options);
     } catch (error) {
       console.error(`Entity ${entityId} onSpawn hook failed:`, error);
+    }
+
+    const { persist = false, persistenceMeta = null } = options;
+    if (persist) {
+      const recorded = persistEntityRecord(entity, {
+        entityId,
+        typeId,
+        meta: persistenceMeta,
+      });
+      if (!recorded) {
+        persistentEntities.delete(entityId);
+      }
+    } else {
+      persistentEntities.delete(entityId);
     }
 
     return entity;
@@ -258,6 +314,13 @@ export function createEntityManager({
       return false;
     }
     const entity = entities.get(entityId);
+    if (persistentEntities.has(entityId)) {
+      try {
+        chunkManager?.recordEntityRemoval?.({ id: entityId });
+      } finally {
+        persistentEntities.delete(entityId);
+      }
+    }
     entities.delete(entityId);
     spawnContexts.delete(entityId);
     disposeMixersForEntity(entityId);
@@ -270,6 +333,31 @@ export function createEntityManager({
       console.error(`Entity ${entityId} dispose hook failed:`, error);
     }
     return true;
+  }
+
+  function setEntityPersistence(entityId, persistConfig = {}) {
+    if (!chunkManager?.recordEntityPlacement || !chunkManager?.recordEntityRemoval) {
+      return false;
+    }
+    const entity = entities.get(entityId);
+    if (!entity) {
+      return false;
+    }
+    const { persist = false, persistenceMeta = null } = persistConfig ?? {};
+    if (persist) {
+      const recorded = persistEntityRecord(entity, {
+        entityId,
+        typeId: entity.typeId,
+        meta: persistenceMeta,
+      });
+      if (!recorded) {
+        persistentEntities.delete(entityId);
+      }
+      return recorded;
+    }
+    const removed = chunkManager.recordEntityRemoval({ id: entityId });
+    persistentEntities.delete(entityId);
+    return removed;
   }
 
   function listEntityTypes() {
@@ -365,12 +453,14 @@ export function createEntityManager({
     entityMixers.clear();
     spawnContexts.clear();
     entityTypes.clear();
+    persistentEntities.clear();
   }
 
   managerApi = {
     registerEntityType,
     spawnEntity,
     despawnEntity,
+    setEntityPersistence,
     listEntityTypes,
     update,
     dispose,
