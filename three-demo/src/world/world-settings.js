@@ -313,6 +313,18 @@ export const defaultWorldOptions = Object.freeze({
   waterLevel: getDescriptorDefault(['waterLevel']),
   chunk: Object.freeze({
     size: getDescriptorDefault(['chunk', 'size']),
+    upgrade: Object.freeze({
+      hysteresisRadius: getDescriptorDefault([
+        'chunk',
+        'upgrade',
+        'hysteresisRadius',
+      ]),
+      hysteresisFrames: getDescriptorDefault([
+        'chunk',
+        'upgrade',
+        'hysteresisFrames',
+      ]),
+    }),
   }),
   water: Object.freeze({
     level: getDescriptorDefault(['water', 'level']),
@@ -335,7 +347,13 @@ function createMutableWorldOptions() {
     baseHeight: defaultWorldOptions.baseHeight,
     maxHeight: defaultWorldOptions.maxHeight,
     waterLevel: defaultWorldOptions.waterLevel,
-    chunk: { size: defaultWorldOptions.chunk.size },
+    chunk: {
+      size: defaultWorldOptions.chunk.size,
+      upgrade: {
+        hysteresisRadius: defaultWorldOptions.chunk.upgrade.hysteresisRadius,
+        hysteresisFrames: defaultWorldOptions.chunk.upgrade.hysteresisFrames,
+      },
+    },
     water: { level: defaultWorldOptions.water.level },
     environment: { skyboxId: defaultEnvironmentOptions.skyboxId },
     terrain: {
@@ -1924,6 +1942,52 @@ export function applyWorldOptions(overrides = {}) {
       ['chunkSize'],
     )
   }
+
+  if (!isObject(worldOptions.chunk.upgrade)) {
+    worldOptions.chunk.upgrade = {
+      hysteresisRadius: defaultWorldOptions.chunk.upgrade.hysteresisRadius,
+      hysteresisFrames: defaultWorldOptions.chunk.upgrade.hysteresisFrames,
+    }
+  }
+
+  const chunkUpgradeOverrides = isObject(chunkOverrides?.upgrade)
+    ? chunkOverrides.upgrade
+    : null
+  const legacyUpgradeOverrides = isObject(overrides.chunkUpgrade)
+    ? overrides.chunkUpgrade
+    : null
+
+  ;[chunkUpgradeOverrides, legacyUpgradeOverrides]
+    .filter((candidate) => isObject(candidate))
+    .forEach((candidate) => {
+      const radiusValue = normalizeNumber(
+        candidate.hysteresisRadius ?? candidate.radius,
+        null,
+      )
+      if (radiusValue !== null) {
+        worldOptions.chunk.upgrade.hysteresisRadius = normalizeWithDescriptor(
+          radiusValue,
+          worldOptions.chunk.upgrade.hysteresisRadius,
+          ['chunk', 'upgrade', 'hysteresisRadius'],
+        )
+      }
+
+      const framesValue = normalizeNumber(
+        candidate.hysteresisFrames ?? candidate.frames,
+        null,
+      )
+      if (framesValue !== null) {
+        const normalizedFrames = normalizeWithDescriptor(
+          framesValue,
+          worldOptions.chunk.upgrade.hysteresisFrames,
+          ['chunk', 'upgrade', 'hysteresisFrames'],
+        )
+        worldOptions.chunk.upgrade.hysteresisFrames = Math.max(
+          0,
+          Math.round(normalizedFrames),
+        )
+      }
+    })
 
   const environmentOverrides = isObject(overrides.environment)
     ? overrides.environment

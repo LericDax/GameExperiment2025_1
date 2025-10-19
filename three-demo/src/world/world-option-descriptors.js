@@ -903,6 +903,30 @@ const chunkGroup = Object.freeze({
       default: 48,
       path: Object.freeze(['chunk', 'size']),
     }),
+    Object.freeze({
+      id: 'chunk.upgrade.hysteresisRadius',
+      label: 'Upgrade Hysteresis Radius',
+      description:
+        'Inner safety margin (in chunks) that a chunk must remain within before queuing an upgrade.',
+      type: numberType,
+      min: 0,
+      max: 16,
+      step: 0.1,
+      default: 1,
+      path: Object.freeze(['chunk', 'upgrade', 'hysteresisRadius']),
+    }),
+    Object.freeze({
+      id: 'chunk.upgrade.hysteresisFrames',
+      label: 'Upgrade Hysteresis Frames',
+      description:
+        'Minimum consecutive update frames a chunk must satisfy upgrade conditions before rebuilding at a higher detail tier.',
+      type: numberType,
+      min: 0,
+      max: 240,
+      step: 1,
+      default: 6,
+      path: Object.freeze(['chunk', 'upgrade', 'hysteresisFrames']),
+    }),
   ]),
 })
 
