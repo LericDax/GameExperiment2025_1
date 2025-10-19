@@ -401,9 +401,17 @@ function addCloud(addBlock, x, y, z) {
 
 const DETAIL_LEVEL_CORE = 'core';
 const DETAIL_LEVEL_RETENTION = 'retention';
+const DETAIL_LEVEL_SCOUT = 'scout';
 
-const normalizeDetailMode = (detailLevel) =>
-  detailLevel === DETAIL_LEVEL_RETENTION ? DETAIL_LEVEL_RETENTION : DETAIL_LEVEL_CORE;
+const normalizeDetailMode = (detailLevel) => {
+  if (detailLevel === DETAIL_LEVEL_SCOUT) {
+    return DETAIL_LEVEL_SCOUT;
+  }
+  if (detailLevel === DETAIL_LEVEL_RETENTION) {
+    return DETAIL_LEVEL_RETENTION;
+  }
+  return DETAIL_LEVEL_CORE;
+};
 
 const sanitizeSerializableForWorker = (value, seen = new WeakSet()) => {
   if (
@@ -614,14 +622,14 @@ const sanitizeBlockMaterialsForWorker = (materials) => {
  * @param {Object} params
  * @param {number} params.chunkX Chunk coordinate on the X axis.
  * @param {number} params.chunkZ Chunk coordinate on the Z axis.
- * @param {'core'|'retention'} [params.detailLevel='core'] Requested detail level.
+ * @param {'core'|'retention'|'scout'} [params.detailLevel='core'] Requested detail level.
  * @param {Object} [params.worldOptions=worldOptions] Source world configuration.
  * @param {Object} [params.blockMaterials] Block material registry used for occlusion.
  * @param {Object} [params.engine] Optional precomputed engine payload for worker use.
  * @returns {{
  *   chunkX: number,
  *   chunkZ: number,
- *   detailLevel: 'core'|'retention',
+ *   detailLevel: 'core'|'retention'|'scout',
  *   worldOptions: Object,
  *   blockMaterials: Object,
  *   engine?: Object,
@@ -660,7 +668,8 @@ export function createChunkBuildTask({
   const engine = ensureTerrainEngine();
   let needsWorkerPayload = Boolean(requireWorkerPayload);
   const detailMode = normalizeDetailMode(detailLevel);
-  const isLowDetail = detailMode !== 'core';
+  const isLowDetail = detailMode !== DETAIL_LEVEL_CORE;
+  const isScoutDetail = detailMode === DETAIL_LEVEL_SCOUT;
   const instancedData = new Map();
   const decorationInstancedData = new Map();
   const decorationData = new Map();
@@ -695,9 +704,17 @@ export function createChunkBuildTask({
   const biomePresence = new Map();
   const prototypeInstances = new Map();
   let prototypeInstanceCounter = 0;
+  let cachedBiomeSummary = null;
 
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ, worldOptions);
   const { chunkSize, waterLevel } = worldOptions;
+  const totalColumns = Math.max(1, chunkSize * chunkSize);
+  const scoutHeightMap = isScoutDetail ? new Int16Array(totalColumns) : null;
+  const scoutBiomeIds = isScoutDetail
+    ? Array(totalColumns).fill(null)
+    : null;
+  let scoutMinHeight = Number.POSITIVE_INFINITY;
+  let scoutMaxHeight = Number.NEGATIVE_INFINITY;
 
   const terrainSampler = (x, z) => engine.sampleColumn(x, z);
 
@@ -1878,8 +1895,6 @@ export function createChunkBuildTask({
     targetGroup.add(mesh);
   };
 
-    const totalColumns = chunkSize * chunkSize;
-
   const processColumnAtIndex = (columnIndex) => {
     const lx = Math.floor(columnIndex / chunkSize);
     const lz = columnIndex % chunkSize;
@@ -1973,6 +1988,16 @@ export function createChunkBuildTask({
       const stats = biomePresence.get(biome.id) ?? { biome, samples: 0 };
       stats.samples += 1;
       biomePresence.set(biome.id, stats);
+    }
+
+    if (isScoutDetail && scoutHeightMap && scoutBiomeIds) {
+      const normalizedHeight = Number.isFinite(height) ? Math.floor(height) : 0;
+      const columnIndex = lx * chunkSize + lz;
+      scoutHeightMap[columnIndex] = normalizedHeight;
+      scoutBiomeIds[columnIndex] = biome?.id ?? null;
+      scoutMinHeight = Math.min(scoutMinHeight, normalizedHeight);
+      scoutMaxHeight = Math.max(scoutMaxHeight, normalizedHeight);
+      return;
     }
 
     const surfaceBlock = isUnderwater
@@ -2312,6 +2337,110 @@ export function createChunkBuildTask({
     prototypeInstances,
   });
 
+  const cloneBiomeSummary = (biomes) =>
+    biomes.map((entry) => ({
+      ...entry,
+      shader: {
+        ...entry.shader,
+      },
+    }));
+
+  const buildBiomeSummary = () => {
+    if (cachedBiomeSummary) {
+      return cloneBiomeSummary(cachedBiomeSummary);
+    }
+    const biomeEntries = Array.from(biomePresence.values());
+    const totalSamples = biomeEntries.reduce((sum, entry) => {
+      const samples = Number.isFinite(entry?.samples) ? entry.samples : 0;
+      return sum + samples;
+    }, 0);
+    const colorScratch = new THREE.Color(0, 0, 0);
+    const toHex = (value) => {
+      if (!value) {
+        return '#000000';
+      }
+      if (typeof value === 'string') {
+        return value;
+      }
+      if (value instanceof THREE.Color) {
+        return `#${value.getHexString()}`;
+      }
+      if (Array.isArray(value)) {
+        const [r = 0, g = 0, b = 0] = value;
+        colorScratch.setRGB(
+          Number.isFinite(r) ? r : 0,
+          Number.isFinite(g) ? g : 0,
+          Number.isFinite(b) ? b : 0,
+        );
+        return `#${colorScratch.getHexString()}`;
+      }
+      if (
+        typeof value === 'object' &&
+        Number.isFinite(value.r) &&
+        Number.isFinite(value.g) &&
+        Number.isFinite(value.b)
+      ) {
+        colorScratch.setRGB(value.r, value.g, value.b);
+        return `#${colorScratch.getHexString()}`;
+      }
+      return '#000000';
+    };
+    cachedBiomeSummary = biomeEntries.map((entry) => {
+      const biome = entry?.biome ?? null;
+      const samples = Number.isFinite(entry?.samples) ? entry.samples : 0;
+      const shader = biome?.shader ?? {};
+      return {
+        id: biome?.id ?? null,
+        label: biome?.label ?? null,
+        weight: totalSamples > 0 ? samples / totalSamples : 0,
+        shader: {
+          fogColor: toHex(shader.fogColor),
+          tintColor: toHex(shader.tintColor),
+          tintStrength: Number.isFinite(shader.tintStrength)
+            ? shader.tintStrength
+            : 1,
+        },
+      };
+    });
+    return cloneBiomeSummary(cachedBiomeSummary);
+  };
+
+  const buildScoutPayload = () => {
+    if (!isScoutDetail) {
+      return null;
+    }
+    const resolvedMinHeight = Number.isFinite(scoutMinHeight)
+      ? scoutMinHeight
+      : Number.isFinite(worldOptions?.baseHeight)
+      ? worldOptions.baseHeight
+      : 0;
+    const resolvedMaxHeight = Number.isFinite(scoutMaxHeight)
+      ? scoutMaxHeight
+      : Number.isFinite(worldOptions?.maxHeight)
+      ? worldOptions.maxHeight
+      : resolvedMinHeight;
+    const heights = scoutHeightMap ? scoutHeightMap.slice() : new Int16Array(0);
+    const biomeIds = scoutBiomeIds
+      ? scoutBiomeIds.map((value) =>
+          value === null || value === undefined ? null : String(value),
+        )
+      : [];
+    return {
+      chunkX,
+      chunkZ,
+      detailLevel: DETAIL_LEVEL_SCOUT,
+      heightSummary: {
+        width: chunkSize,
+        depth: chunkSize,
+        minHeight: resolvedMinHeight,
+        maxHeight: resolvedMaxHeight,
+        heights,
+        biomeIds,
+      },
+      biomes: buildBiomeSummary(),
+    };
+  };
+
   const stepState = {
     stage: 'columns',
     processedColumns: 0,
@@ -2327,6 +2456,12 @@ export function createChunkBuildTask({
   };
 
   const exportPayloadSnapshot = () => {
+    if (isScoutDetail) {
+      if (needsWorkerPayload && cachedChunkPayload) {
+        return cachedChunkPayload;
+      }
+      return buildScoutPayload();
+    }
     if (needsWorkerPayload && cachedChunkPayload) {
       return cachedChunkPayload;
     }
@@ -2828,7 +2963,7 @@ export function createChunkBuildTask({
   };
 
   const prepareEngineForPayload = () => {
-    if (payloadPrepared) {
+    if (payloadPrepared || isScoutDetail) {
       return;
     }
     payloadPrepared = true;
@@ -2883,14 +3018,18 @@ export function createChunkBuildTask({
 
       busy = true;
       try {
-        prepareEngineForPayload();
-        cachedChunkPayload = buildChunkPayload({
-          chunkX,
-          chunkZ,
-          engine: createEnginePayload(),
-          worldOptions,
-          includeBlockPlacements: includeBlockPlacementsInPayload,
-        });
+        if (isScoutDetail) {
+          cachedChunkPayload = buildScoutPayload();
+        } else {
+          prepareEngineForPayload();
+          cachedChunkPayload = buildChunkPayload({
+            chunkX,
+            chunkZ,
+            engine: createEnginePayload(),
+            worldOptions,
+            includeBlockPlacements: includeBlockPlacementsInPayload,
+          });
+        }
         stepState.stage = 'readyForFinalize';
         return { done: true, processed: stepProcessed };
       } finally {
@@ -3234,6 +3373,100 @@ export function createChunkBuildTask({
       throw new Error('Chunk payload not available for finalize.');
     }
 
+    if (isScoutDetail) {
+      const scoutPayload = buildScoutPayload() ?? {
+        heightSummary: {
+          width: chunkSize,
+          depth: chunkSize,
+          minHeight: Number.isFinite(worldOptions?.baseHeight)
+            ? worldOptions.baseHeight
+            : 0,
+          maxHeight: Number.isFinite(worldOptions?.maxHeight)
+            ? worldOptions.maxHeight
+            : 0,
+          heights: new Int16Array(0),
+          biomeIds: [],
+        },
+        biomes: buildBiomeSummary(),
+      };
+      const heightSummary = scoutPayload.heightSummary ?? {
+        width: chunkSize,
+        depth: chunkSize,
+        minHeight: Number.isFinite(worldOptions?.baseHeight)
+          ? worldOptions.baseHeight
+          : 0,
+        maxHeight: Number.isFinite(worldOptions?.maxHeight)
+          ? worldOptions.maxHeight
+          : 0,
+        heights: new Int16Array(0),
+        biomeIds: [],
+      };
+      const chunkBiomes = Array.isArray(scoutPayload.biomes)
+        ? scoutPayload.biomes
+        : buildBiomeSummary();
+      const group = new THREE.Group();
+      group.name = `chunk_${chunkX}_${chunkZ}_scout`;
+      group.visible = false;
+      group.userData = group.userData || {};
+      group.userData.biomes = chunkBiomes;
+      group.userData.detailLevel = DETAIL_LEVEL_SCOUT;
+      group.userData.scoutSummary = heightSummary;
+
+      stepState.stage = 'finalized';
+      releaseCachedPayload();
+      const finalCacheStats = getTerrainSampleCacheStats();
+      recordChunkSamplingProfile({
+        chunkX,
+        chunkZ,
+        hitsBefore: initialCacheStats.hits,
+        missesBefore: initialCacheStats.misses,
+        hitsAfter: finalCacheStats.hits,
+        missesAfter: finalCacheStats.misses,
+      });
+
+      const halfSize = chunkSize / 2;
+      const resolvedMinY = Number.isFinite(heightSummary?.minHeight)
+        ? heightSummary.minHeight - 1
+        : -32;
+      const fallbackMaxHeight = Number.isFinite(worldOptions?.maxHeight)
+        ? worldOptions.maxHeight
+        : resolvedMinY + chunkSize;
+      const resolvedMaxY = Number.isFinite(heightSummary?.maxHeight)
+        ? heightSummary.maxHeight + 1
+        : fallbackMaxHeight;
+
+      return {
+        chunkX,
+        chunkZ,
+        group,
+        solidBlockKeys: new Set(),
+        softBlockKeys: new Set(),
+        typeCapacities: new Map(),
+        waterColumns: new Map(),
+        fluidColumnsByType: new Map(),
+        fluidSurfaces: [],
+        blockLookup: new Map(),
+        fluidBlockKeys: new Set(),
+        typeData: new Map(),
+        decorationData: new Map(),
+        decorationGroups: new Map(),
+        decorationOwnerIndex: new Map(),
+        decorationTypeIndex: new Map(),
+        biomes: chunkBiomes,
+        prototypeInstances: new Map(),
+        detailLevel: detailMode,
+        scoutSummary: heightSummary,
+        bounds: {
+          minX: chunkX * chunkSize - halfSize - 0.5,
+          maxX: chunkX * chunkSize + halfSize + 0.5,
+          minY: resolvedMinY,
+          maxY: resolvedMaxY,
+          minZ: chunkZ * chunkSize - halfSize - 0.5,
+          maxZ: chunkZ * chunkSize + halfSize + 0.5,
+        },
+      };
+    }
+
     let group = null;
     let chunkBiomes = [];
 
@@ -3559,59 +3792,7 @@ export function createChunkBuildTask({
         });
       }
 
-      const biomeEntries = Array.from(biomePresence.values());
-      const totalSamples = biomeEntries.reduce((sum, entry) => {
-        const samples = Number.isFinite(entry?.samples) ? entry.samples : 0;
-        return sum + samples;
-      }, 0);
-      const colorScratch = new THREE.Color(0, 0, 0);
-      const toHex = (value) => {
-        if (!value) {
-          return '#000000';
-        }
-        if (typeof value === 'string') {
-          return value;
-        }
-        if (value instanceof THREE.Color) {
-          return `#${value.getHexString()}`;
-        }
-        if (Array.isArray(value)) {
-          const [r = 0, g = 0, b = 0] = value;
-          colorScratch.setRGB(
-            Number.isFinite(r) ? r : 0,
-            Number.isFinite(g) ? g : 0,
-            Number.isFinite(b) ? b : 0,
-          );
-          return `#${colorScratch.getHexString()}`;
-        }
-        if (
-          typeof value === 'object' &&
-          Number.isFinite(value.r) &&
-          Number.isFinite(value.g) &&
-          Number.isFinite(value.b)
-        ) {
-          colorScratch.setRGB(value.r, value.g, value.b);
-          return `#${colorScratch.getHexString()}`;
-        }
-        return '#000000';
-      };
-      chunkBiomes = biomeEntries.map((entry) => {
-        const biome = entry?.biome ?? null;
-        const samples = Number.isFinite(entry?.samples) ? entry.samples : 0;
-        const shader = biome?.shader ?? {};
-        return {
-          id: biome?.id ?? null,
-          label: biome?.label ?? null,
-          weight: totalSamples > 0 ? samples / totalSamples : 0,
-          shader: {
-            fogColor: toHex(shader.fogColor),
-            tintColor: toHex(shader.tintColor),
-            tintStrength: Number.isFinite(shader.tintStrength)
-              ? shader.tintStrength
-              : 1,
-          },
-        };
-      });
+      chunkBiomes = buildBiomeSummary();
     }
 
     group.name = `chunk_${chunkX}_${chunkZ}`;
