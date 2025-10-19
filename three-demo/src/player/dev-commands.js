@@ -65,6 +65,23 @@ export function registerDeveloperCommands({
     lastErrorMessage: null,
   };
 
+  const formatBytes = (value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return '0 B';
+    }
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let adjusted = numeric;
+    let unitIndex = 0;
+    while (adjusted >= 1024 && unitIndex < units.length - 1) {
+      adjusted /= 1024;
+      unitIndex += 1;
+    }
+    const precision =
+      unitIndex === 0 ? 0 : adjusted >= 100 ? 0 : adjusted >= 10 ? 1 : 2;
+    return `${adjusted.toFixed(precision)} ${units[unitIndex]}`;
+  };
+
   const headlessScanner = createHeadlessScanner({ THREE, scene, chunkManager });
   const scanEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   const scanDirection = new THREE.Vector3(0, 0, -1);
@@ -2933,6 +2950,42 @@ export function registerDeveloperCommands({
       await chunkManager.flush({ includeDisposals: false });
     }
   };
+
+  registerCommand({
+    name: 'chunkmem',
+    description: 'Report scout chunk counts and preview buffer memory usage.',
+    usage: '/chunkmem',
+    handler: ({ info, warn, success }) => {
+      if (typeof chunkManager.getStreamingStats !== 'function') {
+        warn('Streaming stats are unavailable in this build.');
+        return;
+      }
+      const stats = chunkManager.getStreamingStats();
+      if (!stats) {
+        warn('Streaming stats could not be retrieved.');
+        return;
+      }
+      const previewMemory = stats.previewMemory ?? {};
+      const trackedPreviews = previewMemory.trackedChunkCount ?? 0;
+      info(
+        `[chunks] Loaded=${stats.loadedChunkCount ?? 0}, scout detail=${
+          stats.scoutChunkCount ?? 0
+        }, tracked previews=${trackedPreviews}.`,
+      );
+      info(
+        `[chunks] Preview memory — vertices=${formatBytes(
+          previewMemory.vertexBytes,
+        )}, colors=${formatBytes(previewMemory.colorBytes)}, indices=${formatBytes(
+          previewMemory.indexBytes,
+        )}, total=${formatBytes(previewMemory.totalBytes)}${
+          trackedPreviews > 0
+            ? ` (~${formatBytes(previewMemory.perChunkAverageBytes)} per preview)`
+            : ''
+        }.`,
+      );
+      success('Chunk streaming stats reported.');
+    },
+  });
 
   registerCommand({
     name: 'persist',
