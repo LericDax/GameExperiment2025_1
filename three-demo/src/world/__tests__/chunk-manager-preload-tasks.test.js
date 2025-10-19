@@ -896,3 +896,66 @@ test('core preload budget is consumed before scout entries', async () => {
     __resetChunkBuildWorkerFactoryForTest();
   }
 });
+
+test('setStreamingBudgets adjusts streaming defaults', async () => {
+  const scene = new THREE.Scene();
+  const materials = createBlockMaterials();
+  const manager = createChunkManager({
+    scene,
+    blockMaterials: materials.registry,
+    viewDistance: 0,
+    retainDistance: 0,
+    maxPreloadPerUpdate: 3,
+    maxDisposalsPerUpdate: 4,
+    maxActivationsPerUpdate: 5,
+  });
+
+  try {
+    const initial = manager.__getStreamingBudgetsForTest();
+    assert.equal(initial.preload, 3);
+    assert.equal(initial.defaultPreloadBurst, 3);
+    assert.equal(initial.activation, 5);
+    assert.equal(initial.defaultActivationBudget, 5);
+    assert.equal(initial.disposal, 4);
+    assert.equal(initial.defaultDisposalBudget, 4);
+
+    manager.setStreamingBudgets({ preload: 6, activation: 7, disposal: 2 });
+    const raised = manager.__getStreamingBudgetsForTest();
+    assert.equal(raised.preload, 6);
+    assert.equal(raised.defaultPreloadBurst, 6);
+    assert.equal(raised.activation, 7);
+    assert.equal(raised.defaultActivationBudget, 7);
+    assert.equal(raised.disposal, 2);
+    assert.equal(raised.defaultDisposalBudget, 2);
+
+    manager.setStreamingBudgets({ preload: 1, activation: 0, disposal: 0 });
+    const lowered = manager.__getStreamingBudgetsForTest();
+    assert.equal(lowered.preload, 1);
+    assert.equal(lowered.defaultPreloadBurst, 1);
+    assert.equal(lowered.activation, 0);
+    assert.equal(lowered.defaultActivationBudget, 0);
+    assert.equal(lowered.disposal, 0);
+    assert.equal(lowered.defaultDisposalBudget, 0);
+
+    manager.setStreamingBudgets({
+      preload: -5,
+      activation: -3,
+      disposal: 'invalid',
+    });
+    const clamped = manager.__getStreamingBudgetsForTest();
+    assert.equal(clamped.preload, 0);
+    assert.equal(clamped.defaultPreloadBurst, 2);
+    assert.equal(clamped.activation, 0);
+    assert.equal(clamped.defaultActivationBudget, 0);
+    assert.equal(clamped.disposal, 0);
+    assert.equal(clamped.defaultDisposalBudget, 0);
+
+    manager.setStreamingBudgets({ preload: Number.POSITIVE_INFINITY });
+    const unlimited = manager.__getStreamingBudgetsForTest();
+    assert.equal(unlimited.preload, Number.POSITIVE_INFINITY);
+    assert.equal(unlimited.defaultPreloadBurst, 2);
+  } finally {
+    await manager.dispose();
+    materials.createdMaterials.forEach((material) => material.dispose?.());
+  }
+});

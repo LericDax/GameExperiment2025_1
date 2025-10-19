@@ -925,9 +925,9 @@ export function createChunkManager({
   blockMaterials,
   viewDistance = 1,
   retainDistance: initialRetainDistance,
-  maxPreloadPerUpdate = 2,
-  maxDisposalsPerUpdate = 1,
-  maxActivationsPerUpdate = 2,
+  maxPreloadPerUpdate: initialMaxPreloadPerUpdate = 2,
+  maxDisposalsPerUpdate: initialMaxDisposalsPerUpdate = 1,
+  maxActivationsPerUpdate: initialMaxActivationsPerUpdate = 2,
   payloadCacheSize = 0,
   // Additional chunk radius allowed beyond the retention distance before
   // disposal kicks in. This gives callers a way to keep edge chunks alive
@@ -953,15 +953,117 @@ export function createChunkManager({
   const eventListeners = new Map();
   const chunkUpgradeStateByKey = new Map();
   const activeChunkUpgradeQueue = [];
-  const defaultDisposalBudget = resolveBudget(maxDisposalsPerUpdate, 1);
-  const defaultActivationBudget = resolveBudget(maxActivationsPerUpdate, 2);
-  const defaultPreloadBurst = (() => {
+  let maxPreloadPerUpdate = 0;
+  let maxDisposalsPerUpdate = 0;
+  let maxActivationsPerUpdate = 0;
+
+  let defaultDisposalBudget = 0;
+  let defaultActivationBudget = 0;
+  let defaultPreloadBurst = 2;
+
+  const normalizeStreamingBudgetInput = (value) => {
+    if (value === Number.POSITIVE_INFINITY) {
+      return { valid: true, value: Number.POSITIVE_INFINITY, clampedToZero: false };
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return { valid: false, value: 0, clampedToZero: false };
+    }
+    const floored = Math.floor(numeric);
+    if (floored < 0) {
+      return { valid: true, value: 0, clampedToZero: true };
+    }
+    return { valid: true, value: floored, clampedToZero: false };
+  };
+
+  const getStreamingBudgetValue = (kind) => {
+    switch (kind) {
+      case 'preload':
+        return maxPreloadPerUpdate;
+      case 'activation':
+        return maxActivationsPerUpdate;
+      case 'disposal':
+      default:
+        return maxDisposalsPerUpdate;
+    }
+  };
+
+  const setStreamingBudgetValue = (kind, value) => {
+    switch (kind) {
+      case 'preload':
+        maxPreloadPerUpdate = value;
+        break;
+      case 'activation':
+        maxActivationsPerUpdate = value;
+        break;
+      case 'disposal':
+      default:
+        maxDisposalsPerUpdate = value;
+        break;
+    }
+  };
+
+  const recomputeStreamingBudgetDefaults = () => {
+    defaultDisposalBudget = resolveBudget(maxDisposalsPerUpdate, 1);
+    defaultActivationBudget = resolveBudget(maxActivationsPerUpdate, 2);
     const numeric = Number(maxPreloadPerUpdate);
     if (!Number.isFinite(numeric) || numeric <= 0) {
-      return 2;
+      defaultPreloadBurst = 2;
+    } else {
+      defaultPreloadBurst = Math.max(1, Math.floor(numeric));
     }
-    return Math.max(1, Math.floor(numeric));
-  })();
+  };
+
+  const applyInitialStreamingBudgets = () => {
+    const initialBudgets = [
+      ['preload', initialMaxPreloadPerUpdate],
+      ['disposal', initialMaxDisposalsPerUpdate],
+      ['activation', initialMaxActivationsPerUpdate],
+    ];
+    for (const [kind, initialValue] of initialBudgets) {
+      const normalized = normalizeStreamingBudgetInput(initialValue);
+      setStreamingBudgetValue(kind, normalized.valid ? normalized.value : 0);
+    }
+    recomputeStreamingBudgetDefaults();
+  };
+
+  const setStreamingBudgets = (budgets = {}) => {
+    if (!budgets || typeof budgets !== 'object') {
+      console.warn('[chunk-manager] Ignoring invalid streaming budget payload', budgets);
+      return;
+    }
+    let changed = false;
+
+    const applyBudgetChange = (kind) => {
+      if (!(kind in budgets)) {
+        return;
+      }
+      const normalized = normalizeStreamingBudgetInput(budgets[kind]);
+      if (!normalized.valid) {
+        console.warn(`[chunk-manager] Ignoring invalid ${kind} budget`, budgets[kind]);
+        return;
+      }
+      if (normalized.clampedToZero) {
+        console.warn(`[chunk-manager] Clamping ${kind} budget to 0`, budgets[kind]);
+      }
+      const currentValue = getStreamingBudgetValue(kind);
+      if (currentValue === normalized.value) {
+        return;
+      }
+      setStreamingBudgetValue(kind, normalized.value);
+      changed = true;
+    };
+
+    applyBudgetChange('preload');
+    applyBudgetChange('activation');
+    applyBudgetChange('disposal');
+
+    if (changed) {
+      recomputeStreamingBudgetDefaults();
+    }
+  };
+
+  applyInitialStreamingBudgets();
   const addEventListener = (type, listener) => {
     if (!type || typeof listener !== 'function') {
       return () => {};
@@ -7673,6 +7775,7 @@ export function createChunkManager({
     update,
     dispose,
     flush,
+    setStreamingBudgets,
     solidBlocks,
     softBlocks,
     waterColumns,
@@ -7692,6 +7795,18 @@ export function createChunkManager({
     getRaycastTargets,
     ...(debugSnapshot ? { debugSnapshot } : {}),
   };
+
+  Object.defineProperty(managerApi, '__getStreamingBudgetsForTest', {
+    value: () => ({
+      preload: maxPreloadPerUpdate,
+      activation: maxActivationsPerUpdate,
+      disposal: maxDisposalsPerUpdate,
+      defaultPreloadBurst,
+      defaultActivationBudget,
+      defaultDisposalBudget,
+    }),
+    enumerable: false,
+  });
 
   Object.defineProperty(managerApi, '__getPendingEntryForTest', {
     value: (key) => {
