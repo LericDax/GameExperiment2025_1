@@ -940,6 +940,122 @@ export function createChunkManager({
   entityCompactionThresholds = undefined,
 }) {
   const loadedChunks = new Map();
+  const scoutPreviewMemoryByChunk = new Map();
+  const scoutPreviewMemoryTotals = {
+    vertexBytes: 0,
+    colorBytes: 0,
+    indexBytes: 0,
+  };
+
+  function subtractScoutPreviewTotals(stats) {
+    if (!stats) {
+      return;
+    }
+    scoutPreviewMemoryTotals.vertexBytes = Math.max(
+      0,
+      scoutPreviewMemoryTotals.vertexBytes - (stats.vertexBytes ?? 0),
+    );
+    scoutPreviewMemoryTotals.colorBytes = Math.max(
+      0,
+      scoutPreviewMemoryTotals.colorBytes - (stats.colorBytes ?? 0),
+    );
+    scoutPreviewMemoryTotals.indexBytes = Math.max(
+      0,
+      scoutPreviewMemoryTotals.indexBytes - (stats.indexBytes ?? 0),
+    );
+  }
+
+  function addScoutPreviewTotals(stats) {
+    if (!stats) {
+      return;
+    }
+    scoutPreviewMemoryTotals.vertexBytes += stats.vertexBytes ?? 0;
+    scoutPreviewMemoryTotals.colorBytes += stats.colorBytes ?? 0;
+    scoutPreviewMemoryTotals.indexBytes += stats.indexBytes ?? 0;
+  }
+
+  function normalizeScoutPreviewStats(stats) {
+    if (!stats || typeof stats !== 'object') {
+      return null;
+    }
+    const normalizeBytes = (value) => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric <= 0) {
+        return 0;
+      }
+      return Math.max(0, Math.floor(numeric));
+    };
+    const normalizeCount = (value) => {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric) || numeric <= 0) {
+        return 0;
+      }
+      return Math.max(0, Math.floor(numeric));
+    };
+    const vertexBytes = normalizeBytes(stats.vertexBytes);
+    const colorBytes = normalizeBytes(stats.colorBytes);
+    const indexBytes = normalizeBytes(stats.indexBytes);
+    const vertexCount = normalizeCount(stats.vertexCount);
+    const indexCount = normalizeCount(stats.indexCount);
+    const totalBytes = vertexBytes + colorBytes + indexBytes;
+    return {
+      vertexBytes,
+      colorBytes,
+      indexBytes,
+      vertexCount,
+      indexCount,
+      totalBytes,
+    };
+  }
+
+  function setScoutPreviewMemoryForChunkKey(key, stats) {
+    if (!key) {
+      return null;
+    }
+    const previous = scoutPreviewMemoryByChunk.get(key) ?? null;
+    if (previous) {
+      subtractScoutPreviewTotals(previous);
+    }
+    if (!stats) {
+      scoutPreviewMemoryByChunk.delete(key);
+      return null;
+    }
+    const normalized = normalizeScoutPreviewStats(stats);
+    if (!normalized) {
+      scoutPreviewMemoryByChunk.delete(key);
+      return null;
+    }
+    scoutPreviewMemoryByChunk.set(key, normalized);
+    addScoutPreviewTotals(normalized);
+    return normalized;
+  }
+
+  function clearScoutPreviewMemoryForChunkKey(key) {
+    if (!key || !scoutPreviewMemoryByChunk.has(key)) {
+      return;
+    }
+    const previous = scoutPreviewMemoryByChunk.get(key);
+    subtractScoutPreviewTotals(previous);
+    scoutPreviewMemoryByChunk.delete(key);
+  }
+
+  function getScoutPreviewMemoryTotals() {
+    const vertexBytes = scoutPreviewMemoryTotals.vertexBytes;
+    const colorBytes = scoutPreviewMemoryTotals.colorBytes;
+    const indexBytes = scoutPreviewMemoryTotals.indexBytes;
+    const chunkCount = scoutPreviewMemoryByChunk.size;
+    const totalBytes = vertexBytes + colorBytes + indexBytes;
+    const perChunkAverageBytes =
+      chunkCount > 0 ? Math.round(totalBytes / chunkCount) : 0;
+    return {
+      vertexBytes,
+      colorBytes,
+      indexBytes,
+      totalBytes,
+      trackedChunkCount: chunkCount,
+      perChunkAverageBytes,
+    };
+  }
   const solidBlocks = new Set();
   const softBlocks = new Set();
   const waterColumns = new Map();
@@ -2888,6 +3004,16 @@ export function createChunkManager({
       }
     }
 
+    const previewStats = {
+      vertexCount,
+      indexCount,
+      vertexBytes: positions?.byteLength ?? positions.length * 4,
+      colorBytes: colors?.byteLength ?? colors.length * 4,
+      indexBytes: indices?.byteLength ?? indices.length * indices.BYTES_PER_ELEMENT,
+    };
+    previewStats.totalBytes =
+      previewStats.vertexBytes + previewStats.colorBytes + previewStats.indexBytes;
+
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute(
       'position',
@@ -2903,6 +3029,7 @@ export function createChunkManager({
     mesh.name = `chunk_${chunkX}_${chunkZ}_scout_preview`;
     mesh.userData = mesh.userData || {};
     mesh.userData.isScoutPreview = true;
+    mesh.userData.scoutPreviewStats = previewStats;
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     mesh.renderOrder = -1;
@@ -2910,6 +3037,7 @@ export function createChunkManager({
     group.add(mesh);
     group.userData = group.userData || {};
     group.userData.scoutPreviewMesh = mesh;
+    group.userData.scoutPreviewStats = previewStats;
 
     return mesh;
   };
@@ -3002,6 +3130,24 @@ export function createChunkManager({
     });
     group.visible = Boolean(previewMesh);
 
+    const hasValidCoordinates =
+      Number.isFinite(chunkX) && Number.isFinite(chunkZ);
+    const previewKey = hasValidCoordinates ? chunkKey(chunkX, chunkZ) : null;
+    let normalizedPreviewStats = null;
+    if (previewKey) {
+      const previewStatsSource = previewMesh?.userData?.scoutPreviewStats ?? null;
+      normalizedPreviewStats = setScoutPreviewMemoryForChunkKey(
+        previewKey,
+        previewStatsSource,
+      );
+      if (normalizedPreviewStats) {
+        group.userData.scoutPreviewStats = normalizedPreviewStats;
+      } else {
+        clearScoutPreviewMemoryForChunkKey(previewKey);
+        delete group.userData.scoutPreviewStats;
+      }
+    }
+
     const halfSize = chunkSize / 2;
     const fallbackMaxHeight = Number.isFinite(worldConfig?.maxHeight)
       ? worldConfig.maxHeight
@@ -3037,6 +3183,9 @@ export function createChunkManager({
       bounds,
       scoutSummary: summary,
       detailLevel: DETAIL_LEVEL_SCOUT,
+      scoutPreviewMemory: normalizedPreviewStats
+        ? { ...normalizedPreviewStats }
+        : null,
     };
   };
 
@@ -3046,6 +3195,10 @@ export function createChunkManager({
     if (!payload) {
       throw new Error('Chunk worker payload unavailable.');
     }
+    const chunkKeyString =
+      Number.isFinite(entry?.chunkX) && Number.isFinite(entry?.chunkZ)
+        ? chunkKey(entry.chunkX, entry.chunkZ)
+        : null;
     const payloadDetailLevel = normalizeDetailLevel(
       payload?.detailLevel ??
         entry?.detailLevel ??
@@ -3054,6 +3207,9 @@ export function createChunkManager({
     );
     if (payloadDetailLevel === DETAIL_LEVEL_SCOUT) {
       return finalizeScoutChunk(entry, payload);
+    }
+    if (chunkKeyString) {
+      clearScoutPreviewMemoryForChunkKey(chunkKeyString);
     }
     const meshResult = finalizeChunkMeshes(payload, blockMaterials, THREE);
     const derivedCollisionKeys = deriveCollisionKeySetsFromMesh({
@@ -3106,6 +3262,7 @@ export function createChunkManager({
       prototypeInstances: meshResult.prototypeInstances,
       bounds: computeChunkBoundsFromPayload(entry, payload),
     };
+    chunk.scoutPreviewMemory = null;
     chunk.detailLevel = payloadDetailLevel;
     if (entry?.metadata) {
       entry.metadata.payload = null;
@@ -3297,6 +3454,10 @@ export function createChunkManager({
     if (!chunk) {
       return;
     }
+    if (Number.isFinite(chunk.chunkX) && Number.isFinite(chunk.chunkZ)) {
+      clearScoutPreviewMemoryForChunkKey(chunkKey(chunk.chunkX, chunk.chunkZ));
+    }
+    chunk.scoutPreviewMemory = null;
     if (chunk.group?.traverse) {
       chunk.group.traverse((child) => {
         if (!child) {
@@ -7075,6 +7236,22 @@ export function createChunkManager({
     return material.visible !== false;
   }
 
+  function getStreamingStats() {
+    const previewTotals = getScoutPreviewMemoryTotals();
+    let scoutChunkCount = 0;
+    loadedChunks.forEach((chunk) => {
+      if (chunk?.detailLevel === DETAIL_LEVEL_SCOUT) {
+        scoutChunkCount += 1;
+      }
+    });
+    return {
+      generatedAt: Date.now(),
+      loadedChunkCount: loadedChunks.size,
+      scoutChunkCount,
+      previewMemory: previewTotals,
+    };
+  }
+
   const debugSnapshot = !isDevBuild
     ? undefined
     : () => {
@@ -7147,6 +7324,7 @@ export function createChunkManager({
               disposalFloor: derivedDisposalFloor,
             },
           },
+          streamingStats: getStreamingStats(),
           chunks,
         };
       };
@@ -7845,6 +8023,7 @@ export function createChunkManager({
     getViewDistance,
     getRetentionDistance,
     getRaycastTargets,
+    getStreamingStats,
     ...(debugSnapshot ? { debugSnapshot } : {}),
   };
 
