@@ -98,6 +98,9 @@ export function createPlayerControls({
   const axisAttempt = new THREE.Vector3();
   const manualPosition = new THREE.Vector3();
   const previousPosition = new THREE.Vector3();
+  const lastUpdatePosition = new THREE.Vector3();
+  const frameDisplacement = new THREE.Vector3();
+  const horizontalHeading = new THREE.Vector3();
   const yawPitchEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
   let jumpRequested = false;
@@ -490,6 +493,7 @@ export function createPlayerControls({
     const selection = selectSpawnPosition();
     controlObject.position.copy(selection.position);
     preloadChunksAround(controlObject.position);
+    lastUpdatePosition.copy(controlObject.position);
 
     if (!attemptCollisionRescue('spawn')) {
       console.error('Unable to resolve spawn collisions. Player may remain stuck.');
@@ -872,6 +876,7 @@ export function createPlayerControls({
 
     if (!collidesAt(controlObject.position)) {
       await refreshChunksAtControlPosition();
+      lastUpdatePosition.copy(controlObject.position);
       return true;
     }
 
@@ -882,6 +887,7 @@ export function createPlayerControls({
     if (resolved) {
       await refreshChunksAtControlPosition();
     }
+    lastUpdatePosition.copy(controlObject.position);
     return resolved;
   }
 
@@ -1310,6 +1316,45 @@ export function createPlayerControls({
     }
 
     updateAttack(delta);
+
+    if (chunkManager) {
+      const deltaSeconds = Number.isFinite(delta) && delta > 0 ? delta : 1 / 60;
+      frameDisplacement.subVectors(position, lastUpdatePosition);
+      horizontalHeading.set(frameDisplacement.x, 0, frameDisplacement.z);
+      const horizontalDistance = horizontalHeading.length();
+      const horizontalSpeed = horizontalDistance / deltaSeconds;
+
+      let headingVectorValid = false;
+      if (horizontalDistance > 1e-3) {
+        horizontalHeading.multiplyScalar(1 / horizontalDistance);
+        headingVectorValid = true;
+      } else {
+        controls.getDirection(cameraForward);
+        cameraForward.y = 0;
+        if (cameraForward.lengthSq() > 0) {
+          cameraForward.normalize();
+          horizontalHeading.copy(cameraForward);
+          headingVectorValid = true;
+        }
+      }
+
+      if (
+        headingVectorValid &&
+        horizontalSpeed > 0.05 &&
+        typeof chunkManager.preloadDirectional === 'function'
+      ) {
+        chunkManager.preloadDirectional(position, {
+          heading: { x: horizontalHeading.x, y: 0, z: horizontalHeading.z },
+          speed: horizontalSpeed,
+        });
+      } else {
+        preloadChunksAround(position);
+      }
+    } else {
+      preloadChunksAround(position);
+    }
+
+    lastUpdatePosition.copy(position);
     pushState();
   }
 

@@ -325,6 +325,28 @@ export const defaultWorldOptions = Object.freeze({
         'hysteresisFrames',
       ]),
     }),
+    preload: Object.freeze({
+      forwardConeAngle: getDescriptorDefault([
+        'chunk',
+        'preload',
+        'forwardConeAngle',
+      ]),
+      baseLeadDistance: getDescriptorDefault([
+        'chunk',
+        'preload',
+        'baseLeadDistance',
+      ]),
+      speedLeadScale: getDescriptorDefault([
+        'chunk',
+        'preload',
+        'speedLeadScale',
+      ]),
+      rearHysteresis: getDescriptorDefault([
+        'chunk',
+        'preload',
+        'rearHysteresis',
+      ]),
+    }),
   }),
   water: Object.freeze({
     level: getDescriptorDefault(['water', 'level']),
@@ -352,6 +374,12 @@ function createMutableWorldOptions() {
       upgrade: {
         hysteresisRadius: defaultWorldOptions.chunk.upgrade.hysteresisRadius,
         hysteresisFrames: defaultWorldOptions.chunk.upgrade.hysteresisFrames,
+      },
+      preload: {
+        forwardConeAngle: defaultWorldOptions.chunk.preload.forwardConeAngle,
+        baseLeadDistance: defaultWorldOptions.chunk.preload.baseLeadDistance,
+        speedLeadScale: defaultWorldOptions.chunk.preload.speedLeadScale,
+        rearHysteresis: defaultWorldOptions.chunk.preload.rearHysteresis,
       },
     },
     water: { level: defaultWorldOptions.water.level },
@@ -1950,6 +1978,15 @@ export function applyWorldOptions(overrides = {}) {
     }
   }
 
+  if (!isObject(worldOptions.chunk.preload)) {
+    worldOptions.chunk.preload = {
+      forwardConeAngle: defaultWorldOptions.chunk.preload.forwardConeAngle,
+      baseLeadDistance: defaultWorldOptions.chunk.preload.baseLeadDistance,
+      speedLeadScale: defaultWorldOptions.chunk.preload.speedLeadScale,
+      rearHysteresis: defaultWorldOptions.chunk.preload.rearHysteresis,
+    }
+  }
+
   const chunkUpgradeOverrides = isObject(chunkOverrides?.upgrade)
     ? chunkOverrides.upgrade
     : null
@@ -1988,6 +2025,60 @@ export function applyWorldOptions(overrides = {}) {
         )
       }
     })
+
+  const chunkPreloadOverrides = isObject(chunkOverrides?.preload)
+    ? chunkOverrides.preload
+    : null
+
+  if (chunkPreloadOverrides) {
+    const forwardCone = normalizeNumber(
+      chunkPreloadOverrides.forwardConeAngle,
+      null,
+    )
+    if (forwardCone !== null) {
+      worldOptions.chunk.preload.forwardConeAngle = normalizeWithDescriptor(
+        forwardCone,
+        worldOptions.chunk.preload.forwardConeAngle,
+        ['chunk', 'preload', 'forwardConeAngle'],
+      )
+    }
+
+    const baseLead = normalizeNumber(
+      chunkPreloadOverrides.baseLeadDistance,
+      null,
+    )
+    if (baseLead !== null) {
+      worldOptions.chunk.preload.baseLeadDistance = normalizeWithDescriptor(
+        baseLead,
+        worldOptions.chunk.preload.baseLeadDistance,
+        ['chunk', 'preload', 'baseLeadDistance'],
+      )
+    }
+
+    const leadScale = normalizeNumber(
+      chunkPreloadOverrides.speedLeadScale,
+      null,
+    )
+    if (leadScale !== null) {
+      worldOptions.chunk.preload.speedLeadScale = normalizeWithDescriptor(
+        leadScale,
+        worldOptions.chunk.preload.speedLeadScale,
+        ['chunk', 'preload', 'speedLeadScale'],
+      )
+    }
+
+    const rearMargin = normalizeNumber(
+      chunkPreloadOverrides.rearHysteresis,
+      null,
+    )
+    if (rearMargin !== null) {
+      worldOptions.chunk.preload.rearHysteresis = normalizeWithDescriptor(
+        rearMargin,
+        worldOptions.chunk.preload.rearHysteresis,
+        ['chunk', 'preload', 'rearHysteresis'],
+      )
+    }
+  }
 
   const environmentOverrides = isObject(overrides.environment)
     ? overrides.environment
