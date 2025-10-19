@@ -49,7 +49,7 @@ function createBlockMaterials() {
   return { registry, createdMaterials };
 }
 
-test('queued chunk disposal flushes when forcing updates', async () => {
+test('queued chunk disposal flushes within the baseline budget', async () => {
   const scene = new THREE.Scene();
   const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
   const manager = createChunkManager({
@@ -91,27 +91,15 @@ test('queued chunk disposal flushes when forcing updates', async () => {
       retainDistance: 0,
       maxPreload: 0,
     });
-
-    assert.ok(
-      scene.getObjectByName('chunk_0_0'),
-      'chunk scheduled for disposal should remain before the queue drains',
-    );
-
-    manager.update(farPosition, {
-      viewDistance: 0,
-      retainDistance: 0,
-      maxPreload: 0,
-      force: true,
-    });
     await manager.flush();
 
     assert.ok(
       !scene.getObjectByName('chunk_0_0'),
-      'forcing an update should flush the disposal queue',
+      'chunk scheduled for disposal should retire within the baseline budget',
     );
     assert.ok(
       scene.getObjectByName(farChunkName),
-      'new center chunk should remain loaded after forced disposal',
+      'new center chunk should remain loaded after disposal runs',
     );
   } finally {
     await manager.dispose();

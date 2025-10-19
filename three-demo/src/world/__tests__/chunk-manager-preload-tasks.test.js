@@ -291,6 +291,7 @@ test('flush resolves pending chunk jobs asynchronously', async () => {
       'expected flush to resolve and finalize the pending neighbor chunk',
     );
   } finally {
+    await manager.flush();
     await manager.dispose();
     createdMaterials.forEach((material) => material.dispose?.());
   }
@@ -911,6 +912,8 @@ test('setStreamingBudgets adjusts streaming defaults', async () => {
   });
 
   try {
+    const { chunkSize } = generationModule.getWorldOptions();
+    const expectedColumnBudget = Math.max(1, chunkSize * chunkSize);
     const initial = manager.__getStreamingBudgetsForTest();
     assert.equal(initial.preload, 3);
     assert.equal(initial.defaultPreloadBurst, 3);
@@ -918,6 +921,10 @@ test('setStreamingBudgets adjusts streaming defaults', async () => {
     assert.equal(initial.defaultActivationBudget, 5);
     assert.equal(initial.disposal, 4);
     assert.equal(initial.defaultDisposalBudget, 4);
+    assert.equal(initial.derivedChunkColumnsPerChunk, expectedColumnBudget);
+    assert.equal(initial.derivedChunkThroughput, 1);
+    assert.equal(initial.derivedActivationFloor, 1);
+    assert.equal(initial.derivedDisposalFloor, 1);
 
     manager.setStreamingBudgets({ preload: 6, activation: 7, disposal: 2 });
     const raised = manager.__getStreamingBudgetsForTest();
@@ -927,15 +934,23 @@ test('setStreamingBudgets adjusts streaming defaults', async () => {
     assert.equal(raised.defaultActivationBudget, 7);
     assert.equal(raised.disposal, 2);
     assert.equal(raised.defaultDisposalBudget, 2);
+    assert.equal(raised.derivedChunkColumnsPerChunk, expectedColumnBudget);
+    assert.equal(raised.derivedChunkThroughput, 1);
+    assert.equal(raised.derivedActivationFloor, 1);
+    assert.equal(raised.derivedDisposalFloor, 1);
 
     manager.setStreamingBudgets({ preload: 1, activation: 0, disposal: 0 });
     const lowered = manager.__getStreamingBudgetsForTest();
     assert.equal(lowered.preload, 1);
     assert.equal(lowered.defaultPreloadBurst, 1);
     assert.equal(lowered.activation, 0);
-    assert.equal(lowered.defaultActivationBudget, 0);
+    assert.equal(lowered.defaultActivationBudget, 1);
     assert.equal(lowered.disposal, 0);
-    assert.equal(lowered.defaultDisposalBudget, 0);
+    assert.equal(lowered.defaultDisposalBudget, 1);
+    assert.equal(lowered.derivedChunkColumnsPerChunk, expectedColumnBudget);
+    assert.equal(lowered.derivedChunkThroughput, 1);
+    assert.equal(lowered.derivedActivationFloor, 1);
+    assert.equal(lowered.derivedDisposalFloor, 1);
 
     manager.setStreamingBudgets({
       preload: -5,
@@ -949,13 +964,161 @@ test('setStreamingBudgets adjusts streaming defaults', async () => {
     assert.equal(clamped.defaultActivationBudget, 0);
     assert.equal(clamped.disposal, 0);
     assert.equal(clamped.defaultDisposalBudget, 0);
+    assert.equal(clamped.derivedChunkColumnsPerChunk, expectedColumnBudget);
+    assert.equal(clamped.derivedChunkThroughput, 0);
+    assert.equal(clamped.derivedActivationFloor, 0);
+    assert.equal(clamped.derivedDisposalFloor, 0);
 
     manager.setStreamingBudgets({ preload: Number.POSITIVE_INFINITY });
     const unlimited = manager.__getStreamingBudgetsForTest();
     assert.equal(unlimited.preload, Number.POSITIVE_INFINITY);
     assert.equal(unlimited.defaultPreloadBurst, 2);
+    assert.equal(unlimited.defaultActivationBudget, Number.POSITIVE_INFINITY);
+    assert.equal(unlimited.defaultDisposalBudget, Number.POSITIVE_INFINITY);
+    assert.equal(unlimited.derivedChunkColumnsPerChunk, expectedColumnBudget);
+    assert.equal(
+      unlimited.derivedChunkThroughput,
+      Number.POSITIVE_INFINITY,
+    );
+    assert.equal(
+      unlimited.derivedActivationFloor,
+      Number.POSITIVE_INFINITY,
+    );
+    assert.equal(
+      unlimited.derivedDisposalFloor,
+      Number.POSITIVE_INFINITY,
+    );
   } finally {
     await manager.dispose();
     materials.createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
+test('preload-driven scaling drains activation and disposal queues', async () => {
+  const scene = new THREE.Scene();
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const manager = createChunkManager({
+    scene,
+    blockMaterials,
+    viewDistance: 0,
+    retainDistance: 0,
+    maxPreloadPerUpdate: 1,
+    maxDisposalsPerUpdate: 0,
+    maxActivationsPerUpdate: 0,
+  });
+
+  try {
+    const worldOptions = generationModule.getWorldOptions();
+    const rawChunkSize = Number(worldOptions.chunkSize);
+    const chunkSize = Number.isFinite(rawChunkSize)
+      ? Math.max(1, Math.floor(rawChunkSize))
+      : 48;
+    const rawMaxHeight = Number(worldOptions.maxHeight);
+    const maxHeight = Number.isFinite(rawMaxHeight) ? rawMaxHeight : chunkSize;
+    const columnsPerChunk = Math.max(1, chunkSize * chunkSize);
+
+    const targetChunksPerFrame = 3;
+    const raisedPreloadBudget = columnsPerChunk * targetChunksPerFrame;
+    manager.setStreamingBudgets({
+      preload: raisedPreloadBudget,
+      activation: 0,
+      disposal: 0,
+    });
+
+    const budgets = manager.__getStreamingBudgetsForTest();
+    assert.equal(budgets.defaultActivationBudget, targetChunksPerFrame);
+    assert.equal(budgets.defaultDisposalBudget, targetChunksPerFrame);
+    assert.equal(budgets.derivedChunkThroughput, targetChunksPerFrame);
+
+    const chunkKeys = [];
+    const createChunkRecord = (chunkX, chunkZ) => {
+      const key = `${chunkX}|${chunkZ}`;
+      const halfSize = chunkSize / 2;
+      const group = new THREE.Group();
+      group.name = `chunk_${chunkX}_${chunkZ}`;
+      const chunk = {
+        chunkX,
+        chunkZ,
+        detailLevel: 'core',
+        desiredDetailLevel: 'core',
+        group,
+        bounds: {
+          minX: chunkX * chunkSize - halfSize - 0.5,
+          maxX: chunkX * chunkSize + halfSize + 0.5,
+          minZ: chunkZ * chunkSize - halfSize - 0.5,
+          maxZ: chunkZ * chunkSize + halfSize + 0.5,
+          minY: -32,
+          maxY: maxHeight + 32,
+        },
+        fluidSurfaces: [],
+        solidBlockKeys: new Set(),
+        softBlockKeys: new Set(),
+        waterColumns: new Map(),
+        waterColumnKeys: new Set(),
+        fluidBlockKeys: new Set(),
+        fluidColumnsByType: new Map(),
+        decorationGroups: new Map(),
+        decorationOwnerIndex: new Map(),
+        decorationTypeIndex: new Map(),
+        prototypeInstances: new Map(),
+        blockLookup: new Map(),
+      };
+      const entry = {
+        key,
+        chunkX,
+        chunkZ,
+        detailLevel: 'core',
+        desiredDetailLevel: 'core',
+        resolve: () => {},
+        reject: () => {},
+      };
+      return { key, chunk, entry, pendingUpgrade: null };
+    };
+
+    for (let i = 0; i < targetChunksPerFrame; i += 1) {
+      const record = createChunkRecord(i, 0);
+      chunkKeys.push(record.key);
+      manager.__enqueuePendingActivationForTest(record);
+    }
+
+    assert.equal(
+      manager.__getPendingActivationKeysForTest().length,
+      targetChunksPerFrame,
+    );
+
+    const processed = manager.__processPendingActivationsForTest();
+    assert.equal(
+      processed,
+      targetChunksPerFrame,
+      'baseline activation budget should drain the queue',
+    );
+
+    assert.equal(manager.__getPendingActivationKeysForTest().length, 0);
+    chunkKeys.forEach((key) => {
+      assert.ok(
+        manager.__getLoadedChunkForTest(key),
+        `chunk ${key} should activate within a single update`,
+      );
+    });
+
+    const origin = new THREE.Vector3(0, 0, 0);
+    const far = new THREE.Vector3(chunkSize * 16, 0, chunkSize * 16);
+    manager.update(far, {
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreload: 0,
+    });
+    await manager.flush();
+
+    chunkKeys.forEach((key) => {
+      assert.equal(
+        manager.__getLoadedChunkForTest(key),
+        null,
+        `chunk ${key} should dispose within the same frame`,
+      );
+    });
+  } finally {
+    await manager.dispose();
+    createdMaterials.forEach((material) => material.dispose?.());
   }
 });
