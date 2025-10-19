@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { encodeJournalOps, JournalOpId } from '../journal.ts';
+import { encodeJournalOps, JournalOpId, type JournalOp } from '../journal.ts';
 import {
   ChunkSnapshotState,
   DEFAULT_COMPACTION_THRESHOLDS,
@@ -10,6 +10,7 @@ import {
   mergeSnapshotWithJournals,
   shouldCompactJournal,
 } from '../snapshot.ts';
+import { createSyntheticWorldFixture } from './synthetic-world.fixture.ts';
 
 const index3d = (x: number, y: number, z: number, sizeX: number, sizeY: number): number =>
   x + sizeX * (y + sizeY * z);
@@ -77,7 +78,7 @@ test('mergeSnapshotWithJournals applies journal operations to base state', () =>
 
   const basePayload = encodeSnapshotPayload(baseState);
 
-  const journalOps = [
+  const journalOps: JournalOp[] = [
     { id: JournalOpId.SET_BLOCKS_RLE, startIndex: 0, spans: [{ value: 7, length: 2 }] },
     {
       id: JournalOpId.VOXEL_RECT,
@@ -96,7 +97,7 @@ test('mergeSnapshotWithJournals applies journal operations to base state', () =>
       },
     },
     { id: JournalOpId.REMOVE_ENTITY, entityId: 'one' },
-  ] as const;
+  ];
 
   const journalPayload = encodeJournalOps(journalOps);
   const result = mergeSnapshotWithJournals(basePayload, [journalPayload]);
@@ -138,4 +139,39 @@ test('shouldCompactJournal respects thresholds', () => {
   assert.strictEqual(shouldCompactJournal({ entries: 100, bytes: 32 }, customThresholds), false);
   assert.strictEqual(shouldCompactJournal({ entries: 6000, bytes: 32 }, customThresholds), true);
   assert.strictEqual(shouldCompactJournal({ entries: 10, bytes: 128 }, customThresholds), true);
+});
+
+test('synthetic snapshot states survive encode/decode cycles', () => {
+  const fixture = createSyntheticWorldFixture();
+  for (const chunk of fixture.chunks) {
+    const encoded = encodeSnapshotPayload(chunk.expectedState);
+    const decoded = decodeSnapshotPayload(encoded);
+
+    assert.deepStrictEqual(Array.from(decoded.blocks), Array.from(chunk.expectedState.blocks));
+    assert.deepStrictEqual(decoded.metadata, chunk.expectedState.metadata);
+    assert.deepStrictEqual(
+      Array.from(decoded.entities.entries()),
+      Array.from(chunk.expectedState.entities.entries()),
+    );
+
+    const reEncoded = encodeSnapshotPayload(decoded);
+    assert.deepStrictEqual(Array.from(reEncoded), Array.from(encoded));
+  }
+});
+
+test('synthetic journal stats trigger compaction thresholds predictably', () => {
+  const fixture = createSyntheticWorldFixture({ radius: 1, layers: 1 });
+  for (const chunk of fixture.chunks) {
+    const entries = chunk.journalOps.reduce((total, ops) => total + ops.length, 0);
+    const bytes = chunk.journalPayloads.reduce((total, payload) => total + payload.byteLength, 0);
+
+    assert.strictEqual(
+      shouldCompactJournal({ entries, bytes }, { maxOps: entries - 1, maxBytes: bytes + 1 }),
+      true,
+    );
+    assert.strictEqual(
+      shouldCompactJournal({ entries, bytes }, { maxOps: entries + 5, maxBytes: bytes + 1024 }),
+      false,
+    );
+  }
 });

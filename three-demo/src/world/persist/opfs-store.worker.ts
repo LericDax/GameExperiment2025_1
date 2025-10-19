@@ -119,6 +119,24 @@ interface RegionMetadata {
   chunks: Record<string, RegionChunkMetadata>;
 }
 
+function nowMs(): number {
+  const perf = (globalThis as { performance?: { now(): number } }).performance;
+  if (perf && typeof perf.now === 'function') {
+    return perf.now();
+  }
+  return Date.now();
+}
+
+function formatDuration(ms: number): string {
+  return ms.toFixed(2);
+}
+
+function persistDebug(message: string, ...args: unknown[]): void {
+  if (typeof console !== 'undefined' && typeof console.debug === 'function') {
+    console.debug(message, ...args);
+  }
+}
+
 interface RegionContext {
   key: string;
   dir: FileSystemDirectoryHandle;
@@ -269,6 +287,10 @@ async function handleInit(params: InitParams): Promise<null> {
 }
 
 async function handleLoadSnapshot(key: ChunkKey): Promise<Uint8Array | null> {
+  const chunkId = createChunkId(key);
+  const start = nowMs();
+  let outcome: 'hit' | 'miss' | 'error' = 'miss';
+  let bytes = 0;
   const region = await getRegionForKey(key);
   const filename = createChunkFilename(key);
 
@@ -276,16 +298,30 @@ async function handleLoadSnapshot(key: ChunkKey): Promise<Uint8Array | null> {
     const fileHandle = await region.snapshotsDir.getFileHandle(filename);
     const file = await fileHandle.getFile();
     const buffer = new Uint8Array(await file.arrayBuffer());
+    bytes = buffer.byteLength;
+    outcome = 'hit';
     return decodeSnapshot(buffer);
   } catch (error) {
     if (isNotFoundError(error)) {
+      outcome = 'miss';
       return null;
     }
+    outcome = 'error';
     throw error;
+  } finally {
+    const duration = nowMs() - start;
+    persistDebug(
+      `[opfs] loadSnapshot ${chunkId} outcome=${outcome} bytes=${bytes} duration=${formatDuration(duration)}ms`,
+    );
   }
 }
 
 async function handleLoadJournal(key: ChunkKey): Promise<Uint8Array[]> {
+  const chunkId = createChunkId(key);
+  const start = nowMs();
+  let outcome: 'hit' | 'miss' | 'error' = 'miss';
+  let bytes = 0;
+  let entries = 0;
   const region = await getRegionForKey(key);
   const filename = createChunkFilename(key);
 
@@ -293,12 +329,23 @@ async function handleLoadJournal(key: ChunkKey): Promise<Uint8Array[]> {
     const fileHandle = await region.journalsDir.getFileHandle(filename);
     const file = await fileHandle.getFile();
     const buffer = new Uint8Array(await file.arrayBuffer());
-    return decodeJournal(buffer);
+    const payloads = decodeJournal(buffer);
+    bytes = buffer.byteLength;
+    entries = payloads.length;
+    outcome = 'hit';
+    return payloads;
   } catch (error) {
     if (isNotFoundError(error)) {
+      outcome = 'miss';
       return [];
     }
+    outcome = 'error';
     throw error;
+  } finally {
+    const duration = nowMs() - start;
+    persistDebug(
+      `[opfs] loadJournal ${chunkId} outcome=${outcome} entries=${entries} bytes=${bytes} duration=${formatDuration(duration)}ms`,
+    );
   }
 }
 
@@ -583,6 +630,9 @@ async function appendJournal(
   payload: Uint8Array,
   tick: number,
 ): Promise<number> {
+  const start = nowMs();
+  let outcome: 'appended' | 'error' = 'appended';
+  let totalBytes = 0;
   const filename = `${chunkId}.bin`;
   const tempData = encodeJournalEntry(payload, tick);
   const handle = await region.journalsDir.getFileHandle(filename, { create: true });
@@ -597,6 +647,7 @@ async function appendJournal(
     }
   } catch (error) {
     if (!isNotFoundError(error)) {
+      outcome = 'error';
       throw error;
     }
   }
@@ -604,8 +655,19 @@ async function appendJournal(
   const combined = new Uint8Array(existing.byteLength + tempData.byteLength);
   combined.set(existing, 0);
   combined.set(tempData, existing.byteLength);
-  await writeFileAtomic(region.journalsDir, filename, combined);
-  return combined.byteLength;
+  try {
+    await writeFileAtomic(region.journalsDir, filename, combined);
+    totalBytes = combined.byteLength;
+    return totalBytes;
+  } catch (error) {
+    outcome = 'error';
+    throw error;
+  } finally {
+    const duration = nowMs() - start;
+    persistDebug(
+      `[opfs] appendJournal ${chunkId} outcome=${outcome} appended=${payload.byteLength}B total=${totalBytes}B duration=${formatDuration(duration)}ms tick=${Number.isFinite(tick) ? tick : 'n/a'}`,
+    );
+  }
 }
 
 async function writeFileAtomic(

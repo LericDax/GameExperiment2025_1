@@ -6,14 +6,16 @@ import {
   decodeJournalOps,
   encodeJournalOps,
   JournalOpId,
+  type JournalOp,
   ChunkJournalGrid,
 } from '../journal.ts';
+import { createSyntheticWorldFixture } from './synthetic-world.fixture.ts';
 
 const index3d = (x: number, y: number, z: number, sizeX: number, sizeY: number): number =>
   x + sizeX * (y + sizeY * z);
 
 test('journal operations encode and decode symmetrically', () => {
-  const ops = [
+  const ops: JournalOp[] = [
     {
       id: JournalOpId.SET_BLOCKS_RLE,
       startIndex: 2,
@@ -45,7 +47,7 @@ test('journal operations encode and decode symmetrically', () => {
       },
     },
     { id: JournalOpId.REMOVE_ENTITY, entityId: 'entity-1' },
-  ] as const;
+  ];
 
   const encoded = encodeJournalOps(ops);
   const decoded = decodeJournalOps(encoded);
@@ -70,7 +72,7 @@ test('applyJournalToGrid mutates voxel, metadata, and entity state immutably', (
     entities: originalEntities,
   };
 
-  const ops = [
+  const ops: JournalOp[] = [
     { id: JournalOpId.SET_BLOCKS_RLE, startIndex: 0, spans: [{ value: 1, length: 8 }] },
     { id: JournalOpId.SET_META, key: 'foo', value: 123 },
     { id: JournalOpId.SET_META, key: 'bar', value: { enabled: true } },
@@ -106,7 +108,7 @@ test('applyJournalToGrid mutates voxel, metadata, and entity state immutably', (
         state: null,
       },
     },
-  ] as const;
+  ];
 
   const result = applyJournalToGrid(grid, ops);
 
@@ -139,4 +141,24 @@ test('applyJournalToGrid mutates voxel, metadata, and entity state immutably', (
     position: { x: 0, y: 0, z: 0 },
     state: null,
   });
+});
+
+test('synthetic world journal batches replay deterministically', () => {
+  const fixture = createSyntheticWorldFixture();
+  for (const chunk of fixture.chunks) {
+    chunk.journalPayloads.forEach((payload, index) => {
+      const decoded = decodeJournalOps(payload);
+      assert.deepStrictEqual(decoded, chunk.journalOps[index]);
+    });
+
+    const flattened = chunk.journalOps.flat();
+    const replayed = applyJournalToGrid(chunk.baseState, flattened);
+
+    assert.deepStrictEqual(Array.from(replayed.blocks), Array.from(chunk.expectedState.blocks));
+    assert.deepStrictEqual(replayed.metadata, chunk.expectedState.metadata);
+    assert.deepStrictEqual(
+      Array.from(replayed.entities.entries()),
+      Array.from(chunk.expectedState.entities.entries()),
+    );
+  }
 });
