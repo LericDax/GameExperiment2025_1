@@ -836,6 +836,8 @@ export function createChunkManager({
   let entityCompactionTimer = null;
   let entityCompactionRunning = false;
   let nextJournalTick = Math.max(1, Math.floor(Date.now()));
+  const AUTOSAVE_INTERVAL_MS = 750;
+  const COMPACTION_INTERVAL_MS = 2000;
   const entityAutosaveIntervalCandidate = Number(entityAutosaveIntervalMs);
   const entityAutosaveInterval = Math.max(
     16,
@@ -949,9 +951,6 @@ export function createChunkManager({
   const clearPayloadCacheEntries = () => {
     payloadCache.clear();
   };
-
-  const AUTOSAVE_INTERVAL_MS = 750;
-  const COMPACTION_INTERVAL_MS = 2000;
 
   function ensureJournalQueue(key) {
     if (!key) {
