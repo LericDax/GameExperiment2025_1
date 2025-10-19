@@ -197,6 +197,195 @@ function resolveChunkKeyFromTransform(transform) {
   };
 }
 
+function createPreloadBucketQueue({ detailLevels, normalizeDetailLevel }) {
+  const detailOrder = Array.isArray(detailLevels)
+    ? [...detailLevels]
+    : [];
+  const fallbackDetail = detailOrder[detailOrder.length - 1] ?? 'core';
+  const buckets = new Map(detailOrder.map((level) => [level, []]));
+  let entryDetails = new WeakMap();
+
+  const resolveBucketKey = (entry) => {
+    if (!entry) {
+      return fallbackDetail;
+    }
+    const requestedDetail =
+      entry.desiredDetailLevel ?? entry.detailLevel ?? fallbackDetail;
+    return normalizeDetailLevel(requestedDetail ?? fallbackDetail);
+  };
+
+  const getBucket = (level) => {
+    const normalized = normalizeDetailLevel(level ?? fallbackDetail);
+    return buckets.get(normalized) ?? buckets.get(fallbackDetail);
+  };
+
+  const removeFromBucket = (entry, level) => {
+    if (!entry) {
+      return false;
+    }
+    const bucket = getBucket(level);
+    if (!bucket) {
+      return false;
+    }
+    const index = bucket.indexOf(entry);
+    if (index === -1) {
+      return false;
+    }
+    bucket.splice(index, 1);
+    return true;
+  };
+
+  const totalLength = () => {
+    let total = 0;
+    detailOrder.forEach((level) => {
+      total += getBucket(level)?.length ?? 0;
+    });
+    return total;
+  };
+
+  const indexOfEntry = (entry) => {
+    if (!entry) {
+      return -1;
+    }
+    const currentDetail = entryDetails.get(entry) ?? null;
+    if (currentDetail) {
+      const bucket = getBucket(currentDetail);
+      const bucketIndex = bucket.indexOf(entry);
+      if (bucketIndex !== -1) {
+        let offset = 0;
+        for (const level of detailOrder) {
+          if (level === currentDetail) {
+            return offset + bucketIndex;
+          }
+          offset += getBucket(level)?.length ?? 0;
+        }
+        return bucketIndex;
+      }
+    }
+    let offset = 0;
+    for (const level of detailOrder) {
+      const bucket = getBucket(level);
+      const bucketIndex = bucket.indexOf(entry);
+      if (bucketIndex !== -1) {
+        entryDetails.set(entry, level);
+        return offset + bucketIndex;
+      }
+      offset += bucket.length;
+    }
+    return -1;
+  };
+
+  const getByIndex = (index) => {
+    if (index < 0) {
+      return undefined;
+    }
+    let offset = index;
+    for (const level of detailOrder) {
+      const bucket = getBucket(level);
+      if (offset < bucket.length) {
+        return bucket[offset];
+      }
+      offset -= bucket.length;
+    }
+    return undefined;
+  };
+
+  return {
+    push(entry) {
+      if (!entry) {
+        return;
+      }
+      const bucketKey = resolveBucketKey(entry);
+      getBucket(bucketKey).push(entry);
+      entryDetails.set(entry, bucketKey);
+    },
+    update(entry) {
+      if (!entry || !entryDetails.has(entry)) {
+        return;
+      }
+      const nextDetail = resolveBucketKey(entry);
+      const currentDetail = entryDetails.get(entry);
+      if (currentDetail === nextDetail) {
+        return;
+      }
+      const removed = removeFromBucket(entry, currentDetail);
+      if (!removed) {
+        return;
+      }
+      getBucket(nextDetail).push(entry);
+      entryDetails.set(entry, nextDetail);
+    },
+    remove(entry) {
+      if (!entry) {
+        return false;
+      }
+      const currentDetail = entryDetails.get(entry);
+      if (currentDetail && removeFromBucket(entry, currentDetail)) {
+        entryDetails.delete(entry);
+        return true;
+      }
+      let removed = false;
+      for (const level of detailOrder) {
+        if (removeFromBucket(entry, level)) {
+          removed = true;
+          break;
+        }
+      }
+      if (removed) {
+        entryDetails.delete(entry);
+      }
+      return removed;
+    },
+    get(index) {
+      return getByIndex(index);
+    },
+    indexOf(entry) {
+      return indexOfEntry(entry);
+    },
+    sort(compareFn) {
+      detailOrder.forEach((level) => {
+        getBucket(level).sort(compareFn);
+      });
+    },
+    clear() {
+      detailOrder.forEach((level) => {
+        const bucket = getBucket(level);
+        bucket.length = 0;
+      });
+      entryDetails = new WeakMap();
+    },
+    isEmpty() {
+      return totalLength() === 0;
+    },
+    forEach(callback) {
+      detailOrder.forEach((level) => {
+        const bucket = getBucket(level);
+        bucket.forEach((entry, index) => {
+          callback(entry, level, index);
+        });
+      });
+    },
+    forEachReverse(callback) {
+      for (let levelIndex = detailOrder.length - 1; levelIndex >= 0; levelIndex -= 1) {
+        const level = detailOrder[levelIndex];
+        const bucket = getBucket(level);
+        for (let i = bucket.length - 1; i >= 0; i -= 1) {
+          callback(bucket[i], level, i);
+        }
+      }
+    },
+    getBucketEntries(level) {
+      return getBucket(level);
+    },
+    getBucketSize(level) {
+      return getBucket(level)?.length ?? 0;
+    },
+    get length() {
+      return totalLength();
+    },
+  };
+}
+
 const sharedArrayBufferCtor =
   typeof SharedArrayBuffer !== 'undefined' ? SharedArrayBuffer : null;
 
@@ -847,7 +1036,6 @@ export function createChunkManager({
   let lastFiniteRetentionRadius = Number.isFinite(retentionDistance)
     ? retentionDistance
     : Math.max(lastFiniteViewDistance, 1);
-  const preloadQueue = [];
   const pendingPreloadEntries = new Map();
   const pendingActivations = [];
   const pendingActivationByKey = new Map();
@@ -925,6 +1113,8 @@ export function createChunkManager({
   const chunkBuildWorker = ensureChunkBuildWorkerInstance();
   const workerEnabled = Boolean(chunkBuildWorker);
   const workerDisposables = [];
+  let workerInflightCount = 0;
+  const workerUtilizationSamples = { idle: 0, busy: 0 };
   const retentionDisposalMargin = normalizeDistance(disposalMargin, 0);
   const chunkUnitScale = (() => {
     const chunkSizeValue = Number.isFinite(worldConfig?.chunkSize)
@@ -986,6 +1176,31 @@ export function createChunkManager({
   };
   const detailLevelRank = (value) =>
     DETAIL_LEVELS.indexOf(normalizeDetailLevel(value));
+  const preloadQueue = createPreloadBucketQueue({
+    detailLevels: DETAIL_LEVELS,
+    normalizeDetailLevel,
+  });
+  const preloadDebugState = {
+    queueSizes: {
+      [DETAIL_LEVEL_SCOUT]: 0,
+      [DETAIL_LEVEL_RETENTION]: 0,
+      [DETAIL_LEVEL_CORE]: 0,
+    },
+    lastBaseBudget: 0,
+    lastBaseBudgetSpent: 0,
+    lastScoutTopUp: 0,
+    lastScoutTopUpSpent: 0,
+    lastScoutTopUpRemaining: 0,
+    lastProcessedCounts: {
+      [DETAIL_LEVEL_SCOUT]: 0,
+      [DETAIL_LEVEL_RETENTION]: 0,
+      [DETAIL_LEVEL_CORE]: 0,
+    },
+    workerEnabled,
+    workerInflight: 0,
+    workerIdleSamples: 0,
+    workerBusySamples: 0,
+  };
   const resolveDetailLevelForDistance = (
     maxDistance,
     finiteViewRadius,
@@ -1915,6 +2130,7 @@ export function createChunkManager({
       payload: null,
       startPayload: null,
       startPersistence: null,
+      workerStepActive: false,
     };
     if (metadata.mode === 'worker') {
       metadata.startPersistence = { state: 'pending', result: null, transferables: [] };
@@ -1948,6 +2164,10 @@ export function createChunkManager({
     metadata.controller = null;
     metadata.started = false;
     metadata.inflight = false;
+    if (metadata.workerStepActive) {
+      metadata.workerStepActive = false;
+      workerInflightCount = Math.max(0, workerInflightCount - 1);
+    }
     metadata.payload = null;
     metadata.buffers = [];
     metadata.startPersistence = null;
@@ -2594,6 +2814,10 @@ export function createChunkManager({
         return;
       }
       metadata.inflight = false;
+      if (metadata.workerStepActive) {
+        metadata.workerStepActive = false;
+        workerInflightCount = Math.max(0, workerInflightCount - 1);
+      }
       const processed = Math.max(0, Number(data.processed) || 0);
       const done = data.done === true;
 
@@ -3339,6 +3563,7 @@ export function createChunkManager({
       record.chunk = upgradedChunk;
       entry.detailLevel = normalizedTarget;
       entry.desiredDetailLevel = normalizedTarget;
+      preloadQueue.update(entry);
       entry.workerPayload = null;
       entry.metadata = null;
       entry.task = null;
@@ -3418,10 +3643,7 @@ export function createChunkManager({
     entry.pendingBudget = 0;
     entry.unlimited = false;
     entry.active = false;
-    const queueIndex = preloadQueue.indexOf(entry);
-    if (queueIndex >= 0) {
-      preloadQueue.splice(queueIndex, 1);
-    }
+    preloadQueue.remove(entry);
     pendingPreloadEntries.delete(entry.key);
     try {
       let payloadForCache = null;
@@ -3511,13 +3733,14 @@ export function createChunkManager({
       }
       entry.metadata.inflight = false;
       entry.metadata.payload = null;
+      if (entry.metadata.workerStepActive) {
+        entry.metadata.workerStepActive = false;
+        workerInflightCount = Math.max(0, workerInflightCount - 1);
+      }
     }
     entry.workerPayload = null;
     entry.pendingChunk = null;
-    const queueIndex = preloadQueue.indexOf(entry);
-    if (queueIndex >= 0) {
-      preloadQueue.splice(queueIndex, 1);
-    }
+    preloadQueue.remove(entry);
     for (let i = chunkJobQueue.length - 1; i >= 0; i -= 1) {
       if (chunkJobQueue[i] === entry) {
         chunkJobQueue.splice(i, 1);
@@ -3626,8 +3849,19 @@ export function createChunkManager({
             if (metadata.mode === 'worker') {
               try {
                 metadata.inflight = true;
+                if (!metadata.workerStepActive) {
+                  metadata.workerStepActive = true;
+                  workerInflightCount += 1;
+                }
                 controller.step(stepBudget);
               } catch (error) {
+                if (metadata.workerStepActive) {
+                  metadata.workerStepActive = false;
+                  workerInflightCount = Math.max(
+                    0,
+                    workerInflightCount - 1,
+                  );
+                }
                 metadata.inflight = false;
                 console.warn(
                   `[chunk-manager] Failed to step worker job ${entry.key}`,
@@ -4869,6 +5103,7 @@ export function createChunkManager({
       detailLevelRank(entry.desiredDetailLevel) < detailLevelRank(DETAIL_LEVEL_CORE)
     ) {
       entry.desiredDetailLevel = DETAIL_LEVEL_CORE;
+      preloadQueue.update(entry);
     }
 
     if (!entry) {
@@ -5216,6 +5451,7 @@ export function createChunkManager({
           detailLevelRank(requestedDetailLevel)
         ) {
           pendingEntry.desiredDetailLevel = requestedDetailLevel;
+          preloadQueue.update(pendingEntry);
           if (pendingActivationRecord.chunk) {
             pendingActivationRecord.chunk.desiredDetailLevel =
               requestedDetailLevel;
@@ -5262,6 +5498,7 @@ export function createChunkManager({
       ) {
         existing.desiredDetailLevel = requestedDetailLevel;
         changed = true;
+        preloadQueue.update(existing);
       }
       if (changed) {
         queueDirty = true;
@@ -5371,12 +5608,12 @@ export function createChunkManager({
     maxDistance,
     directionalContext = null,
   ) {
-    if (preloadQueue.length === 0) {
+    if (preloadQueue.isEmpty()) {
       return;
     }
     let removedAny = false;
     for (let i = preloadQueue.length - 1; i >= 0; i -= 1) {
-      const entry = preloadQueue[i];
+      const entry = preloadQueue.get(i);
       if (!entry) {
         continue;
       }
@@ -5522,7 +5759,31 @@ export function createChunkManager({
   }
 
   function processPreloadQueue(limit) {
-    if (preloadQueue.length === 0) {
+    if (preloadQueue.isEmpty()) {
+      if (workerEnabled) {
+        if (workerInflightCount > 0) {
+          workerUtilizationSamples.busy += 1;
+        } else {
+          workerUtilizationSamples.idle += 1;
+        }
+      }
+      preloadDebugState.queueSizes[DETAIL_LEVEL_SCOUT] =
+        preloadQueue.getBucketSize(DETAIL_LEVEL_SCOUT);
+      preloadDebugState.queueSizes[DETAIL_LEVEL_RETENTION] =
+        preloadQueue.getBucketSize(DETAIL_LEVEL_RETENTION);
+      preloadDebugState.queueSizes[DETAIL_LEVEL_CORE] =
+        preloadQueue.getBucketSize(DETAIL_LEVEL_CORE);
+      preloadDebugState.lastBaseBudget = 0;
+      preloadDebugState.lastBaseBudgetSpent = 0;
+      preloadDebugState.lastScoutTopUp = 0;
+      preloadDebugState.lastScoutTopUpSpent = 0;
+      preloadDebugState.lastScoutTopUpRemaining = 0;
+      preloadDebugState.lastProcessedCounts[DETAIL_LEVEL_SCOUT] = 0;
+      preloadDebugState.lastProcessedCounts[DETAIL_LEVEL_RETENTION] = 0;
+      preloadDebugState.lastProcessedCounts[DETAIL_LEVEL_CORE] = 0;
+      preloadDebugState.workerInflight = workerInflightCount;
+      preloadDebugState.workerIdleSamples = workerUtilizationSamples.idle;
+      preloadDebugState.workerBusySamples = workerUtilizationSamples.busy;
       return 0;
     }
 
@@ -5548,70 +5809,169 @@ export function createChunkManager({
       queueDirty = false;
     }
 
+    if (workerEnabled) {
+      if (workerInflightCount > 0) {
+        workerUtilizationSamples.busy += 1;
+      } else {
+        workerUtilizationSamples.idle += 1;
+      }
+    }
+
     const unlimitedPromises = [];
-    let index = 0;
-    while (index < preloadQueue.length) {
-      const entry = preloadQueue[index];
-      if (!entry) {
-        index += 1;
-        continue;
-      }
-      if (entry.finalized || entry.cancelled || loadedChunks.has(entry.key)) {
-        cancelPendingEntry(entry);
-        continue;
-      }
-      if (entry.unlimited) {
-        index += 1;
-        continue;
-      }
+    let globalIndex = 0;
+    let baseBudgetSpent = 0;
+    let scoutBudgetSpent = 0;
+    const processedCounts = {
+      [DETAIL_LEVEL_SCOUT]: 0,
+      [DETAIL_LEVEL_RETENTION]: 0,
+      [DETAIL_LEVEL_CORE]: 0,
+    };
 
-      if (unlimited) {
-        const promise = startChunkJob(entry, { unlimited: true });
-        if (promise) {
-          unlimitedPromises.push(promise);
-        }
-        index += 1;
-        continue;
+    const normalizedTopUp = Number(maxPreloadPerUpdate);
+    let scoutReserve = 0;
+    if (workerEnabled && workerInflightCount === 0) {
+      if (normalizedTopUp === Number.POSITIVE_INFINITY) {
+        scoutReserve = Math.max(defaultPreloadBurst, 0);
+      } else if (Number.isFinite(normalizedTopUp)) {
+        scoutReserve = Math.max(0, Math.floor(normalizedTopUp));
       }
-
-      if (remainingBudget <= 0) {
-        break;
-      }
-
-      if (entry.urgent) {
-        const burst = Math.max(defaultPreloadBurst, remainingBudget);
-        const stepBudget = Math.max(1, burst);
-        startChunkJob(entry, { budget: stepBudget });
-        remainingBudget = Math.max(0, remainingBudget - stepBudget);
-        if (remainingBudget <= 0) {
-          break;
-        }
-        index += 1;
-        continue;
-      }
-
-      const remainingEntries = preloadQueue.length - index;
-      let stepBudget = Math.max(
-        1,
-        Math.floor(remainingBudget / Math.max(1, remainingEntries)) || 1,
-      );
-      stepBudget = Math.min(stepBudget, remainingBudget);
-
-      startChunkJob(entry, { budget: stepBudget });
-      remainingBudget = Math.max(0, remainingBudget - stepBudget);
-
-      if (remainingBudget <= 0) {
-        break;
-      }
-
-      index += 1;
     }
 
-    if (unlimitedPromises.length > 0) {
-      return Promise.all(unlimitedPromises);
+    const baseBudgetInitial = unlimited
+      ? Number.POSITIVE_INFINITY
+      : remainingBudget;
+    const scoutReserveInitial = scoutReserve;
+
+    const allocateBudget = (requested, isScout) => {
+      const desired = Math.max(0, Math.floor(Number(requested) || 0));
+      if (desired <= 0) {
+        return 0;
+      }
+      let granted = 0;
+      if (isScout && scoutReserve > 0) {
+        const fromReserve = Math.min(desired, scoutReserve);
+        scoutReserve -= fromReserve;
+        scoutBudgetSpent += fromReserve;
+        granted += fromReserve;
+      }
+      const remainingRequest = desired - granted;
+      if (remainingRequest > 0) {
+        const fromBase = Math.min(remainingRequest, remainingBudget);
+        remainingBudget -= fromBase;
+        baseBudgetSpent += fromBase;
+        granted += fromBase;
+      }
+      return granted;
+    };
+
+    const finalizeAndReturn = () => {
+      preloadDebugState.queueSizes[DETAIL_LEVEL_SCOUT] =
+        preloadQueue.getBucketSize(DETAIL_LEVEL_SCOUT);
+      preloadDebugState.queueSizes[DETAIL_LEVEL_RETENTION] =
+        preloadQueue.getBucketSize(DETAIL_LEVEL_RETENTION);
+      preloadDebugState.queueSizes[DETAIL_LEVEL_CORE] =
+        preloadQueue.getBucketSize(DETAIL_LEVEL_CORE);
+      preloadDebugState.lastBaseBudget = baseBudgetInitial;
+      preloadDebugState.lastBaseBudgetSpent = baseBudgetSpent;
+      preloadDebugState.lastScoutTopUp = scoutReserveInitial;
+      preloadDebugState.lastScoutTopUpSpent = scoutBudgetSpent;
+      preloadDebugState.lastScoutTopUpRemaining = scoutReserve;
+      preloadDebugState.lastProcessedCounts[DETAIL_LEVEL_SCOUT] =
+        processedCounts[DETAIL_LEVEL_SCOUT];
+      preloadDebugState.lastProcessedCounts[DETAIL_LEVEL_RETENTION] =
+        processedCounts[DETAIL_LEVEL_RETENTION];
+      preloadDebugState.lastProcessedCounts[DETAIL_LEVEL_CORE] =
+        processedCounts[DETAIL_LEVEL_CORE];
+      preloadDebugState.workerInflight = workerInflightCount;
+      preloadDebugState.workerIdleSamples = workerUtilizationSamples.idle;
+      preloadDebugState.workerBusySamples = workerUtilizationSamples.busy;
+      if (unlimitedPromises.length > 0) {
+        return Promise.all(unlimitedPromises);
+      }
+      return 0;
+    };
+
+    const detailOrder = [
+      DETAIL_LEVEL_SCOUT,
+      DETAIL_LEVEL_RETENTION,
+      DETAIL_LEVEL_CORE,
+    ];
+
+    for (const detail of detailOrder) {
+      const bucket = preloadQueue.getBucketEntries(detail);
+      if (!Array.isArray(bucket) || bucket.length === 0) {
+        continue;
+      }
+      let i = 0;
+      while (i < bucket.length) {
+        const entry = bucket[i];
+        if (!entry) {
+          i += 1;
+          globalIndex += 1;
+          continue;
+        }
+        if (entry.finalized || entry.cancelled || loadedChunks.has(entry.key)) {
+          cancelPendingEntry(entry);
+          continue;
+        }
+        if (entry.unlimited) {
+          i += 1;
+          globalIndex += 1;
+          continue;
+        }
+
+        const isScout = detail === DETAIL_LEVEL_SCOUT;
+
+        if (unlimited) {
+          const promise = startChunkJob(entry, { unlimited: true });
+          if (promise) {
+            unlimitedPromises.push(promise);
+          }
+          processedCounts[detail] += 1;
+          i += 1;
+          globalIndex += 1;
+          continue;
+        }
+
+        const combinedBudget = remainingBudget + (isScout ? scoutReserve : 0);
+        if (combinedBudget <= 0) {
+          return finalizeAndReturn();
+        }
+
+        let stepBudget;
+        if (entry.urgent) {
+          const burst = Math.max(defaultPreloadBurst, combinedBudget);
+          stepBudget = Math.max(1, burst);
+        } else {
+          const remainingEntries = Math.max(
+            1,
+            preloadQueue.length - globalIndex,
+          );
+          stepBudget = Math.max(
+            1,
+            Math.floor(combinedBudget / remainingEntries) || 1,
+          );
+          stepBudget = Math.min(stepBudget, combinedBudget);
+        }
+
+        const grantedBudget = allocateBudget(stepBudget, isScout);
+        if (grantedBudget <= 0) {
+          return finalizeAndReturn();
+        }
+
+        startChunkJob(entry, { budget: grantedBudget });
+        processedCounts[detail] += 1;
+
+        i += 1;
+        globalIndex += 1;
+
+        if (remainingBudget <= 0 && (!isScout || scoutReserve <= 0)) {
+          return finalizeAndReturn();
+        }
+      }
     }
 
-    return 0;
+    return finalizeAndReturn();
   }
 
   function update(position, options = {}) {
@@ -5674,7 +6034,7 @@ export function createChunkManager({
     const centerChanged = centerKey !== lastCenterKey;
     const viewChanged = desiredViewDistance !== currentViewDistance;
     const retentionChanged = desiredRetention !== retentionDistance;
-    const queueHasWork = preloadQueue.length > 0;
+    const queueHasWork = !preloadQueue.isEmpty();
     const disposalQueueHasWork = chunkDisposalQueue.length > 0;
     const activationQueueHasWork = pendingActivations.length > 0;
 
@@ -6065,7 +6425,7 @@ export function createChunkManager({
     chunkDisposalQueue.length = 0;
     scheduledChunkDisposals.clear();
     Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
-    preloadQueue.length = 0;
+    preloadQueue.clear();
     pendingPreloadEntries.clear();
     queueDirty = false;
     lastCenterKey = null;
@@ -7037,6 +7397,35 @@ export function createChunkManager({
     value: () => runCompactionPass(),
     enumerable: false,
   });
+
+  if (isDevBuild) {
+    Object.defineProperty(managerApi, '__getPreloadDebugCounters', {
+      value: () => ({
+        queueSizes: {
+          scout: preloadDebugState.queueSizes[DETAIL_LEVEL_SCOUT],
+          retention: preloadDebugState.queueSizes[DETAIL_LEVEL_RETENTION],
+          core: preloadDebugState.queueSizes[DETAIL_LEVEL_CORE],
+        },
+        lastBaseBudget: preloadDebugState.lastBaseBudget,
+        lastBaseBudgetSpent: preloadDebugState.lastBaseBudgetSpent,
+        lastScoutTopUp: preloadDebugState.lastScoutTopUp,
+        lastScoutTopUpSpent: preloadDebugState.lastScoutTopUpSpent,
+        lastScoutTopUpRemaining: preloadDebugState.lastScoutTopUpRemaining,
+        lastProcessedCounts: {
+          scout:
+            preloadDebugState.lastProcessedCounts[DETAIL_LEVEL_SCOUT],
+          retention:
+            preloadDebugState.lastProcessedCounts[DETAIL_LEVEL_RETENTION],
+          core: preloadDebugState.lastProcessedCounts[DETAIL_LEVEL_CORE],
+        },
+        workerEnabled: preloadDebugState.workerEnabled,
+        workerInflight: preloadDebugState.workerInflight,
+        workerIdleSamples: preloadDebugState.workerIdleSamples,
+        workerBusySamples: preloadDebugState.workerBusySamples,
+      }),
+      enumerable: false,
+    });
+  }
 
   Object.defineProperty(managerApi, '__getChunkEntityStateForTest', {
     value: (key) => {
