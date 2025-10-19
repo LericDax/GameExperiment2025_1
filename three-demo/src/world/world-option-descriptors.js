@@ -927,6 +927,54 @@ const chunkGroup = Object.freeze({
       default: 6,
       path: Object.freeze(['chunk', 'upgrade', 'hysteresisFrames']),
     }),
+    Object.freeze({
+      id: 'chunk.preload.forwardConeAngle',
+      label: 'Preload Forward Cone',
+      description:
+        'Total cone angle (in degrees) used to bias chunk preloads ahead of the player.',
+      type: numberType,
+      min: 0,
+      max: 180,
+      step: 1,
+      default: 120,
+      path: Object.freeze(['chunk', 'preload', 'forwardConeAngle']),
+    }),
+    Object.freeze({
+      id: 'chunk.preload.baseLeadDistance',
+      label: 'Base Forward Lead (chunks)',
+      description:
+        'Baseline chunk lead applied in front of the player even at low speeds.',
+      type: numberType,
+      min: 0,
+      max: 8,
+      step: 0.05,
+      default: 0.5,
+      path: Object.freeze(['chunk', 'preload', 'baseLeadDistance']),
+    }),
+    Object.freeze({
+      id: 'chunk.preload.speedLeadScale',
+      label: 'Speed Lead Scale',
+      description:
+        'Additional forward lead (in chunks) applied per chunk of player speed.',
+      type: numberType,
+      min: 0,
+      max: 12,
+      step: 0.05,
+      default: 2.5,
+      path: Object.freeze(['chunk', 'preload', 'speedLeadScale']),
+    }),
+    Object.freeze({
+      id: 'chunk.preload.rearHysteresis',
+      label: 'Rear Hysteresis (chunks)',
+      description:
+        'Extra retention margin behind the player before trailing chunks are disposed.',
+      type: numberType,
+      min: 0,
+      max: 8,
+      step: 0.1,
+      default: 2,
+      path: Object.freeze(['chunk', 'preload', 'rearHysteresis']),
+    }),
   ]),
 })
 

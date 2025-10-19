@@ -926,6 +926,46 @@ export function createChunkManager({
   const workerEnabled = Boolean(chunkBuildWorker);
   const workerDisposables = [];
   const retentionDisposalMargin = normalizeDistance(disposalMargin, 0);
+  const chunkUnitScale = (() => {
+    const chunkSizeValue = Number.isFinite(worldConfig?.chunkSize)
+      ? worldConfig.chunkSize
+      : Number(worldConfig?.chunk?.size);
+    if (Number.isFinite(chunkSizeValue) && chunkSizeValue > 0) {
+      return chunkSizeValue;
+    }
+    return 48;
+  })();
+  const directionalPreloadDefaults = (() => {
+    const chunkOptions =
+      worldConfig?.chunk && typeof worldConfig.chunk === 'object'
+        ? worldConfig.chunk
+        : {};
+    const preloadOptions =
+      chunkOptions.preload && typeof chunkOptions.preload === 'object'
+        ? chunkOptions.preload
+        : {};
+    const forwardConeAngle = Number.isFinite(preloadOptions.forwardConeAngle)
+      ? THREE.MathUtils.clamp(preloadOptions.forwardConeAngle, 0, 180)
+      : 120;
+    const baseLeadDistance = Number.isFinite(preloadOptions.baseLeadDistance)
+      ? Math.max(0, preloadOptions.baseLeadDistance)
+      : 0.5;
+    const speedLeadScale = Number.isFinite(preloadOptions.speedLeadScale)
+      ? Math.max(0, preloadOptions.speedLeadScale)
+      : 2.5;
+    const rearHysteresis = Number.isFinite(preloadOptions.rearHysteresis)
+      ? Math.max(0, preloadOptions.rearHysteresis)
+      : 2;
+    return {
+      forwardConeAngle,
+      baseLeadDistance,
+      speedLeadScale,
+      rearHysteresis,
+    };
+  })();
+  const MAX_FORWARD_LEAD_CHUNKS = 6;
+  const REAR_PENALTY_SCALE = 0.6;
+  let activeDirectionalContext = null;
   const DETAIL_LEVEL_CORE = 'core';
   const DETAIL_LEVEL_RETENTION = 'retention';
   const DETAIL_LEVEL_SCOUT = 'scout';
@@ -967,6 +1007,92 @@ export function createChunkManager({
     }
     return DETAIL_LEVEL_SCOUT;
   };
+  function normalizeDirectionalHintInput(candidate) {
+    if (!candidate) {
+      return null;
+    }
+    if (candidate.__normalizedDirectional === true) {
+      return candidate;
+    }
+    const headingSource =
+      candidate.heading ?? candidate.forward ?? candidate.direction ?? null;
+    if (!headingSource) {
+      return null;
+    }
+    const headingX = Number(headingSource.x);
+    const headingZ = Number(
+      Object.prototype.hasOwnProperty.call(headingSource, 'z')
+        ? headingSource.z
+        : headingSource.y,
+    );
+    if (!Number.isFinite(headingX) || !Number.isFinite(headingZ)) {
+      return null;
+    }
+    const headingLength = Math.hypot(headingX, headingZ);
+    if (!Number.isFinite(headingLength) || headingLength === 0) {
+      return null;
+    }
+    const normalizedHeadingX = headingX / headingLength;
+    const normalizedHeadingZ = headingZ / headingLength;
+    const speedValue = Number(candidate.speed);
+    const speedMeters = Number.isFinite(speedValue) ? Math.max(0, speedValue) : 0;
+    const speedChunks = speedMeters / chunkUnitScale;
+    const forwardBoostRaw =
+      directionalPreloadDefaults.baseLeadDistance +
+      speedChunks * directionalPreloadDefaults.speedLeadScale;
+    const forwardBoost = Math.min(
+      MAX_FORWARD_LEAD_CHUNKS,
+      Math.max(0, forwardBoostRaw),
+    );
+    if (forwardBoost <= 0 && directionalPreloadDefaults.rearHysteresis <= 0) {
+      return null;
+    }
+    const halfAngleRadians =
+      THREE.MathUtils.degToRad(
+        THREE.MathUtils.clamp(
+          directionalPreloadDefaults.forwardConeAngle,
+          0,
+          180,
+        ),
+      ) / 2;
+    const coneCos = Math.cos(halfAngleRadians);
+    const forwardExtension = Math.max(0, Math.ceil(forwardBoost));
+    const priorityBiasFactor =
+      forwardBoost > 0 ? (forwardBoost + 1) * 6 : 0;
+    return {
+      __normalizedDirectional: true,
+      heading: { x: normalizedHeadingX, z: normalizedHeadingZ },
+      coneCos,
+      forwardBoost,
+      forwardExtension,
+      rearPenalty: forwardBoost * REAR_PENALTY_SCALE,
+      rearHysteresis: directionalPreloadDefaults.rearHysteresis,
+      priorityBiasFactor,
+    };
+  }
+  function applyDirectionalDistanceBias(baseDistance, offsetX, offsetZ, context) {
+    if (!context || baseDistance <= 0) {
+      return baseDistance;
+    }
+    const { heading, coneCos, forwardBoost, rearPenalty } = context;
+    if (!heading) {
+      return baseDistance;
+    }
+    const offsetLength = Math.hypot(offsetX, offsetZ);
+    if (!Number.isFinite(offsetLength) || offsetLength === 0) {
+      return Math.max(0, baseDistance - forwardBoost);
+    }
+    const dirX = offsetX / offsetLength;
+    const dirZ = offsetZ / offsetLength;
+    const dot = heading.x * dirX + heading.z * dirZ;
+    if (dot >= coneCos) {
+      return Math.max(0, baseDistance - forwardBoost);
+    }
+    if (dot <= -coneCos) {
+      return baseDistance + rearPenalty;
+    }
+    return baseDistance;
+  }
   const payloadCache = new Map();
   const normalizeCacheCapacity = (value) => {
     const numeric = Number(value);
@@ -5056,7 +5182,18 @@ export function createChunkManager({
     const requestedDetailLevel = normalizeDetailLevel(options.detailLevel);
     const dx = chunkX - centerChunkX;
     const dz = chunkZ - centerChunkZ;
-    const priority = dx * dx + dz * dz;
+    let priority = dx * dx + dz * dz;
+    if (activeDirectionalContext?.priorityBiasFactor > 0) {
+      const offsetLength = Math.hypot(dx, dz);
+      if (Number.isFinite(offsetLength) && offsetLength > 0) {
+        const dot =
+          activeDirectionalContext.heading.x * (dx / offsetLength) +
+          activeDirectionalContext.heading.z * (dz / offsetLength);
+        priority -= dot * activeDirectionalContext.priorityBiasFactor;
+      } else {
+        priority -= activeDirectionalContext.priorityBiasFactor;
+      }
+    }
 
     const existing = pendingPreloadEntries.get(key);
     const pendingActivationRecord =
@@ -5228,21 +5365,60 @@ export function createChunkManager({
     return entry;
   }
 
-  function prunePreloadQueue(centerChunkX, centerChunkZ, maxDistance) {
+  function prunePreloadQueue(
+    centerChunkX,
+    centerChunkZ,
+    maxDistance,
+    directionalContext = null,
+  ) {
     if (preloadQueue.length === 0) {
       return;
     }
     let removedAny = false;
     for (let i = preloadQueue.length - 1; i >= 0; i -= 1) {
       const entry = preloadQueue[i];
-      const dx = Math.abs(entry.chunkX - centerChunkX);
-      const dz = Math.abs(entry.chunkZ - centerChunkZ);
-      if (dx > maxDistance || dz > maxDistance) {
+      if (!entry) {
+        continue;
+      }
+      const offsetX = entry.chunkX - centerChunkX;
+      const offsetZ = entry.chunkZ - centerChunkZ;
+      const dx = Math.abs(offsetX);
+      const dz = Math.abs(offsetZ);
+      let allowedDistance = maxDistance;
+      if (
+        Number.isFinite(allowedDistance) &&
+        directionalContext?.rearHysteresis > 0
+      ) {
+        const offsetLength = Math.hypot(offsetX, offsetZ);
+        if (Number.isFinite(offsetLength) && offsetLength > 0) {
+          const dot =
+            directionalContext.heading.x * (offsetX / offsetLength) +
+            directionalContext.heading.z * (offsetZ / offsetLength);
+          if (dot <= -directionalContext.coneCos) {
+            allowedDistance += directionalContext.rearHysteresis;
+          }
+        }
+      }
+      if (
+        Number.isFinite(allowedDistance) &&
+        (dx > allowedDistance || dz > allowedDistance)
+      ) {
         cancelPendingEntry(entry);
         removedAny = true;
         continue;
       }
-      const priority = dx * dx + dz * dz;
+      let priority = offsetX * offsetX + offsetZ * offsetZ;
+      if (directionalContext?.priorityBiasFactor > 0) {
+        const offsetLength = Math.hypot(offsetX, offsetZ);
+        if (Number.isFinite(offsetLength) && offsetLength > 0) {
+          const dot =
+            directionalContext.heading.x * (offsetX / offsetLength) +
+            directionalContext.heading.z * (offsetZ / offsetLength);
+          priority -= dot * directionalContext.priorityBiasFactor;
+        } else {
+          priority -= directionalContext.priorityBiasFactor;
+        }
+      }
       if (priority !== entry.priority) {
         entry.priority = priority;
         removedAny = true;
@@ -5444,6 +5620,7 @@ export function createChunkManager({
     }
 
     refreshCacheForWorldChange();
+    activeDirectionalContext = null;
 
     const centerChunkX = worldToChunk(position.x);
     const centerChunkZ = worldToChunk(position.z);
@@ -5483,6 +5660,16 @@ export function createChunkManager({
       defaultActivationBudget,
     );
     const force = Boolean(options.force);
+    let directionalHint = normalizeDirectionalHintInput(
+      options.directionalHint ?? null,
+    );
+    if (
+      directionalHint &&
+      directionalHint.forwardBoost <= 0 &&
+      directionalHint.rearHysteresis <= 0
+    ) {
+      directionalHint = null;
+    }
 
     const centerChanged = centerKey !== lastCenterKey;
     const viewChanged = desiredViewDistance !== currentViewDistance;
@@ -5520,6 +5707,7 @@ export function createChunkManager({
 
     currentViewDistance = desiredViewDistance;
     retentionDistance = desiredRetention;
+    activeDirectionalContext = directionalHint;
 
     if (Number.isFinite(currentViewDistance)) {
       lastFiniteViewDistance = Math.max(
@@ -5548,6 +5736,7 @@ export function createChunkManager({
     const upgradeRadiusThreshold = Number.isFinite(finiteView)
       ? Math.max(0, finiteView - upgradeHysteresis.radius)
       : Number.POSITIVE_INFINITY;
+    const forwardExtension = directionalHint?.forwardExtension ?? 0;
 
     lastCenterChunkX = centerChunkX;
     lastCenterChunkZ = centerChunkZ;
@@ -5578,9 +5767,18 @@ export function createChunkManager({
         ? Number.POSITIVE_INFINITY
         : finiteRetention + disposalMarginValue;
 
-    prunePreloadQueue(centerChunkX, centerChunkZ, retentionRadiusWithMargin);
+    const retentionRadiusForPrune = Number.isFinite(retentionRadiusWithMargin)
+      ? retentionRadiusWithMargin + forwardExtension
+      : retentionRadiusWithMargin;
+    prunePreloadQueue(
+      centerChunkX,
+      centerChunkZ,
+      retentionRadiusForPrune,
+      directionalHint,
+    );
 
     const guaranteeRadius = Math.min(finiteView, 1);
+    const viewLoopRadius = finiteView + forwardExtension;
 
     for (let dx = -guaranteeRadius; dx <= guaranteeRadius; dx += 1) {
       for (let dz = -guaranteeRadius; dz <= guaranteeRadius; dz += 1) {
@@ -5592,15 +5790,18 @@ export function createChunkManager({
       }
     }
 
-    if (finiteView > guaranteeRadius) {
-      for (let dx = -finiteView; dx <= finiteView; dx += 1) {
-        for (let dz = -finiteView; dz <= finiteView; dz += 1) {
+    if (viewLoopRadius > guaranteeRadius) {
+      for (let dx = -viewLoopRadius; dx <= viewLoopRadius; dx += 1) {
+        for (let dz = -viewLoopRadius; dz <= viewLoopRadius; dz += 1) {
           const maxDistance = Math.max(Math.abs(dx), Math.abs(dz));
           if (maxDistance <= guaranteeRadius) {
             continue;
           }
+          const biasedDistance = directionalHint
+            ? applyDirectionalDistanceBias(maxDistance, dx, dz, directionalHint)
+            : maxDistance;
           const detailLevel = resolveDetailLevelForDistance(
-            maxDistance,
+            biasedDistance,
             finiteView,
             finiteRetention,
           );
@@ -5618,7 +5819,7 @@ export function createChunkManager({
       }
     }
 
-    const extendedRetentionRadius = (() => {
+    const extendedRetentionRadiusBase = (() => {
       if (
         Number.isFinite(retentionRadiusWithMargin) &&
         retentionRadiusWithMargin > finiteRetention
@@ -5631,23 +5832,30 @@ export function createChunkManager({
       return finiteView;
     })();
 
-    if (extendedRetentionRadius > finiteView) {
-      for (
-        let dx = -extendedRetentionRadius;
-        dx <= extendedRetentionRadius;
-        dx += 1
-      ) {
-        for (
-          let dz = -extendedRetentionRadius;
-          dz <= extendedRetentionRadius;
-          dz += 1
-        ) {
+    const retentionLoopRadius = (() => {
+      if (!Number.isFinite(extendedRetentionRadiusBase)) {
+        return extendedRetentionRadiusBase;
+      }
+      const forwardTarget = Number.isFinite(finiteRetention)
+        ? Math.floor(finiteRetention + forwardExtension)
+        : viewLoopRadius;
+      return Math.max(extendedRetentionRadiusBase, forwardTarget);
+    })();
+
+    if (
+      Number.isFinite(retentionLoopRadius) &&
+      retentionLoopRadius > viewLoopRadius
+    ) {
+      for (let dx = -retentionLoopRadius; dx <= retentionLoopRadius; dx += 1) {
+        for (let dz = -retentionLoopRadius; dz <= retentionLoopRadius; dz += 1) {
           const maxDistance = Math.max(Math.abs(dx), Math.abs(dz));
-          if (maxDistance <= finiteView) {
+          if (maxDistance <= viewLoopRadius) {
             continue;
           }
           const detailLevel = resolveDetailLevelForDistance(
-            maxDistance,
+            directionalHint
+              ? applyDirectionalDistanceBias(maxDistance, dx, dz, directionalHint)
+              : maxDistance,
             finiteView,
             finiteRetention,
           );
@@ -5672,11 +5880,31 @@ export function createChunkManager({
         typeof chunk?.chunkZ === 'number'
           ? chunk.chunkZ
           : Number.parseInt(key.split('|')[1], 10);
-      const distanceX = Math.abs(chunkX - centerChunkX);
-      const distanceZ = Math.abs(chunkZ - centerChunkZ);
+      const offsetX = chunkX - centerChunkX;
+      const offsetZ = chunkZ - centerChunkZ;
+      const distanceX = Math.abs(offsetX);
+      const distanceZ = Math.abs(offsetZ);
+      let allowedDistance = retentionRadiusWithMargin;
+      if (Number.isFinite(allowedDistance) && directionalHint) {
+        const offsetLength = Math.hypot(offsetX, offsetZ);
+        if (Number.isFinite(offsetLength) && offsetLength > 0) {
+          const dot =
+            directionalHint.heading.x * (offsetX / offsetLength) +
+            directionalHint.heading.z * (offsetZ / offsetLength);
+          if (dot >= directionalHint.coneCos) {
+            allowedDistance += forwardExtension;
+          } else if (dot <= -directionalHint.coneCos) {
+            allowedDistance += directionalHint.rearHysteresis;
+          }
+        } else {
+          allowedDistance += forwardExtension;
+        }
+      } else if (Number.isFinite(allowedDistance) && forwardExtension > 0) {
+        allowedDistance += forwardExtension;
+      }
       if (
-        distanceX > retentionRadiusWithMargin ||
-        distanceZ > retentionRadiusWithMargin
+        Number.isFinite(allowedDistance) &&
+        (distanceX > allowedDistance || distanceZ > allowedDistance)
       ) {
         cancelActiveChunkUpgrade(key, { disposeTask: true });
         chunkUpgradeStateByKey.delete(key);
@@ -5737,6 +5965,8 @@ export function createChunkManager({
 
     flushChunkDisposals();
 
+    activeDirectionalContext = null;
+
     lastCenterKey = centerKey;
 
     if (force) {
@@ -5777,6 +6007,8 @@ export function createChunkManager({
     processActiveChunkUpgrades();
 
     flushChunkDisposals();
+
+    activeDirectionalContext = null;
 
 
     if (shouldUpdateVisibility) {
@@ -5921,7 +6153,14 @@ export function createChunkManager({
     if (!position) {
       return;
     }
-    const force = options.force === true;
+    const {
+      directionalHint = null,
+      maxPreload: requestedMaxPreload,
+      viewDistance: requestedViewDistance,
+      upgradeHysteresis,
+      force: requestedForce,
+    } = options;
+    const force = requestedForce === true;
     const targetRetention = Math.max(
       currentViewDistance,
       normalizeDistance(distance, retentionDistance),
@@ -5932,12 +6171,12 @@ export function createChunkManager({
       currentViewDistance,
       Math.min(
         targetRetention,
-        normalizeDistance(options.viewDistance, currentViewDistance),
+        normalizeDistance(requestedViewDistance, currentViewDistance),
       ),
     );
 
     const desiredBudget = resolveBudget(
-      options.maxPreload,
+      requestedMaxPreload,
       maxPreloadPerUpdate * 4,
     );
     const effectiveBudget =
@@ -5952,21 +6191,37 @@ export function createChunkManager({
       normalizedBudget = Math.max(normalizedBudget, minimumBurst);
     }
 
-    const updateResult = update(position, {
+    const updateParams = {
       viewDistance: warmView,
       retainDistance: targetRetention,
       maxPreload:
         force || normalizedBudget === Number.POSITIVE_INFINITY
           ? Number.POSITIVE_INFINITY
           : normalizedBudget,
-      upgradeHysteresis: options.upgradeHysteresis,
+      upgradeHysteresis,
       force,
-    });
+    };
+    if (directionalHint) {
+      updateParams.directionalHint = directionalHint;
+    }
+    const updateResult = update(position, updateParams);
     if (updateResult && typeof updateResult.then === 'function') {
       updateResult.catch((error) => {
         console.error('[chunk-manager] preloadAround forced update failed', error);
       });
     }
+  }
+
+  function preloadDirectional(position, directionalHint, options = {}) {
+    if (!position) {
+      return;
+    }
+    if (!directionalHint || typeof directionalHint !== 'object') {
+      preloadAround(position, options.distance, options);
+      return;
+    }
+    const { distance, ...rest } = options;
+    preloadAround(position, distance, { ...rest, directionalHint });
   }
 
   function computeMaterialVisibility(material) {
@@ -6724,6 +6979,7 @@ export function createChunkManager({
     recordEntityPlacement,
     recordEntityRemoval,
     preloadAround,
+    preloadDirectional,
     setViewDistance,
     setRetentionDistance,
     getViewDistance,
