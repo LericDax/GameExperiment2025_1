@@ -829,6 +829,9 @@ export function createChunkManager({
   let lastFiniteRetentionDistance = Number.isFinite(retentionDistance)
     ? retentionDistance
     : Math.max(lastFiniteViewDistance, 1);
+  let lastFiniteRetentionRadius = Number.isFinite(retentionDistance)
+    ? retentionDistance
+    : Math.max(lastFiniteViewDistance, 1);
   const preloadQueue = [];
   const pendingPreloadEntries = new Map();
   const pendingActivations = [];
@@ -910,22 +913,44 @@ export function createChunkManager({
   const retentionDisposalMargin = normalizeDistance(disposalMargin, 0);
   const DETAIL_LEVEL_CORE = 'core';
   const DETAIL_LEVEL_RETENTION = 'retention';
-  const DETAIL_LEVELS = [DETAIL_LEVEL_RETENTION, DETAIL_LEVEL_CORE];
+  const DETAIL_LEVEL_SCOUT = 'scout';
+  const DETAIL_LEVELS = [
+    DETAIL_LEVEL_SCOUT,
+    DETAIL_LEVEL_RETENTION,
+    DETAIL_LEVEL_CORE,
+  ];
   const normalizeDetailLevel = (value) => {
-    if (value === DETAIL_LEVEL_RETENTION || value === DETAIL_LEVEL_CORE) {
+    if (
+      value === DETAIL_LEVEL_RETENTION ||
+      value === DETAIL_LEVEL_CORE ||
+      value === DETAIL_LEVEL_SCOUT
+    ) {
       return value;
     }
     return DETAIL_LEVEL_CORE;
   };
   const detailLevelRank = (value) =>
     DETAIL_LEVELS.indexOf(normalizeDetailLevel(value));
-  const resolveDetailLevelForDistance = (maxDistance, finiteViewRadius) => {
-    if (!Number.isFinite(finiteViewRadius)) {
+  const resolveDetailLevelForDistance = (
+    maxDistance,
+    finiteViewRadius,
+    finiteRetentionRadius = finiteViewRadius,
+  ) => {
+    const viewRadius = Number.isFinite(finiteViewRadius)
+      ? Math.max(0, Math.floor(finiteViewRadius))
+      : Number.isFinite(finiteRetentionRadius)
+      ? Math.max(0, Math.floor(finiteRetentionRadius))
+      : Number.POSITIVE_INFINITY;
+    if (maxDistance <= viewRadius) {
       return DETAIL_LEVEL_CORE;
     }
-    return maxDistance <= finiteViewRadius
-      ? DETAIL_LEVEL_CORE
-      : DETAIL_LEVEL_RETENTION;
+    const retentionRadius = Number.isFinite(finiteRetentionRadius)
+      ? Math.max(viewRadius, Math.floor(finiteRetentionRadius))
+      : Number.POSITIVE_INFINITY;
+    if (maxDistance <= retentionRadius) {
+      return DETAIL_LEVEL_RETENTION;
+    }
+    return DETAIL_LEVEL_SCOUT;
   };
   const payloadCache = new Map();
   const normalizeCacheCapacity = (value) => {
@@ -1045,6 +1070,9 @@ export function createChunkManager({
       snapshot,
       stats,
       needsCompaction: false,
+      detailLevel: normalizeDetailLevel(
+        chunk?.detailLevel ?? payload?.detailLevel ?? DETAIL_LEVEL_CORE,
+      ),
     });
     ensureJournalQueue(key);
   }
@@ -1800,6 +1828,20 @@ export function createChunkManager({
     if (!payload || typeof payload !== 'object') {
       return defaultBounds;
     }
+    const heightSummary = payload.heightSummary;
+    if (heightSummary && typeof heightSummary === 'object') {
+      const minY = Number.isFinite(heightSummary.minHeight)
+        ? heightSummary.minHeight - 1
+        : defaultBounds.minY;
+      const maxY = Number.isFinite(heightSummary.maxHeight)
+        ? heightSummary.maxHeight + 1
+        : defaultBounds.maxY;
+      return {
+        ...defaultBounds,
+        minY,
+        maxY,
+      };
+    }
     const occupancy = payload.occupancy;
     const normalizeKeys = (value) => {
       if (!value) {
@@ -2198,11 +2240,138 @@ export function createChunkManager({
     };
   }
 
+  const finalizeScoutChunk = (entry, payload) => {
+    const chunkX = entry?.chunkX ?? 0;
+    const chunkZ = entry?.chunkZ ?? 0;
+    const summarySource = payload?.heightSummary ?? {};
+    const chunkSize = Number.isFinite(worldConfig.chunkSize)
+      ? Math.max(1, Math.floor(worldConfig.chunkSize))
+      : 16;
+    const width = Number.isFinite(summarySource?.width)
+      ? Math.max(1, Math.floor(summarySource.width))
+      : chunkSize;
+    const depth = Number.isFinite(summarySource?.depth)
+      ? Math.max(1, Math.floor(summarySource.depth))
+      : chunkSize;
+    const totalColumns = Math.max(1, width * depth);
+
+    let sourceHeights = summarySource?.heights ?? null;
+    if (sourceHeights instanceof ArrayBuffer) {
+      sourceHeights = new Int16Array(sourceHeights);
+    }
+    const heightView = ArrayBuffer.isView(sourceHeights)
+      ? sourceHeights
+      : Array.isArray(sourceHeights)
+      ? sourceHeights
+      : null;
+    const heights = new Int16Array(totalColumns);
+    if (heightView) {
+      const limit = Math.min(totalColumns, heightView.length ?? totalColumns);
+      for (let index = 0; index < limit; index += 1) {
+        const numeric = Number(heightView[index]);
+        heights[index] = Number.isFinite(numeric)
+          ? Math.max(0, Math.floor(numeric))
+          : 0;
+      }
+    }
+
+    let sourceBiomeIds = summarySource?.biomeIds ?? null;
+    if (sourceBiomeIds instanceof ArrayBuffer) {
+      sourceBiomeIds = Array.from(new Uint16Array(sourceBiomeIds));
+    } else if (ArrayBuffer.isView(sourceBiomeIds)) {
+      sourceBiomeIds = Array.from(sourceBiomeIds);
+    } else if (sourceBiomeIds == null) {
+      sourceBiomeIds = [];
+    } else if (!Array.isArray(sourceBiomeIds)) {
+      sourceBiomeIds = [sourceBiomeIds];
+    }
+    const biomeIds = Array.isArray(sourceBiomeIds)
+      ? sourceBiomeIds.map((value) =>
+          value === null || value === undefined ? null : String(value),
+        )
+      : [];
+
+    const minHeight = Number.isFinite(summarySource?.minHeight)
+      ? summarySource.minHeight
+      : Number.isFinite(worldConfig?.baseHeight)
+      ? worldConfig.baseHeight
+      : 0;
+    const maxHeight = Number.isFinite(summarySource?.maxHeight)
+      ? summarySource.maxHeight
+      : Number.isFinite(worldConfig?.maxHeight)
+      ? worldConfig.maxHeight
+      : minHeight;
+
+    const summary = {
+      width,
+      depth,
+      minHeight,
+      maxHeight,
+      heights,
+      biomeIds,
+    };
+
+    const chunkBiomes = Array.isArray(payload?.biomes) ? payload.biomes : [];
+    const group = new THREE.Group();
+    group.name = `chunk_${chunkX}_${chunkZ}_scout`;
+    group.visible = false;
+    group.userData = group.userData || {};
+    group.userData.biomes = chunkBiomes;
+    group.userData.detailLevel = DETAIL_LEVEL_SCOUT;
+    group.userData.scoutSummary = summary;
+
+    const halfSize = chunkSize / 2;
+    const fallbackMaxHeight = Number.isFinite(worldConfig?.maxHeight)
+      ? worldConfig.maxHeight
+      : maxHeight + 32;
+    const bounds = {
+      minX: chunkX * chunkSize - halfSize - 0.5,
+      maxX: chunkX * chunkSize + halfSize + 0.5,
+      minZ: chunkZ * chunkSize - halfSize - 0.5,
+      maxZ: chunkZ * chunkSize + halfSize + 0.5,
+      minY: Number.isFinite(minHeight) ? minHeight - 1 : -32,
+      maxY: Number.isFinite(maxHeight) ? maxHeight + 1 : fallbackMaxHeight,
+    };
+
+    return {
+      chunkX,
+      chunkZ,
+      group,
+      solidBlockKeys: new Set(),
+      softBlockKeys: new Set(),
+      typeCapacities: new Map(),
+      waterColumns: new Map(),
+      fluidColumnsByType: new Map(),
+      fluidSurfaces: [],
+      blockLookup: new Map(),
+      fluidBlockKeys: new Set(),
+      typeData: new Map(),
+      decorationData: new Map(),
+      decorationGroups: new Map(),
+      decorationOwnerIndex: new Map(),
+      decorationTypeIndex: new Map(),
+      biomes: chunkBiomes,
+      prototypeInstances: new Map(),
+      bounds,
+      scoutSummary: summary,
+      detailLevel: DETAIL_LEVEL_SCOUT,
+    };
+  };
+
   function finalizeWorkerChunk(entry, workerPayload = null) {
     const payload =
       workerPayload?.payload ?? entry?.metadata?.payload ?? null;
     if (!payload) {
       throw new Error('Chunk worker payload unavailable.');
+    }
+    const payloadDetailLevel = normalizeDetailLevel(
+      payload?.detailLevel ??
+        entry?.detailLevel ??
+        entry?.desiredDetailLevel ??
+        DETAIL_LEVEL_CORE,
+    );
+    if (payloadDetailLevel === DETAIL_LEVEL_SCOUT) {
+      return finalizeScoutChunk(entry, payload);
     }
     const meshResult = finalizeChunkMeshes(payload, blockMaterials, THREE);
     const derivedCollisionKeys = deriveCollisionKeySetsFromMesh({
@@ -2255,6 +2424,7 @@ export function createChunkManager({
       prototypeInstances: meshResult.prototypeInstances,
       bounds: computeChunkBoundsFromPayload(entry, payload),
     };
+    chunk.detailLevel = payloadDetailLevel;
     if (entry?.metadata) {
       entry.metadata.payload = null;
     }
@@ -2602,7 +2772,11 @@ export function createChunkManager({
     const dx = Math.abs(chunkX - lastCenterChunkX);
     const dz = Math.abs(chunkZ - lastCenterChunkZ);
     const maxDistance = Math.max(dx, dz);
-    return resolveDetailLevelForDistance(maxDistance, lastFiniteViewRadius);
+    return resolveDetailLevelForDistance(
+      maxDistance,
+      lastFiniteViewRadius,
+      lastFiniteRetentionRadius,
+    );
   }
 
   function upgradePendingChunkRecord(record, targetDetailLevel) {
@@ -2693,7 +2867,7 @@ export function createChunkManager({
       );
       if (
         detailLevelRank(requiredDetail) <
-        detailLevelRank(DETAIL_LEVEL_RETENTION)
+        detailLevelRank(DETAIL_LEVEL_SCOUT)
       ) {
         pendingActivationByKey.set(record.key, record);
         pendingActivations.push(record);
@@ -4979,6 +5153,7 @@ export function createChunkManager({
     lastCenterChunkZ = centerChunkZ;
     hasLastCenter = true;
     lastFiniteViewRadius = finiteView;
+    lastFiniteRetentionRadius = finiteRetention;
 
     if (
       retentionChanged &&
@@ -5027,6 +5202,7 @@ export function createChunkManager({
           const detailLevel = resolveDetailLevelForDistance(
             maxDistance,
             finiteView,
+            finiteRetention,
           );
           schedulePreload(
             centerChunkX + dx,
@@ -5042,9 +5218,30 @@ export function createChunkManager({
       }
     }
 
-    if (finiteRetention > finiteView) {
-      for (let dx = -finiteRetention; dx <= finiteRetention; dx += 1) {
-        for (let dz = -finiteRetention; dz <= finiteRetention; dz += 1) {
+    const extendedRetentionRadius = (() => {
+      if (
+        Number.isFinite(retentionRadiusWithMargin) &&
+        retentionRadiusWithMargin > finiteRetention
+      ) {
+        return Math.floor(retentionRadiusWithMargin);
+      }
+      if (Number.isFinite(finiteRetention)) {
+        return Math.floor(finiteRetention);
+      }
+      return finiteView;
+    })();
+
+    if (extendedRetentionRadius > finiteView) {
+      for (
+        let dx = -extendedRetentionRadius;
+        dx <= extendedRetentionRadius;
+        dx += 1
+      ) {
+        for (
+          let dz = -extendedRetentionRadius;
+          dz <= extendedRetentionRadius;
+          dz += 1
+        ) {
           const maxDistance = Math.max(Math.abs(dx), Math.abs(dz));
           if (maxDistance <= finiteView) {
             continue;
@@ -5052,6 +5249,7 @@ export function createChunkManager({
           const detailLevel = resolveDetailLevelForDistance(
             maxDistance,
             finiteView,
+            finiteRetention,
           );
           schedulePreload(
             centerChunkX + dx,

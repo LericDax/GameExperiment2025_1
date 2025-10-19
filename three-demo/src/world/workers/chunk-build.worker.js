@@ -122,6 +122,9 @@ const normalizeDetailLevel = (value) => {
   }
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
+    if (['scout', 'scouting', 'sc'].includes(normalized)) {
+      return 'scout';
+    }
     if (
       [
         'retention',
