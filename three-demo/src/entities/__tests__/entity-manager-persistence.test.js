@@ -25,17 +25,18 @@ test.after(() => {
 const { createEntityManager } = await import('../entity-manager.js');
 
 function createChunkManagerStub() {
-  const placements = [];
-  const removals = [];
+  const recordEntityPlacementCalls = [];
+  const recordEntityRemovalCalls = [];
+
   return {
-    placements,
-    removals,
+    recordEntityPlacementCalls,
+    recordEntityRemovalCalls,
     recordEntityPlacement(payload) {
-      placements.push(payload);
+      recordEntityPlacementCalls.push(payload);
       return true;
     },
     recordEntityRemoval(payload) {
-      removals.push(payload);
+      recordEntityRemovalCalls.push(payload);
       return true;
     },
   };
@@ -77,12 +78,24 @@ test('persistent entities notify the chunk manager on spawn and despawn', () => 
     persistenceMeta,
   });
 
-  assert.equal(chunkManager.placements.length, 1, 'placement should be recorded once');
-  const [placement] = chunkManager.placements;
+  assert.equal(
+    chunkManager.recordEntityPlacementCalls.length,
+    1,
+    'placement should be recorded once',
+  );
+  const [placement] = chunkManager.recordEntityPlacementCalls;
 
   assert.equal(placement.id, entity.id);
   assert.equal(placement.typeId, typeId);
-  assert.equal(placement.transform.length, 16, 'transform should contain 16 elements');
+  assert.equal(
+    placement.transform.length,
+    16,
+    'transform should contain 16 elements',
+  );
+  assert.ok(
+    placement.transform instanceof Float32Array,
+    'transform should be a Float32Array',
+  );
 
   entity.root.updateMatrixWorld();
   const expectedTransform = entity.root.matrixWorld.toArray(new Float32Array(16));
@@ -91,11 +104,19 @@ test('persistent entities notify the chunk manager on spawn and despawn', () => 
     Array.from(expectedTransform),
     'recorded transform should match the entity world matrix',
   );
-  assert.deepEqual(placement.meta, persistenceMeta, 'persistence metadata should be forwarded');
+  assert.deepEqual(
+    placement.meta,
+    persistenceMeta,
+    'persistence metadata should be forwarded',
+  );
 
   manager.despawnEntity(entity.id);
-  assert.equal(chunkManager.removals.length, 1, 'removal should be recorded once');
-  assert.deepEqual(chunkManager.removals[0], { id: entity.id });
+  assert.equal(
+    chunkManager.recordEntityRemovalCalls.length,
+    1,
+    'removal should be recorded once',
+  );
+  assert.deepEqual(chunkManager.recordEntityRemovalCalls[0], { id: entity.id });
 });
 
 test('non-persistent entities do not interact with the chunk manager', () => {
@@ -116,10 +137,26 @@ test('non-persistent entities do not interact with the chunk manager', () => {
     persist: false,
   });
 
-  assert.equal(chunkManager.placements.length, 0, 'no placement should be recorded');
-  assert.equal(chunkManager.removals.length, 0, 'no removal should be recorded');
+  assert.equal(
+    chunkManager.recordEntityPlacementCalls.length,
+    0,
+    'no placement should be recorded',
+  );
+  assert.equal(
+    chunkManager.recordEntityRemovalCalls.length,
+    0,
+    'no removal should be recorded',
+  );
 
   manager.despawnEntity(entity.id);
-  assert.equal(chunkManager.placements.length, 0, 'placement should remain untouched');
-  assert.equal(chunkManager.removals.length, 0, 'removal should remain untouched');
+  assert.equal(
+    chunkManager.recordEntityPlacementCalls.length,
+    0,
+    'placement should remain untouched',
+  );
+  assert.equal(
+    chunkManager.recordEntityRemovalCalls.length,
+    0,
+    'removal should remain untouched',
+  );
 });
