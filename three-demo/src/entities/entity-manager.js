@@ -203,24 +203,44 @@ export function createEntityManager({
     return mixer;
   }
 
-  function spawnEntity(typeId, options = {}) {
+  function spawnEntity(
+    typeId,
+    {
+      id: explicitId,
+      position: positionInput,
+      metadata,
+      userData,
+      persist = false,
+      persistenceMeta = null,
+      ...restOptions
+    } = {},
+  ) {
     assertActive();
     if (!entityTypes.has(typeId)) {
       throw new Error(`Unknown entity type: ${typeId}`);
     }
     const typeEntry = entityTypes.get(typeId);
-    const entityId = options.id ?? `${typeId}-${nextEntityId++}`;
+    const entityId = explicitId ?? `${typeId}-${nextEntityId++}`;
     if (entities.has(entityId)) {
       throw new Error(`Entity id ${entityId} is already in use.`);
     }
 
-    const position = normalizeVector3(options.position, THREERef);
+    const position = normalizeVector3(positionInput, THREERef);
+    const options = {
+      id: explicitId,
+      position: positionInput,
+      metadata,
+      userData,
+      persist,
+      persistenceMeta,
+      ...restOptions,
+    };
     const spawnContext = buildSpawnContext({
       entityId,
       typeId,
       position,
-      metadata: options.metadata,
-      userData: options.userData,
+      metadata,
+      userData,
     });
 
     const createParams = {
@@ -261,7 +281,7 @@ export function createEntityManager({
     entity.root.userData.persistenceId = entityId;
 
     scene.add(entity.root);
-    if (options.position) {
+    if (positionInput) {
       if (typeof entity.setPosition === 'function') {
         entity.setPosition(position);
       } else {
@@ -275,7 +295,6 @@ export function createEntityManager({
       console.error(`Entity ${entityId} onSpawn hook failed:`, error);
     }
 
-    const { persist = false, persistenceMeta = null } = options;
     if (persist) {
       const recorded = persistEntityRecord(entity, {
         entityId,
