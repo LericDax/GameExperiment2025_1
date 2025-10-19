@@ -4682,7 +4682,17 @@ export function createChunkManager({
       return false;
     }
     const normalizedTransform = normalizeEntityTransform(transform);
-    const { key, chunkX, chunkZ } = resolveChunkKeyFromTransform(normalizedTransform);
+    const translationX = Number.isFinite(normalizedTransform[12])
+      ? normalizedTransform[12]
+      : 0;
+    const translationZ = Number.isFinite(normalizedTransform[14])
+      ? normalizedTransform[14]
+      : 0;
+    const { x: chunkX, z: chunkZ } = chunkIndexFromWorld(
+      translationX,
+      translationZ,
+    );
+    const key = chunkKey(chunkX, chunkZ);
     const previousKey = entityIdIndex.get(normalizedId);
     if (previousKey && previousKey !== key) {
       const previousState = chunkEntityState.get(previousKey);
