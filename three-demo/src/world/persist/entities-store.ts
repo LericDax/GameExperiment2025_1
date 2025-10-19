@@ -451,15 +451,6 @@ function readRecord(
   data: Uint8Array,
   offset: number,
 ): { record: PersistedEntityRecord; nextOffset: number } {
-  const idResult = readVarint(data, offset);
-  offset = idResult.nextOffset;
-  const idEnd = offset + idResult.value;
-  if (idEnd > data.length) {
-    throw new RangeError('Malformed entity record id');
-  }
-  const id = TEXT_DECODER.decode(data.subarray(offset, idEnd));
-  offset = idEnd;
-
   const typeResult = readVarint(data, offset);
   offset = typeResult.nextOffset;
   const typeEnd = offset + typeResult.value;
@@ -488,6 +479,15 @@ function readRecord(
   const metaText = TEXT_DECODER.decode(data.subarray(offset, metaEnd));
   const meta = metaText.length === 0 ? null : JSON.parse(metaText);
   offset = metaEnd;
+
+  const idResult = readVarint(data, offset);
+  offset = idResult.nextOffset;
+  const idEnd = offset + idResult.value;
+  if (idEnd > data.length) {
+    throw new RangeError('Malformed entity record id');
+  }
+  const id = TEXT_DECODER.decode(data.subarray(offset, idEnd));
+  offset = idEnd;
 
   return {
     record: { id, typeId, transform, meta },
@@ -614,19 +614,16 @@ function encodeRecord(record: PersistedEntityRecord): Uint8Array {
   const metaBytes = TEXT_ENCODER.encode(metaJson);
 
   const totalLength =
-    sizeOfVarint(idBytes.length) +
-    idBytes.length +
     sizeOfVarint(typeBytes.length) +
     typeBytes.length +
     64 +
     sizeOfVarint(metaBytes.length) +
-    metaBytes.length;
+    metaBytes.length +
+    sizeOfVarint(idBytes.length) +
+    idBytes.length;
 
   const result = new Uint8Array(totalLength);
-  let offset = writeVarint(idBytes.length, result, 0);
-  result.set(idBytes, offset);
-  offset += idBytes.length;
-  offset = writeVarint(typeBytes.length, result, offset);
+  let offset = writeVarint(typeBytes.length, result, 0);
   result.set(typeBytes, offset);
   offset += typeBytes.length;
 
@@ -640,6 +637,10 @@ function encodeRecord(record: PersistedEntityRecord): Uint8Array {
   offset = writeVarint(metaBytes.length, result, offset);
   result.set(metaBytes, offset);
   offset += metaBytes.length;
+
+  offset = writeVarint(idBytes.length, result, offset);
+  result.set(idBytes, offset);
+  offset += idBytes.length;
 
   return result.subarray(0, offset);
 }
