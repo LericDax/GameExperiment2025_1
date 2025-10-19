@@ -431,12 +431,23 @@ function buildPersistenceResult(entry, { snapshot, journals, metadata, mergeInfo
     }
   }
 
+  const hasSnapshot = snapshot instanceof Uint8Array || snapshot instanceof ArrayBuffer;
+  const hasJournals = Array.isArray(journals) && journals.length > 0;
+  const hasMergeState = Boolean(mergeInfo?.voxelField);
+  const hasPersistedState = hasSnapshot || hasJournals || hasMergeState;
+  const syntheticFallback = fallback && !hasPersistedState;
+
+  if (syntheticFallback) {
+    payload = null;
+  }
+
   return {
     snapshot,
     journals,
     metadata: metadata ?? null,
     payload: payload ?? null,
     fallback,
+    hasPersistedState: hasPersistedState,
     voxelField: mergeInfo?.voxelField ?? null,
     mergedSnapshot: mergeInfo?.mergedSnapshot ?? null,
     journalStats: mergeInfo
@@ -477,6 +488,7 @@ function normalizePersistenceResultForEntry(entry, rawResult) {
         metadata: container?.metadata ?? rawResult?.metadata ?? null,
         payload: directPayload,
         fallback: false,
+        hasPersistedState: true,
         voxelField: null,
         mergedSnapshot: null,
         journalStats: null,

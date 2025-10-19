@@ -51,14 +51,19 @@ function createBlockMaterials() {
   return { registry, createdMaterials };
 }
 
-function createStubPersistenceQueue() {
+function createStubPersistenceQueue({ loadHandler } = {}) {
   const loads = [];
   const saves = [];
   let disposed = false;
   return {
     enqueueLoad(request) {
       loads.push(request);
-      return Promise.resolve({ snapshot: null, journalStats: { entries: 0, bytes: 0 } });
+      const defaultResult = {
+        snapshot: null,
+        journalStats: { entries: 0, bytes: 0 },
+      };
+      const result = loadHandler ? loadHandler(request) : defaultResult;
+      return Promise.resolve(result);
     },
     enqueueSave(request) {
       saves.push(request);
@@ -71,6 +76,34 @@ function createStubPersistenceQueue() {
       return disposed;
     } },
   };
+}
+
+function chunkHasRenderableGeometry(chunk) {
+  if (!chunk?.group) {
+    return false;
+  }
+  let hasGeometry = false;
+  chunk.group.traverse((child) => {
+    if (hasGeometry) {
+      return;
+    }
+    if (!child) {
+      return;
+    }
+    if (child.isInstancedMesh) {
+      if (Number.isFinite(child.count) && child.count > 0) {
+        hasGeometry = true;
+      }
+      return;
+    }
+    if (child.isMesh && child.geometry) {
+      const position = child.geometry.getAttribute?.('position');
+      if (position && Number.isFinite(position.count) && position.count > 0) {
+        hasGeometry = true;
+      }
+    }
+  });
+  return hasGeometry;
 }
 
 function decodeFirstVarint(data) {
@@ -153,6 +186,49 @@ test('block removal records a journal entry and flushes via autosave pass', asyn
   } finally {
     await manager.dispose();
     assert.ok(queue.__records.disposed, 'disposal should tear down persistence queue');
+    createdMaterials.forEach((material) => {
+      material.dispose?.();
+    });
+  }
+});
+
+test('fresh chunk load produces geometry when persistence queue has no records', async () => {
+  const scene = new THREE.Scene();
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const queue = createStubPersistenceQueue({
+    loadHandler() {
+      return null;
+    },
+  });
+  const manager = createChunkManager({
+    scene,
+    blockMaterials,
+    viewDistance: 0,
+    retainDistance: 0,
+    maxPreloadPerUpdate: 4,
+    maxDisposalsPerUpdate: 0,
+    maxActivationsPerUpdate: 4,
+    chunkPersistenceQueue: queue,
+  });
+
+  try {
+    const origin = new THREE.Vector3(0, 0, 0);
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreload: 0,
+      force: true,
+    });
+    await manager.flush();
+
+    const chunk = manager.__getLoadedChunkForTest('0|0');
+    assert.ok(chunk, 'expected origin chunk to be loaded');
+    assert.ok(
+      chunkHasRenderableGeometry(chunk),
+      'fresh chunk should contain renderable geometry when persistence queue returns nothing',
+    );
+  } finally {
+    await manager.dispose();
     createdMaterials.forEach((material) => {
       material.dispose?.();
     });
