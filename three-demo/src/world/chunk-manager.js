@@ -3078,6 +3078,7 @@ export function createChunkManager({
       record.chunk = null;
       return;
     }
+    record.pendingUpgrade = null;
     try {
       registerGeneratedChunk(chunk);
       entry.resolve?.(chunk);
@@ -3112,6 +3113,10 @@ export function createChunkManager({
     if (record.entry) {
       record.entry.pendingChunk = null;
     }
+    if (record.pendingUpgrade) {
+      cancelPendingChunkUpgradeJob(record.pendingUpgrade);
+    }
+    record.pendingUpgrade = null;
     if (disposeChunk) {
       releasePendingChunkResources(record.chunk);
     }
@@ -3447,6 +3452,115 @@ export function createChunkManager({
     return true;
   }
 
+  const PENDING_UPGRADE_JOB_KIND = 'pending-upgrade';
+
+  function createPendingChunkUpgradeJob({
+    record,
+    targetDetailLevel,
+    task,
+  }) {
+    if (!record || !record.entry || !task) {
+      return null;
+    }
+    const normalizedDetail = normalizeDetailLevel(targetDetailLevel);
+    return {
+      kind: PENDING_UPGRADE_JOB_KIND,
+      key: `${record.entry.key}:upgrade`,
+      record,
+      entry: record.entry,
+      task,
+      targetDetailLevel: normalizedDetail,
+      pendingBudget: 0,
+      stepHint: defaultPreloadBurst,
+      unlimited: false,
+      active: false,
+      finalized: false,
+      cancelled: false,
+    };
+  }
+
+  function finalizePendingChunkUpgradeJob(job) {
+    if (!job || job.finalized) {
+      return;
+    }
+    job.finalized = true;
+    job.active = false;
+    const { record } = job;
+    const targetDetail = normalizeDetailLevel(job.targetDetailLevel);
+    try {
+      const upgradedChunk = finalizeChunkUpgradeTask(job.task, targetDetail);
+      if (!upgradedChunk) {
+        throw new Error('upgrade-task-empty');
+      }
+      if (record) {
+        if (record.chunk && record.chunk !== upgradedChunk) {
+          releasePendingChunkResources(record.chunk);
+        }
+        record.chunk = upgradedChunk;
+        record.chunk.detailLevel = targetDetail;
+        record.chunk.desiredDetailLevel = targetDetail;
+        if (record.entry) {
+          record.entry.detailLevel = targetDetail;
+          record.entry.desiredDetailLevel = targetDetail;
+          preloadQueue.update(record.entry);
+          record.entry.workerPayload = null;
+          record.entry.metadata = null;
+          record.entry.task = null;
+          record.entry.pendingChunk = record;
+        }
+        record.pendingUpgrade = null;
+      }
+    } catch (error) {
+      console.error('[chunk-manager] Failed to finalize pending chunk upgrade', error);
+      if (record) {
+        record.pendingUpgrade = null;
+      }
+    } finally {
+      job.task?.releaseCachedPayload?.();
+      job.task = null;
+    }
+  }
+
+  function cancelPendingChunkUpgradeJob(job) {
+    if (!job || job.finalized) {
+      return;
+    }
+    job.cancelled = true;
+    job.finalized = true;
+    job.active = false;
+    const index = chunkJobQueue.indexOf(job);
+    if (index >= 0) {
+      chunkJobQueue.splice(index, 1);
+    }
+    try {
+      job.task?.releaseCachedPayload?.();
+    } catch (error) {
+      console.debug('[chunk-manager] Failed to release pending upgrade task', error);
+    }
+    job.task = null;
+    if (job.record && job.record.pendingUpgrade === job) {
+      job.record.pendingUpgrade = null;
+    }
+  }
+
+  function schedulePendingChunkUpgradeJob(job, { budget } = {}) {
+    if (!job || job.finalized || job.cancelled) {
+      return;
+    }
+    const burst = Math.max(1, defaultPreloadBurst);
+    const pendingBudget = Number.isFinite(job.pendingBudget)
+      ? job.pendingBudget
+      : 0;
+    const granted = Math.max(1, Math.floor(budget ?? burst));
+    job.pendingBudget = pendingBudget + granted;
+    job.stepHint = Math.max(1, job.stepHint || burst, granted);
+    if (!job.active) {
+      job.active = true;
+      chunkJobQueue.push(job);
+    }
+    ensureChunkJobPump();
+  }
+
   function finalizeActiveChunkUpgrade(entry) {
     if (!entry || !entry.task) {
       return;
@@ -3531,47 +3645,70 @@ export function createChunkManager({
     if (!record) {
       return false;
     }
-    const { entry } = record;
-    if (!entry) {
+    const { entry, chunk } = record;
+    if (!entry || !chunk) {
       return false;
     }
-    try {
-      if (record.chunk) {
-        releasePendingChunkResources(record.chunk);
+    const currentDetail = normalizeDetailLevel(chunk.detailLevel);
+    const currentRank = detailLevelRank(currentDetail);
+    const requiredRank = detailLevelRank(normalizedTarget);
+    if (currentRank >= requiredRank) {
+      chunk.detailLevel = normalizedTarget;
+      chunk.desiredDetailLevel = normalizedTarget;
+      entry.detailLevel = normalizedTarget;
+      entry.desiredDetailLevel = normalizedTarget;
+      return true;
+    }
+
+    entry.desiredDetailLevel = normalizedTarget;
+    chunk.desiredDetailLevel = normalizedTarget;
+
+    const existingJob = record.pendingUpgrade ?? null;
+    if (existingJob) {
+      if (existingJob.finalized || existingJob.cancelled) {
+        record.pendingUpgrade = null;
+      } else {
+        const existingRank = detailLevelRank(
+          normalizeDetailLevel(existingJob.targetDetailLevel),
+        );
+        if (existingRank < requiredRank) {
+          cancelPendingChunkUpgradeJob(existingJob);
+        } else {
+          schedulePendingChunkUpgradeJob(existingJob, {
+            budget: existingJob.stepHint || defaultPreloadBurst,
+          });
+          return false;
+        }
       }
-      const upgradeTask = createChunkBuildTask({
+    }
+
+    let upgradeTask = null;
+    try {
+      upgradeTask = createChunkBuildTask({
         chunkX: entry.chunkX,
         chunkZ: entry.chunkZ,
         blockMaterials,
         detailLevel: normalizedTarget,
       });
-      let done = false;
-      while (!done) {
-        const stepResult = upgradeTask.step(Number.POSITIVE_INFINITY);
-        if (!stepResult) {
-          break;
-        }
-        done = stepResult.done === true;
-      }
-      const upgradedChunk = finalizeChunkUpgradeTask(
-        upgradeTask,
-        normalizedTarget,
-      );
-      if (!upgradedChunk) {
-        return false;
-      }
-      record.chunk = upgradedChunk;
-      entry.detailLevel = normalizedTarget;
-      entry.desiredDetailLevel = normalizedTarget;
-      preloadQueue.update(entry);
-      entry.workerPayload = null;
-      entry.metadata = null;
-      entry.task = null;
-      return true;
     } catch (error) {
-      console.error('[chunk-manager] Failed to upgrade chunk detail', error);
+      console.error('[chunk-manager] Failed to create upgrade task', error);
       return false;
     }
+
+    const upgradeJob = createPendingChunkUpgradeJob({
+      record,
+      targetDetailLevel: normalizedTarget,
+      task: upgradeTask,
+    });
+    if (!upgradeJob) {
+      upgradeTask?.releaseCachedPayload?.();
+      return false;
+    }
+    record.pendingUpgrade = upgradeJob;
+    schedulePendingChunkUpgradeJob(upgradeJob, {
+      budget: defaultPreloadBurst,
+    });
+    return false;
   }
 
   function processPendingActivations(limit = defaultActivationBudget) {
@@ -3675,6 +3812,7 @@ export function createChunkManager({
         key: entry.key,
         chunk,
         entry,
+        pendingUpgrade: null,
       };
       entry.pendingChunk = pendingRecord;
       entry.task?.releaseCachedPayload?.();
@@ -3905,10 +4043,19 @@ export function createChunkManager({
           }
         }
 
+        if (!done && entry.kind === PENDING_UPGRADE_JOB_KIND) {
+          const burst = Math.max(1, entry.stepHint || defaultPreloadBurst);
+          entry.pendingBudget = Math.max(entry.pendingBudget ?? 0, burst);
+        }
+
         const wasUnlimited = entry.unlimited === true;
 
         if (done) {
-          finalizePendingEntry(entry);
+          if (entry.kind === PENDING_UPGRADE_JOB_KIND) {
+            finalizePendingChunkUpgradeJob(entry);
+          } else {
+            finalizePendingEntry(entry);
+          }
         } else if (entry.unlimited || entry.pendingBudget > 0) {
           entry.active = true;
           chunkJobQueue.push(entry);
@@ -7362,6 +7509,17 @@ export function createChunkManager({
     enumerable: false,
   });
 
+  Object.defineProperty(managerApi, '__getChunkJobQueueSnapshotForTest', {
+    value: () =>
+      chunkJobQueue.map((entry) => ({
+        key: entry?.key ?? null,
+        kind: entry?.kind ?? 'preload',
+        pendingBudget: entry?.pendingBudget ?? null,
+        unlimited: entry?.unlimited === true,
+      })),
+    enumerable: false,
+  });
+
   Object.defineProperty(managerApi, '__getLoadedChunkForTest', {
     value: (key) => {
       if (key == null) {
@@ -7438,6 +7596,26 @@ export function createChunkManager({
       }
       return chunkEntityState.get(String(key)) ?? null;
     },
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__enqueuePendingActivationForTest', {
+    value: (record) => enqueuePendingActivation(record),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__processPendingActivationsForTest', {
+    value: (limit) => processPendingActivations(limit),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__getPendingActivationKeysForTest', {
+    value: () => Array.from(pendingActivationByKey.keys()),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__upgradePendingChunkRecordForTest', {
+    value: (record, detailLevel) => upgradePendingChunkRecord(record, detailLevel),
     enumerable: false,
   });
 
