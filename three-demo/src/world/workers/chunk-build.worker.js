@@ -624,12 +624,16 @@ const normalizePersistenceStartInfo = (raw) => {
 
   let payload = resultValue;
   let hasPersistedState = false;
+  let syntheticFallback = false;
   if (resultValue && typeof resultValue === 'object') {
     if (Object.prototype.hasOwnProperty.call(resultValue, 'payload')) {
       const innerPayload = resultValue.payload;
       if (innerPayload !== undefined) {
         payload = innerPayload;
       }
+    }
+    if (resultValue.syntheticFallback === true || resultValue.isSyntheticFallback === true) {
+      syntheticFallback = true;
     }
     if (
       metadata == null &&
@@ -720,11 +724,30 @@ const normalizePersistenceStartInfo = (raw) => {
     }
   }
 
+  if (!syntheticFallback) {
+    const fallbackCandidates = [resultValue, container, raw];
+    for (let i = 0; i < fallbackCandidates.length; i += 1) {
+      const candidate = fallbackCandidates[i];
+      if (!candidate || typeof candidate !== 'object') {
+        continue;
+      }
+      if (candidate.syntheticFallback === true || candidate.isSyntheticFallback === true) {
+        syntheticFallback = true;
+        break;
+      }
+    }
+  }
+
+  if (syntheticFallback) {
+    hasPersistedState = false;
+  }
+
   const shouldBypass =
     stateValue === 'ready' &&
     hasPersistedState &&
     payload !== null &&
-    payload !== undefined;
+    payload !== undefined &&
+    !syntheticFallback;
 
   return {
     state: stateValue,
@@ -736,6 +759,7 @@ const normalizePersistenceStartInfo = (raw) => {
     promise: promise ?? null,
     voxelSources,
     hasPersistedState,
+    syntheticFallback,
   };
 };
 
@@ -1244,6 +1268,7 @@ const startBuilderForKey = (
       transferables: [],
       error: null,
       promise: null,
+      syntheticFallback: false,
     };
   const infoVoxelSources = hasVoxelSourceData(info?.voxelSources)
     ? info.voxelSources
@@ -1270,7 +1295,9 @@ const startBuilderForKey = (
     effectiveOptions.voxelSources = combinedVoxelSources;
   }
 
-  const builder = info.shouldBypass
+  const bypassPersistence = info.shouldBypass && info.syntheticFallback !== true;
+
+  const builder = bypassPersistence
     ? createPersistenceBuilder({
         payload: info.payload,
         metadata: info.metadata,
@@ -1380,6 +1407,7 @@ const handleStartMessage = (message) => {
             transferables: [],
             error: serializeError(error),
             promise: null,
+            syntheticFallback: false,
           };
           try {
             startBuilderForKey(key, normalizedOptions, fallbackInfo);

@@ -357,6 +357,106 @@ test('chunk manager posts worker start payloads before steps', async () => {
   }
 });
 
+test('chunk manager executes worker build when persistence only provides fallback payload', async () => {
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const scene = new THREE.Scene();
+  const worker = new FakeChunkBuildWorker();
+  const persistenceQueue = new FakeChunkPersistenceQueue();
+  __setChunkBuildWorkerFactoryForTest(() => worker);
+  __setChunkPersistenceQueueFactoryForTest(() => persistenceQueue);
+
+  let manager;
+  try {
+    manager = createChunkManager({
+      scene,
+      blockMaterials,
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreloadPerUpdate: 1,
+      maxDisposalsPerUpdate: 0,
+    });
+
+    const origin = new THREE.Vector3(0, 0, 0);
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreload: 1,
+    });
+
+    await waitForCondition(() => persistenceQueue.loadJobs.length > 0);
+
+    persistenceQueue.resolveNextLoad();
+
+    await waitForCondition(() =>
+      worker.messages.some((entry) => entry?.type === 'start') &&
+        worker.messages.some((entry) => entry?.type === 'step'),
+    );
+
+    const startMessage = worker.messages.find((entry) => entry?.type === 'start');
+    const stepMessage = worker.messages.find((entry) => entry?.type === 'step');
+    assert.ok(startMessage, 'expected worker start message when fallback persistence resolves');
+    assert.ok(stepMessage, 'expected worker step message when fallback persistence resolves');
+
+    const fallbackFlag = Boolean(
+      startMessage.persistence?.syntheticFallback ??
+        startMessage.persistence?.result?.syntheticFallback ??
+        false,
+    );
+    assert.equal(
+      fallbackFlag,
+      true,
+      'start persistence metadata should mark synthetic fallback payloads',
+    );
+
+    const task = generationModule.createChunkBuildTask({
+      chunkX: startMessage.payload.chunkX,
+      chunkZ: startMessage.payload.chunkZ,
+      blockMaterials,
+      requireWorkerPayload: true,
+      detailLevel: startMessage.payload.detailLevel,
+    });
+    let taskDone = false;
+    while (!taskDone) {
+      const result = task.step(Number.POSITIVE_INFINITY);
+      taskDone = result?.done === true;
+    }
+    const workerPayload = task.exportPayloadSnapshot();
+    task.releaseCachedPayload?.();
+
+    assert.ok(
+      Array.isArray(workerPayload?.blockPlacements),
+      'worker payload should include block placements when fallback requires rebuild',
+    );
+    assert.ok(
+      workerPayload.blockPlacements.length > 0,
+      'block placements should be generated when createChunkBuildTask executes',
+    );
+
+    worker.emit('message', {
+      key: startMessage.key,
+      processed: Number.isFinite(stepMessage?.budget)
+        ? Math.max(1, Math.floor(stepMessage.budget))
+        : 1,
+      done: true,
+      payload: workerPayload,
+    });
+
+    await waitForCondition(() =>
+      Boolean(manager?.__getLoadedChunkForTest?.(startMessage.key)),
+    );
+
+    const loadedChunk = manager.__getLoadedChunkForTest(startMessage.key);
+    assert.ok(loadedChunk, 'expected fallback persistence to trigger a worker rebuild');
+    await manager.flush();
+  } finally {
+    await manager?.dispose?.();
+    persistenceQueue.dispose();
+    __resetChunkPersistenceQueueFactoryForTest();
+    __resetChunkBuildWorkerFactoryForTest();
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
 test('chunk manager forwards persistence payload buffers to worker start message', async () => {
   const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
   const scene = new THREE.Scene();
