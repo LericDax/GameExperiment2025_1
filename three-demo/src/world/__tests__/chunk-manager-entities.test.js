@@ -84,6 +84,13 @@ function cloneEntityRecord(record) {
   };
 }
 
+function normalizeStats(stats) {
+  return {
+    entries: Math.max(0, Math.floor(stats?.entries ?? 0)),
+    bytes: Math.max(0, Math.floor(stats?.bytes ?? 0)),
+  };
+}
+
 function createStubEntityStore() {
   const loads = [];
   const appends = [];
@@ -92,7 +99,7 @@ function createStubEntityStore() {
   const statsByKey = new Map();
   let nextAppendStats = null;
 
-  return {
+  const store = {
     loadChunkEntities({ cx, cz }) {
       const key = `${cx}|${cz}`;
       loads.push({ key, cx, cz });
@@ -100,6 +107,7 @@ function createStubEntityStore() {
       return { snapshot: [], stats };
     },
     async appendEntityDeltas({ key, deltas }) {
+      const normalizedKey = String(key ?? '');
       const normalizedDeltas = Array.isArray(deltas)
         ? deltas
             .map((delta) => {
@@ -115,62 +123,73 @@ function createStubEntityStore() {
               if (delta.kind === 'remove') {
                 return { kind: 'remove', id: String(delta.id ?? '') };
               }
-              return delta;
+              return null;
             })
             .filter(Boolean)
         : [];
-      const previous = statsByKey.get(key) ?? { entries: 0, bytes: 0 };
-      const result = nextAppendStats
-        ? {
-            entries: Math.max(0, Math.floor(nextAppendStats.entries ?? 0)),
-            bytes: Math.max(0, Math.floor(nextAppendStats.bytes ?? 0)),
-          }
-        : {
-            entries: previous.entries + normalizedDeltas.length,
-            bytes: previous.bytes + normalizedDeltas.length * 16,
-          };
+      const previous = statsByKey.get(normalizedKey) ?? { entries: 0, bytes: 0 };
+      const stats = normalizeStats(
+        nextAppendStats ?? {
+          entries: previous.entries + normalizedDeltas.length,
+          bytes: previous.bytes + normalizedDeltas.length * 64,
+        },
+      );
+      statsByKey.set(normalizedKey, stats);
       nextAppendStats = null;
-      statsByKey.set(key, result);
-      appends.push({ key, deltas: normalizedDeltas, stats: result });
-      return result;
+      appends.push({ key: normalizedKey, deltas: normalizedDeltas, stats });
+      return stats;
     },
     async compactChunkEntities({ key, records, deltas }) {
-      const normalizedRecords = Array.isArray(records)
+      const normalizedKey = String(key ?? '');
+      const clonedRecords = Array.isArray(records)
         ? records.map((record) => cloneEntityRecord(record))
         : [];
-      const normalizedDeltas = Array.isArray(deltas)
-        ? deltas.map((delta) => ({ ...delta }))
+      const clonedDeltas = Array.isArray(deltas)
+        ? deltas.map((delta) =>
+            delta?.kind === 'place'
+              ? { kind: 'place', record: cloneEntityRecord(delta.record) }
+              : delta?.kind === 'remove'
+              ? { kind: 'remove', id: String(delta.id ?? '') }
+              : null,
+          ).filter(Boolean)
         : [];
-      compactions.push({ key, records: normalizedRecords, deltas: normalizedDeltas });
-      statsByKey.set(key, { entries: 0, bytes: 0 });
+      compactions.push({ key: normalizedKey, records: clonedRecords, deltas: clonedDeltas });
+      statsByKey.set(normalizedKey, { entries: 0, bytes: 0 });
       return { entries: 0, bytes: 0 };
     },
     async removeChunkEntities({ key }) {
-      removals.push({ key });
-      statsByKey.delete(key);
-      return { ok: true };
+      const normalizedKey = String(key ?? '');
+      removals.push({ key: normalizedKey });
+      statsByKey.delete(normalizedKey);
+      return null;
+    },
+    __setNextAppendStats(stats) {
+      nextAppendStats = normalizeStats(stats);
+    },
+    __setStatsForKey(key, stats) {
+      statsByKey.set(String(key ?? ''), normalizeStats(stats));
+    },
+    __getStatsForKey(key) {
+      return statsByKey.get(String(key ?? '')) ?? { entries: 0, bytes: 0 };
     },
     __records: {
       loads,
       appends,
       compactions,
       removals,
-      statsByKey,
-    },
-    __setNextAppendStats(stats) {
-      nextAppendStats = {
-        entries: Math.max(0, Math.floor(stats?.entries ?? 0)),
-        bytes: Math.max(0, Math.floor(stats?.bytes ?? 0)),
-      };
     },
   };
+
+  return store;
 }
 
-test('entity persistence integration flushes, compacts, and disposes correctly', async () => {
+test('entity persistence pipeline flushes and compacts chunk journals', async () => {
   const scene = new THREE.Scene();
+  const origin = new THREE.Vector3(0, 0, 0);
   const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
   const persistenceQueue = createStubPersistenceQueue();
   const entityStore = createStubEntityStore();
+
   const manager = createChunkManager({
     scene,
     blockMaterials,
@@ -184,7 +203,6 @@ test('entity persistence integration flushes, compacts, and disposes correctly',
     entityAutosaveIntervalMs: 1_000_000,
   });
 
-  const origin = new THREE.Vector3(0, 0, 0);
   let disposed = false;
 
   try {
@@ -200,7 +218,10 @@ test('entity persistence integration flushes, compacts, and disposes correctly',
       manager.__getLoadedChunkForTest('0|0'),
       'expected origin chunk to be available after bootstrap',
     );
-    assert.ok(entityStore.__records.loads.length >= 1, 'entity store should load chunk state');
+    assert.ok(
+      entityStore.__records.loads.length >= 1,
+      'entity store should load chunk state during initialization',
+    );
 
     const transform = new Float32Array(16);
     transform[0] = 1;
@@ -220,6 +241,7 @@ test('entity persistence integration flushes, compacts, and disposes correctly',
       true,
       'placement should be recorded',
     );
+
     assert.equal(
       manager.recordEntityRemoval({ id: 'entity-1' }),
       true,
@@ -246,6 +268,7 @@ test('entity persistence integration flushes, compacts, and disposes correctly',
     const stateAfterAutosave = manager.__getChunkEntityStateForTest('0|0');
     assert.ok(stateAfterAutosave, 'chunk entity state should exist after autosave');
     assert.equal(stateAfterAutosave.needsCompaction, true);
+    assert.deepEqual(stateAfterAutosave.stats, { entries: 4096, bytes: 256 * 1024 });
 
     await manager.__runEntityCompactionPassForTest();
 
@@ -253,6 +276,7 @@ test('entity persistence integration flushes, compacts, and disposes correctly',
     const compaction = entityStore.__records.compactions[0];
     assert.equal(compaction.key, '0|0');
     assert.equal(compaction.records.length, 0, 'compaction should run with no live records');
+    assert.deepEqual(compaction.deltas, [], 'compaction should not include prior deltas');
 
     const stateAfterCompaction = manager.__getChunkEntityStateForTest('0|0');
     assert.ok(stateAfterCompaction, 'state should remain after compaction');
