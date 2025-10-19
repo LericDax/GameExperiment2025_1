@@ -90,6 +90,113 @@ function serializeError(error) {
   return { name, message, stack };
 }
 
+function cloneEntityMeta(meta) {
+  if (meta == null) {
+    return meta ?? null;
+  }
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(meta);
+    } catch (error) {
+      console.debug('[chunk-manager] Failed to structuredClone entity meta', error);
+    }
+  }
+  try {
+    return JSON.parse(JSON.stringify(meta));
+  } catch (error) {
+    console.debug('[chunk-manager] Failed to clone entity meta via JSON', error);
+  }
+  return meta;
+}
+
+function normalizeEntityTransform(transform) {
+  const matrix = new Float32Array(16);
+  matrix[0] = 1;
+  matrix[5] = 1;
+  matrix[10] = 1;
+  matrix[15] = 1;
+  if (transform instanceof Float32Array) {
+    const limit = Math.min(transform.length, 16);
+    for (let i = 0; i < limit; i += 1) {
+      matrix[i] = Number.isFinite(transform[i]) ? transform[i] : matrix[i];
+    }
+    return matrix;
+  }
+  if (Array.isArray(transform)) {
+    const limit = Math.min(transform.length, 16);
+    for (let i = 0; i < limit; i += 1) {
+      const value = Number(transform[i]);
+      matrix[i] = Number.isFinite(value) ? value : matrix[i];
+    }
+  }
+  return matrix;
+}
+
+function clonePersistedEntityRecord(record) {
+  if (!record) {
+    return null;
+  }
+  const normalizedId = String(record.id ?? '');
+  if (!normalizedId) {
+    return null;
+  }
+  return {
+    id: normalizedId,
+    typeId: String(record.typeId ?? ''),
+    transform: normalizeEntityTransform(record.transform),
+    meta: cloneEntityMeta(record.meta),
+  };
+}
+
+function normalizeEntityStats(stats) {
+  return {
+    entries: Math.max(0, Math.floor(stats?.entries ?? 0)),
+    bytes: Math.max(0, Math.floor(stats?.bytes ?? 0)),
+  };
+}
+
+function applyEntityDeltaToRecords(records, delta, entityIndex, key) {
+  if (!records || !delta) {
+    return;
+  }
+  if (delta.kind === 'place') {
+    const cloned = clonePersistedEntityRecord(delta.record);
+    if (!cloned) {
+      return;
+    }
+    records.set(cloned.id, cloned);
+    if (entityIndex && key) {
+      entityIndex.set(cloned.id, key);
+    }
+    return;
+  }
+  const normalizedId = String(delta.id ?? '');
+  if (!normalizedId) {
+    return;
+  }
+  records.delete(normalizedId);
+  entityIndex?.delete(normalizedId);
+}
+
+function resolveChunkKeyFromTransform(transform) {
+  if (!(transform instanceof Float32Array) && !Array.isArray(transform)) {
+    return {
+      key: chunkKey(0, 0),
+      chunkX: 0,
+      chunkZ: 0,
+    };
+  }
+  const x = Number(transform[12] ?? 0);
+  const z = Number(transform[14] ?? 0);
+  const chunkX = worldToChunk(Number.isFinite(x) ? x : 0);
+  const chunkZ = worldToChunk(Number.isFinite(z) ? z : 0);
+  return {
+    key: chunkKey(chunkX, chunkZ),
+    chunkX,
+    chunkZ,
+  };
+}
+
 const sharedArrayBufferCtor =
   typeof SharedArrayBuffer !== 'undefined' ? SharedArrayBuffer : null;
 
@@ -623,6 +730,9 @@ export function createChunkManager({
   disposalMargin = 0,
   chunkPersistenceQueue: providedChunkPersistenceQueue = undefined,
   chunkPersistenceTimeout = DEFAULT_CHUNK_STORE_TIMEOUT_MS,
+  entityStore = null,
+  entityAutosaveIntervalMs = undefined,
+  entityCompactionThresholds = undefined,
 }) {
   const loadedChunks = new Map();
   const solidBlocks = new Set();
@@ -712,11 +822,39 @@ export function createChunkManager({
   const chunkJournalQueues = new Map();
   const chunkPersistenceState = new Map();
   const chunksPendingCompaction = new Set();
+  const chunkEntityState = new Map();
+  const entityDeltaQueues = new Map();
+  const dirtyEntityChunks = new Set();
+  const entityCompactionQueue = new Set();
+  const entityIdIndex = new Map();
   let autosaveTimer = null;
   let autosaveRunning = false;
   let compactionTimer = null;
   let compactionRunning = false;
+  let entityAutosaveTimer = null;
+  let entityAutosaveRunning = false;
+  let entityCompactionTimer = null;
+  let entityCompactionRunning = false;
   let nextJournalTick = Math.max(1, Math.floor(Date.now()));
+  const entityAutosaveIntervalCandidate = Number(entityAutosaveIntervalMs);
+  const entityAutosaveInterval = Math.max(
+    16,
+    Math.floor(
+      Number.isFinite(entityAutosaveIntervalCandidate)
+        ? entityAutosaveIntervalCandidate
+        : AUTOSAVE_INTERVAL_MS,
+    ),
+  );
+  const normalizedEntityMaxOps = Number(entityCompactionThresholds?.maxOps);
+  const normalizedEntityMaxBytes = Number(entityCompactionThresholds?.maxBytes);
+  const entityCompactionThresholdsNormalized = {
+    maxOps: Number.isFinite(normalizedEntityMaxOps)
+      ? Math.max(0, Math.floor(normalizedEntityMaxOps))
+      : DEFAULT_COMPACTION_THRESHOLDS.maxOps,
+    maxBytes: Number.isFinite(normalizedEntityMaxBytes)
+      ? Math.max(0, Math.floor(normalizedEntityMaxBytes))
+      : DEFAULT_COMPACTION_THRESHOLDS.maxBytes,
+  };
   const chunkPersistenceQueue = (() => {
     if (providedChunkPersistenceQueue === null) {
       return null;
@@ -894,6 +1032,242 @@ export function createChunkManager({
       needsCompaction: false,
     });
     ensureJournalQueue(key);
+  }
+
+  function ensureEntityDeltaQueue(key) {
+    if (!key) {
+      return [];
+    }
+    let queue = entityDeltaQueues.get(key);
+    if (!queue) {
+      queue = [];
+      entityDeltaQueues.set(key, queue);
+    }
+    return queue;
+  }
+
+  function updateChunkPersistentEntities(key) {
+    if (!key) {
+      return;
+    }
+    const chunk = loadedChunks.get(key);
+    const state = chunkEntityState.get(key);
+    if (!chunk) {
+      return;
+    }
+    if (!state) {
+      chunk.persistentEntities = [];
+      return;
+    }
+    chunk.persistentEntities = Array.from(state.records.values());
+  }
+
+  function ensureChunkEntityState(key, chunkX, chunkZ, chunk = null) {
+    if (!entityStore || typeof entityStore.loadChunkEntities !== 'function') {
+      if (chunk) {
+        chunk.persistentEntities = [];
+      }
+      return null;
+    }
+    if (!key) {
+      if (chunk) {
+        chunk.persistentEntities = [];
+      }
+      return null;
+    }
+    let state = chunkEntityState.get(key);
+    if (state) {
+      if (chunk) {
+        chunk.persistentEntities = Array.from(state.records.values());
+      }
+      return state;
+    }
+    let result = null;
+    try {
+      result = entityStore.loadChunkEntities({ cx: chunkX, cz: chunkZ }) ?? null;
+    } catch (error) {
+      console.warn('[chunk-manager] Failed to load chunk entities', error);
+    }
+    const records = new Map();
+    const stats = normalizeEntityStats(result?.stats ?? result?.logStats ?? {});
+    const snapshot = Array.isArray(result?.snapshot)
+      ? result.snapshot
+      : Array.isArray(result?.records)
+      ? result.records
+      : [];
+    snapshot.forEach((record) => {
+      const cloned = clonePersistedEntityRecord(record);
+      if (!cloned) {
+        return;
+      }
+      records.set(cloned.id, cloned);
+      entityIdIndex.set(cloned.id, key);
+    });
+    const deltas = Array.isArray(result?.deltas) ? result.deltas : [];
+    deltas.forEach((delta) => applyEntityDeltaToRecords(records, delta, entityIdIndex, key));
+    state = {
+      records,
+      stats,
+      needsCompaction: false,
+    };
+    chunkEntityState.set(key, state);
+    ensureEntityDeltaQueue(key);
+    if (shouldCompactJournal(state.stats, entityCompactionThresholdsNormalized)) {
+      state.needsCompaction = true;
+      entityCompactionQueue.add(key);
+      scheduleEntityCompactionTimer();
+    }
+    if (chunk) {
+      chunk.persistentEntities = Array.from(records.values());
+    }
+    return state;
+  }
+
+  function markEntityChunkDirty(key) {
+    if (!key || !entityStore) {
+      return;
+    }
+    dirtyEntityChunks.add(key);
+    scheduleEntityAutosaveTimer();
+  }
+
+  async function flushChunkEntityLog(key) {
+    if (!key) {
+      return;
+    }
+    const queue = entityDeltaQueues.get(key);
+    if (!queue || queue.length === 0) {
+      dirtyEntityChunks.delete(key);
+      return;
+    }
+    if (!entityStore || typeof entityStore.appendEntityDeltas !== 'function') {
+      dirtyEntityChunks.delete(key);
+      return;
+    }
+    const deltas = queue.splice(0);
+    try {
+      const statsResult = await entityStore.appendEntityDeltas({ key, deltas });
+      const state = chunkEntityState.get(key);
+      if (state) {
+        const normalizedStats = normalizeEntityStats(statsResult ?? state.stats ?? {});
+        if (!statsResult) {
+          normalizedStats.entries = Math.max(0, state.stats.entries + deltas.length);
+        }
+        state.stats = normalizedStats;
+        if (shouldCompactJournal(state.stats, entityCompactionThresholdsNormalized)) {
+          state.needsCompaction = true;
+          entityCompactionQueue.add(key);
+          scheduleEntityCompactionTimer();
+        }
+      }
+      dirtyEntityChunks.delete(key);
+    } catch (error) {
+      console.warn('[chunk-manager] Failed to append entity deltas', error);
+      const existing = entityDeltaQueues.get(key) ?? [];
+      entityDeltaQueues.set(key, [...deltas, ...existing]);
+      dirtyEntityChunks.add(key);
+      scheduleEntityAutosaveTimer();
+    }
+  }
+
+  async function runEntityAutosavePass() {
+    if (entityAutosaveRunning || !entityStore) {
+      return;
+    }
+    entityAutosaveRunning = true;
+    try {
+      const pendingKeys = Array.from(dirtyEntityChunks.values());
+      for (const key of pendingKeys) {
+        await flushChunkEntityLog(key);
+      }
+    } finally {
+      entityAutosaveRunning = false;
+      if (dirtyEntityChunks.size > 0) {
+        scheduleEntityAutosaveTimer();
+      }
+    }
+  }
+
+  function scheduleEntityAutosaveTimer() {
+    if (!entityStore || dirtyEntityChunks.size === 0) {
+      return;
+    }
+    if (entityAutosaveTimer !== null || entityAutosaveRunning) {
+      return;
+    }
+    entityAutosaveTimer = setTimeout(() => {
+      entityAutosaveTimer = null;
+      void runEntityAutosavePass();
+    }, entityAutosaveInterval);
+  }
+
+  async function runEntityCompactionPass() {
+    if (entityCompactionRunning || !entityStore) {
+      return;
+    }
+    if (typeof entityStore.compactChunkEntities !== 'function') {
+      entityCompactionQueue.clear();
+      return;
+    }
+    entityCompactionRunning = true;
+    try {
+      for (const key of Array.from(entityCompactionQueue)) {
+        const state = chunkEntityState.get(key);
+        if (!state || !state.needsCompaction) {
+          entityCompactionQueue.delete(key);
+          continue;
+        }
+        try {
+          const records = Array.from(state.records.values())
+            .map((record) => clonePersistedEntityRecord(record))
+            .filter(Boolean);
+          await entityStore.compactChunkEntities({ key, records, deltas: [] });
+          state.needsCompaction = false;
+          state.stats = { entries: 0, bytes: 0 };
+          entityCompactionQueue.delete(key);
+        } catch (error) {
+          console.warn('[chunk-manager] Failed to compact entity log', error);
+        }
+      }
+    } finally {
+      entityCompactionRunning = false;
+      if (entityCompactionQueue.size > 0) {
+        scheduleEntityCompactionTimer();
+      }
+    }
+  }
+
+  function scheduleEntityCompactionTimer() {
+    if (!entityStore || entityCompactionQueue.size === 0) {
+      return;
+    }
+    if (entityCompactionTimer !== null || entityCompactionRunning) {
+      return;
+    }
+    entityCompactionTimer = setTimeout(() => {
+      entityCompactionTimer = null;
+      void runEntityCompactionPass();
+    }, COMPACTION_INTERVAL_MS);
+  }
+
+  function cleanupChunkEntityState(key) {
+    if (!key) {
+      return;
+    }
+    const state = chunkEntityState.get(key);
+    if (state) {
+      state.records.forEach((_, entityId) => {
+        entityIdIndex.delete(entityId);
+      });
+    }
+    chunkEntityState.delete(key);
+    entityDeltaQueues.delete(key);
+    dirtyEntityChunks.delete(key);
+    entityCompactionQueue.delete(key);
+    const chunk = loadedChunks.get(key);
+    if (chunk) {
+      chunk.persistentEntities = [];
+    }
   }
 
   function markChunkDirty(key) {
@@ -3630,6 +4004,8 @@ export function createChunkManager({
     );
     chunk.__persistenceResult = null;
 
+    ensureChunkEntityState(key, chunkX, chunkZ, chunk);
+
     chunk.group.frustumCulled = false;
     applyChunkBounds(chunk);
     chunk.group.traverse((child) => {
@@ -3886,6 +4262,31 @@ export function createChunkManager({
       chunksPendingCompaction.delete(key);
       dirtyChunks.delete(key);
     }
+
+    const pendingEntityDeltas = entityDeltaQueues.get(key) ?? [];
+    const entityFlushPromise =
+      pendingEntityDeltas.length > 0
+        ? flushChunkEntityLog(key).catch((error) => {
+            console.warn(
+              '[chunk-manager] Failed to flush entity log before disposal',
+              error,
+            );
+          })
+        : Promise.resolve();
+    const entityRemovalPromise =
+      entityStore && typeof entityStore.removeChunkEntities === 'function'
+        ? entityFlushPromise
+            .then(() => entityStore.removeChunkEntities({ key }))
+            .catch((error) => {
+              console.warn(
+                '[chunk-manager] Failed to remove chunk entities during disposal',
+                error,
+              );
+            })
+        : entityFlushPromise.catch(() => {});
+    entityRemovalPromise.finally(() => {
+      cleanupChunkEntityState(key);
+    });
 
     if (
       chunkPersistenceQueue &&
@@ -4269,6 +4670,88 @@ export function createChunkManager({
     if (removedAny) {
       queueDirty = true;
     }
+  }
+
+  function recordEntityPlacement({ id, typeId, transform, meta }) {
+    if (!entityStore) {
+      return false;
+    }
+    const normalizedId = String(id ?? '');
+    const normalizedTypeId = String(typeId ?? '');
+    if (!normalizedId || !normalizedTypeId) {
+      return false;
+    }
+    const normalizedTransform = normalizeEntityTransform(transform);
+    const { key, chunkX, chunkZ } = resolveChunkKeyFromTransform(normalizedTransform);
+    const previousKey = entityIdIndex.get(normalizedId);
+    if (previousKey && previousKey !== key) {
+      const previousState = chunkEntityState.get(previousKey);
+      if (previousState) {
+        previousState.records.delete(normalizedId);
+        ensureEntityDeltaQueue(previousKey).push({ kind: 'remove', id: normalizedId });
+        markEntityChunkDirty(previousKey);
+        updateChunkPersistentEntities(previousKey);
+      }
+    }
+    let state = chunkEntityState.get(key);
+    if (!state) {
+      state = ensureChunkEntityState(key, chunkX, chunkZ) ?? {
+        records: new Map(),
+        stats: { entries: 0, bytes: 0 },
+        needsCompaction: false,
+      };
+      if (!chunkEntityState.has(key)) {
+        chunkEntityState.set(key, state);
+      }
+    }
+    const record = {
+      id: normalizedId,
+      typeId: normalizedTypeId,
+      transform: normalizedTransform,
+      meta: cloneEntityMeta(meta),
+    };
+    state.records.set(normalizedId, record);
+    entityIdIndex.set(normalizedId, key);
+    const queue = ensureEntityDeltaQueue(key);
+    const queuedRecord = clonePersistedEntityRecord(record);
+    if (queuedRecord) {
+      queue.push({ kind: 'place', record: queuedRecord });
+    }
+    markEntityChunkDirty(key);
+    updateChunkPersistentEntities(key);
+    return true;
+  }
+
+  function recordEntityRemoval({ id }) {
+    if (!entityStore) {
+      return false;
+    }
+    const normalizedId = String(id ?? '');
+    if (!normalizedId) {
+      return false;
+    }
+    let key = entityIdIndex.get(normalizedId) ?? null;
+    if (!key) {
+      for (const [candidateKey, state] of chunkEntityState.entries()) {
+        if (state?.records?.has(normalizedId)) {
+          key = candidateKey;
+          break;
+        }
+      }
+    }
+    if (!key) {
+      return false;
+    }
+    const state = chunkEntityState.get(key);
+    if (!state) {
+      return false;
+    }
+    state.records.delete(normalizedId);
+    entityIdIndex.delete(normalizedId);
+    ensureEntityDeltaQueue(key).push({ kind: 'remove', id: normalizedId });
+    markEntityChunkDirty(key);
+    updateChunkPersistentEntities(key);
+    return true;
   }
 
   function processPreloadQueue(limit) {
@@ -4655,6 +5138,10 @@ export function createChunkManager({
         await Promise.all(pendingJobs);
       }
     }
+    if (entityStore) {
+      await runEntityAutosavePass();
+      await runEntityCompactionPass();
+    }
   }
 
   async function dispose() {
@@ -4694,6 +5181,19 @@ export function createChunkManager({
     if (compactionTimer !== null) {
       clearTimeout(compactionTimer);
       compactionTimer = null;
+    }
+    chunkEntityState.clear();
+    entityDeltaQueues.clear();
+    dirtyEntityChunks.clear();
+    entityCompactionQueue.clear();
+    entityIdIndex.clear();
+    if (entityAutosaveTimer !== null) {
+      clearTimeout(entityAutosaveTimer);
+      entityAutosaveTimer = null;
+    }
+    if (entityCompactionTimer !== null) {
+      clearTimeout(entityCompactionTimer);
+      entityCompactionTimer = null;
     }
     chunkPersistenceJobs.clear();
     chunkPersistenceQueue?.dispose?.();
@@ -5541,6 +6041,8 @@ export function createChunkManager({
     removeBlockInstance,
     removeDecorationInstance,
     removeDecorationGroup,
+    recordEntityPlacement,
+    recordEntityRemoval,
     preloadAround,
     setViewDistance,
     setRetentionDistance,
@@ -5597,6 +6099,26 @@ export function createChunkManager({
 
   Object.defineProperty(managerApi, '__runCompactionPassForTest', {
     value: () => runCompactionPass(),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__getChunkEntityStateForTest', {
+    value: (key) => {
+      if (key == null) {
+        return null;
+      }
+      return chunkEntityState.get(String(key)) ?? null;
+    },
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__runEntityAutosavePassForTest', {
+    value: () => runEntityAutosavePass(),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__runEntityCompactionPassForTest', {
+    value: () => runEntityCompactionPass(),
     enumerable: false,
   });
 
