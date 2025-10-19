@@ -12,6 +12,9 @@ const isWorkerScope =
   self instanceof WorkerGlobalScope &&
   typeof self.document === 'undefined';
 
+const sharedArrayBufferCtor =
+  typeof SharedArrayBuffer === 'function' ? SharedArrayBuffer : null;
+
 const postFromWorker = (message, transferables = undefined) => {
   if (typeof self === 'undefined' || typeof self.postMessage !== 'function') {
     return;
@@ -423,6 +426,21 @@ const extractVoxelSourceDescriptor = (source) => {
   return descriptor;
 };
 
+const descriptorHasVoxelPersistence = (descriptor) => {
+  if (!descriptor) {
+    return false;
+  }
+  const snapshot = descriptor.snapshot;
+  if (
+    snapshot instanceof ArrayBuffer ||
+    (sharedArrayBufferCtor && snapshot instanceof sharedArrayBufferCtor) ||
+    snapshot instanceof Uint8Array
+  ) {
+    return true;
+  }
+  return Array.isArray(descriptor.journals) && descriptor.journals.length > 0;
+};
+
 const hasVoxelSourceData = (descriptor) => {
   if (!descriptor || typeof descriptor !== 'object') {
     return false;
@@ -515,6 +533,7 @@ const normalizePersistenceStartInfo = (raw) => {
       transferables: [],
       error: null,
       promise: null,
+      hasPersistedState: false,
     };
   }
 
@@ -545,6 +564,7 @@ const normalizePersistenceStartInfo = (raw) => {
       transferables: [],
       error: null,
       promise: raw,
+      hasPersistedState: false,
     };
   }
 
@@ -603,6 +623,7 @@ const normalizePersistenceStartInfo = (raw) => {
   }
 
   let payload = resultValue;
+  let hasPersistedState = false;
   if (resultValue && typeof resultValue === 'object') {
     if (Object.prototype.hasOwnProperty.call(resultValue, 'payload')) {
       const innerPayload = resultValue.payload;
@@ -624,6 +645,11 @@ const normalizePersistenceStartInfo = (raw) => {
           transfers,
         );
       }
+    }
+    if (resultValue.hasPersistedState === true) {
+      hasPersistedState = true;
+    } else if (resultValue.hasPersistedState === false) {
+      hasPersistedState = false;
     }
   }
 
@@ -652,10 +678,53 @@ const normalizePersistenceStartInfo = (raw) => {
         }
       });
     }
+    if (!hasPersistedState) {
+      const descriptorHasPersistedState = Boolean(
+        descriptorHasVoxelPersistence(voxelSources),
+      );
+      if (descriptorHasPersistedState) {
+        hasPersistedState = true;
+      }
+    }
+  }
+
+  if (!hasPersistedState) {
+    const persistedCandidates = [resultValue, container, raw];
+    for (let i = 0; i < persistedCandidates.length; i += 1) {
+      const candidate = persistedCandidates[i];
+      if (!candidate || typeof candidate !== 'object') {
+        continue;
+      }
+      if (candidate.hasPersistedState === true) {
+        hasPersistedState = true;
+        break;
+      }
+      if (candidate.hasPersistedState === false) {
+        continue;
+      }
+      const candidateSnapshot =
+        candidate.snapshot ?? candidate.baseSnapshot ?? null;
+      if (
+        candidateSnapshot instanceof ArrayBuffer ||
+        (sharedArrayBufferCtor &&
+          candidateSnapshot instanceof sharedArrayBufferCtor) ||
+        candidateSnapshot instanceof Uint8Array
+      ) {
+        hasPersistedState = true;
+        break;
+      }
+      if (Array.isArray(candidate.journals) && candidate.journals.length > 0) {
+        hasPersistedState = true;
+        break;
+      }
+    }
   }
 
   const shouldBypass =
-    stateValue === 'ready' && payload !== null && payload !== undefined;
+    stateValue === 'ready' &&
+    hasPersistedState &&
+    payload !== null &&
+    payload !== undefined;
 
   return {
     state: stateValue,
@@ -666,6 +735,7 @@ const normalizePersistenceStartInfo = (raw) => {
     error: serializedError,
     promise: promise ?? null,
     voxelSources,
+    hasPersistedState,
   };
 };
 
