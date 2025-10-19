@@ -304,6 +304,9 @@ function updateEntryPersistenceMetadata(entry, { stateOverride } = {}) {
     const result = entry.persistenceResult ?? null;
     persistenceDescriptor.result = result;
     transferables = extractPersistenceTransferables(result);
+    if (result?.syntheticFallback === true) {
+      persistenceDescriptor.syntheticFallback = true;
+    }
   } else if (state === 'failed') {
     persistenceDescriptor.result = null;
     const errorInfo = serializeError(entry.persistenceError);
@@ -447,6 +450,7 @@ function buildPersistenceResult(entry, { snapshot, journals, metadata, mergeInfo
     metadata: metadata ?? null,
     payload: payload ?? null,
     fallback,
+    syntheticFallback,
     hasPersistedState: hasPersistedState,
     voxelField: mergeInfo?.voxelField ?? null,
     mergedSnapshot: mergeInfo?.mergedSnapshot ?? null,
