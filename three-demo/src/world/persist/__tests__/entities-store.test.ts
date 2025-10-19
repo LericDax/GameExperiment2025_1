@@ -14,6 +14,14 @@ import {
   type PersistedEntityRecord,
 } from '../entities-store.ts';
 
+declare global {
+  interface FileSystemWritableFileStream {
+    write(
+      data: FileSystemWriteChunkType | Uint8Array<ArrayBufferLike>,
+    ): Promise<void>;
+  }
+}
+
 const COMPATIBILITY_OPTIONS = {
   regionSize: 4,
   worldUuid: '00000000-0000-0000-0000-000000000000',
@@ -60,16 +68,18 @@ function recordsFromDeltas(deltas: EntityDelta[]): Map<string, PersistedEntityRe
   return records;
 }
 
-test('entities region lifecycle persists snapshots and logs', async () => {
+test('entities region lifecycle persists snapshots and logs', async (t) => {
   const root = await createRegionRoot();
   const region = await openEntitiesRegion(root, 0, 0, COMPATIBILITY_OPTIONS);
   const chunkIndex = 0;
   const regionPath = path.join(root, 'entities.r.0.0.gea');
 
-  const fresh = loadChunkEntities(region, chunkIndex);
-  assert.deepStrictEqual(fresh.snapshot, []);
-  assert.deepStrictEqual(fresh.deltas, []);
-  assert.deepStrictEqual(fresh.logStats, { entries: 0, bytes: 0 });
+  await t.test('fresh region has no snapshot or log entries', () => {
+    const loaded = loadChunkEntities(region, chunkIndex);
+    assert.deepStrictEqual(loaded.snapshot, []);
+    assert.deepStrictEqual(loaded.deltas, []);
+    assert.deepStrictEqual(loaded.logStats, { entries: 0, bytes: 0 });
+  });
 
   const placeA: EntityDelta = {
     kind: 'place',
@@ -100,92 +110,93 @@ test('entities region lifecycle persists snapshots and logs', async () => {
     },
   };
 
-  const statsAfterPlacements = await appendEntityDeltas(region, chunkIndex, [
-    placeA,
-    placeB,
-  ]);
-  assert.strictEqual(statsAfterPlacements.entries, 2);
-  assert.ok(statsAfterPlacements.bytes > 0);
+  let statsAfterPlacements: Awaited<ReturnType<typeof appendEntityDeltas>>;
+  await t.test('appending placements records deltas with transforms and metadata', async () => {
+    statsAfterPlacements = await appendEntityDeltas(region, chunkIndex, [placeA, placeB]);
+    assert.strictEqual(statsAfterPlacements.entries, 2);
+    assert.ok(statsAfterPlacements.bytes > 0);
 
-  const afterPlacements = loadChunkEntities(region, chunkIndex);
-  assert.strictEqual(afterPlacements.snapshot.length, 0);
-  assert.strictEqual(afterPlacements.deltas.length, 2);
-  assert.deepStrictEqual(afterPlacements.deltas.map((delta) => delta.kind), [
-    'place',
-    'place',
-  ]);
-  const loadedA = afterPlacements.deltas[0];
-  const loadedB = afterPlacements.deltas[1];
-  if (loadedA.kind !== 'place' || loadedB.kind !== 'place') {
-    throw new Error('expected placement deltas');
-  }
-  assert.deepStrictEqual(Array.from(loadedA.record.transform), Array.from(placeA.record.transform));
-  assert.deepStrictEqual(loadedA.record.meta, placeA.record.meta);
-  assert.deepStrictEqual(Array.from(loadedB.record.transform), Array.from(placeB.record.transform));
-  assert.deepStrictEqual(loadedB.record.meta, placeB.record.meta);
+    const loaded = loadChunkEntities(region, chunkIndex);
+    assert.deepStrictEqual(loaded.snapshot, []);
+    assert.strictEqual(loaded.deltas.length, 2);
+    const [first, second] = loaded.deltas;
+    assert.ok(first?.kind === 'place');
+    assert.ok(second?.kind === 'place');
+    assert.strictEqual(first.record.id, placeA.record.id);
+    assert.strictEqual(second.record.id, placeB.record.id);
+    assert.deepStrictEqual(Array.from(first.record.transform), Array.from(placeA.record.transform));
+    assert.deepStrictEqual(Array.from(second.record.transform), Array.from(placeB.record.transform));
+    assert.deepStrictEqual(first.record.meta, placeA.record.meta);
+    assert.deepStrictEqual(second.record.meta, placeB.record.meta);
+  });
 
-  const statsAfterRemoval = await appendEntityDeltas(region, chunkIndex, [
-    { kind: 'remove', id: 'entity-a' },
-  ]);
-  assert.strictEqual(statsAfterRemoval.entries, 3);
-  assert.ok(statsAfterRemoval.bytes > statsAfterPlacements.bytes);
+  let survivingRecord: PersistedEntityRecord | undefined;
+  let statsAfterRemoval: Awaited<ReturnType<typeof appendEntityDeltas>>;
+  await t.test('removing an entity leaves only surviving records', async () => {
+    statsAfterRemoval = await appendEntityDeltas(region, chunkIndex, [
+      { kind: 'remove', id: 'entity-a' },
+    ]);
+    assert.strictEqual(statsAfterRemoval.entries, 3);
+    assert.ok(statsAfterRemoval.bytes > statsAfterPlacements.bytes);
 
-  const afterRemoval = loadChunkEntities(region, chunkIndex);
-  assert.strictEqual(afterRemoval.deltas.length, 3);
-  const lastDelta = afterRemoval.deltas.at(-1);
-  assert.ok(lastDelta);
-  assert.deepStrictEqual(lastDelta, { kind: 'remove', id: 'entity-a' });
-  const survivingRecords = recordsFromDeltas(afterRemoval.deltas);
-  assert.deepStrictEqual(Array.from(survivingRecords.keys()), ['entity-b']);
-  const survivingRecord = survivingRecords.get('entity-b');
-  assert.ok(survivingRecord);
+    const loaded = loadChunkEntities(region, chunkIndex);
+    const records = recordsFromDeltas(loaded.deltas);
+    assert.deepStrictEqual(Array.from(records.keys()), ['entity-b']);
+    survivingRecord = records.get('entity-b');
+    assert.ok(survivingRecord);
+  });
 
-  await compactChunkEntities(region, chunkIndex, [survivingRecord]);
-  const afterCompaction = loadChunkEntities(region, chunkIndex);
-  assert.strictEqual(afterCompaction.snapshot.length, 1);
-  assert.deepStrictEqual(afterCompaction.snapshot[0].id, 'entity-b');
-  assert.deepStrictEqual(
-    Array.from(afterCompaction.snapshot[0].transform),
-    Array.from(survivingRecord.transform),
-  );
-  assert.deepStrictEqual(afterCompaction.snapshot[0].meta, survivingRecord.meta);
-  assert.deepStrictEqual(afterCompaction.deltas, []);
-  assert.deepStrictEqual(afterCompaction.logStats, { entries: 0, bytes: 0 });
+  let sizeAfterCompaction = 0;
+  await t.test('compaction rewrites snapshot and resets log stats', async () => {
+    assert.ok(survivingRecord);
+    await compactChunkEntities(region, chunkIndex, [survivingRecord]);
 
-  const sizeAfterCompaction = (await fs.stat(regionPath)).size;
-  assert.ok(sizeAfterCompaction > 0);
+    const loaded = loadChunkEntities(region, chunkIndex);
+    assert.strictEqual(loaded.snapshot.length, 1);
+    const [snapshotRecord] = loaded.snapshot;
+    assert.strictEqual(snapshotRecord.id, survivingRecord.id);
+    assert.strictEqual(snapshotRecord.typeId, survivingRecord.typeId);
+    assert.deepStrictEqual(Array.from(snapshotRecord.transform), Array.from(survivingRecord.transform));
+    assert.deepStrictEqual(snapshotRecord.meta, survivingRecord.meta);
+    assert.deepStrictEqual(loaded.deltas, []);
+    assert.deepStrictEqual(loaded.logStats, { entries: 0, bytes: 0 });
 
-  await removeChunkEntities(region, chunkIndex);
-  const afterChunkRemoval = loadChunkEntities(region, chunkIndex);
-  assert.deepStrictEqual(afterChunkRemoval.snapshot, []);
-  assert.deepStrictEqual(afterChunkRemoval.deltas, []);
-  assert.deepStrictEqual(afterChunkRemoval.logStats, { entries: 0, bytes: 0 });
-  const sizeAfterRemoval = (await fs.stat(regionPath)).size;
-  assert.ok(sizeAfterRemoval < sizeAfterCompaction);
+    const stats = await fs.stat(regionPath);
+    sizeAfterCompaction = stats.size;
+    assert.ok(sizeAfterCompaction > 0);
+  });
 
-  const newRecord: PersistedEntityRecord = {
-    id: 'entity-c',
-    typeId: 'crystal',
-    transform: createTransform([
-      1, 0, 0, 0,
-      0, 1, 0, 0,
-      0, 0, 1, 0,
-      8, -3, 2, 1,
-    ]),
-    meta: { glow: 'blue' },
-  };
-  await appendEntityDeltas(region, chunkIndex, [{ kind: 'place', record: newRecord }]);
-  const sizeAfterRecreation = (await fs.stat(regionPath)).size;
-  assert.ok(sizeAfterRecreation > sizeAfterRemoval);
+  await t.test('removing the chunk clears persisted data and allows recreation', async () => {
+    await removeChunkEntities(region, chunkIndex);
+    const loaded = loadChunkEntities(region, chunkIndex);
+    assert.deepStrictEqual(loaded.snapshot, []);
+    assert.deepStrictEqual(loaded.deltas, []);
+    assert.deepStrictEqual(loaded.logStats, { entries: 0, bytes: 0 });
 
-  const afterRecreation = loadChunkEntities(region, chunkIndex);
-  assert.strictEqual(afterRecreation.deltas.length, 1);
-  const replaced = afterRecreation.deltas[0];
-  if (replaced.kind !== 'place') {
-    throw new Error('expected placement delta after recreation');
-  }
-  assert.strictEqual(replaced.record.id, newRecord.id);
-  assert.strictEqual(replaced.record.typeId, newRecord.typeId);
-  assert.deepStrictEqual(Array.from(replaced.record.transform), Array.from(newRecord.transform));
-  assert.deepStrictEqual(replaced.record.meta, newRecord.meta);
+    const sizeAfterRemoval = (await fs.stat(regionPath)).size;
+    assert.ok(sizeAfterRemoval < sizeAfterCompaction);
+
+    const newRecord: PersistedEntityRecord = {
+      id: 'entity-c',
+      typeId: 'crystal',
+      transform: createTransform([
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        8, -3, 2, 1,
+      ]),
+      meta: { glow: 'blue' },
+    };
+    await appendEntityDeltas(region, chunkIndex, [{ kind: 'place', record: newRecord }]);
+    const sizeAfterRecreation = (await fs.stat(regionPath)).size;
+    assert.ok(sizeAfterRecreation > sizeAfterRemoval);
+
+    const afterRecreation = loadChunkEntities(region, chunkIndex);
+    assert.strictEqual(afterRecreation.deltas.length, 1);
+    const [delta] = afterRecreation.deltas;
+    assert.ok(delta?.kind === 'place');
+    assert.strictEqual(delta.record.id, newRecord.id);
+    assert.deepStrictEqual(Array.from(delta.record.transform), Array.from(newRecord.transform));
+    assert.deepStrictEqual(delta.record.meta, newRecord.meta);
+  });
 });
