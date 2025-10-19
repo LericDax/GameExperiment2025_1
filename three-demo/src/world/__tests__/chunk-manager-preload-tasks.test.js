@@ -728,3 +728,171 @@ test('infinite view distance reuses the last finite scheduling radius', () => {
     createdMaterials.forEach((material) => material.dispose?.());
   }
 });
+
+test('core preload budget is consumed before scout entries', async () => {
+  const origin = new THREE.Vector3(0, 0, 0);
+  const scene = new THREE.Scene();
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const buildMockPayload = (chunkX, chunkZ) => {
+    const coordinateKey = `${chunkX}|${chunkZ}|0`;
+    return {
+      chunkX,
+      chunkZ,
+      typeMetadata: [
+        {
+          type: 'test:block',
+          capacity: 1,
+          entryKeys: [coordinateKey],
+          entryPayloads: [
+            {
+              key: `${coordinateKey}:entry`,
+              coordinateKey,
+              type: 'test:block',
+              matrix: [
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1,
+              ],
+              position: [chunkX * 16, 0, chunkZ * 16],
+              scale: [1, 1, 1],
+              visualScale: [1, 1, 1],
+              visualOffset: [0, 0, 0],
+              paletteColor: [0.65, 0.85, 1],
+              tintColor: [0.65, 0.85, 1],
+              isSolid: true,
+            },
+          ],
+        },
+      ],
+      occupancy: {
+        solidCoordinates: [coordinateKey],
+      },
+      fluids: {
+        blockKeys: [`water:${coordinateKey}`],
+        waterColumns: {
+          keys: [coordinateKey],
+          bottomY: [0],
+          surfaceY: [1],
+        },
+      },
+      entities: [],
+    };
+  };
+  class MockChunkBuildWorker {
+    constructor() {
+      this.listeners = new Map();
+    }
+
+    addEventListener(type, handler) {
+      if (!this.listeners.has(type)) {
+        this.listeners.set(type, new Set());
+      }
+      this.listeners.get(type).add(handler);
+    }
+
+    removeEventListener(type, handler) {
+      const bucket = this.listeners.get(type);
+      if (!bucket) {
+        return;
+      }
+      bucket.delete(handler);
+      if (bucket.size === 0) {
+        this.listeners.delete(type);
+      }
+    }
+
+    postMessage(message) {
+      const { type, key } = message ?? {};
+      if (!key) {
+        return;
+      }
+      if (type === 'cancel') {
+        return;
+      }
+      if (type === 'step') {
+        const [chunkX = 0, chunkZ = 0] = key
+          .split('|')
+          .map((value) => Number.parseInt(value, 10) || 0);
+        const processedBudget = Number.isFinite(message?.budget)
+          ? Math.max(1, Math.floor(message.budget))
+          : 1;
+        const event = {
+          data: {
+            key,
+            processed: processedBudget,
+            done: true,
+            metadata: { mocked: true },
+            payload: buildMockPayload(chunkX, chunkZ),
+          },
+        };
+        queueMicrotask(() => this.#dispatch('message', event));
+      }
+    }
+
+    terminate() {
+      this.listeners.clear();
+    }
+
+    #dispatch(type, event) {
+      const bucket = this.listeners.get(type);
+      if (!bucket) {
+        return;
+      }
+      bucket.forEach((handler) => {
+        handler(event);
+      });
+    }
+  }
+
+  __setChunkBuildWorkerFactoryForTest(() => new MockChunkBuildWorker());
+
+  try {
+    const manager = createChunkManager({
+      scene,
+      blockMaterials,
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreloadPerUpdate: 1,
+      maxDisposalsPerUpdate: 0,
+      maxActivationsPerUpdate: 8,
+      disposalMargin: 2,
+    });
+
+    try {
+      manager.update(origin, {
+        viewDistance: 0,
+        retainDistance: 0,
+        maxPreload: 0,
+        force: true,
+      });
+      await manager.flush();
+
+      manager.update(origin, {
+        viewDistance: 2,
+        retainDistance: 2,
+        maxPreload: 1,
+      });
+
+      for (let i = 0; i < 10 && manager.__isChunkJobPumpActiveForTest(); i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      const loadedCoreChunk = manager.__getLoadedChunkForTest('2|0');
+      assert.ok(
+        loadedCoreChunk?.group?.isGroup || scene.getObjectByName('chunk_2_0'),
+        'core-detail chunk should load even when scout entries are queued',
+      );
+
+      const pendingScout = manager.__getPendingEntryForTest('4|0');
+      assert.ok(pendingScout, 'scout entry should remain pending when base budget is spent');
+      assert.equal(pendingScout.detailLevel, 'scout');
+      assert.equal(pendingScout.pendingBudget ?? 0, 0);
+    } finally {
+      await manager.dispose();
+      createdMaterials.forEach((material) => material.dispose?.());
+    }
+  } finally {
+    __resetChunkBuildWorkerFactoryForTest();
+  }
+});

@@ -5892,9 +5892,9 @@ export function createChunkManager({
     };
 
     const detailOrder = [
-      DETAIL_LEVEL_SCOUT,
-      DETAIL_LEVEL_RETENTION,
       DETAIL_LEVEL_CORE,
+      DETAIL_LEVEL_RETENTION,
+      DETAIL_LEVEL_SCOUT,
     ];
 
     for (const detail of detailOrder) {
@@ -5952,6 +5952,10 @@ export function createChunkManager({
             Math.floor(combinedBudget / remainingEntries) || 1,
           );
           stepBudget = Math.min(stepBudget, combinedBudget);
+        }
+
+        if (isScout && scoutReserve > 0) {
+          stepBudget = Math.min(stepBudget, scoutReserve);
         }
 
         const grantedBudget = allocateBudget(stepBudget, isScout);
