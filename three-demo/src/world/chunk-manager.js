@@ -2601,6 +2601,183 @@ export function createChunkManager({
     };
   }
 
+  const scoutPreviewMaterial = (() => {
+    const material = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 1,
+      metalness: 0,
+      transparent: true,
+      opacity: 0.85,
+    });
+    material.name = 'scout-preview';
+    material.flatShading = true;
+    material.needsUpdate = true;
+    return material;
+  })();
+
+  const scoutPreviewColorLow = new THREE.Color('#4b5d6a');
+  const scoutPreviewColorHigh = new THREE.Color('#c6d4df');
+  const scoutPreviewColorScratch = new THREE.Color();
+
+  const createScoutChunkPreview = ({
+    group,
+    chunkX,
+    chunkZ,
+    chunkSize,
+    summary,
+  }) => {
+    if (!group || !summary) {
+      return null;
+    }
+
+    const normalizedChunkSize = Number.isFinite(chunkSize)
+      ? Math.max(1, Math.floor(chunkSize))
+      : 16;
+    const width = Number.isFinite(summary.width)
+      ? Math.max(1, Math.floor(summary.width))
+      : normalizedChunkSize;
+    const depth = Number.isFinite(summary.depth)
+      ? Math.max(1, Math.floor(summary.depth))
+      : normalizedChunkSize;
+    const totalColumns = Math.max(1, width * depth);
+
+    let heightsSource = summary.heights ?? null;
+    if (heightsSource instanceof ArrayBuffer) {
+      heightsSource = new Int16Array(heightsSource);
+    }
+    const fallbackHeight = Number.isFinite(summary.minHeight)
+      ? summary.minHeight
+      : 0;
+    const heights = new Float32Array(totalColumns);
+    let computedMin = Number.isFinite(summary.minHeight)
+      ? summary.minHeight
+      : Number.POSITIVE_INFINITY;
+    let computedMax = Number.isFinite(summary.maxHeight)
+      ? summary.maxHeight
+      : Number.NEGATIVE_INFINITY;
+    for (let index = 0; index < totalColumns; index += 1) {
+      let value = null;
+      if (Array.isArray(heightsSource) || ArrayBuffer.isView(heightsSource)) {
+        value = heightsSource[index];
+      } else if (heightsSource && typeof heightsSource === 'object') {
+        value = heightsSource[index] ?? null;
+      }
+      const numeric = Number(value);
+      const heightValue = Number.isFinite(numeric) ? numeric : fallbackHeight;
+      heights[index] = heightValue;
+      if (!Number.isFinite(summary.minHeight)) {
+        computedMin = Math.min(computedMin, heightValue);
+      }
+      if (!Number.isFinite(summary.maxHeight)) {
+        computedMax = Math.max(computedMax, heightValue);
+      }
+    }
+    if (!Number.isFinite(summary.minHeight)) {
+      computedMin =
+        computedMin === Number.POSITIVE_INFINITY ? fallbackHeight : computedMin;
+    }
+    if (!Number.isFinite(summary.maxHeight)) {
+      computedMax =
+        computedMax === Number.NEGATIVE_INFINITY ? computedMin : computedMax;
+    }
+    const heightRange = Math.max(1, computedMax - computedMin);
+    const clamp01 = (value) => Math.min(Math.max(value, 0), 1);
+
+    const vertexCountX = width + 1;
+    const vertexCountZ = depth + 1;
+    const vertexCount = vertexCountX * vertexCountZ;
+    const positions = new Float32Array(vertexCount * 3);
+    const colors = new Float32Array(vertexCount * 3);
+
+    const halfSize = normalizedChunkSize / 2;
+    const minWorldX = chunkX * normalizedChunkSize - halfSize - 0.5;
+    const minWorldZ = chunkZ * normalizedChunkSize - halfSize - 0.5;
+    const stepX = normalizedChunkSize / width;
+    const stepZ = normalizedChunkSize / depth;
+
+    for (let vx = 0; vx < vertexCountX; vx += 1) {
+      for (let vz = 0; vz < vertexCountZ; vz += 1) {
+        const vertexIndex = vx * vertexCountZ + vz;
+        let sum = 0;
+        let samples = 0;
+        for (let dx = 0; dx < 2; dx += 1) {
+          for (let dz = 0; dz < 2; dz += 1) {
+            const columnX = vx - dx;
+            const columnZ = vz - dz;
+            if (columnX < 0 || columnX >= width || columnZ < 0 || columnZ >= depth) {
+              continue;
+            }
+            const columnIndex = columnX * depth + columnZ;
+            const columnHeight = heights[columnIndex];
+            if (Number.isFinite(columnHeight)) {
+              sum += columnHeight;
+              samples += 1;
+            }
+          }
+        }
+        const averagedHeight =
+          samples > 0 ? sum / samples : fallbackHeight;
+        const positionOffset = vertexIndex * 3;
+        positions[positionOffset] = minWorldX + vx * stepX;
+        positions[positionOffset + 1] = averagedHeight;
+        positions[positionOffset + 2] = minWorldZ + vz * stepZ;
+
+        const normalized = clamp01((averagedHeight - computedMin) / heightRange);
+        scoutPreviewColorScratch.copy(scoutPreviewColorLow);
+        scoutPreviewColorScratch.lerp(scoutPreviewColorHigh, normalized);
+        colors[positionOffset] = scoutPreviewColorScratch.r;
+        colors[positionOffset + 1] = scoutPreviewColorScratch.g;
+        colors[positionOffset + 2] = scoutPreviewColorScratch.b;
+      }
+    }
+
+    const indexCount = width * depth * 6;
+    const useUint32 = vertexCount > 65535;
+    const indices = useUint32
+      ? new Uint32Array(indexCount)
+      : new Uint16Array(indexCount);
+    let indexOffset = 0;
+    for (let vx = 0; vx < width; vx += 1) {
+      for (let vz = 0; vz < depth; vz += 1) {
+        const a = vx * vertexCountZ + vz;
+        const b = (vx + 1) * vertexCountZ + vz;
+        const c = (vx + 1) * vertexCountZ + (vz + 1);
+        const d = vx * vertexCountZ + (vz + 1);
+        indices[indexOffset++] = a;
+        indices[indexOffset++] = d;
+        indices[indexOffset++] = b;
+        indices[indexOffset++] = d;
+        indices[indexOffset++] = c;
+        indices[indexOffset++] = b;
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+
+    const mesh = new THREE.Mesh(geometry, scoutPreviewMaterial);
+    mesh.name = `chunk_${chunkX}_${chunkZ}_scout_preview`;
+    mesh.userData = mesh.userData || {};
+    mesh.userData.isScoutPreview = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.renderOrder = -1;
+
+    group.add(mesh);
+    group.userData = group.userData || {};
+    group.userData.scoutPreviewMesh = mesh;
+
+    return mesh;
+  };
+
   const finalizeScoutChunk = (entry, payload) => {
     const chunkX = entry?.chunkX ?? 0;
     const chunkZ = entry?.chunkZ ?? 0;
@@ -2675,11 +2852,19 @@ export function createChunkManager({
     const chunkBiomes = Array.isArray(payload?.biomes) ? payload.biomes : [];
     const group = new THREE.Group();
     group.name = `chunk_${chunkX}_${chunkZ}_scout`;
-    group.visible = false;
     group.userData = group.userData || {};
     group.userData.biomes = chunkBiomes;
     group.userData.detailLevel = DETAIL_LEVEL_SCOUT;
     group.userData.scoutSummary = summary;
+
+    const previewMesh = createScoutChunkPreview({
+      group,
+      chunkX,
+      chunkZ,
+      chunkSize,
+      summary,
+    });
+    group.visible = Boolean(previewMesh);
 
     const halfSize = chunkSize / 2;
     const fallbackMaxHeight = Number.isFinite(worldConfig?.maxHeight)
@@ -2989,10 +3174,16 @@ export function createChunkManager({
           child.geometry?.dispose?.();
         }
         const material = child.material;
+        const disposeMaterial = (mat) => {
+          if (!mat || mat === scoutPreviewMaterial) {
+            return;
+          }
+          mat.dispose?.();
+        };
         if (Array.isArray(material)) {
-          material.forEach((mat) => mat?.dispose?.());
+          material.forEach(disposeMaterial);
         } else {
-          material?.dispose?.();
+          disposeMaterial(material);
         }
       });
     }
@@ -3435,6 +3626,7 @@ export function createChunkManager({
       chunkZ: chunk.chunkZ,
       blockMaterials,
       detailLevel: normalizedTarget,
+      scoutPreviewBuilder: createScoutChunkPreview,
     });
     const entry = {
       key,
@@ -3689,6 +3881,7 @@ export function createChunkManager({
         chunkZ: entry.chunkZ,
         blockMaterials,
         detailLevel: normalizedTarget,
+        scoutPreviewBuilder: createScoutChunkPreview,
       });
     } catch (error) {
       console.error('[chunk-manager] Failed to create upgrade task', error);
@@ -5742,6 +5935,7 @@ export function createChunkManager({
       blockMaterials,
       requireWorkerPayload: entry.metadata?.mode === 'worker',
       detailLevel: entry.detailLevel,
+      scoutPreviewBuilder: createScoutChunkPreview,
     });
     pendingPreloadEntries.set(key, entry);
     preloadQueue.push(entry);
