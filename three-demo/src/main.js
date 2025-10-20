@@ -303,7 +303,7 @@ try {
     viewDistance: 2,
     retainDistance: 4,
     disposalMargin: 4,
-    maxPreloadPerUpdate: 8,
+    maxPreloadPerUpdate: 1,
   })
 
   if (chunkManager?.events?.addEventListener) {

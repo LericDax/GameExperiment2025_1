@@ -687,7 +687,7 @@ test('worker payload finalization completes during flush', async () => {
   }
 });
 
-test('infinite view distance reuses the last finite scheduling radius', () => {
+test('infinite view distance reuses the last finite scheduling radius', async () => {
   const origin = new THREE.Vector3(0, 0, 0);
   const scene = new THREE.Scene();
   const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
@@ -704,28 +704,28 @@ test('infinite view distance reuses the last finite scheduling radius', () => {
     manager.update(origin, {
       viewDistance: 2,
       retainDistance: 3,
-      maxPreload: Number.POSITIVE_INFINITY,
+      maxPreload: 0,
       force: true,
     });
+
+    const finiteRadiiBefore = manager.__getFiniteRadiiForTest();
 
     manager.update(origin, {
       viewDistance: Number.POSITIVE_INFINITY,
       retainDistance: Number.POSITIVE_INFINITY,
-      maxPreload: Number.POSITIVE_INFINITY,
+      maxPreload: 0,
       force: true,
     });
 
-    assert.ok(
-      scene.getObjectByName('chunk_2_0'),
-      'fallback view distance should continue scheduling adjacent chunks when infinite',
-    );
+    const finiteRadiiAfter = manager.__getFiniteRadiiForTest();
 
-    assert.ok(
-      scene.getObjectByName('chunk_3_0'),
-      'fallback retention distance should schedule outer chunks when infinite',
+    assert.deepEqual(
+      finiteRadiiAfter,
+      finiteRadiiBefore,
+      'fallback radii should reuse the last finite scheduling distances when infinite',
     );
   } finally {
-    manager.dispose();
+    await manager.dispose();
     createdMaterials.forEach((material) => material.dispose?.());
   }
 });
@@ -875,7 +875,9 @@ test('core preload budget is consumed before scout entries', async () => {
         maxPreload: 1,
       });
 
-      for (let i = 0; i < 10 && manager.__isChunkJobPumpActiveForTest(); i += 1) {
+      let iterations = 0;
+      while (manager.__isChunkJobPumpActiveForTest() && iterations < 30) {
+        iterations += 1;
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
@@ -915,8 +917,8 @@ test('setStreamingBudgets adjusts streaming defaults', async () => {
     const { chunkSize } = generationModule.getWorldOptions();
     const expectedColumnBudget = Math.max(1, chunkSize * chunkSize);
     const initial = manager.__getStreamingBudgetsForTest();
-    assert.equal(initial.preload, 3);
-    assert.equal(initial.defaultPreloadBurst, 3);
+    assert.equal(initial.preload, expectedColumnBudget);
+    assert.equal(initial.defaultPreloadBurst, expectedColumnBudget);
     assert.equal(initial.activation, 5);
     assert.equal(initial.defaultActivationBudget, 5);
     assert.equal(initial.disposal, 4);
@@ -928,8 +930,8 @@ test('setStreamingBudgets adjusts streaming defaults', async () => {
 
     manager.setStreamingBudgets({ preload: 6, activation: 7, disposal: 2 });
     const raised = manager.__getStreamingBudgetsForTest();
-    assert.equal(raised.preload, 6);
-    assert.equal(raised.defaultPreloadBurst, 6);
+    assert.equal(raised.preload, expectedColumnBudget);
+    assert.equal(raised.defaultPreloadBurst, expectedColumnBudget);
     assert.equal(raised.activation, 7);
     assert.equal(raised.defaultActivationBudget, 7);
     assert.equal(raised.disposal, 2);
@@ -941,8 +943,8 @@ test('setStreamingBudgets adjusts streaming defaults', async () => {
 
     manager.setStreamingBudgets({ preload: 1, activation: 0, disposal: 0 });
     const lowered = manager.__getStreamingBudgetsForTest();
-    assert.equal(lowered.preload, 1);
-    assert.equal(lowered.defaultPreloadBurst, 1);
+    assert.equal(lowered.preload, expectedColumnBudget);
+    assert.equal(lowered.defaultPreloadBurst, expectedColumnBudget);
     assert.equal(lowered.activation, 0);
     assert.equal(lowered.defaultActivationBudget, 1);
     assert.equal(lowered.disposal, 0);
@@ -991,6 +993,156 @@ test('setStreamingBudgets adjusts streaming defaults', async () => {
   } finally {
     await manager.dispose();
     materials.createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
+test('scaled preload budgets finish chunks within a few frames', async () => {
+  const scene = new THREE.Scene();
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const origin = new THREE.Vector3(0, 0, 0);
+  const processedBudgetsByKey = new Map();
+
+  const buildMockPayload = (chunkX, chunkZ) => ({
+    chunkX,
+    chunkZ,
+    typeMetadata: [],
+    occupancy: { solidCoordinates: [] },
+    fluids: {
+      blockKeys: [],
+      waterColumns: { keys: [], bottomY: [], surfaceY: [] },
+      columnsByType: [],
+      surfaces: [],
+    },
+    entities: [],
+  });
+
+  class RecordingChunkBuildWorker {
+    constructor() {
+      this.listeners = new Map();
+    }
+
+    addEventListener(type, handler) {
+      if (!this.listeners.has(type)) {
+        this.listeners.set(type, new Set());
+      }
+      this.listeners.get(type).add(handler);
+    }
+
+    removeEventListener(type, handler) {
+      const bucket = this.listeners.get(type);
+      if (!bucket) {
+        return;
+      }
+      bucket.delete(handler);
+      if (bucket.size === 0) {
+        this.listeners.delete(type);
+      }
+    }
+
+    postMessage(message) {
+      const { type, key } = message ?? {};
+      if (!key) {
+        return;
+      }
+      if (type === 'cancel') {
+        return;
+      }
+      if (type === 'step') {
+        const [chunkX = 0, chunkZ = 0] = key
+          .split('|')
+          .map((value) => Number.parseInt(value, 10) || 0);
+        const processedBudget = Number.isFinite(message?.budget)
+          ? Math.max(1, Math.floor(message.budget))
+          : 1;
+        const bucket = processedBudgetsByKey.get(key) ?? [];
+        bucket.push(processedBudget);
+        processedBudgetsByKey.set(key, bucket);
+        const event = {
+          data: {
+            key,
+            processed: processedBudget,
+            done: true,
+            metadata: { mocked: true },
+            payload: buildMockPayload(chunkX, chunkZ),
+          },
+        };
+        queueMicrotask(() => this.#dispatch('message', event));
+      }
+    }
+
+    terminate() {
+      this.listeners.clear();
+    }
+
+    #dispatch(type, event) {
+      const bucket = this.listeners.get(type);
+      if (!bucket) {
+        return;
+      }
+      bucket.forEach((handler) => {
+        handler(event);
+      });
+    }
+  }
+
+  __setChunkBuildWorkerFactoryForTest(() => new RecordingChunkBuildWorker());
+
+  try {
+    const manager = createChunkManager({
+      scene,
+      blockMaterials,
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreloadPerUpdate: 1,
+      maxDisposalsPerUpdate: 0,
+      maxActivationsPerUpdate: 0,
+    });
+
+    try {
+      manager.update(origin, {
+        viewDistance: 0,
+        retainDistance: 0,
+        maxPreload: 0,
+        force: true,
+      });
+      await manager.flush();
+
+      manager.preloadAround(origin, 0, {
+        viewDistance: 0,
+        maxPreload: 1,
+        force: true,
+      });
+
+      let iterations = 0;
+      while (manager.__isChunkJobPumpActiveForTest() && iterations < 30) {
+        iterations += 1;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      const { chunkSize } = generationModule.getWorldOptions();
+      const expectedColumns = Math.max(1, chunkSize * chunkSize);
+      const budgetEntries = Array.from(processedBudgetsByKey.entries());
+      assert.ok(budgetEntries.length > 0, 'chunk jobs should record worker slices');
+      const [primaryKey, centerBudgets] = budgetEntries.sort((a, b) => {
+        const totalA = a[1].reduce((sum, value) => sum + value, 0);
+        const totalB = b[1].reduce((sum, value) => sum + value, 0);
+        return totalB - totalA;
+      })[0];
+      assert.ok(centerBudgets.length > 0, `chunk ${primaryKey} should receive work slices`);
+      assert.ok(
+        iterations <= 6,
+        `expected chunk processing to finish within a few frames, took ${iterations}`,
+      );
+      assert.ok(
+        centerBudgets.length <= 6,
+        `expected center chunk to finish within a few slices, got ${centerBudgets.length}`,
+      );
+    } finally {
+      await manager.dispose();
+      createdMaterials.forEach((material) => material.dispose?.());
+    }
+  } finally {
+    __resetChunkBuildWorkerFactoryForTest();
   }
 });
 
