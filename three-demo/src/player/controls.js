@@ -271,7 +271,13 @@ export function createPlayerControls({
     terrainReadyListenerDisposer = chunkManager.events.addEventListener(
       ChunkManagerEvents.FIRST_CHUNK_MESHED,
       () => {
-        terrainReady = true;
+        const collisionsAvailable = Boolean(
+          chunkManager?.solidBlocks?.size > 0,
+        );
+        terrainReady = collisionsAvailable;
+        if (!collisionsAvailable) {
+          return;
+        }
         verticalVelocity = 0;
         maxDownwardSpeed = 0;
         attemptCollisionRescue('spawn');
