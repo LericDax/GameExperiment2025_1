@@ -4,6 +4,7 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { FLAGS } from './app/feature-flags.ts'
 import { createWorldService } from './app/services/world-service.ts'
 import { createChunkWorkerAdapter } from './app/services/chunk-worker-adapter.ts'
+import { createPersistenceService } from './app/services/persistence-service.ts'
 import { budgetRegistry, CPU_POOL, GPU_POOL } from './app/budgets'
 import { createBlockMaterials } from './rendering/textures.js'
 import {
@@ -729,6 +730,7 @@ function bootHybridRuntime(runtimeOptions = {}) {
 
   const scene = new THREE.Scene()
   const blockMaterials = createBlockMaterials({ THREE })
+  const persistenceService = createPersistenceService()
   const worldService = createWorldService({
     scene,
     blockMaterials,
@@ -736,7 +738,7 @@ function bootHybridRuntime(runtimeOptions = {}) {
     retainDistance: 4,
     disposalMargin: 4,
     maxPreloadPerUpdate: 1,
-  })
+  }, { persistenceService })
   const chunkWorker = createChunkWorkerAdapter()
 
   const sampleKeys = {
