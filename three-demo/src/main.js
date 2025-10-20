@@ -37,6 +37,10 @@ import {
   getSkyboxSceneSettings,
   resolveSkyboxRequest,
 } from './rendering/skyboxes/skybox-manager.js'
+import {
+  computeChunkFogRange,
+  easeFogTowardRange,
+} from './rendering/fog-utils.js'
 
 const overlay = document.getElementById('overlay')
 const overlayStatus = overlay?.querySelector('#overlay-status')
@@ -197,6 +201,7 @@ configureInitialSkybox(skyboxRequest).catch((error) => {
 })
 
 const clock = new THREE.Clock()
+const FOG_EASING_STRENGTH = 3.5
 const diagnosticOverlayCallbacks = new Set()
 
 function registerDiagnosticOverlay(callback) {
@@ -445,6 +450,16 @@ try {
 
   chunkManager.update(playerControls.getPosition(), { camera })
 
+  const initialFogRange = computeChunkFogRange({ chunkManager, worldConfig })
+  if (scene.fog && initialFogRange) {
+    if (Number.isFinite(initialFogRange.near)) {
+      scene.fog.near = initialFogRange.near
+    }
+    if (Number.isFinite(initialFogRange.far)) {
+      scene.fog.far = initialFogRange.far
+    }
+  }
+
   updateHud(playerControls.getState())
 
   registerBuiltinEntities()
@@ -584,6 +599,18 @@ if (!initializationError) {
       playerControls,
       camera,
     })
+
+    if (scene.fog && chunkManager) {
+      const targetFogRange = computeChunkFogRange({ chunkManager, worldConfig })
+      if (targetFogRange) {
+        easeFogTowardRange({
+          fog: scene.fog,
+          targetRange: targetFogRange,
+          delta,
+          easing: FOG_EASING_STRENGTH,
+        })
+      }
+    }
 
     if (diagnosticOverlayCallbacks.size > 0) {
       const callbacks = Array.from(diagnosticOverlayCallbacks)
