@@ -2362,9 +2362,110 @@ export function createChunkManager({
   let lastCenterChunkX = 0;
   let lastCenterChunkZ = 0;
   let hasLastCenter = false;
+  let spawnColumnKey = null;
+  let lastKnownPlayerColumnKey = null;
   let lastFiniteViewRadius = Number.isFinite(currentViewDistance)
     ? Math.max(0, Math.floor(currentViewDistance))
     : Math.max(0, Math.floor(lastFiniteViewDistance));
+
+  const normalizeColumnCoordinates = (input) => {
+    if (!input) {
+      return null;
+    }
+    if (typeof input === 'string') {
+      return parseColumnCoordinates(input);
+    }
+    const resolveCandidate = (value, fallback = null) => {
+      if (Number.isFinite(value)) {
+        return value;
+      }
+      if (Number.isFinite(fallback)) {
+        return fallback;
+      }
+      return null;
+    };
+    const xCandidate = resolveCandidate(
+      input.x,
+      Array.isArray(input) ? input[0] : input.columnX,
+    );
+    const zCandidate = resolveCandidate(
+      input.z,
+      Array.isArray(input) ? input[1] : input.columnZ,
+    );
+    if (!Number.isFinite(xCandidate) || !Number.isFinite(zCandidate)) {
+      return null;
+    }
+    return {
+      x: Math.round(xCandidate),
+      z: Math.round(zCandidate),
+    };
+  };
+
+  const toColumnKey = (coordinates) => {
+    if (!coordinates) {
+      return null;
+    }
+    const { x, z } = coordinates;
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return null;
+    }
+    return `${x}|${z}`;
+  };
+
+  const collectionHasSolidInColumn = (collection, columnX, columnZ) => {
+    if (!collection || !Number.isFinite(columnX) || !Number.isFinite(columnZ)) {
+      return false;
+    }
+    const matchesColumn = (key) => {
+      if (typeof key !== 'string') {
+        return false;
+      }
+      const parts = key.split('|');
+      if (parts.length !== 3) {
+        return false;
+      }
+      const [xPart, , zPart] = parts;
+      const keyX = Number.parseInt(xPart, 10);
+      const keyZ = Number.parseInt(zPart, 10);
+      if (!Number.isFinite(keyX) || !Number.isFinite(keyZ)) {
+        return false;
+      }
+      return keyX === columnX && keyZ === columnZ;
+    };
+    if (collection instanceof Set) {
+      for (const key of collection) {
+        if (matchesColumn(key)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (collection instanceof Map) {
+      for (const key of collection.keys()) {
+        if (matchesColumn(key)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (Array.isArray(collection)) {
+      for (const key of collection) {
+        if (matchesColumn(key)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (typeof collection === 'object') {
+      for (const key of Object.keys(collection)) {
+        if (matchesColumn(key)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    return false;
+  };
 
   function waitForNextJobSlice(timeout) {
     const hasExplicitTimeout = arguments.length > 0;
@@ -5804,23 +5905,27 @@ export function createChunkManager({
         chunkX === lastCenterChunkX &&
         chunkZ === lastCenterChunkZ;
 
-      let solidBlockCount = 0;
-      const solidBlockKeys = chunk.solidBlockKeys;
-      if (solidBlockKeys instanceof Set || solidBlockKeys instanceof Map) {
-        solidBlockCount = solidBlockKeys.size;
-      } else if (Array.isArray(solidBlockKeys)) {
-        solidBlockCount = solidBlockKeys.length;
-      } else if (solidBlockKeys && typeof solidBlockKeys === 'object') {
-        if (typeof solidBlockKeys.size === 'number') {
-          solidBlockCount = solidBlockKeys.size;
-        } else if (typeof solidBlockKeys.length === 'number') {
-          solidBlockCount = solidBlockKeys.length;
-        } else {
-          solidBlockCount = Object.keys(solidBlockKeys).length;
+      const targetColumnCoordinates = (() => {
+        const lastKnown = parseColumnCoordinates(lastKnownPlayerColumnKey);
+        if (lastKnown) {
+          return lastKnown;
+        }
+        return parseColumnCoordinates(spawnColumnKey);
+      })();
+
+      let spawnColumnReady = false;
+      if (targetColumnCoordinates) {
+        const { x: columnX, z: columnZ } = targetColumnCoordinates;
+        const columnChunkX = worldToChunk(columnX);
+        const columnChunkZ = worldToChunk(columnZ);
+        if (chunkX === columnChunkX && chunkZ === columnChunkZ) {
+          spawnColumnReady =
+            collectionHasSolidInColumn(chunk.solidBlockKeys, columnX, columnZ) ||
+            collectionHasSolidInColumn(solidBlocks, columnX, columnZ);
         }
       }
 
-      if (isCenterChunk && isCoreDetail && solidBlockCount > 0) {
+      if (isCenterChunk && isCoreDetail && spawnColumnReady) {
         hasEmittedFirstChunkMeshed = true;
         dispatchChunkEvent(ChunkManagerEvents.FIRST_CHUNK_MESHED, {
           chunkX,
@@ -7026,6 +7131,11 @@ export function createChunkManager({
     lastCenterChunkX = centerChunkX;
     lastCenterChunkZ = centerChunkZ;
     hasLastCenter = true;
+    const columnFromPosition = normalizeColumnCoordinates(position);
+    const newColumnKey = toColumnKey(columnFromPosition);
+    if (newColumnKey) {
+      lastKnownPlayerColumnKey = newColumnKey;
+    }
     lastFiniteViewRadius = finiteView;
     lastFiniteRetentionRadius = finiteRetention;
 
@@ -8336,6 +8446,9 @@ export function createChunkManager({
     dispose,
     flush,
     setStreamingBudgets,
+    setPlayerSpawnColumn(column) {
+      spawnColumnKey = toColumnKey(normalizeColumnCoordinates(column));
+    },
     solidBlocks,
     softBlocks,
     waterColumns,
