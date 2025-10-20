@@ -4,6 +4,8 @@ const DEFAULT_CHUNK_SIZE = 16;
 const DEFAULT_MARGIN_CHUNKS = 0.75;
 const DEFAULT_MIN_RANGE_MULTIPLIER = 2;
 const DEFAULT_MIN_NEAR_MULTIPLIER = 0.5;
+const DEFAULT_CAMERA_MARGIN_CHUNKS = 0.5;
+const DEFAULT_MIN_CAMERA_FAR_MULTIPLIER = 3;
 
 function resolveChunkSize(worldConfig) {
   const numeric = Number(worldConfig?.chunkSize);
@@ -112,6 +114,38 @@ export function resolveFogSettingsWithChunkRange({
   }
 
   return nextSettings;
+}
+
+export function computeChunkCameraFarDistance({
+  chunkManager,
+  worldConfig,
+  fogRange = null,
+  cameraMarginChunks = DEFAULT_CAMERA_MARGIN_CHUNKS,
+  minFarMultiplier = DEFAULT_MIN_CAMERA_FAR_MULTIPLIER,
+} = {}) {
+  const chunkSize = resolveChunkSize(worldConfig);
+  const margin = resolveMargin(cameraMarginChunks, chunkSize);
+  const minFar = Math.max(
+    chunkSize,
+    resolveMultiplier(minFarMultiplier, DEFAULT_MIN_CAMERA_FAR_MULTIPLIER) * chunkSize,
+  );
+
+  const resolvedRange =
+    fogRange ??
+    computeChunkFogRange({
+      chunkManager,
+      worldConfig,
+    });
+
+  const baseFar = resolvedRange && Number.isFinite(resolvedRange.far)
+    ? resolvedRange.far
+    : null;
+
+  if (!Number.isFinite(baseFar)) {
+    return minFar;
+  }
+
+  return Math.max(baseFar + margin, minFar);
 }
 
 export function easeFogTowardRange({ fog, targetRange, delta, easing = 3 }) {
