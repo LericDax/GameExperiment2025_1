@@ -16,6 +16,7 @@ import {
   normalizeSkyboxSelection,
   setSkyboxRotation,
 } from '../rendering/skyboxes/skybox-manager.js';
+import { resolveFogSettingsWithChunkRange } from '../rendering/fog-utils.js';
 
 const worldConfig = getWorldOptions();
 
@@ -231,7 +232,13 @@ export function registerDeveloperCommands({
     if (!targetScene || !fogSettings) {
       return;
     }
-    const { fogColor, fogNear, fogFar } = fogSettings;
+    const effectiveSettings =
+      resolveFogSettingsWithChunkRange({
+        baseSettings: fogSettings,
+        chunkManager,
+        worldConfig,
+      }) ?? fogSettings;
+    const { fogColor, fogNear, fogFar } = effectiveSettings;
     if (!targetScene.fog) {
       targetScene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
       return;
