@@ -5780,12 +5780,37 @@ export function createChunkManager({
     loadedChunks.set(key, chunk);
 
     if (!hasEmittedFirstChunkMeshed) {
-      hasEmittedFirstChunkMeshed = true;
-      dispatchChunkEvent(ChunkManagerEvents.FIRST_CHUNK_MESHED, {
-        chunkX,
-        chunkZ,
-        chunkKey: key,
-      });
+      const normalizedDetail = normalizeDetailLevel(
+        chunk.detailLevel ?? chunk.desiredDetailLevel ?? DETAIL_LEVEL_SCOUT,
+      );
+      const isCoreDetail =
+        detailLevelRank(normalizedDetail) >=
+        detailLevelRank(DETAIL_LEVEL_CORE);
+
+      let solidBlockCount = 0;
+      const solidBlockKeys = chunk.solidBlockKeys;
+      if (solidBlockKeys instanceof Set || solidBlockKeys instanceof Map) {
+        solidBlockCount = solidBlockKeys.size;
+      } else if (Array.isArray(solidBlockKeys)) {
+        solidBlockCount = solidBlockKeys.length;
+      } else if (solidBlockKeys && typeof solidBlockKeys === 'object') {
+        if (typeof solidBlockKeys.size === 'number') {
+          solidBlockCount = solidBlockKeys.size;
+        } else if (typeof solidBlockKeys.length === 'number') {
+          solidBlockCount = solidBlockKeys.length;
+        } else {
+          solidBlockCount = Object.keys(solidBlockKeys).length;
+        }
+      }
+
+      if (isCoreDetail && solidBlockCount > 0) {
+        hasEmittedFirstChunkMeshed = true;
+        dispatchChunkEvent(ChunkManagerEvents.FIRST_CHUNK_MESHED, {
+          chunkX,
+          chunkZ,
+          chunkKey: key,
+        });
+      }
     }
 
     if (chunk.__cachePayload) {
