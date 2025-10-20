@@ -1080,6 +1080,61 @@ export function createChunkManager({
   let derivedChunkThroughput = 0;
   let derivedActivationFloor = 0;
   let derivedDisposalFloor = 0;
+  let derivedPreloadChunkBurst = 1;
+  let derivedPreloadChunkWarmup = 1;
+
+  const PRELOAD_CHUNK_MINIMUM_BURST_MULTIPLIER = 2;
+  const PRELOAD_CHUNK_WARMUP_MULTIPLIER = 4;
+  const PRELOAD_DIRECTIONAL_CHUNK_CAP = 4;
+
+  const normalizeChunkCount = (value) => {
+    if (value === Number.POSITIVE_INFINITY) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return 0;
+    }
+    return Math.max(1, Math.floor(numeric));
+  };
+
+  const chunkCountToColumnBudget = (chunkCount) => {
+    if (chunkCount === Number.POSITIVE_INFINITY) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const numeric = Number(chunkCount);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return 0;
+    }
+    const columnsPerChunk = Math.max(1, Math.floor(derivedChunkColumnsPerChunk));
+    return Math.max(1, Math.ceil(numeric * columnsPerChunk));
+  };
+
+  const computeMinimumChunkBurst = (chunkThroughput) => {
+    if (chunkThroughput === Number.POSITIVE_INFINITY) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const normalized = normalizeChunkCount(chunkThroughput);
+    if (normalized <= 0) {
+      return 1;
+    }
+    return Math.max(1, normalized * PRELOAD_CHUNK_MINIMUM_BURST_MULTIPLIER);
+  };
+
+  const computeWarmupChunkBudget = (chunkThroughput) => {
+    if (chunkThroughput === Number.POSITIVE_INFINITY) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const normalized = normalizeChunkCount(chunkThroughput);
+    if (normalized <= 0) {
+      return Math.max(1, PRELOAD_CHUNK_WARMUP_MULTIPLIER);
+    }
+    const warmup = Math.max(
+      normalized,
+      normalized * PRELOAD_CHUNK_WARMUP_MULTIPLIER,
+    );
+    return Math.max(warmup, computeMinimumChunkBurst(normalized));
+  };
 
   const normalizeStreamingBudgetInput = (value) => {
     if (value === Number.POSITIVE_INFINITY) {
@@ -1160,8 +1215,25 @@ export function createChunkManager({
       maxPreloadPerUpdate = effectivePreloadBudget;
     }
 
-    derivedActivationFloor = derivedChunkThroughput;
-    derivedDisposalFloor = derivedChunkThroughput;
+    const chunkMinimumBurst = computeMinimumChunkBurst(derivedChunkThroughput);
+    const chunkWarmupBudget = computeWarmupChunkBudget(derivedChunkThroughput);
+
+    derivedPreloadChunkBurst =
+      chunkMinimumBurst === Number.POSITIVE_INFINITY
+        ? Number.POSITIVE_INFINITY
+        : Math.max(1, Math.floor(chunkMinimumBurst));
+    derivedPreloadChunkWarmup =
+      chunkWarmupBudget === Number.POSITIVE_INFINITY
+        ? Number.POSITIVE_INFINITY
+        : Math.max(derivedPreloadChunkBurst, Math.floor(chunkWarmupBudget));
+
+    const maximumChunkPreloadRequest =
+      derivedPreloadChunkWarmup === Number.POSITIVE_INFINITY
+        ? Number.POSITIVE_INFINITY
+        : derivedPreloadChunkWarmup + PRELOAD_DIRECTIONAL_CHUNK_CAP;
+
+    derivedActivationFloor = maximumChunkPreloadRequest;
+    derivedDisposalFloor = maximumChunkPreloadRequest;
 
     defaultDisposalBudget = Math.max(resolvedDisposal, derivedDisposalFloor);
     defaultActivationBudget = Math.max(resolvedActivation, derivedActivationFloor);
@@ -1169,7 +1241,13 @@ export function createChunkManager({
     if (effectivePreloadBudget === Number.POSITIVE_INFINITY) {
       defaultPreloadBurst = 2;
     } else if (effectivePreloadBudget > 0) {
-      defaultPreloadBurst = Math.max(1, Math.floor(effectivePreloadBudget));
+      const minimumBurstColumns = chunkCountToColumnBudget(
+        derivedPreloadChunkBurst,
+      );
+      defaultPreloadBurst = Math.max(
+        1,
+        Math.floor(Math.max(effectivePreloadBudget, minimumBurstColumns)),
+      );
     } else {
       defaultPreloadBurst = 2;
     }
@@ -7262,13 +7340,16 @@ export function createChunkManager({
       return;
     }
     const {
-      directionalHint = null,
+      directionalHint: requestedDirectionalHint = null,
       maxPreload: requestedMaxPreload,
       viewDistance: requestedViewDistance,
       upgradeHysteresis,
       force: requestedForce,
     } = options;
     const force = requestedForce === true;
+    const directionalHint = requestedDirectionalHint
+      ? normalizeDirectionalHintInput(requestedDirectionalHint)
+      : null;
     const targetRetention = Math.max(
       currentViewDistance,
       normalizeDistance(distance, retentionDistance),
@@ -7283,20 +7364,61 @@ export function createChunkManager({
       ),
     );
 
+    const directionalBoostChunks =
+      directionalHint?.forwardBoost > 0
+        ? Math.min(
+            PRELOAD_DIRECTIONAL_CHUNK_CAP,
+            Math.max(0, Math.ceil(directionalHint.forwardBoost)),
+          )
+        : 0;
+
+    const chunkMinimumBurst =
+      derivedPreloadChunkBurst === Number.POSITIVE_INFINITY
+        ? Number.POSITIVE_INFINITY
+        : Math.max(1, derivedPreloadChunkBurst);
+    const minimumBurstColumns =
+      chunkMinimumBurst === Number.POSITIVE_INFINITY
+        ? Number.POSITIVE_INFINITY
+        : chunkCountToColumnBudget(chunkMinimumBurst);
+
+    const chunkWarmupWithBoost = (() => {
+      if (derivedPreloadChunkWarmup === Number.POSITIVE_INFINITY) {
+        return Number.POSITIVE_INFINITY;
+      }
+      const baseWarmup = Math.max(
+        chunkMinimumBurst,
+        derivedPreloadChunkWarmup,
+      );
+      return baseWarmup + directionalBoostChunks;
+    })();
+
+    const fallbackColumnBudget =
+      chunkWarmupWithBoost === Number.POSITIVE_INFINITY
+        ? Number.POSITIVE_INFINITY
+        : chunkCountToColumnBudget(chunkWarmupWithBoost);
+
     const desiredBudget = resolveBudget(
       requestedMaxPreload,
-      maxPreloadPerUpdate * 4,
+      fallbackColumnBudget,
     );
     const effectiveBudget =
-      desiredBudget === 0 ? maxPreloadPerUpdate * 2 : desiredBudget;
-    const minimumBurst = Math.max(1, defaultPreloadBurst * 2);
+      desiredBudget === 0 ? minimumBurstColumns : desiredBudget;
     let normalizedBudget = effectiveBudget;
     if (normalizedBudget === Number.POSITIVE_INFINITY) {
       normalizedBudget = Number.POSITIVE_INFINITY;
     } else if (!Number.isFinite(normalizedBudget) || normalizedBudget <= 0) {
-      normalizedBudget = minimumBurst;
-    } else {
-      normalizedBudget = Math.max(normalizedBudget, minimumBurst);
+      normalizedBudget = minimumBurstColumns;
+    } else if (
+      minimumBurstColumns > 0 &&
+      Number.isFinite(minimumBurstColumns)
+    ) {
+      normalizedBudget = Math.max(normalizedBudget, minimumBurstColumns);
+    }
+    if (
+      minimumBurstColumns === Number.POSITIVE_INFINITY &&
+      normalizedBudget !== Number.POSITIVE_INFINITY
+    ) {
+      normalizedBudget = Number.POSITIVE_INFINITY;
     }
 
     const updateParams = {
@@ -7428,6 +7550,9 @@ export function createChunkManager({
               chunkThroughputPerFrame: derivedChunkThroughput,
               activationFloor: derivedActivationFloor,
               disposalFloor: derivedDisposalFloor,
+              preloadChunkBurst: derivedPreloadChunkBurst,
+              preloadChunkWarmup: derivedPreloadChunkWarmup,
+              directionalChunkBoostCap: PRELOAD_DIRECTIONAL_CHUNK_CAP,
             },
           },
           streamingStats: getStreamingStats(),
