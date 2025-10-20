@@ -4711,25 +4711,34 @@ export function createChunkManager({
     const normalizedBudget = unlimited
       ? Number.POSITIVE_INFINITY
       : Math.max(1, Math.floor(Number(budget) || 0) || 1);
+    let acceptedBudget = 0;
     if (unlimited) {
       entry.unlimited = true;
       entry.pendingBudget = Number.POSITIVE_INFINITY;
       entry.stepHint = Number.POSITIVE_INFINITY;
+      acceptedBudget = Number.POSITIVE_INFINITY;
     } else if (!entry.unlimited) {
       const previousBudget = Number.isFinite(entry.pendingBudget)
         ? entry.pendingBudget
         : 0;
       entry.pendingBudget = previousBudget + normalizedBudget;
       entry.stepHint = Math.max(entry.stepHint || 0, normalizedBudget);
+      acceptedBudget = normalizedBudget;
     }
     if (!chunkPersistenceQueue) {
       scheduleChunkJobEntry(entry);
+      if (promise && typeof promise === 'object') {
+        promise.acceptedBudget = acceptedBudget;
+      }
       return promise;
     }
 
     const persistenceState = entry.persistenceState ?? 'ready';
     if (persistenceState === 'ready' || persistenceState === 'failed') {
       scheduleChunkJobEntry(entry);
+      if (promise && typeof promise === 'object') {
+        promise.acceptedBudget = acceptedBudget;
+      }
       return promise;
     }
 
@@ -4737,6 +4746,9 @@ export function createChunkManager({
       awaitChunkPersistenceAndReschedule(entry);
     }
 
+    if (promise && typeof promise === 'object') {
+      promise.acceptedBudget = acceptedBudget;
+    }
     return promise;
   }
   let queueDirty = false;
@@ -6598,23 +6610,60 @@ export function createChunkManager({
     const allocateBudget = (requested, isScout) => {
       const desired = Math.max(0, Math.floor(Number(requested) || 0));
       if (desired <= 0) {
-        return 0;
+        return {
+          granted: 0,
+          commit() {
+            return { used: 0, base: 0, reserve: 0 };
+          },
+        };
       }
-      let granted = 0;
-      if (isScout && scoutReserve > 0) {
-        const fromReserve = Math.min(desired, scoutReserve);
-        scoutReserve -= fromReserve;
-        scoutBudgetSpent += fromReserve;
-        granted += fromReserve;
-      }
-      const remainingRequest = desired - granted;
-      if (remainingRequest > 0) {
-        const fromBase = Math.min(remainingRequest, remainingBudget);
-        remainingBudget -= fromBase;
-        baseBudgetSpent += fromBase;
-        granted += fromBase;
-      }
-      return granted;
+
+      const reserveGrant = isScout && scoutReserve > 0
+        ? Math.min(desired, scoutReserve)
+        : 0;
+      const remainingRequest = desired - reserveGrant;
+      const baseGrant = remainingRequest > 0
+        ? Math.min(remainingRequest, remainingBudget)
+        : 0;
+      const granted = reserveGrant + baseGrant;
+
+      return {
+        granted,
+        commit(used = granted) {
+          if (granted <= 0) {
+            return { used: 0, base: 0, reserve: 0 };
+          }
+          const normalizedUsed = Math.max(
+            0,
+            Math.min(granted, Math.floor(Number(used) || 0)),
+          );
+          if (normalizedUsed <= 0) {
+            return { used: 0, base: 0, reserve: 0 };
+          }
+
+          const reserveUsed = Math.min(reserveGrant, normalizedUsed);
+          const baseUsed = Math.min(
+            baseGrant,
+            normalizedUsed - reserveUsed,
+          );
+
+          if (reserveUsed > 0) {
+            scoutReserve -= reserveUsed;
+            scoutBudgetSpent += reserveUsed;
+          }
+
+          if (baseUsed > 0) {
+            remainingBudget -= baseUsed;
+            baseBudgetSpent += baseUsed;
+          }
+
+          return {
+            used: reserveUsed + baseUsed,
+            base: baseUsed,
+            reserve: reserveUsed,
+          };
+        },
+      };
     };
 
     const finalizeAndReturn = () => {
@@ -6798,19 +6847,28 @@ export function createChunkManager({
           continue;
         }
 
-        const previousRemainingBudget = remainingBudget;
-        const grantedBudget = allocateBudget(stepBudget, isScout);
+        if (entry.urgent && chunkColumnBudget > 0) {
+          stepBudget = Math.min(stepBudget, chunkColumnBudget);
+        }
+
+        const allocation = allocateBudget(stepBudget, isScout);
+        const grantedBudget = allocation.granted;
         if (grantedBudget <= 0) {
           return finalizeAndReturn();
         }
 
+        const jobPromise = startChunkJob(entry, { budget: grantedBudget });
+        const acceptedBudget = Math.max(
+          0,
+          Math.floor(Number(jobPromise?.acceptedBudget ?? 0) || 0),
+        );
+        const commitResult = allocation.commit(acceptedBudget);
+
         if (!unlimited) {
-          const baseSpent = previousRemainingBudget - remainingBudget;
           const spentTotal = detailBudgetSpent.get(detail) ?? 0;
-          detailBudgetSpent.set(detail, spentTotal + Math.max(0, baseSpent));
+          detailBudgetSpent.set(detail, spentTotal + Math.max(0, commitResult.base));
         }
 
-        startChunkJob(entry, { budget: grantedBudget });
         processedCounts[detail] += 1;
 
         i += 1;
