@@ -6183,9 +6183,11 @@ export function createChunkManager({
     refreshCacheForWorldChange();
 
     const { urgent = false } = options;
+    const maxDistance = options.maxDistance;
     const requestedDetailLevel = normalizeDetailLevel(options.detailLevel);
     const dx = chunkX - centerChunkX;
     const dz = chunkZ - centerChunkZ;
+    const chunkDistance = Math.max(Math.abs(dx), Math.abs(dz));
     let priority = dx * dx + dz * dz;
     if (activeDirectionalContext?.priorityBiasFactor > 0) {
       const offsetLength = Math.hypot(dx, dz);
@@ -6202,6 +6204,15 @@ export function createChunkManager({
     const existing = pendingPreloadEntries.get(key);
     const pendingActivationRecord =
       pendingActivationByKey.get(key) ?? existing?.pendingChunk ?? null;
+
+    if (
+      !existing &&
+      !pendingActivationRecord &&
+      Number.isFinite(maxDistance) &&
+      chunkDistance > maxDistance
+    ) {
+      return null;
+    }
 
     if (!existing && pendingActivationRecord) {
       const pendingEntry = pendingActivationRecord.entry ?? null;
@@ -7010,7 +7021,7 @@ export function createChunkManager({
     const upgradeRadiusThreshold = Number.isFinite(finiteView)
       ? Math.max(0, finiteView - upgradeHysteresis.radius)
       : Number.POSITIVE_INFINITY;
-    const forwardExtension = directionalHint?.forwardExtension ?? 0;
+    const forwardExtension = Math.max(0, directionalHint?.forwardExtension ?? 0);
 
     lastCenterChunkX = centerChunkX;
     lastCenterChunkZ = centerChunkZ;
@@ -7052,7 +7063,17 @@ export function createChunkManager({
     );
 
     const guaranteeRadius = Math.min(finiteView, 1);
-    const viewLoopRadius = finiteView + forwardExtension;
+    const retentionSchedulingRadius = Number.isFinite(finiteRetention)
+      ? Math.max(
+          Math.floor(finiteRetention),
+          Math.floor(finiteRetention + forwardExtension),
+        )
+      : Number.POSITIVE_INFINITY;
+
+    const viewLoopRadiusCandidate = finiteView + forwardExtension;
+    const viewLoopRadius = Number.isFinite(retentionSchedulingRadius)
+      ? Math.min(viewLoopRadiusCandidate, retentionSchedulingRadius)
+      : viewLoopRadiusCandidate;
 
     for (let dx = -guaranteeRadius; dx <= guaranteeRadius; dx += 1) {
       for (let dz = -guaranteeRadius; dz <= guaranteeRadius; dz += 1) {
@@ -7087,34 +7108,14 @@ export function createChunkManager({
             {
               urgent: detailLevel === DETAIL_LEVEL_CORE,
               detailLevel,
+              maxDistance: retentionSchedulingRadius,
             },
           );
         }
       }
     }
 
-    const extendedRetentionRadiusBase = (() => {
-      if (
-        Number.isFinite(retentionRadiusWithMargin) &&
-        retentionRadiusWithMargin > finiteRetention
-      ) {
-        return Math.floor(retentionRadiusWithMargin);
-      }
-      if (Number.isFinite(finiteRetention)) {
-        return Math.floor(finiteRetention);
-      }
-      return finiteView;
-    })();
-
-    const retentionLoopRadius = (() => {
-      if (!Number.isFinite(extendedRetentionRadiusBase)) {
-        return extendedRetentionRadiusBase;
-      }
-      const forwardTarget = Number.isFinite(finiteRetention)
-        ? Math.floor(finiteRetention + forwardExtension)
-        : viewLoopRadius;
-      return Math.max(extendedRetentionRadiusBase, forwardTarget);
-    })();
+    const retentionLoopRadius = retentionSchedulingRadius;
 
     if (
       Number.isFinite(retentionLoopRadius) &&
@@ -7138,7 +7139,7 @@ export function createChunkManager({
             centerChunkZ + dz,
             centerChunkX,
             centerChunkZ,
-            { detailLevel },
+            { detailLevel, maxDistance: retentionSchedulingRadius },
           );
         }
       }
