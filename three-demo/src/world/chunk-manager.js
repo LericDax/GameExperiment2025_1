@@ -5611,14 +5611,6 @@ export function createChunkManager({
       surface.userData.chunkKey = key;
     });
     scene.add(chunk.group);
-    if (!hasEmittedFirstChunkMeshed) {
-      hasEmittedFirstChunkMeshed = true;
-      dispatchChunkEvent(ChunkManagerEvents.FIRST_CHUNK_MESHED, {
-        chunkX,
-        chunkZ,
-        chunkKey: key,
-      });
-    }
     (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.add(block));
     (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
     const chunkWaterColumnSource =
@@ -5708,6 +5700,15 @@ export function createChunkManager({
       registerDecorationGroup(key, group, chunk);
     });
     loadedChunks.set(key, chunk);
+
+    if (!hasEmittedFirstChunkMeshed) {
+      hasEmittedFirstChunkMeshed = true;
+      dispatchChunkEvent(ChunkManagerEvents.FIRST_CHUNK_MESHED, {
+        chunkX,
+        chunkZ,
+        chunkKey: key,
+      });
+    }
 
     if (chunk.__cachePayload) {
       if (payloadCacheCapacity > 0) {
