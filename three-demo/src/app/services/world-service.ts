@@ -2,6 +2,7 @@ import type { Camera } from 'three'
 
 import { createChunkManager } from '../../world/chunk-manager.js'
 import { budgetRegistry, GPU_POOL } from '../budgets'
+import type { ChunkPersistenceService } from './persistence-service.ts'
 
 export interface ChunkPosition {
   x: number
@@ -90,8 +91,13 @@ export interface ChunkStreamingService {
 
 export type WorldServiceOptions = Parameters<typeof createChunkManager>[0]
 
+export interface WorldServiceDependencies {
+  persistenceService?: ChunkPersistenceService | null
+}
+
 export function createWorldService(
   options: WorldServiceOptions,
+  dependencies: WorldServiceDependencies = {},
 ): ChunkStreamingService {
   const chunkBudgetKeys = new Set<string>()
   const previewBudgetKeys = new Set<string>()
@@ -183,13 +189,21 @@ export function createWorldService(
 
   const {
     budgetCallbacks: providedBudgetCallbacks,
+    chunkPersistenceQueue: providedChunkPersistenceQueue,
     ...restOptions
   } = (options ?? {}) as Record<string, unknown> & {
     budgetCallbacks?: unknown
+    chunkPersistenceQueue?: WorldServiceOptions['chunkPersistenceQueue']
   }
+
+  const persistenceQueue =
+    providedChunkPersistenceQueue ??
+    dependencies?.persistenceService?.getQueue() ??
+    undefined
 
   const chunkManager = createChunkManager({
     ...(restOptions as WorldServiceOptions),
+    chunkPersistenceQueue: persistenceQueue,
     budgetCallbacks: mergeBudgetCallbacks(
       providedBudgetCallbacks,
       instrumentationCallbacks,
@@ -256,6 +270,7 @@ export function createWorldService(
     if (chunkManager && typeof chunkManager.dispose === 'function') {
       chunkManager.dispose()
     }
+    dependencies?.persistenceService?.dispose()
     chunkBudgetKeys.forEach((entryKey) => {
       budgetRegistry.release(GPU_POOL, entryKey)
     })
