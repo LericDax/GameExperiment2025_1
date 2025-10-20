@@ -497,6 +497,12 @@ export function createPlayerControls({
     preloadChunksAround(controlObject.position);
 
     const selection = selectSpawnPosition();
+    if (
+      chunkManager &&
+      typeof chunkManager.setPlayerSpawnColumn === 'function'
+    ) {
+      chunkManager.setPlayerSpawnColumn(selection.position);
+    }
     controlObject.position.copy(selection.position);
     preloadChunksAround(controlObject.position);
     lastUpdatePosition.copy(controlObject.position);
