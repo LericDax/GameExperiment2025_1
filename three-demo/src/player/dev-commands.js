@@ -16,7 +16,10 @@ import {
   normalizeSkyboxSelection,
   setSkyboxRotation,
 } from '../rendering/skyboxes/skybox-manager.js';
-import { resolveFogSettingsWithChunkRange } from '../rendering/fog-utils.js';
+import {
+  resolveFogSettingsWithChunkRange,
+  computeChunkCameraFarDistance,
+} from '../rendering/fog-utils.js';
 
 const worldConfig = getWorldOptions();
 
@@ -25,6 +28,7 @@ export function registerDeveloperCommands({
   playerControls,
   chunkManager,
   scene,
+  camera = null,
   THREE,
   registerDiagnosticOverlay,
   particleSystem = null,
@@ -241,11 +245,27 @@ export function registerDeveloperCommands({
     const { fogColor, fogNear, fogFar } = effectiveSettings;
     if (!targetScene.fog) {
       targetScene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
-      return;
     }
     targetScene.fog.color.set(fogColor);
     targetScene.fog.near = fogNear;
     targetScene.fog.far = fogFar;
+
+    if (camera) {
+      const safeFar = computeChunkCameraFarDistance({
+        chunkManager,
+        worldConfig,
+        fogRange: { near: fogNear, far: fogFar },
+      });
+      if (
+        Number.isFinite(safeFar) &&
+        (!Number.isFinite(camera.far) || Math.abs(camera.far - safeFar) > 0.01)
+      ) {
+        camera.far = safeFar;
+        if (typeof camera.updateProjectionMatrix === 'function') {
+          camera.updateProjectionMatrix();
+        }
+      }
+    }
   };
 
   const ensureEntityManagerAvailable = () => {

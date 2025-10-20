@@ -40,6 +40,7 @@ import {
 import {
   computeChunkFogRange,
   easeFogTowardRange,
+  computeChunkCameraFarDistance,
 } from './rendering/fog-utils.js'
 
 const overlay = document.getElementById('overlay')
@@ -202,6 +203,7 @@ configureInitialSkybox(skyboxRequest).catch((error) => {
 
 const clock = new THREE.Clock()
 const FOG_EASING_STRENGTH = 3.5
+const CAMERA_FAR_EASING_STRENGTH = 3.5
 const diagnosticOverlayCallbacks = new Set()
 
 function registerDiagnosticOverlay(callback) {
@@ -460,6 +462,16 @@ try {
     }
   }
 
+  const initialCameraFar = computeChunkCameraFarDistance({
+    chunkManager,
+    worldConfig,
+    fogRange: initialFogRange,
+  })
+  if (Number.isFinite(initialCameraFar)) {
+    camera.far = initialCameraFar
+    camera.updateProjectionMatrix?.()
+  }
+
   updateHud(playerControls.getState())
 
   registerBuiltinEntities()
@@ -544,6 +556,7 @@ try {
     playerControls,
     chunkManager,
     scene,
+    camera,
     THREE,
     registerDiagnosticOverlay,
     particleSystem,
@@ -600,15 +613,41 @@ if (!initializationError) {
       camera,
     })
 
-    if (scene.fog && chunkManager) {
+    if (chunkManager) {
       const targetFogRange = computeChunkFogRange({ chunkManager, worldConfig })
-      if (targetFogRange) {
+      if (scene.fog && targetFogRange) {
         easeFogTowardRange({
           fog: scene.fog,
           targetRange: targetFogRange,
           delta,
           easing: FOG_EASING_STRENGTH,
         })
+      }
+
+      const targetCameraFar = computeChunkCameraFarDistance({
+        chunkManager,
+        worldConfig,
+        fogRange: targetFogRange ?? undefined,
+      })
+      if (Number.isFinite(targetCameraFar)) {
+        const currentFar = Number.isFinite(camera.far)
+          ? camera.far
+          : targetCameraFar
+        const factor =
+          Number.isFinite(delta) && delta > 0
+            ? 1 - Math.exp(-Math.max(0, CAMERA_FAR_EASING_STRENGTH) * delta)
+            : 1
+        const nextFar = THREE.MathUtils.lerp(currentFar, targetCameraFar, factor)
+        if (Number.isFinite(nextFar) && typeof camera.updateProjectionMatrix === 'function') {
+          const difference = Math.abs(nextFar - camera.far)
+          if (difference > 0.01) {
+            camera.far = nextFar
+            camera.updateProjectionMatrix()
+          } else if (Math.abs(targetCameraFar - camera.far) > 0.001) {
+            camera.far = targetCameraFar
+            camera.updateProjectionMatrix()
+          }
+        }
       }
     }
 
