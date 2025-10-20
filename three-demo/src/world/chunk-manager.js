@@ -5799,6 +5799,11 @@ export function createChunkManager({
         detailLevelRank(normalizedDetail) >=
         detailLevelRank(DETAIL_LEVEL_CORE);
 
+      const isCenterChunk =
+        hasLastCenter &&
+        chunkX === lastCenterChunkX &&
+        chunkZ === lastCenterChunkZ;
+
       let solidBlockCount = 0;
       const solidBlockKeys = chunk.solidBlockKeys;
       if (solidBlockKeys instanceof Set || solidBlockKeys instanceof Map) {
@@ -5815,7 +5820,7 @@ export function createChunkManager({
         }
       }
 
-      if (isCoreDetail && solidBlockCount > 0) {
+      if (isCenterChunk && isCoreDetail && solidBlockCount > 0) {
         hasEmittedFirstChunkMeshed = true;
         dispatchChunkEvent(ChunkManagerEvents.FIRST_CHUNK_MESHED, {
           chunkX,
