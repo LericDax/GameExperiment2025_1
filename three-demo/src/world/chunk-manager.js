@@ -938,6 +938,7 @@ export function createChunkManager({
   entityStore = null,
   entityAutosaveIntervalMs = undefined,
   entityCompactionThresholds = undefined,
+  budgetCallbacks = undefined,
 }) {
   const loadedChunks = new Map();
   const scoutPreviewMemoryByChunk = new Map();
@@ -1008,13 +1009,21 @@ export function createChunkManager({
     };
   }
 
-  function setScoutPreviewMemoryForChunkKey(key, stats) {
+  function setScoutPreviewMemoryForChunkKey(key, stats, coordinates = null) {
     if (!key) {
       return null;
     }
     const previous = scoutPreviewMemoryByChunk.get(key) ?? null;
     if (previous) {
       subtractScoutPreviewTotals(previous);
+      if (coordinates) {
+        emitScoutPreviewCleared({
+          key,
+          chunkX: coordinates.chunkX ?? null,
+          chunkZ: coordinates.chunkZ ?? null,
+          stats: previous,
+        });
+      }
     }
     if (!stats) {
       scoutPreviewMemoryByChunk.delete(key);
@@ -1027,16 +1036,28 @@ export function createChunkManager({
     }
     scoutPreviewMemoryByChunk.set(key, normalized);
     addScoutPreviewTotals(normalized);
+    emitScoutPreviewTracked({
+      key,
+      chunkX: coordinates?.chunkX ?? null,
+      chunkZ: coordinates?.chunkZ ?? null,
+      stats: normalized,
+    });
     return normalized;
   }
 
-  function clearScoutPreviewMemoryForChunkKey(key) {
+  function clearScoutPreviewMemoryForChunkKey(key, coordinates = null) {
     if (!key || !scoutPreviewMemoryByChunk.has(key)) {
       return;
     }
     const previous = scoutPreviewMemoryByChunk.get(key);
     subtractScoutPreviewTotals(previous);
     scoutPreviewMemoryByChunk.delete(key);
+    emitScoutPreviewCleared({
+      key,
+      chunkX: coordinates?.chunkX ?? null,
+      chunkZ: coordinates?.chunkZ ?? null,
+      stats: previous ?? null,
+    });
   }
 
   function getScoutPreviewMemoryTotals() {
@@ -1067,6 +1088,175 @@ export function createChunkManager({
   const raycastTargets = new Set();
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   const eventListeners = new Map();
+  const budgetCallbacksNormalized = (() => {
+    if (!budgetCallbacks || typeof budgetCallbacks !== 'object') {
+      return {
+        chunkMeshed: null,
+        chunkDisposed: null,
+        scoutPreviewTracked: null,
+        scoutPreviewCleared: null,
+      };
+    }
+    return {
+      chunkMeshed:
+        typeof budgetCallbacks.onChunkMeshed === 'function'
+          ? budgetCallbacks.onChunkMeshed
+          : null,
+      chunkDisposed:
+        typeof budgetCallbacks.onChunkDisposed === 'function'
+          ? budgetCallbacks.onChunkDisposed
+          : null,
+      scoutPreviewTracked:
+        typeof budgetCallbacks.onScoutPreviewTracked === 'function'
+          ? budgetCallbacks.onScoutPreviewTracked
+          : null,
+      scoutPreviewCleared:
+        typeof budgetCallbacks.onScoutPreviewCleared === 'function'
+          ? budgetCallbacks.onScoutPreviewCleared
+          : null,
+    };
+  })();
+
+  const notifyBudgetCallback = (callback, payload, label) => {
+    if (typeof callback !== 'function') {
+      return;
+    }
+    try {
+      callback(payload);
+    } catch (error) {
+      console.warn(`[chunk-manager] budget callback ${label} failed`, error);
+    }
+  };
+
+  const emitChunkMeshed = (payload) =>
+    notifyBudgetCallback(
+      budgetCallbacksNormalized.chunkMeshed,
+      payload,
+      'onChunkMeshed',
+    );
+  const emitChunkDisposed = (payload) =>
+    notifyBudgetCallback(
+      budgetCallbacksNormalized.chunkDisposed,
+      payload,
+      'onChunkDisposed',
+    );
+  const emitScoutPreviewTracked = (payload) =>
+    notifyBudgetCallback(
+      budgetCallbacksNormalized.scoutPreviewTracked,
+      payload,
+      'onScoutPreviewTracked',
+    );
+  const emitScoutPreviewCleared = (payload) =>
+    notifyBudgetCallback(
+      budgetCallbacksNormalized.scoutPreviewCleared,
+      payload,
+      'onScoutPreviewCleared',
+    );
+
+  const accumulateAttributeBytes = (attribute, state) => {
+    if (!attribute) {
+      return;
+    }
+    if (Array.isArray(attribute)) {
+      attribute.forEach((entry) => accumulateAttributeBytes(entry, state));
+      return;
+    }
+    const source =
+      attribute.array ??
+      attribute.data?.array ??
+      null;
+    if (!source || state.seenArrays.has(source)) {
+      return;
+    }
+    const byteLength = Number(source.byteLength);
+    if (Number.isFinite(byteLength) && byteLength > 0) {
+      state.totalBytes += byteLength;
+    }
+    state.attributeCount += 1;
+    state.seenArrays.add(source);
+  };
+
+  const accumulateIndexBytes = (index, state) => {
+    if (!index || !index.array) {
+      return;
+    }
+    accumulateAttributeBytes(index, state);
+  };
+
+  const accumulateObjectGeometryBytes = (object, state) => {
+    if (!object) {
+      return;
+    }
+    const geometry = object.geometry ?? null;
+    if (geometry && !state.seenGeometries.has(geometry)) {
+      state.seenGeometries.add(geometry);
+      const attributes = geometry.attributes ?? {};
+      Object.values(attributes).forEach((attr) => accumulateAttributeBytes(attr, state));
+      accumulateIndexBytes(geometry.index ?? null, state);
+      const morphAttributes = geometry.morphAttributes ?? {};
+      Object.values(morphAttributes).forEach((entry) => {
+        if (Array.isArray(entry)) {
+          entry.forEach((attr) => accumulateAttributeBytes(attr, state));
+        } else {
+          accumulateAttributeBytes(entry, state);
+        }
+      });
+    }
+    if (object.instanceMatrix) {
+      accumulateAttributeBytes(object.instanceMatrix, state);
+    }
+    if (object.instanceColor) {
+      accumulateAttributeBytes(object.instanceColor, state);
+    }
+    if (object.userData?.tintAttribute) {
+      accumulateAttributeBytes(object.userData.tintAttribute, state);
+    }
+  };
+
+  const computeChunkMemoryStatsForBudget = (chunk) => {
+    const state = {
+      totalBytes: 0,
+      attributeCount: 0,
+      meshCount: 0,
+      seenArrays: new Set(),
+      seenGeometries: new Set(),
+    };
+    const visitObject = (object) => {
+      if (!object) {
+        return;
+      }
+      if (
+        object.isMesh ||
+        object.isInstancedMesh ||
+        object.isPoints ||
+        object.isLine ||
+        object.isLineSegments
+      ) {
+        state.meshCount += 1;
+        accumulateObjectGeometryBytes(object, state);
+      }
+    };
+    if (chunk?.group?.traverse) {
+      chunk.group.traverse((child) => {
+        visitObject(child);
+      });
+    }
+    if (Array.isArray(chunk?.fluidSurfaces)) {
+      chunk.fluidSurfaces.forEach((surface) => visitObject(surface));
+    }
+    if (chunk?.decorationGroups instanceof Map) {
+      chunk.decorationGroups.forEach((group) => {
+        if (group?.mesh) {
+          visitObject(group.mesh);
+        }
+      });
+    }
+    return {
+      geometryBytes: Math.max(0, Math.floor(state.totalBytes)),
+      attributeCount: state.attributeCount,
+      meshCount: state.meshCount,
+    };
+  };
   const chunkUpgradeStateByKey = new Map();
   const activeChunkUpgradeQueue = [];
   let maxPreloadPerUpdate = 0;
@@ -3329,11 +3519,12 @@ export function createChunkManager({
       normalizedPreviewStats = setScoutPreviewMemoryForChunkKey(
         previewKey,
         previewStatsSource,
+        { chunkX, chunkZ },
       );
       if (normalizedPreviewStats) {
         group.userData.scoutPreviewStats = normalizedPreviewStats;
       } else {
-        clearScoutPreviewMemoryForChunkKey(previewKey);
+        clearScoutPreviewMemoryForChunkKey(previewKey, { chunkX, chunkZ });
         delete group.userData.scoutPreviewStats;
       }
     }
@@ -3399,7 +3590,10 @@ export function createChunkManager({
       return finalizeScoutChunk(entry, payload);
     }
     if (chunkKeyString) {
-      clearScoutPreviewMemoryForChunkKey(chunkKeyString);
+      clearScoutPreviewMemoryForChunkKey(chunkKeyString, {
+        chunkX: entry?.chunkX ?? null,
+        chunkZ: entry?.chunkZ ?? null,
+      });
     }
     const meshResult = finalizeChunkMeshes(payload, blockMaterials, THREE);
     const derivedCollisionKeys = deriveCollisionKeySetsFromMesh({
@@ -3644,8 +3838,31 @@ export function createChunkManager({
     if (!chunk) {
       return;
     }
+    const budgetKey =
+      chunk.__budgetKey ??
+      (Number.isFinite(chunk.chunkX) && Number.isFinite(chunk.chunkZ)
+        ? chunkKey(chunk.chunkX, chunk.chunkZ)
+        : null);
+    if (chunk.__budgetTracked && budgetKey) {
+      const normalizedDetail = normalizeDetailLevel(
+        chunk.detailLevel ?? chunk.desiredDetailLevel ?? DETAIL_LEVEL_SCOUT,
+      );
+      emitChunkDisposed({
+        key: budgetKey,
+        chunkX: Number.isFinite(chunk.chunkX) ? chunk.chunkX : null,
+        chunkZ: Number.isFinite(chunk.chunkZ) ? chunk.chunkZ : null,
+        detailLevel: normalizedDetail,
+        memory: chunk.__budgetStats ?? null,
+      });
+    }
+    chunk.__budgetTracked = false;
+    chunk.__budgetStats = null;
+    chunk.__budgetKey = null;
     if (Number.isFinite(chunk.chunkX) && Number.isFinite(chunk.chunkZ)) {
-      clearScoutPreviewMemoryForChunkKey(chunkKey(chunk.chunkX, chunk.chunkZ));
+      clearScoutPreviewMemoryForChunkKey(chunkKey(chunk.chunkX, chunk.chunkZ), {
+        chunkX: chunk.chunkX ?? null,
+        chunkZ: chunk.chunkZ ?? null,
+      });
     }
     chunk.scoutPreviewMemory = null;
     if (chunk.group?.traverse) {
@@ -5892,6 +6109,29 @@ export function createChunkManager({
     });
     loadedChunks.set(key, chunk);
 
+    chunk.__budgetKey = key;
+    const normalizedDetailLevel = normalizeDetailLevel(
+      chunk.detailLevel ?? chunk.desiredDetailLevel ?? DETAIL_LEVEL_SCOUT,
+    );
+    if (
+      detailLevelRank(normalizedDetailLevel) >
+      detailLevelRank(DETAIL_LEVEL_SCOUT)
+    ) {
+      const memoryStats = computeChunkMemoryStatsForBudget(chunk);
+      chunk.__budgetTracked = true;
+      chunk.__budgetStats = memoryStats;
+      emitChunkMeshed({
+        key,
+        chunkX,
+        chunkZ,
+        detailLevel: normalizedDetailLevel,
+        memory: memoryStats,
+      });
+    } else {
+      chunk.__budgetTracked = false;
+      chunk.__budgetStats = null;
+    }
+
     if (!hasEmittedFirstChunkMeshed) {
       const normalizedDetail = normalizeDetailLevel(
         chunk.detailLevel ?? chunk.desiredDetailLevel ?? DETAIL_LEVEL_SCOUT,
@@ -6054,6 +6294,22 @@ export function createChunkManager({
     if (!chunk) {
       return;
     }
+
+    if (chunk.__budgetTracked) {
+      const normalizedDetail = normalizeDetailLevel(
+        chunk.detailLevel ?? chunk.desiredDetailLevel ?? DETAIL_LEVEL_SCOUT,
+      );
+      emitChunkDisposed({
+        key: chunk.__budgetKey ?? key,
+        chunkX: Number.isFinite(chunk.chunkX) ? chunk.chunkX : null,
+        chunkZ: Number.isFinite(chunk.chunkZ) ? chunk.chunkZ : null,
+        detailLevel: normalizedDetail,
+        memory: chunk.__budgetStats ?? null,
+      });
+    }
+    chunk.__budgetTracked = false;
+    chunk.__budgetStats = null;
+    chunk.__budgetKey = null;
 
     const pendingJournalOps = chunkJournalQueues.get(key) ?? [];
     const pendingFlush =

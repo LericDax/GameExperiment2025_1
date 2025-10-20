@@ -4,6 +4,7 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { FLAGS } from './app/feature-flags.ts'
 import { createWorldService } from './app/services/world-service.ts'
 import { createChunkWorkerAdapter } from './app/services/chunk-worker-adapter.ts'
+import { budgetRegistry, CPU_POOL, GPU_POOL } from './app/budgets'
 import { createBlockMaterials } from './rendering/textures.js'
 import {
   applyWorldOptions,
@@ -719,7 +720,7 @@ function bootLegacyRuntime() {
   }
 }
 
-function bootHybridRuntime() {
+function bootHybridRuntime(runtimeOptions = {}) {
   console.info('[runtime] Hybrid runtime bootstrap (experimental).')
 
   applyWorldOptions({})
@@ -738,11 +739,74 @@ function bootHybridRuntime() {
   })
   const chunkWorker = createChunkWorkerAdapter()
 
+  const sampleKeys = {
+    cpu: 'runtime:js-heap',
+    gpu: 'runtime:renderer-info',
+  }
+  let samplingActive = true
+  let sampleFrameHandle = null
+  const rendererForSampling = runtimeOptions?.renderer ?? null
+
+  const sampleMemory = () => {
+    if (!samplingActive) {
+      return
+    }
+    const timestamp =
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now()
+    const rendererInfo = rendererForSampling?.info?.memory ?? null
+    if (rendererInfo) {
+      const programsInfo = rendererForSampling.info?.programs ?? 0
+      const programCount = Array.isArray(programsInfo)
+        ? programsInfo.length
+        : Number(programsInfo) || 0
+      budgetRegistry.request(GPU_POOL, sampleKeys.gpu, 0, {
+        source: 'renderer.info.memory',
+        geometries: Number(rendererInfo.geometries) || 0,
+        textures: Number(rendererInfo.textures) || 0,
+        programs: programCount,
+        timestamp,
+      })
+    }
+    if (typeof performance !== 'undefined' && performance?.memory) {
+      const { usedJSHeapSize, totalJSHeapSize, jsHeapSizeLimit } = performance.memory
+      budgetRegistry.request(CPU_POOL, sampleKeys.cpu, usedJSHeapSize ?? 0, {
+        source: 'performance.memory',
+        totalJSHeapSize: totalJSHeapSize ?? null,
+        jsHeapSizeLimit: jsHeapSizeLimit ?? null,
+        timestamp,
+      })
+    }
+    if (typeof requestAnimationFrame === 'function') {
+      sampleFrameHandle = requestAnimationFrame(sampleMemory)
+    }
+  }
+
+  if (
+    typeof requestAnimationFrame === 'function' &&
+    (rendererForSampling?.info?.memory ||
+      (typeof performance !== 'undefined' && performance?.memory))
+  ) {
+    sampleFrameHandle = requestAnimationFrame(sampleMemory)
+  }
+
+  const stopSampling = () => {
+    samplingActive = false
+    if (sampleFrameHandle !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(sampleFrameHandle)
+    }
+    sampleFrameHandle = null
+    budgetRegistry.release(CPU_POOL, sampleKeys.cpu)
+    budgetRegistry.release(GPU_POOL, sampleKeys.gpu)
+  }
+
   return {
     cancelRenderLoop: () => {},
     removeBeforeUnloadListener: () => {},
     disposeHud: () => {},
     dispose: () => {
+      stopSampling()
       chunkWorker.terminate()
       worldService.dispose()
     },
