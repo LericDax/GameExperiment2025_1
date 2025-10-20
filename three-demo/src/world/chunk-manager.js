@@ -7486,8 +7486,18 @@ export function createChunkManager({
         ? Number.POSITIVE_INFINITY
         : chunkCountToColumnBudget(chunkWarmupWithBoost);
 
+    let requestedMaxPreloadColumns = requestedMaxPreload;
+    if (requestedMaxPreloadColumns !== Number.POSITIVE_INFINITY) {
+      const numericRequestedMaxPreload = Number(requestedMaxPreloadColumns);
+      if (Number.isFinite(numericRequestedMaxPreload)) {
+        requestedMaxPreloadColumns = chunkCountToColumnBudget(
+          numericRequestedMaxPreload,
+        );
+      }
+    }
+
     const desiredBudget = resolveBudget(
-      requestedMaxPreload,
+      requestedMaxPreloadColumns,
       fallbackColumnBudget,
     );
     const effectiveBudget =
