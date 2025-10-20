@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js'
 
 import { FLAGS } from './app/feature-flags.ts'
+import { createWorldService } from './app/services/world-service.ts'
+import { createChunkWorkerAdapter } from './app/services/chunk-worker-adapter.ts'
 import { createBlockMaterials } from './rendering/textures.js'
 import {
   applyWorldOptions,
@@ -718,12 +720,34 @@ function bootLegacyRuntime() {
 }
 
 function bootHybridRuntime() {
-  console.info('[runtime] Hybrid runtime bootstrap not yet implemented.')
+  console.info('[runtime] Hybrid runtime bootstrap (experimental).')
+
+  applyWorldOptions({})
+  initializeWorldGeneration({ THREE })
+  initializeFluidRegistry({ THREE })
+
+  const scene = new THREE.Scene()
+  const blockMaterials = createBlockMaterials({ THREE })
+  const worldService = createWorldService({
+    scene,
+    blockMaterials,
+    viewDistance: 2,
+    retainDistance: 4,
+    disposalMargin: 4,
+    maxPreloadPerUpdate: 1,
+  })
+  const chunkWorker = createChunkWorkerAdapter()
+
   return {
     cancelRenderLoop: () => {},
     removeBeforeUnloadListener: () => {},
     disposeHud: () => {},
-    dispose: () => {},
+    dispose: () => {
+      chunkWorker.terminate()
+      worldService.dispose()
+    },
+    worldService,
+    chunkWorker,
   }
 }
 
