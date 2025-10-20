@@ -939,6 +939,7 @@ export function createChunkManager({
   entityAutosaveIntervalMs = undefined,
   entityCompactionThresholds = undefined,
   budgetCallbacks = undefined,
+  workerBroker: providedWorkerBroker = null,
 }) {
   const loadedChunks = new Map();
   const scoutPreviewMemoryByChunk = new Map();
@@ -1638,11 +1639,15 @@ export function createChunkManager({
     }
     return Math.floor(numeric);
   })();
+  const workerBroker = providedWorkerBroker ?? null;
   const chunkPersistenceJobs = new Map();
   let chunkJobPumpActive = false;
   let chunkJobPumpPromise = null;
-  const chunkBuildWorker = ensureChunkBuildWorkerInstance();
-  const workerEnabled = Boolean(chunkBuildWorker);
+  const chunkBuildWorker = workerBroker
+    ? workerBroker.getProcgenWorker?.() ?? null
+    : ensureChunkBuildWorkerInstance();
+  const workerTarget = workerBroker ?? chunkBuildWorker;
+  const workerEnabled = Boolean(workerTarget);
   const workerDisposables = [];
   let workerInflightCount = 0;
   const workerUtilizationSamples = { idle: 0, busy: 0 };
@@ -2704,7 +2709,7 @@ export function createChunkManager({
   }
 
   function createWorkerJobController(entryKey, metadata) {
-    if (!workerEnabled || !chunkBuildWorker) {
+    if (!workerEnabled || (!chunkBuildWorker && !workerBroker)) {
       return null;
     }
     return {
@@ -2728,6 +2733,21 @@ export function createChunkManager({
           startPayload = startPayload ?? {};
         }
 
+        const transferables = Array.isArray(startTransferables)
+          ? startTransferables
+          : Array.isArray(metadata?.buffers)
+          ? metadata.buffers
+          : [];
+        if (workerBroker) {
+          workerBroker.requestProcgen({
+            type: 'procgen:start',
+            key: entryKey,
+            payload: startPayload ?? {},
+            persistence: startPersistence ?? undefined,
+            transferables,
+          });
+          return;
+        }
         const message = {
           type: 'start',
           key: entryKey,
@@ -2736,17 +2756,27 @@ export function createChunkManager({
         if (startPersistence !== undefined && startPersistence !== null) {
           message.persistence = startPersistence;
         }
-        const transferables = Array.isArray(startTransferables)
-          ? startTransferables
-          : Array.isArray(metadata?.buffers)
-          ? metadata.buffers
-          : [];
         chunkBuildWorker.postMessage(message, transferables);
       },
       step(budget) {
+        if (workerBroker) {
+          workerBroker.requestProcgen({
+            type: 'procgen:step',
+            key: entryKey,
+            budget,
+          });
+          return;
+        }
         chunkBuildWorker.postMessage({ type: 'step', key: entryKey, budget });
       },
       cancel() {
+        if (workerBroker) {
+          workerBroker.requestProcgen({
+            type: 'procgen:cancel',
+            key: entryKey,
+          });
+          return;
+        }
         chunkBuildWorker.postMessage({ type: 'cancel', key: entryKey });
       },
     };
@@ -2754,7 +2784,7 @@ export function createChunkManager({
 
   function createChunkJobMetadata(entry) {
     const metadata = {
-      mode: workerEnabled && chunkBuildWorker ? 'worker' : 'local',
+      mode: workerEnabled && workerTarget ? 'worker' : 'local',
       controller: null,
       buffers: [],
       started: false,
@@ -3657,7 +3687,7 @@ export function createChunkManager({
     return chunk;
   }
 
-  if (workerEnabled && chunkBuildWorker) {
+  if (workerEnabled && workerTarget && workerTarget.addEventListener) {
     const handleWorkerMessage = (event) => {
       const data = event?.data;
       if (!data || typeof data !== 'object') {
@@ -3737,11 +3767,11 @@ export function createChunkManager({
       console.error('[chunk-manager] chunk build worker error', event?.error || event);
     };
 
-    chunkBuildWorker.addEventListener('message', handleWorkerMessage);
-    chunkBuildWorker.addEventListener('error', handleWorkerError);
+    workerTarget.addEventListener('message', handleWorkerMessage);
+    workerTarget.addEventListener('error', handleWorkerError);
     workerDisposables.push(() => {
-      chunkBuildWorker.removeEventListener('message', handleWorkerMessage);
-      chunkBuildWorker.removeEventListener('error', handleWorkerError);
+      workerTarget.removeEventListener('message', handleWorkerMessage);
+      workerTarget.removeEventListener('error', handleWorkerError);
     });
   }
 

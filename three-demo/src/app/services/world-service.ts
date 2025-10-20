@@ -2,6 +2,7 @@ import type { Camera } from 'three'
 
 import { createChunkManager } from '../../world/chunk-manager.js'
 import { budgetRegistry, GPU_POOL } from '../budgets'
+import type { WorkerBroker } from '../broker.types'
 import type { ChunkPersistenceService } from './persistence-service.ts'
 
 export interface ChunkPosition {
@@ -93,6 +94,7 @@ export type WorldServiceOptions = Parameters<typeof createChunkManager>[0]
 
 export interface WorldServiceDependencies {
   persistenceService?: ChunkPersistenceService | null
+  workerBroker?: WorkerBroker | null
 }
 
 export function createWorldService(
@@ -208,6 +210,7 @@ export function createWorldService(
       providedBudgetCallbacks,
       instrumentationCallbacks,
     ),
+    workerBroker: dependencies?.workerBroker ?? null,
   })
 
   const load: ChunkStreamingService['load'] = (
