@@ -1140,15 +1140,24 @@ export function createChunkManager({
       normalizedChunkSize * normalizedChunkSize,
     );
 
+    let effectivePreloadBudget = 0;
     if (maxPreloadPerUpdate === Number.POSITIVE_INFINITY) {
       derivedChunkThroughput = Number.POSITIVE_INFINITY;
+      effectivePreloadBudget = Number.POSITIVE_INFINITY;
     } else if (!Number.isFinite(numeric) || numeric <= 0) {
       derivedChunkThroughput = 0;
+      effectivePreloadBudget = 0;
     } else {
+      const floored = Math.max(1, Math.floor(numeric));
+      effectivePreloadBudget = Math.max(floored, derivedChunkColumnsPerChunk);
       derivedChunkThroughput = Math.max(
         1,
-        Math.ceil(numeric / derivedChunkColumnsPerChunk),
+        Math.ceil(effectivePreloadBudget / derivedChunkColumnsPerChunk),
       );
+    }
+
+    if (effectivePreloadBudget !== Number.POSITIVE_INFINITY) {
+      maxPreloadPerUpdate = effectivePreloadBudget;
     }
 
     derivedActivationFloor = derivedChunkThroughput;
@@ -1157,10 +1166,12 @@ export function createChunkManager({
     defaultDisposalBudget = Math.max(resolvedDisposal, derivedDisposalFloor);
     defaultActivationBudget = Math.max(resolvedActivation, derivedActivationFloor);
 
-    if (!Number.isFinite(numeric) || numeric <= 0) {
+    if (effectivePreloadBudget === Number.POSITIVE_INFINITY) {
       defaultPreloadBurst = 2;
+    } else if (effectivePreloadBudget > 0) {
+      defaultPreloadBurst = Math.max(1, Math.floor(effectivePreloadBudget));
     } else {
-      defaultPreloadBurst = Math.max(1, Math.floor(numeric));
+      defaultPreloadBurst = 2;
     }
   };
 
@@ -6535,6 +6546,48 @@ export function createChunkManager({
       DETAIL_LEVEL_SCOUT,
     ];
 
+    const activeDetails = detailOrder.filter((detail) => {
+      const bucketSize = preloadQueue.getBucketSize(detail);
+      return Number.isFinite(bucketSize) && bucketSize > 0;
+    });
+
+    const detailBudgetCaps = new Map();
+    const detailBudgetSpent = new Map();
+    if (unlimited || activeDetails.length === 0) {
+      activeDetails.forEach((detail) => {
+        detailBudgetCaps.set(detail, Number.POSITIVE_INFINITY);
+        detailBudgetSpent.set(detail, 0);
+      });
+    } else {
+      let remainingShare = baseBudgetInitial;
+      activeDetails.forEach((detail, index) => {
+        const remainingBuckets = activeDetails.length - index;
+        if (remainingBuckets <= 0) {
+          detailBudgetCaps.set(detail, 0);
+          detailBudgetSpent.set(detail, 0);
+          return;
+        }
+        let share = Math.floor(remainingShare / remainingBuckets);
+        const remainder = remainingShare % remainingBuckets;
+        if (remainder > 0) {
+          share += 1;
+        }
+        share = Math.max(0, Math.min(share, remainingShare));
+        detailBudgetCaps.set(detail, share);
+        detailBudgetSpent.set(detail, 0);
+        remainingShare -= share;
+      });
+      if (remainingShare > 0) {
+        const lastDetail = activeDetails[activeDetails.length - 1];
+        const current = detailBudgetCaps.get(lastDetail) ?? 0;
+        detailBudgetCaps.set(lastDetail, current + remainingShare);
+      }
+    }
+
+    const chunkColumnBudget = Number.isFinite(derivedChunkColumnsPerChunk)
+      ? derivedChunkColumnsPerChunk
+      : 0;
+
     for (const detail of detailOrder) {
       const bucket = preloadQueue.getBucketEntries(detail);
       if (!Array.isArray(bucket) || bucket.length === 0) {
@@ -6596,9 +6649,61 @@ export function createChunkManager({
           stepBudget = Math.min(stepBudget, scoutReserve);
         }
 
+        const detailCap = detailBudgetCaps.get(detail);
+        const detailSpent = detailBudgetSpent.get(detail) ?? 0;
+        const remainingDetailCap = unlimited
+          ? Number.POSITIVE_INFINITY
+          : Math.max(0, (detailCap ?? 0) - detailSpent);
+
+        if (!unlimited && remainingDetailCap <= 0 && (!isScout || scoutReserve <= 0)) {
+          i += 1;
+          globalIndex += 1;
+          continue;
+        }
+
+        if (!unlimited) {
+          const availableTotal = Math.max(
+            0,
+            Math.min(
+              remainingDetailCap + (isScout ? scoutReserve : 0),
+              combinedBudget,
+            ),
+          );
+          if (availableTotal <= 0) {
+            i += 1;
+            globalIndex += 1;
+            continue;
+          }
+          stepBudget = Math.min(stepBudget, availableTotal);
+          if (!entry.urgent && chunkColumnBudget > 0) {
+            const target = Math.min(availableTotal, chunkColumnBudget);
+            if (target > stepBudget) {
+              stepBudget = target;
+            }
+          }
+        } else if (!entry.urgent && chunkColumnBudget > 0) {
+          const target = Math.min(combinedBudget, chunkColumnBudget);
+          if (target > stepBudget) {
+            stepBudget = target;
+          }
+        }
+
+        if (stepBudget <= 0) {
+          i += 1;
+          globalIndex += 1;
+          continue;
+        }
+
+        const previousRemainingBudget = remainingBudget;
         const grantedBudget = allocateBudget(stepBudget, isScout);
         if (grantedBudget <= 0) {
           return finalizeAndReturn();
+        }
+
+        if (!unlimited) {
+          const baseSpent = previousRemainingBudget - remainingBudget;
+          const spentTotal = detailBudgetSpent.get(detail) ?? 0;
+          detailBudgetSpent.set(detail, spentTotal + Math.max(0, baseSpent));
         }
 
         startChunkJob(entry, { budget: grantedBudget });
@@ -8039,6 +8144,14 @@ export function createChunkManager({
       derivedChunkThroughput,
       derivedActivationFloor,
       derivedDisposalFloor,
+    }),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__getFiniteRadiiForTest', {
+    value: () => ({
+      view: lastFiniteViewRadius,
+      retention: lastFiniteRetentionRadius,
     }),
     enumerable: false,
   });
