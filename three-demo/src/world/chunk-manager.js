@@ -4152,7 +4152,7 @@ export function createChunkManager({
       }
       if (disposeTask) {
         try {
-          state.entry.task?.releaseCachedPayload?.();
+          state.entry.task?.releaseCachedPayload?.({ cancel: true });
         } catch (error) {
           console.debug('[chunk-manager] upgrade task release failed', error);
         }
@@ -4459,7 +4459,7 @@ export function createChunkManager({
       chunkJobQueue.splice(index, 1);
     }
     try {
-      job.task?.releaseCachedPayload?.();
+      job.task?.releaseCachedPayload?.({ cancel: true });
     } catch (error) {
       console.debug('[chunk-manager] Failed to release pending upgrade task', error);
     }
@@ -4628,7 +4628,7 @@ export function createChunkManager({
       task: upgradeTask,
     });
     if (!upgradeJob) {
-      upgradeTask?.releaseCachedPayload?.();
+      upgradeTask?.releaseCachedPayload?.({ cancel: true });
       return false;
     }
     record.pendingUpgrade = upgradeJob;
@@ -4823,7 +4823,7 @@ export function createChunkManager({
         );
       }
     }
-    entry.task?.releaseCachedPayload?.();
+    entry.task?.releaseCachedPayload?.({ cancel: true });
   }
 
   async function runChunkJobPump() {

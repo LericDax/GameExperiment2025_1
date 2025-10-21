@@ -1239,7 +1239,7 @@ const createBuilder = (options = {}) => {
     },
     cancel() {
       try {
-        task?.releaseCachedPayload?.();
+        task?.releaseCachedPayload?.({ cancel: true });
       } catch (error) {
         errorInfo = serializeError(error);
       }
