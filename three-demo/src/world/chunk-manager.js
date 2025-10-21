@@ -35,6 +35,7 @@ import {
   shouldCompactJournal,
 } from './persist/snapshot.ts';
 import { encodeJournalOps, JournalOpId } from './persist/journal.ts';
+import { WORLD_BUDGET } from './world-settings.js';
 
 export const ChunkManagerEvents = Object.freeze({
   FIRST_CHUNK_MESHED: 'first-chunk-meshed',
@@ -1113,6 +1114,90 @@ export function createChunkManager({
   const prototypeRemovalGuards = new Set();
   const chunkDisposalQueue = [];
   const scheduledChunkDisposals = new Set();
+  function resolveResidentChunkCap() {
+    const options = getWorldOptions();
+    const candidate = Number(options?.budget?.residentChunks);
+    if (Number.isFinite(candidate)) {
+      return Math.max(0, Math.floor(candidate));
+    }
+    const fallback = Number(WORLD_BUDGET?.residentChunks);
+    if (Number.isFinite(fallback)) {
+      return Math.max(0, Math.floor(fallback));
+    }
+    return Number.POSITIVE_INFINITY;
+  }
+
+  function ensureResidentCapacityForChunk(
+    key,
+    { protectedKeys = [] } = {},
+  ) {
+    if (!key) {
+      return [];
+    }
+    const cap = resolveResidentChunkCap();
+    if (!Number.isFinite(cap)) {
+      return [];
+    }
+    const alreadyLoaded = loadedChunks.has(key);
+    const projectedSize = loadedChunks.size + (alreadyLoaded ? 0 : 1);
+    let overBudget = projectedSize - cap;
+    if (overBudget <= 0) {
+      return [];
+    }
+    const protectedSet = new Set();
+    const addProtectedKey = (candidate) => {
+      if (!candidate) {
+        return;
+      }
+      const normalized = String(candidate);
+      if (!normalized) {
+        return;
+      }
+      protectedSet.add(normalized);
+    };
+    addProtectedKey(key);
+    if (Array.isArray(protectedKeys)) {
+      protectedKeys.forEach(addProtectedKey);
+    } else if (protectedKeys instanceof Set) {
+      protectedKeys.forEach(addProtectedKey);
+    } else {
+      addProtectedKey(protectedKeys);
+    }
+
+    const evictionCandidates = [];
+    loadedChunks.forEach((chunk, chunkKey) => {
+      if (protectedSet.has(chunkKey) || scheduledChunkDisposals.has(chunkKey)) {
+        return;
+      }
+      const lastTouchedAt = Number.isFinite(chunk?.lastTouchedAt)
+        ? chunk.lastTouchedAt
+        : Number.NEGATIVE_INFINITY;
+      evictionCandidates.push({ key: chunkKey, lastTouchedAt });
+    });
+    if (evictionCandidates.length === 0) {
+      processChunkDisposalQueue(Number.POSITIVE_INFINITY);
+      return [];
+    }
+    evictionCandidates.sort((a, b) => {
+      if (a.lastTouchedAt === b.lastTouchedAt) {
+        return a.key.localeCompare(b.key);
+      }
+      return a.lastTouchedAt - b.lastTouchedAt;
+    });
+    const queuedKeys = [];
+    for (const candidate of evictionCandidates) {
+      if (overBudget <= 0) {
+        break;
+      }
+      queueChunkForDisposal(candidate.key, { front: true });
+      queuedKeys.push(candidate.key);
+      overBudget -= 1;
+    }
+    if (queuedKeys.length > 0 || overBudget > 0) {
+      processChunkDisposalQueue(Number.POSITIVE_INFINITY);
+    }
+    return queuedKeys;
+  }
   const raycastTargets = new Set();
   const isDevBuild = Boolean(import.meta.env && import.meta.env.DEV);
   const eventListeners = new Map();
@@ -4068,8 +4153,9 @@ export function createChunkManager({
     }
     record.pendingUpgrade = null;
     try {
-      registerGeneratedChunk(chunk);
       const key = chunkKey(chunk.chunkX, chunk.chunkZ);
+      ensureResidentCapacityForChunk(key);
+      registerGeneratedChunk(chunk, { budgetCheckHandled: true });
       touchLoadedChunkRecord(key, chunk);
       entry.resolve?.(chunk);
     } catch (error) {
@@ -6198,12 +6284,18 @@ export function createChunkManager({
   }
 
 
-  function registerGeneratedChunk(chunk) {
+  function registerGeneratedChunk(chunk, options = {}) {
     if (!chunk) {
       return;
     }
     const { chunkX, chunkZ } = chunk;
     const key = chunkKey(chunkX, chunkZ);
+    const budgetHandled = options?.budgetCheckHandled === true;
+    if (!budgetHandled) {
+      ensureResidentCapacityForChunk(key, {
+        protectedKeys: options?.protectedKeys,
+      });
+    }
     if (loadedChunks.has(key)) {
       touchLoadedChunkRecord(key);
       return;
