@@ -8,6 +8,7 @@ import {
   makeBlockKey,
   isBlockOccluding,
 } from './generation.js';
+import { createChunkBlockIndex, isChunkBlockIndex } from './chunk-block-index.js';
 import { finalizeChunkMeshes } from './finalize-chunk-meshes.js';
 import { deriveCollisionKeySetsFromMesh } from './collision-key-utils.js';
 import { pruneOccludedInstancedEntries } from './instanced-occlusion-utils.js';
@@ -1078,8 +1079,12 @@ export function createChunkManager({
       perChunkAverageBytes,
     };
   }
-  const solidBlocks = new Set();
-  const softBlocks = new Set();
+  const solidBlocks = createChunkBlockIndex({
+    chunkSize: worldConfig.chunkSize,
+  });
+  const softBlocks = createChunkBlockIndex({
+    chunkSize: worldConfig.chunkSize,
+  });
   const waterColumns = new Map();
   const decorationGroupsByKey = new Map();
   const decorationOwnersIndex = new Map();
@@ -2611,6 +2616,9 @@ export function createChunkManager({
     if (!collection || !Number.isFinite(columnX) || !Number.isFinite(columnZ)) {
       return false;
     }
+    if (typeof collection?.hasColumn === 'function') {
+      return collection.hasColumn({ x: columnX, z: columnZ });
+    }
     const matchesColumn = (key) => {
       if (typeof key !== 'string') {
         return false;
@@ -3576,8 +3584,16 @@ export function createChunkManager({
       chunkX,
       chunkZ,
       group,
-      solidBlockKeys: new Set(),
-      softBlockKeys: new Set(),
+      solidBlockKeys: createChunkBlockIndex({
+        chunkSize,
+        chunkX,
+        chunkZ,
+      }),
+      softBlockKeys: createChunkBlockIndex({
+        chunkSize,
+        chunkX,
+        chunkZ,
+      }),
       typeCapacities: new Map(),
       waterColumns: new Map(),
       fluidColumnsByType: new Map(),
@@ -3655,12 +3671,37 @@ export function createChunkManager({
       occludedEntries: derivedCollisionKeys.occludedEntries,
     });
 
+    const chunkOverrides =
+      Number.isFinite(entry?.chunkX) && Number.isFinite(entry?.chunkZ)
+        ? { chunkX: entry.chunkX, chunkZ: entry.chunkZ }
+        : {};
+    const chunkSolidKeys = createChunkBlockIndex({
+      chunkSize: worldConfig.chunkSize,
+      chunkX: chunkOverrides.chunkX,
+      chunkZ: chunkOverrides.chunkZ,
+    });
+    populateChunkBlockIndex(
+      chunkSolidKeys,
+      derivedCollisionKeys.solidBlockKeys,
+      chunkOverrides,
+    );
+    const chunkSoftKeys = createChunkBlockIndex({
+      chunkSize: worldConfig.chunkSize,
+      chunkX: chunkOverrides.chunkX,
+      chunkZ: chunkOverrides.chunkZ,
+    });
+    populateChunkBlockIndex(
+      chunkSoftKeys,
+      derivedCollisionKeys.softBlockKeys,
+      chunkOverrides,
+    );
+
     const chunk = {
       chunkX: entry.chunkX,
       chunkZ: entry.chunkZ,
       group: meshResult.chunkGroup,
-      solidBlockKeys: derivedCollisionKeys.solidBlockKeys,
-      softBlockKeys: derivedCollisionKeys.softBlockKeys,
+      solidBlockKeys: chunkSolidKeys,
+      softBlockKeys: chunkSoftKeys,
       typeCapacities: meshResult.typeCapacities,
       waterColumns: meshResult.waterColumns,
       fluidColumnsByType: meshResult.fluidColumnsByType,
@@ -4175,8 +4216,18 @@ export function createChunkManager({
         : [];
     previousGroups.forEach((group) => unregisterDecorationGroup(group));
 
-    (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.delete(block));
-    (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.delete(block));
+    const chunkOverrides =
+      Number.isFinite(chunk?.chunkX) && Number.isFinite(chunk?.chunkZ)
+        ? { chunkX: chunk.chunkX, chunkZ: chunk.chunkZ }
+        : {};
+    const existingSolidIndex = resolveChunkBlockIndex(chunk, 'solidBlockKeys');
+    existingSolidIndex?.forEach((block) =>
+      solidBlocks.delete(block, chunkOverrides),
+    );
+    const existingSoftIndex = resolveChunkBlockIndex(chunk, 'softBlockKeys');
+    existingSoftIndex?.forEach((block) =>
+      softBlocks.delete(block, chunkOverrides),
+    );
     if (chunk.waterColumns instanceof Map) {
       chunk.waterColumns.forEach((_, columnKey) => waterColumns.delete(columnKey));
     } else if (chunk.waterColumnKeys instanceof Set) {
@@ -4197,14 +4248,28 @@ export function createChunkManager({
     releasePendingChunkResources(chunk);
 
     chunk.group = upgradedChunk.group;
-    chunk.solidBlockKeys =
-      upgradedChunk.solidBlockKeys instanceof Set
-        ? upgradedChunk.solidBlockKeys
-        : new Set(upgradedChunk.solidBlockKeys ?? []);
-    chunk.softBlockKeys =
-      upgradedChunk.softBlockKeys instanceof Set
-        ? upgradedChunk.softBlockKeys
-        : new Set(upgradedChunk.softBlockKeys ?? []);
+    const nextSolidIndex = createChunkBlockIndex({
+      chunkSize: worldConfig.chunkSize,
+      chunkX: chunkOverrides.chunkX,
+      chunkZ: chunkOverrides.chunkZ,
+    });
+    populateChunkBlockIndex(
+      nextSolidIndex,
+      upgradedChunk.solidBlockKeys,
+      chunkOverrides,
+    );
+    chunk.solidBlockKeys = nextSolidIndex;
+    const nextSoftIndex = createChunkBlockIndex({
+      chunkSize: worldConfig.chunkSize,
+      chunkX: chunkOverrides.chunkX,
+      chunkZ: chunkOverrides.chunkZ,
+    });
+    populateChunkBlockIndex(
+      nextSoftIndex,
+      upgradedChunk.softBlockKeys,
+      chunkOverrides,
+    );
+    chunk.softBlockKeys = nextSoftIndex;
     chunk.typeCapacities =
       upgradedChunk.typeCapacities instanceof Map
         ? upgradedChunk.typeCapacities
@@ -4314,8 +4379,14 @@ export function createChunkManager({
       registerDecorationGroup(key, group, chunk);
     });
 
-    (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.add(block));
-    (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
+    const updatedSolidIndex = resolveChunkBlockIndex(chunk, 'solidBlockKeys');
+    updatedSolidIndex?.forEach((block) =>
+      solidBlocks.add(block, chunkOverrides),
+    );
+    const updatedSoftIndex = resolveChunkBlockIndex(chunk, 'softBlockKeys');
+    updatedSoftIndex?.forEach((block) =>
+      softBlocks.add(block, chunkOverrides),
+    );
 
     chunk.detailLevel = normalizeDetailLevel(upgradedChunk.detailLevel);
     chunk.desiredDetailLevel = chunk.detailLevel;
@@ -5223,9 +5294,13 @@ export function createChunkManager({
       ? Math.floor(chunk.bounds.minY - 1)
       : -64;
     let supportTop = null;
+    const chunkOverrides =
+      Number.isFinite(chunk?.chunkX) && Number.isFinite(chunk?.chunkZ)
+        ? { chunkX: chunk.chunkX, chunkZ: chunk.chunkZ }
+        : {};
     for (let y = startY; y >= minYLimit; y -= 1) {
       const candidateKey = `${coordinates.x}|${y}|${coordinates.z}`;
-      if (solidBlocks.has(candidateKey)) {
+      if (solidBlocks.has(candidateKey, chunkOverrides)) {
         supportTop = y + 0.5;
         break;
       }
@@ -5558,7 +5633,7 @@ export function createChunkManager({
     return group.hiddenEntries;
   }
 
-  function resolveChunkKeySet(
+  function resolveChunkBlockIndex(
     chunk,
     property,
     { createIfMissing = false } = {},
@@ -5567,22 +5642,89 @@ export function createChunkManager({
       return null;
     }
     const current = chunk[property];
-    if (current instanceof Set) {
+    if (isChunkBlockIndex(current)) {
       return current;
     }
-    if (current === undefined || current === null) {
-      if (!createIfMissing) {
-        return null;
-      }
-      const next = new Set();
-      chunk[property] = next;
-      return next;
+    const hasCurrent = current !== undefined && current !== null;
+    if (!hasCurrent && !createIfMissing) {
+      return null;
     }
-    const iterable =
-      current && typeof current[Symbol.iterator] === 'function' ? current : [];
-    const next = new Set(iterable);
-    chunk[property] = next;
-    return next;
+    const overrides =
+      Number.isFinite(chunk.chunkX) && Number.isFinite(chunk.chunkZ)
+        ? { chunkX: chunk.chunkX, chunkZ: chunk.chunkZ }
+        : {};
+    const index = createChunkBlockIndex({
+      chunkSize: worldConfig.chunkSize,
+      chunkX: overrides.chunkX,
+      chunkZ: overrides.chunkZ,
+    });
+    if (hasCurrent) {
+      const applyKey = (key) => {
+        const coords = parseBlockCoordinateKey(key);
+        if (!coords) {
+          return;
+        }
+        index.add(coords, overrides);
+      };
+      if (current instanceof Set || Array.isArray(current)) {
+        current.forEach(applyKey);
+      } else if (current && typeof current.forEach === 'function') {
+        current.forEach((value, keyCandidate) => {
+          if (typeof keyCandidate === 'string') {
+            applyKey(keyCandidate);
+          } else {
+            applyKey(value);
+          }
+        });
+      } else if (current && typeof current === 'object') {
+        Object.keys(current).forEach(applyKey);
+      }
+    }
+    if (hasCurrent || createIfMissing) {
+      chunk[property] = index;
+      return index;
+    }
+    return null;
+  }
+
+  function populateChunkBlockIndex(index, source, overrides = {}) {
+    if (!index || !source) {
+      return;
+    }
+    const applyKey = (key) => {
+      const coords = parseBlockCoordinateKey(key);
+      if (!coords) {
+        return;
+      }
+      index.add(coords, overrides);
+    };
+    if (isChunkBlockIndex(source)) {
+      source.forEach((key) => applyKey(key));
+      return;
+    }
+    if (source instanceof Set || Array.isArray(source)) {
+      source.forEach(applyKey);
+      return;
+    }
+    if (typeof source?.forEach === 'function') {
+      source.forEach((value, keyCandidate) => {
+        if (typeof keyCandidate === 'string') {
+          applyKey(keyCandidate);
+        } else {
+          applyKey(value);
+        }
+      });
+      return;
+    }
+    if (typeof source === 'object') {
+      Object.keys(source).forEach(applyKey);
+      return;
+    }
+    if (typeof source?.[Symbol.iterator] === 'function') {
+      for (const value of source) {
+        applyKey(value);
+      }
+    }
   }
 
   function addEntryToChunkMesh(chunk, entry) {
@@ -5668,19 +5810,30 @@ export function createChunkManager({
     entry.isVisible = true;
     const coordinateKey = entry.coordinateKey ?? entry.key;
     if (coordinateKey) {
-      if (entry.isSolid) {
-        const chunkSolidKeys = resolveChunkKeySet(chunk, 'solidBlockKeys', {
-          createIfMissing: true,
-        });
-        chunkSolidKeys?.add(coordinateKey);
-        solidBlocks.add(coordinateKey);
-      }
-      if (entry.collisionMode === 'soft') {
-        const chunkSoftKeys = resolveChunkKeySet(chunk, 'softBlockKeys', {
-          createIfMissing: true,
-        });
-        chunkSoftKeys?.add(coordinateKey);
-        softBlocks.add(coordinateKey);
+      const coords = parseBlockCoordinateKey(coordinateKey);
+      if (coords) {
+        const overrides =
+          Number.isFinite(chunk?.chunkX) && Number.isFinite(chunk?.chunkZ)
+            ? { chunkX: chunk.chunkX, chunkZ: chunk.chunkZ }
+            : {};
+        if (entry.isSolid) {
+          const chunkSolidKeys = resolveChunkBlockIndex(
+            chunk,
+            'solidBlockKeys',
+            { createIfMissing: true },
+          );
+          chunkSolidKeys?.add(coords, overrides);
+          solidBlocks.add(coords, overrides);
+        }
+        if (entry.collisionMode === 'soft') {
+          const chunkSoftKeys = resolveChunkBlockIndex(
+            chunk,
+            'softBlockKeys',
+            { createIfMissing: true },
+          );
+          chunkSoftKeys?.add(coords, overrides);
+          softBlocks.add(coords, overrides);
+        }
       }
     }
   }
@@ -5691,15 +5844,23 @@ export function createChunkManager({
       if (!chunk || !entry || !coordinateKey) {
         return;
       }
+      const coords = parseBlockCoordinateKey(coordinateKey);
+      if (!coords) {
+        return;
+      }
+      const overrides =
+        Number.isFinite(chunk?.chunkX) && Number.isFinite(chunk?.chunkZ)
+          ? { chunkX: chunk.chunkX, chunkZ: chunk.chunkZ }
+          : {};
       if (entry.isSolid) {
-        const chunkSolidKeys = resolveChunkKeySet(chunk, 'solidBlockKeys');
-        chunkSolidKeys?.delete(coordinateKey);
-        solidBlocks.delete(coordinateKey);
+        const chunkSolidKeys = resolveChunkBlockIndex(chunk, 'solidBlockKeys');
+        chunkSolidKeys?.delete(coords, overrides);
+        solidBlocks.delete(coords, overrides);
       }
       if (entry.collisionMode === 'soft') {
-        const chunkSoftKeys = resolveChunkKeySet(chunk, 'softBlockKeys');
-        chunkSoftKeys?.delete(coordinateKey);
-        softBlocks.delete(coordinateKey);
+        const chunkSoftKeys = resolveChunkBlockIndex(chunk, 'softBlockKeys');
+        chunkSoftKeys?.delete(coords, overrides);
+        softBlocks.delete(coords, overrides);
       }
     };
     if (!chunk || !entry || !chunk.typeData) {
@@ -6049,8 +6210,26 @@ export function createChunkManager({
       surface.userData.chunkKey = key;
     });
     scene.add(chunk.group);
-    (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.add(block));
-    (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.add(block));
+    const chunkOverrides =
+      Number.isFinite(chunk?.chunkX) && Number.isFinite(chunk?.chunkZ)
+        ? { chunkX: chunk.chunkX, chunkZ: chunk.chunkZ }
+        : {};
+    const chunkSolidIndex = resolveChunkBlockIndex(
+      chunk,
+      'solidBlockKeys',
+      { createIfMissing: true },
+    );
+    chunkSolidIndex?.forEach((block) =>
+      solidBlocks.add(block, chunkOverrides),
+    );
+    const chunkSoftIndex = resolveChunkBlockIndex(
+      chunk,
+      'softBlockKeys',
+      { createIfMissing: true },
+    );
+    chunkSoftIndex?.forEach((block) =>
+      softBlocks.add(block, chunkOverrides),
+    );
     const chunkWaterColumnSource =
       chunk.waterColumns ?? chunk.waterColumnKeys ?? null;
     const chunkWaterColumns = ensureWaterColumnMap(chunkWaterColumnSource);
@@ -6475,8 +6654,16 @@ export function createChunkManager({
       surface.geometry?.dispose?.();
       disposeFluidSurface(surface);
     });
-    (chunk.solidBlockKeys ?? []).forEach((block) => solidBlocks.delete(block));
-    (chunk.softBlockKeys ?? []).forEach((block) => softBlocks.delete(block));
+    const chunkOverrides =
+      Number.isFinite(chunk?.chunkX) && Number.isFinite(chunk?.chunkZ)
+        ? { chunkX: chunk.chunkX, chunkZ: chunk.chunkZ }
+        : {};
+    resolveChunkBlockIndex(chunk, 'solidBlockKeys')?.forEach((block) =>
+      solidBlocks.delete(block, chunkOverrides),
+    );
+    resolveChunkBlockIndex(chunk, 'softBlockKeys')?.forEach((block) =>
+      softBlocks.delete(block, chunkOverrides),
+    );
     if (chunk.waterColumns instanceof Map) {
       chunk.waterColumns.forEach((_, columnKey) => waterColumns.delete(columnKey));
     } else if (chunk.waterColumnKeys instanceof Set) {
@@ -8156,6 +8343,10 @@ export function createChunkManager({
     const prototypeRefs = [];
     const settleColumnKeys = new Set();
     const visibilityPositions = [];
+    const chunkOverrides =
+      Number.isFinite(chunk?.chunkX) && Number.isFinite(chunk?.chunkZ)
+        ? { chunkX: chunk.chunkX, chunkZ: chunk.chunkZ }
+        : {};
 
     uniqueEntries.forEach((entry) => {
       if (!entry) {
@@ -8177,17 +8368,26 @@ export function createChunkManager({
         }
       }
       const coordinateKey = entry.coordinateKey ?? entry.key;
-      if (entry.isSolid && coordinateKey) {
-        chunk.solidBlockKeys?.delete(coordinateKey);
-        solidBlocks.delete(coordinateKey);
-        if (entry.position) {
+      if (coordinateKey) {
+        const coords = parseBlockCoordinateKey(coordinateKey);
+        if (entry.isSolid && coords) {
+          resolveChunkBlockIndex(chunk, 'solidBlockKeys')?.delete(
+            coords,
+            chunkOverrides,
+          );
+          solidBlocks.delete(coords, chunkOverrides);
+        }
+        if (entry.collisionMode === 'soft' && coords) {
+          resolveChunkBlockIndex(chunk, 'softBlockKeys')?.delete(
+            coords,
+            chunkOverrides,
+          );
+          softBlocks.delete(coords, chunkOverrides);
+        }
+        if (entry.isSolid && coords && entry.position) {
           const settleKey = `${Math.round(entry.position.x)}|${Math.round(entry.position.z)}`;
           settleColumnKeys.add(settleKey);
         }
-      }
-      if (entry.collisionMode === 'soft' && coordinateKey) {
-        chunk.softBlockKeys?.delete(coordinateKey);
-        softBlocks.delete(coordinateKey);
       }
       if (entry.isWater && entry.position) {
         const columnKey = `${entry.position.x}|${entry.position.z}`;
