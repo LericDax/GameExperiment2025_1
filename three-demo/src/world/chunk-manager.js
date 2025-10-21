@@ -943,6 +943,28 @@ export function createChunkManager({
   workerBroker: providedWorkerBroker = null,
 }) {
   const loadedChunks = new Map();
+
+  const resolveChunkTouchTimestamp = () => {
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+      return performance.now();
+    }
+    return Date.now();
+  };
+
+  function touchLoadedChunkRecord(key, chunk = loadedChunks.get(key), timestamp) {
+    if (!key || !chunk) {
+      return null;
+    }
+    const resolvedTimestamp =
+      typeof timestamp === 'number' && Number.isFinite(timestamp)
+        ? timestamp
+        : resolveChunkTouchTimestamp();
+    chunk.lastTouchedAt = resolvedTimestamp;
+    if (loadedChunks.get(key) !== chunk) {
+      loadedChunks.set(key, chunk);
+    }
+    return chunk;
+  }
   const scoutPreviewMemoryByChunk = new Map();
   const scoutPreviewMemoryTotals = {
     vertexBytes: 0,
@@ -4047,6 +4069,8 @@ export function createChunkManager({
     record.pendingUpgrade = null;
     try {
       registerGeneratedChunk(chunk);
+      const key = chunkKey(chunk.chunkX, chunk.chunkZ);
+      touchLoadedChunkRecord(key, chunk);
       entry.resolve?.(chunk);
     } catch (error) {
       entry.reject?.(error);
@@ -5394,7 +5418,8 @@ export function createChunkManager({
 
   function updateChunkVisibility(camera) {
     if (!camera) {
-      loadedChunks.forEach((chunk) => {
+      loadedChunks.forEach((chunk, key) => {
+        touchLoadedChunkRecord(key, chunk);
         if (chunk?.group) {
           chunk.group.visible = true;
         }
@@ -5408,7 +5433,8 @@ export function createChunkManager({
     );
     chunkCullFrustum.setFromProjectionMatrix(chunkCullMatrix);
 
-    loadedChunks.forEach((chunk) => {
+    loadedChunks.forEach((chunk, key) => {
+      touchLoadedChunkRecord(key, chunk);
       if (!chunk?.group) {
         return;
       }
@@ -6179,6 +6205,7 @@ export function createChunkManager({
     const { chunkX, chunkZ } = chunk;
     const key = chunkKey(chunkX, chunkZ);
     if (loadedChunks.has(key)) {
+      touchLoadedChunkRecord(key);
       return;
     }
 
@@ -6316,7 +6343,7 @@ export function createChunkManager({
     chunk.decorationGroups.forEach((group) => {
       registerDecorationGroup(key, group, chunk);
     });
-    loadedChunks.set(key, chunk);
+    touchLoadedChunkRecord(key, chunk);
 
     chunk.__budgetKey = key;
     const normalizedDetailLevel = normalizeDetailLevel(
@@ -6403,6 +6430,7 @@ export function createChunkManager({
   function ensureChunk(chunkX, chunkZ, options = {}) {
     const key = chunkKey(chunkX, chunkZ);
     if (loadedChunks.has(key)) {
+      touchLoadedChunkRecord(key);
       return;
     }
     const blocking = options.blocking === true;
@@ -6755,6 +6783,7 @@ export function createChunkManager({
   ) {
     const key = chunkKey(chunkX, chunkZ);
     if (loadedChunks.has(key)) {
+      touchLoadedChunkRecord(key);
       return;
     }
 
@@ -8004,6 +8033,12 @@ export function createChunkManager({
   }
 
   function getRaycastTargets() {
+    raycastTargets.forEach((mesh) => {
+      const key = mesh?.userData?.chunkKey;
+      if (typeof key === 'string' && key) {
+        touchLoadedChunkRecord(key);
+      }
+    });
     return Array.from(raycastTargets);
   }
 
