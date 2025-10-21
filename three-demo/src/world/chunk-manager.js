@@ -1725,6 +1725,156 @@ export function createChunkManager({
   const pendingActivations = [];
   const pendingActivationByKey = new Map();
   const deferredActivations = [];
+  const BUDGET_CONGESTION_WARN_THRESHOLD = 3;
+  const BUDGET_CONGESTION_LABELS = {
+    resident: 'resident chunk cap',
+    pendingBuild: 'pending-build cap',
+    activation: 'activation cap',
+  };
+  const budgetCongestionState = {
+    resident: { frames: 0, cap: null, count: 0, details: {} },
+    pendingBuild: { frames: 0, cap: null, count: 0, details: {} },
+    activation: { frames: 0, cap: null, count: 0, details: {} },
+  };
+  function formatCapValue(cap) {
+    if (cap === Number.POSITIVE_INFINITY) {
+      return 'Infinity';
+    }
+    if (cap === Number.NEGATIVE_INFINITY) {
+      return '-Infinity';
+    }
+    if (cap == null) {
+      return 'n/a';
+    }
+    const numeric = Number(cap);
+    if (!Number.isFinite(numeric)) {
+      return String(cap);
+    }
+    return String(Math.max(0, Math.floor(numeric)));
+  }
+  function updateBudgetCongestionState(
+    key,
+    { congested, cap, count, details },
+  ) {
+    const state = budgetCongestionState[key];
+    if (!state) {
+      return;
+    }
+    state.cap = cap ?? null;
+    state.count = Number.isFinite(count) ? count : 0;
+    state.details = details && typeof details === 'object' ? { ...details } : {};
+    state.frames = congested ? state.frames + 1 : 0;
+    if (
+      !isDevBuild ||
+      !congested ||
+      state.frames !== BUDGET_CONGESTION_WARN_THRESHOLD
+    ) {
+      return;
+    }
+    const label = BUDGET_CONGESTION_LABELS[key] ?? key;
+    const parts = [`cap=${formatCapValue(cap)}`, `count=${state.count}`];
+    Object.entries(state.details).forEach(([detailKey, value]) => {
+      if (value == null) {
+        return;
+      }
+      parts.push(`${detailKey}=${value}`);
+    });
+    parts.push(`frames=${state.frames}`);
+    console.warn(`[chunk-manager] ${label} congestion (${parts.join(', ')})`);
+  }
+  function checkBudgetCongestion({
+    activationBudget = Number.POSITIVE_INFINITY,
+    activationProcessed = 0,
+  } = {}) {
+    const residentCap = resolveResidentChunkCap();
+    const residentCount = loadedChunks.size;
+    const residentCongested =
+      Number.isFinite(residentCap) && residentCount > residentCap;
+    const residentDetails = {
+      over:
+        residentCongested && Number.isFinite(residentCap)
+          ? residentCount - residentCap
+          : 0,
+      disposalsQueued: chunkDisposalQueue.length,
+    };
+    updateBudgetCongestionState('resident', {
+      congested: residentCongested,
+      cap: residentCap,
+      count: residentCount,
+      details: residentDetails,
+    });
+
+    const pendingBuildCap = resolvePendingBuildCap();
+    const activePendingBuilds = pendingPreloadEntries.size;
+    const waitingPendingBuilds = waitingPreloadQueue.length;
+    const pendingBuildCongested =
+      Number.isFinite(pendingBuildCap) &&
+      pendingBuildCap >= 0 &&
+      (activePendingBuilds > pendingBuildCap ||
+        (activePendingBuilds >= pendingBuildCap && waitingPendingBuilds > 0));
+    const pendingBuildCount =
+      waitingPendingBuilds > 0 ? waitingPendingBuilds : activePendingBuilds;
+    updateBudgetCongestionState('pendingBuild', {
+      congested: pendingBuildCongested,
+      cap: pendingBuildCap,
+      count: pendingBuildCount,
+      details: {
+        active: activePendingBuilds,
+        waiting: waitingPendingBuilds,
+      },
+    });
+
+    const meshCommitCap = resolveMeshCommitCap();
+    const pendingActivationCount = pendingActivations.length;
+    const deferredActivationCount = deferredActivations.length;
+    const totalActivationQueue =
+      pendingActivationCount + deferredActivationCount;
+    const normalizedActivationBudget = Number.isFinite(activationBudget)
+      ? Math.max(0, Math.floor(activationBudget))
+      : Number.POSITIVE_INFINITY;
+    const processedActivations = Math.max(
+      0,
+      Math.floor(Number(activationProcessed) || 0),
+    );
+    const activationCongested = (() => {
+      if (totalActivationQueue <= 0) {
+        return false;
+      }
+      if (
+        deferredActivationCount > 0 &&
+        Number.isFinite(meshCommitCap) &&
+        meshCommitCap >= 0
+      ) {
+        return true;
+      }
+      if (!Number.isFinite(activationBudget)) {
+        return false;
+      }
+      return processedActivations >= normalizedActivationBudget;
+    })();
+    const activationCapForMessage = Number.isFinite(activationBudget)
+      ? normalizedActivationBudget
+      : Number.isFinite(meshCommitCap)
+        ? meshCommitCap
+        : Number.POSITIVE_INFINITY;
+    const activationDetails = {
+      pending: pendingActivationCount,
+      deferred: deferredActivationCount,
+      processed: processedActivations,
+      capSource:
+        deferredActivationCount > 0 && Number.isFinite(meshCommitCap)
+          ? 'mesh-commit'
+          : Number.isFinite(activationBudget)
+            ? 'frame-budget'
+            : 'unbounded',
+    };
+    updateBudgetCongestionState('activation', {
+      congested: activationCongested,
+      cap: activationCapForMessage,
+      count: totalActivationQueue,
+      details: activationDetails,
+    });
+  }
   const chunkJobQueue = [];
   const dirtyChunks = new Set();
   const chunkJournalQueues = new Map();
@@ -8012,6 +8162,10 @@ export function createChunkManager({
       !disposalQueueHasWork &&
       !activationQueueHasWork
     ) {
+      checkBudgetCongestion({
+        activationBudget,
+        activationProcessed: 0,
+      });
 
       if (shouldUpdateVisibility) {
         updateChunkVisibility(camera);
@@ -8286,6 +8440,10 @@ export function createChunkManager({
     lastCenterKey = centerKey;
 
     if (force) {
+      checkBudgetCongestion({
+        activationBudget,
+        activationProcessed: 0,
+      });
       const completion = (async () => {
         await flush({ includeDisposals: true });
         if (shouldUpdateVisibility) {
@@ -8318,13 +8476,18 @@ export function createChunkManager({
       }
     }
 
-    processPendingActivations(activationBudget);
+    const activationProcessed = processPendingActivations(activationBudget);
 
     processActiveChunkUpgrades();
 
     flushChunkDisposals();
 
     activeDirectionalContext = null;
+
+    checkBudgetCongestion({
+      activationBudget,
+      activationProcessed,
+    });
 
 
     if (shouldUpdateVisibility) {
@@ -8693,6 +8856,24 @@ export function createChunkManager({
           });
         });
 
+        const congestionSnapshot = Object.fromEntries(
+          Object.entries(budgetCongestionState).map(([key, value]) => {
+            const details =
+              value.details && typeof value.details === 'object'
+                ? { ...value.details }
+                : {};
+            return [
+              key,
+              {
+                frames: value.frames,
+                cap: value.cap,
+                count: value.count,
+                details,
+              },
+            ];
+          }),
+        );
+
         return {
           generatedAt: Date.now(),
           chunkCount: chunks.length,
@@ -8719,6 +8900,7 @@ export function createChunkManager({
             },
           },
           streamingStats: getStreamingStats(),
+          budgetCongestion: congestionSnapshot,
           chunks,
         };
       };
