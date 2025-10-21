@@ -562,6 +562,7 @@ function bootLegacyRuntime() {
       commandConsole,
       playerControls,
       chunkManager,
+      renderer,
       scene,
       camera,
       THREE,
