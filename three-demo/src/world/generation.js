@@ -39,6 +39,7 @@ import {
   getTerrainSampleCacheStats,
   recordChunkSamplingProfile,
   primeTerrainSample,
+  releaseTerrainSamplesForChunk,
   clearTerrainSampleCache,
 } from './terrain-sample-cache.js';
 export { worldOptions, getWorldOptions, applyWorldOptions } from './world-settings.js';
@@ -708,7 +709,24 @@ export function createChunkBuildTask({
   let cachedBiomeSummary = null;
 
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ, worldOptions);
-  const { chunkSize, waterLevel } = worldOptions;
+  const configuredChunkSize = Number.isFinite(worldOptions?.chunkSize)
+    ? worldOptions.chunkSize
+    : 16;
+  const chunkSize = Math.max(1, Math.floor(configuredChunkSize));
+  const { waterLevel } = worldOptions;
+  const chunkMinX = minX;
+  const chunkMinZ = minZ;
+  const chunkMaxX = chunkMinX + chunkSize - 1;
+  const chunkMaxZ = chunkMinZ + chunkSize - 1;
+
+  let sampledMinX = Number.POSITIVE_INFINITY;
+  let sampledMaxX = Number.NEGATIVE_INFINITY;
+  let sampledMinZ = Number.POSITIVE_INFINITY;
+  let sampledMaxZ = Number.NEGATIVE_INFINITY;
+  let hasSampleBounds = false;
+  let terrainSamplesReleased = false;
+  let chunkProfileRecorded = false;
+
   const totalColumns = Math.max(1, chunkSize * chunkSize);
   const scoutHeightMap = isScoutDetail ? new Int16Array(totalColumns) : null;
   const scoutBiomeIds = isScoutDetail
@@ -719,12 +737,75 @@ export function createChunkBuildTask({
 
   const terrainSampler = (x, z) => engine.sampleColumn(x, z);
 
+  const trackSampleCoordinate = (x, z) => {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return;
+    }
+    if (!hasSampleBounds) {
+      hasSampleBounds = true;
+    }
+    if (x < sampledMinX) {
+      sampledMinX = x;
+    }
+    if (x > sampledMaxX) {
+      sampledMaxX = x;
+    }
+    if (z < sampledMinZ) {
+      sampledMinZ = z;
+    }
+    if (z > sampledMaxZ) {
+      sampledMaxZ = z;
+    }
+  };
+
+  const computeSamplePadding = () => {
+    if (!hasSampleBounds) {
+      return 0;
+    }
+    const extraMinX = Math.max(0, chunkMinX - sampledMinX);
+    const extraMaxX = Math.max(0, sampledMaxX - chunkMaxX);
+    const extraMinZ = Math.max(0, chunkMinZ - sampledMinZ);
+    const extraMaxZ = Math.max(0, sampledMaxZ - chunkMaxZ);
+    const padding = Math.max(extraMinX, extraMaxX, extraMinZ, extraMaxZ);
+    return Math.max(0, Math.ceil(padding));
+  };
+
   const initialCacheStats = (() => {
     const stats = getTerrainSampleCacheStats();
     return { hits: stats.hits, misses: stats.misses };
   })();
 
+  const recordFinalSamplingProfile = () => {
+    if (chunkProfileRecorded) {
+      return;
+    }
+    const finalCacheStats = getTerrainSampleCacheStats();
+    recordChunkSamplingProfile({
+      chunkX,
+      chunkZ,
+      hitsBefore: initialCacheStats.hits,
+      missesBefore: initialCacheStats.misses,
+      hitsAfter: finalCacheStats.hits,
+      missesAfter: finalCacheStats.misses,
+    });
+    chunkProfileRecorded = true;
+  };
+
+  const ensureTerrainSamplesReleased = () => {
+    if (terrainSamplesReleased) {
+      return;
+    }
+    recordFinalSamplingProfile();
+    const padding = computeSamplePadding();
+    releaseTerrainSamplesForChunk(chunkX, chunkZ, {
+      chunkSize,
+      padding,
+    });
+    terrainSamplesReleased = true;
+  };
+
   const sampleColumnCached = (x, z) => {
+    trackSampleCoordinate(x, z);
     const sample = sampleColumnWithCache(x, z, terrainSampler);
     if (!sample || !Number.isFinite(sample.height)) {
       if (sample !== null) {
@@ -2451,9 +2532,18 @@ export function createChunkBuildTask({
   let busy = false;
   let payloadPrepared = false;
 
-  const releaseCachedPayload = () => {
+  const releaseCachedPayload = (options = {}) => {
     cachedChunkPayload = null;
     payloadPrepared = false;
+    const normalizedOptions =
+      options && typeof options === 'object' ? options : {};
+    if (normalizedOptions.cancel) {
+      ensureTerrainSamplesReleased();
+      return;
+    }
+    if (stepState.stage === 'readyForFinalize') {
+      ensureTerrainSamplesReleased();
+    }
   };
 
   const exportPayloadSnapshot = () => {
@@ -2982,64 +3072,69 @@ export function createChunkBuildTask({
   };
 
   const step = (maxColumns = Number.POSITIVE_INFINITY) => {
-    if (stepState.stage === 'readyForFinalize') {
-      return { done: true, processed: 0 };
-    }
-    const limit =
-      Number.isFinite(maxColumns) && maxColumns >= 0
-        ? Math.floor(maxColumns)
-        : Number.POSITIVE_INFINITY;
-    if (limit <= 0) {
-      return { done: false, processed: 0 };
-    }
-
-    const remainingColumns = Math.max(0, totalColumns - stepState.processedColumns);
-    const stepProcessed = Math.min(limit, remainingColumns);
-    if (stepProcessed > 0) {
-      const startIndex = stepState.processedColumns;
-      for (let offset = 0; offset < stepProcessed; offset += 1) {
-        processColumnAtIndex(startIndex + offset);
+    try {
+      if (stepState.stage === 'readyForFinalize') {
+        return { done: true, processed: 0 };
       }
-      stepState.processedColumns += stepProcessed;
-    }
-
-    if (stepState.processedColumns < totalColumns) {
-      return { done: false, processed: stepProcessed };
-    }
-
-    if (needsWorkerPayload) {
-      if (cachedChunkPayload) {
-        stepState.stage = 'readyForFinalize';
-        return { done: true, processed: stepProcessed };
-      }
-
-      if (busy) {
+      const limit =
+        Number.isFinite(maxColumns) && maxColumns >= 0
+          ? Math.floor(maxColumns)
+          : Number.POSITIVE_INFINITY;
+      if (limit <= 0) {
         return { done: false, processed: 0 };
       }
 
-      busy = true;
-      try {
-        if (isScoutDetail) {
-          cachedChunkPayload = buildScoutPayload();
-        } else {
-          prepareEngineForPayload();
-          cachedChunkPayload = buildChunkPayload({
-            chunkX,
-            chunkZ,
-            engine: createEnginePayload(),
-            worldOptions,
-            includeBlockPlacements: includeBlockPlacementsInPayload,
-          });
+      const remainingColumns = Math.max(0, totalColumns - stepState.processedColumns);
+      const stepProcessed = Math.min(limit, remainingColumns);
+      if (stepProcessed > 0) {
+        const startIndex = stepState.processedColumns;
+        for (let offset = 0; offset < stepProcessed; offset += 1) {
+          processColumnAtIndex(startIndex + offset);
         }
-        stepState.stage = 'readyForFinalize';
-        return { done: true, processed: stepProcessed };
-      } finally {
-        busy = false;
+        stepState.processedColumns += stepProcessed;
       }
-    }
 
-    stepState.stage = 'readyForFinalize';
-    return { done: true, processed: stepProcessed };
+      if (stepState.processedColumns < totalColumns) {
+        return { done: false, processed: stepProcessed };
+      }
+
+      if (needsWorkerPayload) {
+        if (cachedChunkPayload) {
+          stepState.stage = 'readyForFinalize';
+          return { done: true, processed: stepProcessed };
+        }
+
+        if (busy) {
+          return { done: false, processed: 0 };
+        }
+
+        busy = true;
+        try {
+          if (isScoutDetail) {
+            cachedChunkPayload = buildScoutPayload();
+          } else {
+            prepareEngineForPayload();
+            cachedChunkPayload = buildChunkPayload({
+              chunkX,
+              chunkZ,
+              engine: createEnginePayload(),
+              worldOptions,
+              includeBlockPlacements: includeBlockPlacementsInPayload,
+            });
+          }
+          stepState.stage = 'readyForFinalize';
+          return { done: true, processed: stepProcessed };
+        } finally {
+          busy = false;
+        }
+      }
+
+      stepState.stage = 'readyForFinalize';
+      return { done: true, processed: stepProcessed };
+    } catch (error) {
+      ensureTerrainSamplesReleased();
+      throw error;
+    }
   };
 
   const buildFluidSurfaces = () => {
@@ -3374,12 +3469,13 @@ export function createChunkBuildTask({
       throw new Error('Chunk payload not available for finalize.');
     }
 
-    if (isScoutDetail) {
-      const scoutPayload = buildScoutPayload() ?? {
-        heightSummary: {
-          width: chunkSize,
-          depth: chunkSize,
-          minHeight: Number.isFinite(worldOptions?.baseHeight)
+    try {
+      if (isScoutDetail) {
+        const scoutPayload = buildScoutPayload() ?? {
+          heightSummary: {
+            width: chunkSize,
+            depth: chunkSize,
+            minHeight: Number.isFinite(worldOptions?.baseHeight)
             ? worldOptions.baseHeight
             : 0,
           maxHeight: Number.isFinite(worldOptions?.maxHeight)
@@ -3432,16 +3528,7 @@ export function createChunkBuildTask({
       group.visible = Boolean(previewMesh);
 
       stepState.stage = 'finalized';
-      releaseCachedPayload();
-      const finalCacheStats = getTerrainSampleCacheStats();
-      recordChunkSamplingProfile({
-        chunkX,
-        chunkZ,
-        hitsBefore: initialCacheStats.hits,
-        missesBefore: initialCacheStats.misses,
-        hitsAfter: finalCacheStats.hits,
-        missesAfter: finalCacheStats.misses,
-      });
+      recordFinalSamplingProfile();
 
       const halfSize = chunkSize / 2;
       const resolvedMinY = Number.isFinite(heightSummary?.minHeight)
@@ -3454,40 +3541,43 @@ export function createChunkBuildTask({
         ? heightSummary.maxHeight + 1
         : fallbackMaxHeight;
 
-      return {
+      const result = {
         chunkX,
         chunkZ,
         group,
         solidBlockKeys: new Set(),
         softBlockKeys: new Set(),
-        typeCapacities: new Map(),
-        waterColumns: new Map(),
-        fluidColumnsByType: new Map(),
-        fluidSurfaces: [],
-        blockLookup: new Map(),
-        fluidBlockKeys: new Set(),
-        typeData: new Map(),
-        decorationData: new Map(),
-        decorationGroups: new Map(),
-        decorationOwnerIndex: new Map(),
-        decorationTypeIndex: new Map(),
-        biomes: chunkBiomes,
-        prototypeInstances: new Map(),
-        detailLevel: detailMode,
-        scoutSummary: heightSummary,
-        bounds: {
-          minX: chunkX * chunkSize - halfSize - 0.5,
-          maxX: chunkX * chunkSize + halfSize + 0.5,
+          typeCapacities: new Map(),
+          waterColumns: new Map(),
+          fluidColumnsByType: new Map(),
+          fluidSurfaces: [],
+          blockLookup: new Map(),
+          fluidBlockKeys: new Set(),
+          typeData: new Map(),
+          decorationData: new Map(),
+          decorationGroups: new Map(),
+          decorationOwnerIndex: new Map(),
+          decorationTypeIndex: new Map(),
+          biomes: chunkBiomes,
+          prototypeInstances: new Map(),
+          detailLevel: detailMode,
+          scoutSummary: heightSummary,
+          bounds: {
+            minX: chunkX * chunkSize - halfSize - 0.5,
+            maxX: chunkX * chunkSize + halfSize + 0.5,
           minY: resolvedMinY,
           maxY: resolvedMaxY,
           minZ: chunkZ * chunkSize - halfSize - 0.5,
           maxZ: chunkZ * chunkSize + halfSize + 0.5,
         },
       };
-    }
 
-    let group = null;
-    let chunkBiomes = [];
+      releaseCachedPayload();
+      return result;
+      }
+
+      let group = null;
+      let chunkBiomes = [];
 
     if (needsWorkerPayload) {
       const chunkPayload = cachedChunkPayload;
@@ -3819,17 +3909,9 @@ export function createChunkBuildTask({
     group.userData.biomes = chunkBiomes;
 
     stepState.stage = 'finalized';
-    releaseCachedPayload();
-    const finalCacheStats = getTerrainSampleCacheStats();
-    recordChunkSamplingProfile({
-      chunkX,
-      chunkZ,
-      hitsBefore: initialCacheStats.hits,
-      missesBefore: initialCacheStats.misses,
-      hitsAfter: finalCacheStats.hits,
-      missesAfter: finalCacheStats.misses,
-    });
-    return {
+    recordFinalSamplingProfile();
+
+    const result = {
       chunkX,
       chunkZ,
       group,
@@ -3871,6 +3953,12 @@ export function createChunkBuildTask({
         };
       })(),
     };
+
+    releaseCachedPayload();
+    return result;
+    } finally {
+      ensureTerrainSamplesReleased();
+    }
   };
 
   return {

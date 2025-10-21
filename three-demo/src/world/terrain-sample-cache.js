@@ -1,4 +1,5 @@
 const DEFAULT_MAX_ENTRIES = 200000;
+const ACTIVE_CHUNK_SAMPLE_BUDGET = DEFAULT_MAX_ENTRIES;
 
 const cache = new Map();
 let maxEntries = DEFAULT_MAX_ENTRIES;
@@ -71,7 +72,17 @@ export const setTerrainSampleCacheLimit = (limit) => {
   if (!Number.isFinite(numeric) || numeric <= 0) {
     maxEntries = 0;
   } else {
-    maxEntries = Math.floor(numeric);
+    const nextLimit = Math.floor(numeric);
+    if (nextLimit > ACTIVE_CHUNK_SAMPLE_BUDGET) {
+      console.warn(
+        '[terrain-cache] cache limit exceeds active chunk budget',
+        {
+          limit: nextLimit,
+          budget: ACTIVE_CHUNK_SAMPLE_BUDGET,
+        },
+      );
+    }
+    maxEntries = nextLimit;
   }
   enforceLimit();
   return maxEntries;
@@ -222,6 +233,28 @@ export const invalidateTerrainSamplesForChunk = ({
   const minZ = chunkWorldMin(chunkZ, chunkSize) - padding;
   const maxZ = chunkWorldMax(chunkZ, chunkSize) + padding;
   return invalidateTerrainSampleRange({ minX, maxX, minZ, maxZ });
+};
+
+export const releaseTerrainSamplesForChunk = (
+  chunkX,
+  chunkZ,
+  { chunkSize, padding = 0 } = {},
+) => {
+  const normalizedChunkSize = Number.isFinite(chunkSize)
+    ? Math.max(1, Math.floor(chunkSize))
+    : null;
+  if (!normalizedChunkSize) {
+    return 0;
+  }
+  const normalizedPadding = Number.isFinite(padding)
+    ? Math.max(0, Math.floor(padding))
+    : 0;
+  return invalidateTerrainSamplesForChunk({
+    chunkX,
+    chunkZ,
+    chunkSize: normalizedChunkSize,
+    padding: normalizedPadding,
+  });
 };
 
 export const pruneTerrainSampleCacheOutsideRadius = ({
