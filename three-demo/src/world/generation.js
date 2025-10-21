@@ -3987,7 +3987,12 @@ export function generateWorld(blockMaterials) {
   const chunk = generateChunk(blockMaterials, 0, 0);
   return {
     meshes: [...chunk.group.children],
-    solidBlocks: new Set(chunk.solidBlockKeys),
+    solidBlocks: new Set(
+      (chunk.solidBlockKeys?.toJSON?.({
+        chunkX: chunk.chunkX,
+        chunkZ: chunk.chunkZ,
+      }) ?? chunk.solidBlockKeys ?? []),
+    ),
     waterColumns: new Map(chunk.waterColumns ?? []),
     biomes: chunk.biomes,
   };

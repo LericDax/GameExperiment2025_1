@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
 
+import { createChunkBlockIndex } from '../chunk-block-index.js';
+
 const originalConsoleLog = console.log;
 const originalConsoleDebug = console.debug;
 const suppressiblePrefixes = ['[voxel-object-placement]'];
@@ -1203,8 +1205,16 @@ test('preload-driven scaling drains activation and disposal queues', async () =>
           maxY: maxHeight + 32,
         },
         fluidSurfaces: [],
-        solidBlockKeys: new Set(),
-        softBlockKeys: new Set(),
+        solidBlockKeys: createChunkBlockIndex({
+          chunkSize,
+          chunkX,
+          chunkZ,
+        }),
+        softBlockKeys: createChunkBlockIndex({
+          chunkSize,
+          chunkX,
+          chunkZ,
+        }),
         waterColumns: new Map(),
         waterColumnKeys: new Set(),
         fluidBlockKeys: new Set(),
