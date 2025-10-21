@@ -978,6 +978,52 @@ const chunkGroup = Object.freeze({
   ]),
 })
 
+const streamingBudgetGroup = Object.freeze({
+  id: 'budget',
+  label: 'Streaming Budget',
+  description:
+    'Caps that throttle how many chunks can remain resident and how many streaming tasks execute per frame.',
+  type: groupType,
+  children: Object.freeze([
+    Object.freeze({
+      id: 'budget.residentChunks',
+      label: 'Resident Chunk Cap',
+      description:
+        'Upper bound on the number of chunk columns kept in memory before the streamer begins evicting the oldest entries.',
+      type: numberType,
+      min: 0,
+      max: 2048,
+      step: 1,
+      default: 256,
+      path: Object.freeze(['budget', 'residentChunks']),
+    }),
+    Object.freeze({
+      id: 'budget.pendingBuilds',
+      label: 'Pending Build Cap',
+      description:
+        'Maximum number of chunk build jobs that may be queued simultaneously before new requests are deferred.',
+      type: numberType,
+      min: 0,
+      max: 256,
+      step: 1,
+      default: 24,
+      path: Object.freeze(['budget', 'pendingBuilds']),
+    }),
+    Object.freeze({
+      id: 'budget.meshCommits',
+      label: 'Mesh Commit Cap',
+      description:
+        'Limits how many chunk mesh uploads are finalized per frame to avoid large GPU or main-thread spikes.',
+      type: numberType,
+      min: 0,
+      max: 128,
+      step: 1,
+      default: 12,
+      path: Object.freeze(['budget', 'meshCommits']),
+    }),
+  ]),
+})
+
 const legacyChunkSizeDescriptor = Object.freeze({
   id: 'chunkSize',
   label: 'Chunk Size (alias)',
@@ -1367,6 +1413,7 @@ const biomesGroup = Object.freeze({
 export const worldOptionDescriptors = Object.freeze([
   seedDescriptor,
   chunkGroup,
+  streamingBudgetGroup,
   environmentGroup,
   legacyChunkSizeDescriptor,
   waterGroup,
