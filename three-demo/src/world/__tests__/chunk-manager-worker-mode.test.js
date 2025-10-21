@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
 
+import { createChunkBlockIndex } from '../chunk-block-index.js';
+
 const biomeDefinition = JSON.parse(
   await readFile(new URL('../biomes/temperate.json', import.meta.url), 'utf8'),
 );
@@ -33,6 +35,9 @@ const {
   __setChunkPersistenceQueueFactoryForTest,
   __resetChunkPersistenceQueueFactoryForTest,
 } = await import('../chunk-manager.js');
+
+const worldSettingsModule = await import('../world-settings.js');
+const { applyWorldOptions, resetWorldOptions } = worldSettingsModule;
 
 function createBlockMaterials() {
   const createdMaterials = new Set();
@@ -353,6 +358,110 @@ test('chunk manager posts worker start payloads before steps', async () => {
     persistenceQueue.dispose();
     __resetChunkPersistenceQueueFactoryForTest();
     __resetChunkBuildWorkerFactoryForTest();
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
+test('mesh-commit throttle defers and resumes activations under cap', async () => {
+  resetWorldOptions();
+  applyWorldOptions({ budget: { meshCommits: 1 } });
+
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const scene = new THREE.Scene();
+  const manager = createChunkManager({
+    scene,
+    blockMaterials,
+    viewDistance: 0,
+    retainDistance: 0,
+    maxPreloadPerUpdate: 1,
+    maxDisposalsPerUpdate: 0,
+    maxActivationsPerUpdate: 1,
+  });
+
+  const chunkSize = generationModule.getWorldOptions().chunkSize;
+  const createPendingRecord = (chunkX, chunkZ) => {
+    const key = `${chunkX}|${chunkZ}`;
+    const group = new THREE.Group();
+    group.name = `chunk_${chunkX}_${chunkZ}`;
+    const chunk = {
+      chunkX,
+      chunkZ,
+      group,
+      detailLevel: 'core',
+      desiredDetailLevel: 'core',
+      solidBlockKeys: createChunkBlockIndex({ chunkSize, chunkX, chunkZ }),
+      softBlockKeys: createChunkBlockIndex({ chunkSize, chunkX, chunkZ }),
+      fluidSurfaces: [],
+      fluidColumnsByType: new Map(),
+      decorationData: new Map(),
+      decorationGroups: new Map(),
+      decorationTypeIndex: new Map(),
+      decorationOwnerIndex: new Map(),
+      typeData: new Map(),
+      typeCapacities: new Map(),
+      prototypeInstances: new Map(),
+      blockLookup: new Map(),
+    };
+    let resolvedChunk = null;
+    const entry = {
+      key,
+      detailLevel: 'core',
+      desiredDetailLevel: 'core',
+      resolve: (value) => {
+        resolvedChunk = value;
+      },
+      reject: () => {},
+    };
+    return {
+      key,
+      chunk,
+      entry,
+      waitingForActivation: false,
+      pendingUpgrade: null,
+      getResolvedChunk: () => resolvedChunk,
+    };
+  };
+
+  try {
+    const firstRecord = createPendingRecord(16, 0);
+    manager.__enqueuePendingActivationForTest(firstRecord);
+    assert.equal(
+      firstRecord.waitingForActivation,
+      false,
+      'first activation should enter the commit queue immediately',
+    );
+
+    const secondRecord = createPendingRecord(17, 0);
+    manager.__enqueuePendingActivationForTest(secondRecord);
+    assert.equal(
+      secondRecord.waitingForActivation,
+      true,
+      'second activation should defer while the cap is saturated',
+    );
+
+    assert.deepEqual(
+      new Set(manager.__getPendingActivationKeysForTest()),
+      new Set([firstRecord.key, secondRecord.key]),
+      'both activation records should be tracked while one waits',
+    );
+
+    const processedFirst = manager.__processPendingActivationsForTest(1);
+    assert.equal(processedFirst, 1);
+    assert.equal(
+      secondRecord.waitingForActivation,
+      false,
+      'deferred activation should resume once capacity frees up',
+    );
+    assert.ok(
+      manager.__getPendingActivationKeysForTest().includes(secondRecord.key),
+      'second record should remain queued for activation',
+    );
+
+    manager.__processPendingActivationsForTest(Number.POSITIVE_INFINITY);
+
+  } finally {
+    resetWorldOptions();
+    await manager.dispose();
     createdMaterials.forEach((material) => material.dispose?.());
   }
 });

@@ -206,6 +206,7 @@ function createPreloadBucketQueue({ detailLevels, normalizeDetailLevel }) {
   const fallbackDetail = detailOrder[detailOrder.length - 1] ?? 'core';
   const buckets = new Map(detailOrder.map((level) => [level, []]));
   let entryDetails = new WeakMap();
+  const status = { pendingBuildsThrottled: false };
 
   const resolveBucketKey = (entry) => {
     if (!entry) {
@@ -384,6 +385,18 @@ function createPreloadBucketQueue({ detailLevels, normalizeDetailLevel }) {
     },
     get length() {
       return totalLength();
+    },
+    get status() {
+      return status;
+    },
+    setStatus(key, value) {
+      if (!key) {
+        return;
+      }
+      status[key] = Boolean(value);
+    },
+    getStatus(key) {
+      return status[key];
     },
   };
 }
@@ -1127,6 +1140,32 @@ export function createChunkManager({
     return Number.POSITIVE_INFINITY;
   }
 
+  function resolvePendingBuildCap() {
+    const options = getWorldOptions();
+    const candidate = Number(options?.budget?.pendingBuilds);
+    if (Number.isFinite(candidate)) {
+      return Math.max(0, Math.floor(candidate));
+    }
+    const fallback = Number(WORLD_BUDGET?.pendingBuilds);
+    if (Number.isFinite(fallback)) {
+      return Math.max(0, Math.floor(fallback));
+    }
+    return Number.POSITIVE_INFINITY;
+  }
+
+  function resolveMeshCommitCap() {
+    const options = getWorldOptions();
+    const candidate = Number(options?.budget?.meshCommits);
+    if (Number.isFinite(candidate)) {
+      return Math.max(0, Math.floor(candidate));
+    }
+    const fallback = Number(WORLD_BUDGET?.meshCommits);
+    if (Number.isFinite(fallback)) {
+      return Math.max(0, Math.floor(fallback));
+    }
+    return Number.POSITIVE_INFINITY;
+  }
+
   function ensureResidentCapacityForChunk(
     key,
     { protectedKeys = [] } = {},
@@ -1681,8 +1720,11 @@ export function createChunkManager({
     ? retentionDistance
     : Math.max(lastFiniteViewDistance, 1);
   const pendingPreloadEntries = new Map();
+  const waitingPreloadEntries = new Map();
+  const waitingPreloadQueue = [];
   const pendingActivations = [];
   const pendingActivationByKey = new Map();
+  const deferredActivations = [];
   const chunkJobQueue = [];
   const dirtyChunks = new Set();
   const chunkJournalQueues = new Map();
@@ -1828,6 +1870,192 @@ export function createChunkManager({
     detailLevels: DETAIL_LEVELS,
     normalizeDetailLevel,
   });
+  let pendingBuildThrottleActive = false;
+
+  const compareWaitingPreloadEntries = (a, b) => {
+    if (a?.urgent !== b?.urgent) {
+      return a?.urgent ? -1 : 1;
+    }
+    const priorityA = Number.isFinite(a?.priority)
+      ? a.priority
+      : Number.POSITIVE_INFINITY;
+    const priorityB = Number.isFinite(b?.priority)
+      ? b.priority
+      : Number.POSITIVE_INFINITY;
+    if (priorityA !== priorityB) {
+      return priorityA - priorityB;
+    }
+    return 0;
+  };
+
+  function setPendingBuildThrottleActive(active) {
+    const next = Boolean(active);
+    if (pendingBuildThrottleActive === next) {
+      return;
+    }
+    pendingBuildThrottleActive = next;
+    if (typeof preloadQueue.setStatus === 'function') {
+      preloadQueue.setStatus('pendingBuildsThrottled', next);
+    } else if (
+      preloadQueue.status &&
+      typeof preloadQueue.status === 'object'
+    ) {
+      preloadQueue.status.pendingBuildsThrottled = next;
+    }
+  }
+
+  function updatePendingBuildThrottle() {
+    setPendingBuildThrottleActive(waitingPreloadQueue.length > 0);
+  }
+
+  function removeWaitingPreloadEntry(entry) {
+    if (!entry) {
+      return;
+    }
+    const index = waitingPreloadQueue.indexOf(entry);
+    if (index >= 0) {
+      waitingPreloadQueue.splice(index, 1);
+    }
+  }
+
+  function queueWaitingPreloadEntry(entry) {
+    if (!entry) {
+      return;
+    }
+    removeWaitingPreloadEntry(entry);
+    const insertIndex = waitingPreloadQueue.findIndex((candidate) =>
+      compareWaitingPreloadEntries(entry, candidate) < 0,
+    );
+    if (insertIndex === -1) {
+      waitingPreloadQueue.push(entry);
+    } else {
+      waitingPreloadQueue.splice(insertIndex, 0, entry);
+    }
+  }
+
+  function hasPendingBuildCapacity({ force = false } = {}) {
+    if (force) {
+      return true;
+    }
+    const cap = resolvePendingBuildCap();
+    if (cap === 0) {
+      return false;
+    }
+    if (!Number.isFinite(cap)) {
+      return true;
+    }
+    return pendingPreloadEntries.size < cap;
+  }
+
+  function isPendingBuildCapReached() {
+    const cap = resolvePendingBuildCap();
+    if (cap === 0) {
+      return true;
+    }
+    if (!Number.isFinite(cap)) {
+      return false;
+    }
+    return pendingPreloadEntries.size >= cap;
+  }
+
+  function markEntryWaitingForCapacity(entry) {
+    if (!entry || !entry.key) {
+      return;
+    }
+    entry.waitingForCapacity = true;
+    waitingPreloadEntries.set(entry.key, entry);
+    queueWaitingPreloadEntry(entry);
+    updatePendingBuildThrottle();
+  }
+
+  function tryActivateWaitingEntry(entry, { force = false } = {}) {
+    if (!entry || !entry.key || !waitingPreloadEntries.has(entry.key)) {
+      return false;
+    }
+    if (!hasPendingBuildCapacity({ force })) {
+      return false;
+    }
+    waitingPreloadEntries.delete(entry.key);
+    removeWaitingPreloadEntry(entry);
+    entry.waitingForCapacity = false;
+    pendingPreloadEntries.set(entry.key, entry);
+    preloadQueue.push(entry);
+    queueDirty = true;
+    if (entry.pendingBudget > 0 || entry.unlimited) {
+      scheduleChunkJobEntry(entry);
+    }
+    updatePendingBuildThrottle();
+    return true;
+  }
+
+  function promoteWaitingPreloadEntries({ force = false } = {}) {
+    if (waitingPreloadQueue.length === 0) {
+      updatePendingBuildThrottle();
+      return;
+    }
+    while (waitingPreloadQueue.length > 0 && hasPendingBuildCapacity({ force })) {
+      const entry = waitingPreloadQueue.shift();
+      if (!entry || !waitingPreloadEntries.has(entry.key)) {
+        continue;
+      }
+      waitingPreloadEntries.delete(entry.key);
+      entry.waitingForCapacity = false;
+      pendingPreloadEntries.set(entry.key, entry);
+      preloadQueue.push(entry);
+      queueDirty = true;
+      if (entry.pendingBudget > 0 || entry.unlimited) {
+        scheduleChunkJobEntry(entry);
+      }
+      if (!force && !hasPendingBuildCapacity()) {
+        break;
+      }
+    }
+    updatePendingBuildThrottle();
+  }
+
+  function getPendingEntryByKey(key) {
+    if (key == null) {
+      return null;
+    }
+    const normalized = String(key);
+    if (!normalized) {
+      return null;
+    }
+    return (
+      pendingPreloadEntries.get(normalized) ??
+      waitingPreloadEntries.get(normalized) ??
+      null
+    );
+  }
+
+  function hasMeshCommitCapacity() {
+    const cap = resolveMeshCommitCap();
+    if (cap === 0) {
+      return false;
+    }
+    if (!Number.isFinite(cap)) {
+      return true;
+    }
+    return pendingActivations.length < cap;
+  }
+
+  function promoteDeferredActivations() {
+    const cap = resolveMeshCommitCap();
+    if (cap === 0) {
+      return;
+    }
+    while (deferredActivations.length > 0) {
+      if (Number.isFinite(cap) && pendingActivations.length >= cap) {
+        break;
+      }
+      const record = deferredActivations.shift();
+      if (!record) {
+        continue;
+      }
+      record.waitingForActivation = false;
+      pendingActivations.push(record);
+    }
+  }
   const preloadDebugState = {
     queueSizes: {
       [DETAIL_LEVEL_SCOUT]: 0,
@@ -4181,6 +4409,11 @@ export function createChunkManager({
     if (index >= 0) {
       pendingActivations.splice(index, 1);
     }
+    const deferredIndex = deferredActivations.indexOf(record);
+    if (deferredIndex >= 0) {
+      deferredActivations.splice(deferredIndex, 1);
+    }
+    record.waitingForActivation = false;
     if (settle && record.entry) {
       record.entry.resolve?.(null);
       record.entry.reject = null;
@@ -4198,6 +4431,7 @@ export function createChunkManager({
     }
     record.entry = null;
     record.chunk = null;
+    promoteDeferredActivations();
   }
 
   function enqueuePendingActivation(record) {
@@ -4207,6 +4441,13 @@ export function createChunkManager({
     if (pendingActivationByKey.has(record.key)) {
       dropPendingActivation(record.key, { disposeChunk: true, settle: true });
     }
+    if (!hasMeshCommitCapacity()) {
+      record.waitingForActivation = true;
+      pendingActivationByKey.set(record.key, record);
+      deferredActivations.push(record);
+      return;
+    }
+    record.waitingForActivation = false;
     pendingActivationByKey.set(record.key, record);
     pendingActivations.push(record);
   }
@@ -4609,7 +4850,11 @@ export function createChunkManager({
         if (record.entry) {
           record.entry.detailLevel = targetDetail;
           record.entry.desiredDetailLevel = targetDetail;
-          preloadQueue.update(record.entry);
+          if (record.entry.waitingForCapacity) {
+            queueWaitingPreloadEntry(record.entry);
+          } else {
+            preloadQueue.update(record.entry);
+          }
           record.entry.workerPayload = null;
           record.entry.metadata = null;
           record.entry.task = null;
@@ -4820,30 +5065,48 @@ export function createChunkManager({
   }
 
   function processPendingActivations(limit = defaultActivationBudget) {
-    if (pendingActivations.length === 0) {
+    if (
+      pendingActivations.length === 0 &&
+      deferredActivations.length === 0
+    ) {
       return 0;
     }
 
+    const cap = resolveMeshCommitCap();
+    if (cap === 0) {
+      return 0;
+    }
+
+    promoteDeferredActivations();
+
     const unlimited = !Number.isFinite(limit);
     let budget = unlimited
-      ? pendingActivations.length
+      ? Number.POSITIVE_INFINITY
       : Math.max(0, Math.floor(limit));
     let processed = 0;
-    const initialLength = pendingActivations.length;
 
-    for (let i = 0; i < initialLength; i += 1) {
-      if (!unlimited && processed >= budget) {
-        break;
+    const takeNextRecord = () => {
+      if (pendingActivations.length === 0) {
+        promoteDeferredActivations();
       }
-      const record = pendingActivations.shift();
-      if (!record) {
-        continue;
+      if (pendingActivations.length === 0) {
+        return null;
       }
+      const next = pendingActivations.shift();
+      if (next) {
+        next.waitingForActivation = false;
+      }
+      return next;
+    };
+
+    let record = takeNextRecord();
+    while (record && (unlimited || processed < budget)) {
       pendingActivationByKey.delete(record.key);
       const { entry, chunk } = record;
       if (!entry || !chunk) {
         record.entry = null;
         record.chunk = null;
+        record = takeNextRecord();
         continue;
       }
 
@@ -4857,6 +5120,7 @@ export function createChunkManager({
       ) {
         pendingActivationByKey.set(record.key, record);
         pendingActivations.push(record);
+        record = takeNextRecord();
         continue;
       }
 
@@ -4866,6 +5130,7 @@ export function createChunkManager({
         if (!upgraded) {
           pendingActivationByKey.set(record.key, record);
           pendingActivations.push(record);
+          record = takeNextRecord();
           continue;
         }
       }
@@ -4874,6 +5139,11 @@ export function createChunkManager({
       record.chunk.desiredDetailLevel = record.chunk.detailLevel;
       activatePendingChunkRecord(record);
       processed += 1;
+      record = takeNextRecord();
+    }
+
+    if (!record) {
+      promoteDeferredActivations();
     }
 
     return processed;
@@ -4888,7 +5158,12 @@ export function createChunkManager({
     entry.pendingBudget = 0;
     entry.unlimited = false;
     entry.active = false;
-    preloadQueue.remove(entry);
+    if (entry.waitingForCapacity) {
+      removeWaitingPreloadEntry(entry);
+      waitingPreloadEntries.delete(entry.key);
+    } else {
+      preloadQueue.remove(entry);
+    }
     pendingPreloadEntries.delete(entry.key);
     try {
       let payloadForCache = null;
@@ -4956,6 +5231,8 @@ export function createChunkManager({
       entry.metadata = null;
     }
     entry.workerPayload = null;
+    updatePendingBuildThrottle();
+    promoteWaitingPreloadEntries();
   }
 
   function cancelPendingEntry(entry, { resolveWith = null } = {}) {
@@ -4986,13 +5263,20 @@ export function createChunkManager({
     }
     entry.workerPayload = null;
     entry.pendingChunk = null;
-    preloadQueue.remove(entry);
+    if (entry.waitingForCapacity) {
+      removeWaitingPreloadEntry(entry);
+      waitingPreloadEntries.delete(entry.key);
+    } else {
+      preloadQueue.remove(entry);
+    }
     for (let i = chunkJobQueue.length - 1; i >= 0; i -= 1) {
       if (chunkJobQueue[i] === entry) {
         chunkJobQueue.splice(i, 1);
       }
     }
     pendingPreloadEntries.delete(entry.key);
+    updatePendingBuildThrottle();
+    promoteWaitingPreloadEntries();
     const promise = ensurePendingEntryPromise(entry);
     if (promise) {
       try {
@@ -5015,6 +5299,9 @@ export function createChunkManager({
           continue;
         }
         entry.active = false;
+        if (entry.waitingForCapacity) {
+          continue;
+        }
         if (entry.finalized || entry.cancelled) {
           continue;
         }
@@ -5200,6 +5487,9 @@ export function createChunkManager({
     if (!entry || entry.finalized || entry.cancelled) {
       return;
     }
+    if (entry.waitingForCapacity) {
+      return;
+    }
     if (!entry.active) {
       entry.active = true;
       chunkJobQueue.push(entry);
@@ -5253,6 +5543,12 @@ export function createChunkManager({
       entry.pendingBudget = previousBudget + normalizedBudget;
       entry.stepHint = Math.max(entry.stepHint || 0, normalizedBudget);
       acceptedBudget = normalizedBudget;
+    }
+    if (entry.waitingForCapacity) {
+      if (promise && typeof promise === 'object') {
+        promise.acceptedBudget = 0;
+      }
+      return promise;
     }
     if (!chunkPersistenceQueue) {
       scheduleChunkJobEntry(entry);
@@ -6531,7 +6827,7 @@ export function createChunkManager({
     const centerChunkZ =
       typeof options.centerChunkZ === 'number' ? options.centerChunkZ : chunkZ;
     const urgentBurst = Math.max(1, defaultPreloadBurst);
-    let entry = pendingPreloadEntries.get(key);
+    let entry = getPendingEntryByKey(key);
     if (!entry) {
       entry = schedulePreload(chunkX, chunkZ, centerChunkX, centerChunkZ, {
         urgent: true,
@@ -6546,7 +6842,12 @@ export function createChunkManager({
       detailLevelRank(entry.desiredDetailLevel) < detailLevelRank(DETAIL_LEVEL_CORE)
     ) {
       entry.desiredDetailLevel = DETAIL_LEVEL_CORE;
-      preloadQueue.update(entry);
+      if (entry.waitingForCapacity) {
+        queueWaitingPreloadEntry(entry);
+        tryActivateWaitingEntry(entry);
+      } else {
+        preloadQueue.update(entry);
+      }
     }
 
     if (!entry) {
@@ -6615,7 +6916,7 @@ export function createChunkManager({
     dropPendingActivation(key, { disposeChunk: true, settle: true });
     cancelActiveChunkUpgrade(key, { disposeTask: true });
     chunkUpgradeStateByKey.delete(key);
-    const pendingEntry = pendingPreloadEntries.get(key);
+    const pendingEntry = getPendingEntryByKey(key);
     if (pendingEntry) {
       cancelPendingEntry(pendingEntry);
     }
@@ -6900,7 +7201,9 @@ export function createChunkManager({
       }
     }
 
-    const existing = pendingPreloadEntries.get(key);
+    const activeEntry = pendingPreloadEntries.get(key) ?? null;
+    const waitingEntry = activeEntry ? null : waitingPreloadEntries.get(key) ?? null;
+    const existing = activeEntry ?? waitingEntry ?? null;
     const pendingActivationRecord =
       pendingActivationByKey.get(key) ?? existing?.pendingChunk ?? null;
 
@@ -6930,12 +7233,20 @@ export function createChunkManager({
           detailLevelRank(requestedDetailLevel)
         ) {
           pendingEntry.desiredDetailLevel = requestedDetailLevel;
-          preloadQueue.update(pendingEntry);
+          if (pendingEntry.waitingForCapacity) {
+            queueWaitingPreloadEntry(pendingEntry);
+            tryActivateWaitingEntry(pendingEntry);
+          } else {
+            preloadQueue.update(pendingEntry);
+          }
           if (pendingActivationRecord.chunk) {
             pendingActivationRecord.chunk.desiredDetailLevel =
               requestedDetailLevel;
           }
           reprioritize = true;
+        } else if (pendingEntry.waitingForCapacity) {
+          queueWaitingPreloadEntry(pendingEntry);
+          tryActivateWaitingEntry(pendingEntry);
         }
       }
 
@@ -6977,10 +7288,19 @@ export function createChunkManager({
       ) {
         existing.desiredDetailLevel = requestedDetailLevel;
         changed = true;
-        preloadQueue.update(existing);
+        if (existing.waitingForCapacity) {
+          queueWaitingPreloadEntry(existing);
+        } else {
+          preloadQueue.update(existing);
+        }
+      } else if (existing.waitingForCapacity) {
+        queueWaitingPreloadEntry(existing);
       }
-      if (changed) {
+      if (!existing.waitingForCapacity && changed) {
         queueDirty = true;
+      }
+      if (existing.waitingForCapacity) {
+        tryActivateWaitingEntry(existing);
       }
       return existing;
     }
@@ -7018,6 +7338,7 @@ export function createChunkManager({
           persistencePromise: null,
           persistenceResult: cachedEntry.payload ?? null,
           persistenceError: null,
+          waitingForCapacity: false,
         };
         ensurePendingEntryPromise(entry);
         const chunk = finalizeWorkerChunk(entry, entry.workerPayload);
@@ -7065,6 +7386,7 @@ export function createChunkManager({
       persistencePromise: null,
       persistenceResult: null,
       persistenceError: null,
+      waitingForCapacity: false,
     };
     entry.metadata = createChunkJobMetadata(entry);
     updateEntryPersistenceMetadata(entry);
@@ -7076,6 +7398,10 @@ export function createChunkManager({
       detailLevel: entry.detailLevel,
       scoutPreviewBuilder: createScoutChunkPreview,
     });
+    if (isPendingBuildCapReached()) {
+      markEntryWaitingForCapacity(entry);
+      return entry;
+    }
     pendingPreloadEntries.set(key, entry);
     preloadQueue.push(entry);
     queueDirty = true;
@@ -7620,6 +7946,10 @@ export function createChunkManager({
     }
     const camera = options.camera ?? lastCamera;
     const shouldUpdateVisibility = Boolean(camera);
+    const skipLowPriorityPreload =
+      typeof options.shouldSkipLowPriorityPreload === 'function'
+        ? options.shouldSkipLowPriorityPreload
+        : () => false;
 
     const previousRetentionDistance = retentionDistance;
 
@@ -7660,7 +7990,8 @@ export function createChunkManager({
     const retentionChanged = desiredRetention !== retentionDistance;
     const queueHasWork = !preloadQueue.isEmpty();
     const disposalQueueHasWork = chunkDisposalQueue.length > 0;
-    const activationQueueHasWork = pendingActivations.length > 0;
+    const activationQueueHasWork =
+      pendingActivations.length > 0 || deferredActivations.length > 0;
 
     const flushChunkDisposals = (overrideBudget = disposalBudget) => {
       if (force && overrideBudget === 0) {
@@ -7804,6 +8135,9 @@ export function createChunkManager({
             finiteView,
             finiteRetention,
           );
+          if (skipLowPriorityPreload(detailLevel)) {
+            continue;
+          }
           schedulePreload(
             centerChunkX + dx,
             centerChunkZ + dz,
@@ -7838,6 +8172,9 @@ export function createChunkManager({
             finiteView,
             finiteRetention,
           );
+          if (skipLowPriorityPreload(detailLevel)) {
+            continue;
+          }
           schedulePreload(
             centerChunkX + dx,
             centerChunkZ + dz,
@@ -7997,6 +8334,7 @@ export function createChunkManager({
   }
 
   async function flush({ includeDisposals = true } = {}) {
+    promoteWaitingPreloadEntries({ force: true });
     const pendingEntries = Array.from(pendingPreloadEntries.values());
     if (pendingEntries.length > 0) {
       const promises = pendingEntries
@@ -8046,6 +8384,9 @@ export function createChunkManager({
     Array.from(loadedChunks.keys()).forEach((key) => disposeChunk(key));
     preloadQueue.clear();
     pendingPreloadEntries.clear();
+    waitingPreloadEntries.clear();
+    waitingPreloadQueue.length = 0;
+    setPendingBuildThrottleActive(false);
     queueDirty = false;
     lastCenterKey = null;
     hasLastCenter = false;
@@ -8087,6 +8428,7 @@ export function createChunkManager({
     }
     chunkPersistenceJobs.clear();
     chunkPersistenceQueue?.dispose?.();
+    deferredActivations.length = 0;
   }
 
   function setViewDistance(distance) {
@@ -8230,6 +8572,17 @@ export function createChunkManager({
       normalizedBudget = Number.POSITIVE_INFINITY;
     }
 
+    const pendingBuildsThrottled = typeof preloadQueue.getStatus === 'function'
+      ? preloadQueue.getStatus('pendingBuildsThrottled') === true
+      : preloadQueue.status?.pendingBuildsThrottled === true;
+    const shouldSkipLowPriorityPreload = (detailLevel) => {
+      if (!pendingBuildsThrottled || force) {
+        return false;
+      }
+      return (
+        detailLevelRank(detailLevel) < detailLevelRank(DETAIL_LEVEL_CORE)
+      );
+    };
     const updateParams = {
       viewDistance: warmView,
       retainDistance: targetRetention,
@@ -8239,6 +8592,7 @@ export function createChunkManager({
           : normalizedBudget,
       upgradeHysteresis,
       force,
+      shouldSkipLowPriorityPreload,
     };
     if (directionalHint) {
       updateParams.directionalHint = directionalHint;
@@ -9112,7 +9466,7 @@ export function createChunkManager({
       if (key == null) {
         return null;
       }
-      return pendingPreloadEntries.get(String(key)) ?? null;
+      return getPendingEntryByKey(String(key));
     },
     enumerable: false,
   });

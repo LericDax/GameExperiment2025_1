@@ -48,6 +48,9 @@ generationModule.initializeWorldGeneration({ THREE });
 const fluidRegistryModule = await import('../fluids/fluid-registry.js');
 fluidRegistryModule.initializeFluidRegistry({ THREE });
 
+const worldSettingsModule = await import('../world-settings.js');
+const { applyWorldOptions, resetWorldOptions } = worldSettingsModule;
+
 const {
   createChunkManager,
   __setChunkBuildWorkerFactoryForTest,
@@ -380,6 +383,90 @@ test('forced flush drains pending chunks without repeated idle delays', async ()
   } finally {
     await manager.dispose();
     createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
+test('pending-build throttle defers entries until capacity frees up', async () => {
+  const origin = new THREE.Vector3(0, 0, 0);
+  resetWorldOptions();
+  applyWorldOptions({ budget: { pendingBuilds: 1 } });
+
+  const scene = new THREE.Scene();
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const manager = createChunkManager({
+    scene,
+    blockMaterials,
+    viewDistance: 0,
+    retainDistance: 0,
+    maxPreloadPerUpdate: 4,
+    maxDisposalsPerUpdate: 0,
+  });
+
+  try {
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: 0,
+      maxPreload: 0,
+      force: true,
+    });
+    await manager.flush();
+
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: 1,
+      maxPreload: 0,
+    });
+
+    const neighborKeys = [
+      '1|0',
+      '-1|0',
+      '0|1',
+      '0|-1',
+      '1|1',
+      '1|-1',
+      '-1|1',
+      '-1|-1',
+    ];
+
+    const pendingEntries = neighborKeys
+      .map((key) => manager.__getPendingEntryForTest(key))
+      .filter(Boolean);
+
+    assert.ok(
+      pendingEntries.length >= 2,
+      'expected multiple neighbors to queue under throttle',
+    );
+
+    const waitingEntries = pendingEntries.filter((entry) => entry.waitingForCapacity);
+    assert.ok(
+      waitingEntries.length >= 1,
+      'pending-build throttle should defer excess entries',
+    );
+
+    const activeEntries = pendingEntries.filter((entry) => !entry.waitingForCapacity);
+    assert.ok(
+      activeEntries.length <= 1,
+      'pending-build throttle should cap concurrently active jobs',
+    );
+
+    await manager.flush();
+
+    neighborKeys.forEach((key) => {
+      assert.equal(
+        manager.__getPendingEntryForTest(key),
+        null,
+        `pending entry ${key} should resolve after backlog drains`,
+      );
+      const chunkName = `chunk_${key.replace('|', '_')}`;
+      assert.ok(
+        scene.getObjectByName(chunkName),
+        `chunk ${chunkName} should load once capacity frees up`,
+      );
+    });
+  } finally {
+    await manager.dispose();
+    createdMaterials.forEach((material) => material.dispose?.());
+    resetWorldOptions();
   }
 });
 
