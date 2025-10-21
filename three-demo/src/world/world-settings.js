@@ -304,6 +304,12 @@ export const biomeOptionMetadata = Object.freeze(
   ),
 )
 
+export const WORLD_BUDGET = Object.freeze({
+  residentChunks: getDescriptorDefault(['budget', 'residentChunks']),
+  pendingBuilds: getDescriptorDefault(['budget', 'pendingBuilds']),
+  meshCommits: getDescriptorDefault(['budget', 'meshCommits']),
+})
+
 export const defaultWorldOptions = Object.freeze({
   seed: DEFAULT_SEED_VALUE,
   seedHash: DEFAULT_SEED_HASH,
@@ -351,6 +357,7 @@ export const defaultWorldOptions = Object.freeze({
   water: Object.freeze({
     level: getDescriptorDefault(['water', 'level']),
   }),
+  budget: WORLD_BUDGET,
   environment: defaultEnvironmentOptions,
   terrain: defaultTerrainOptions,
   biomes: defaultBiomeTuning,
@@ -383,6 +390,11 @@ function createMutableWorldOptions() {
       },
     },
     water: { level: defaultWorldOptions.water.level },
+    budget: {
+      residentChunks: WORLD_BUDGET.residentChunks,
+      pendingBuilds: WORLD_BUDGET.pendingBuilds,
+      meshCommits: WORLD_BUDGET.meshCommits,
+    },
     environment: { skyboxId: defaultEnvironmentOptions.skyboxId },
     terrain: {
       baseHeight: defaultTerrainOptions.baseHeight,
@@ -2080,6 +2092,48 @@ export function applyWorldOptions(overrides = {}) {
     }
   }
 
+  if (!isObject(worldOptions.budget)) {
+    worldOptions.budget = {
+      residentChunks: WORLD_BUDGET.residentChunks,
+      pendingBuilds: WORLD_BUDGET.pendingBuilds,
+      meshCommits: WORLD_BUDGET.meshCommits,
+    }
+  } else {
+    if (!Number.isFinite(worldOptions.budget.residentChunks)) {
+      worldOptions.budget.residentChunks = WORLD_BUDGET.residentChunks
+    }
+    if (!Number.isFinite(worldOptions.budget.pendingBuilds)) {
+      worldOptions.budget.pendingBuilds = WORLD_BUDGET.pendingBuilds
+    }
+    if (!Number.isFinite(worldOptions.budget.meshCommits)) {
+      worldOptions.budget.meshCommits = WORLD_BUDGET.meshCommits
+    }
+  }
+
+  const budgetOverrides = isObject(overrides.budget) ? overrides.budget : null
+  if (budgetOverrides) {
+    const budgetDescriptorPaths = {
+      residentChunks: ['budget', 'residentChunks'],
+      pendingBuilds: ['budget', 'pendingBuilds'],
+      meshCommits: ['budget', 'meshCommits'],
+    }
+    Object.entries(budgetDescriptorPaths).forEach(([key, path]) => {
+      if (!Object.prototype.hasOwnProperty.call(budgetOverrides, key)) {
+        return
+      }
+      const candidate = normalizeNumber(budgetOverrides[key], null)
+      if (candidate === null) {
+        return
+      }
+      const normalized = normalizeWithDescriptor(
+        candidate,
+        worldOptions.budget[key],
+        path,
+      )
+      worldOptions.budget[key] = Math.max(0, Math.floor(normalized))
+    })
+  }
+
   const environmentOverrides = isObject(overrides.environment)
     ? overrides.environment
     : null
@@ -2327,6 +2381,12 @@ export function resetWorldOptions() {
 
   Object.assign(worldOptions.chunk, fresh.chunk)
   Object.assign(worldOptions.water, fresh.water)
+  if (!isObject(worldOptions.budget)) {
+    worldOptions.budget = {}
+  }
+  worldOptions.budget.residentChunks = fresh.budget.residentChunks
+  worldOptions.budget.pendingBuilds = fresh.budget.pendingBuilds
+  worldOptions.budget.meshCommits = fresh.budget.meshCommits
   if (!worldOptions.environment) {
     worldOptions.environment = {}
   }
