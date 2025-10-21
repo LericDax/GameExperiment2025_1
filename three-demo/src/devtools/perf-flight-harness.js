@@ -18,11 +18,13 @@ function extractChunkStats(chunkManager) {
       solidBlocks: null,
       softBlocks: null,
       waterColumns: null,
+      loadedChunkCount: null,
     }
   }
 
   let chunkCount = null
   let totalBlocks = null
+  let loadedChunkCount = null
   if (typeof chunkManager.debugSnapshot === 'function') {
     try {
       const snapshot = chunkManager.debugSnapshot()
@@ -33,9 +35,23 @@ function extractChunkStats(chunkManager) {
         if (Number.isFinite(snapshot.totalBlocks)) {
           totalBlocks = snapshot.totalBlocks
         }
+        if (Number.isFinite(snapshot.loadedChunkCount)) {
+          loadedChunkCount = snapshot.loadedChunkCount
+        }
       }
     } catch (error) {
       console.warn('perf flight: failed to read chunk snapshot.', error)
+    }
+  }
+
+  if (typeof chunkManager.getStreamingStats === 'function') {
+    try {
+      const stats = chunkManager.getStreamingStats()
+      if (stats && Number.isFinite(stats.loadedChunkCount)) {
+        loadedChunkCount = stats.loadedChunkCount
+      }
+    } catch (error) {
+      console.warn('perf flight: failed to read streaming stats.', error)
     }
   }
 
@@ -49,7 +65,47 @@ function extractChunkStats(chunkManager) {
     ? chunkManager.waterColumns.size
     : null
 
-  return { chunkCount, totalBlocks, solidBlocks, softBlocks, waterColumns }
+  return {
+    chunkCount,
+    totalBlocks,
+    solidBlocks,
+    softBlocks,
+    waterColumns,
+    loadedChunkCount,
+  }
+}
+
+function readJsHeapUsed() {
+  if (typeof performance === 'undefined' || !performance) {
+    return null
+  }
+  const memory = performance.memory
+  if (!memory || typeof memory.usedJSHeapSize !== 'number') {
+    return null
+  }
+  return Number.isFinite(memory.usedJSHeapSize) ? memory.usedJSHeapSize : null
+}
+
+export function collectPerfFlightMetrics({ renderer, chunkManager }) {
+  const renderInfo = renderer?.info?.render || {}
+  const memoryInfo = renderer?.info?.memory || {}
+  const chunkStats = extractChunkStats(chunkManager)
+
+  return {
+    renderCalls: normalizeNumber(renderInfo.calls),
+    triangles: normalizeNumber(renderInfo.triangles),
+    memoryGeometries: normalizeNumber(memoryInfo.geometries),
+    memoryTextures: normalizeNumber(memoryInfo.textures),
+    memoryPrograms: normalizeNumber(memoryInfo.programs),
+    memoryTriangles: normalizeNumber(memoryInfo.triangles),
+    chunkCount: normalizeNumber(chunkStats.chunkCount),
+    totalBlocks: normalizeNumber(chunkStats.totalBlocks),
+    solidBlocks: normalizeNumber(chunkStats.solidBlocks),
+    softBlocks: normalizeNumber(chunkStats.softBlocks),
+    waterColumns: normalizeNumber(chunkStats.waterColumns),
+    loadedChunkCount: normalizeNumber(chunkStats.loadedChunkCount),
+    jsHeapUsed: normalizeNumber(readJsHeapUsed()),
+  }
 }
 
 function computeAggregate(frames, key) {
@@ -102,6 +158,25 @@ function createOverlayElement() {
   return element
 }
 
+function formatBytes(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return '0 B'
+  }
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let adjusted = value
+  let unitIndex = 0
+  while (adjusted >= 1024 && unitIndex < units.length - 1) {
+    adjusted /= 1024
+    unitIndex += 1
+  }
+  const precision = unitIndex === 0 ? 0 : adjusted >= 100 ? 0 : adjusted >= 10 ? 1 : 2
+  return `${adjusted.toFixed(precision)} ${units[unitIndex]}`
+}
+
+function formatCount(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 'n/a'
+}
+
 function updateOverlay(element, data) {
   if (!element) {
     return
@@ -124,6 +199,28 @@ function updateOverlay(element, data) {
   if (typeof data.totalBlocks === 'number') {
     lines.push(`total blocks: ${data.totalBlocks}`)
   }
+  if (typeof data.loadedChunkCount === 'number') {
+    lines.push(`loaded chunks: ${data.loadedChunkCount}`)
+  }
+  const memoryMetrics = []
+  if (typeof data.memoryGeometries === 'number') {
+    memoryMetrics.push(`geo=${formatCount(data.memoryGeometries)}`)
+  }
+  if (typeof data.memoryTextures === 'number') {
+    memoryMetrics.push(`tex=${formatCount(data.memoryTextures)}`)
+  }
+  if (typeof data.memoryPrograms === 'number') {
+    memoryMetrics.push(`prog=${formatCount(data.memoryPrograms)}`)
+  }
+  if (typeof data.memoryTriangles === 'number') {
+    memoryMetrics.push(`tri=${formatCount(data.memoryTriangles)}`)
+  }
+  if (memoryMetrics.length > 0) {
+    lines.push(`gl memory: ${memoryMetrics.join(', ')}`)
+  }
+  if (typeof data.jsHeapUsed === 'number') {
+    lines.push(`js heap: ${formatBytes(data.jsHeapUsed)}`)
+  }
   element.textContent = lines.join('\n')
 }
 
@@ -133,11 +230,17 @@ function buildSummary(samples, metadata) {
     fps: computeAggregate(samples, 'fps'),
     renderCalls: computeAggregate(samples, 'renderCalls'),
     triangles: computeAggregate(samples, 'triangles'),
+    memoryGeometries: computeAggregate(samples, 'memoryGeometries'),
+    memoryTextures: computeAggregate(samples, 'memoryTextures'),
+    memoryPrograms: computeAggregate(samples, 'memoryPrograms'),
+    memoryTriangles: computeAggregate(samples, 'memoryTriangles'),
     chunkCount: computeAggregate(samples, 'chunkCount'),
     totalBlocks: computeAggregate(samples, 'totalBlocks'),
     solidBlocks: computeAggregate(samples, 'solidBlocks'),
     softBlocks: computeAggregate(samples, 'softBlocks'),
     waterColumns: computeAggregate(samples, 'waterColumns'),
+    loadedChunkCount: computeAggregate(samples, 'loadedChunkCount'),
+    jsHeapUsed: computeAggregate(samples, 'jsHeapUsed'),
   }
 
   return {
@@ -304,20 +407,13 @@ export async function runPerfFlight({
 
         const elapsedMs = now - startTime
         const fps = delta > 0 ? 1 / delta : 0
-        const renderInfo = renderer.info?.render || {}
-        const chunkStats = extractChunkStats(chunkManager)
+        const resourceMetrics = collectPerfFlightMetrics({ renderer, chunkManager })
 
         const frameRecord = {
           timestamp: elapsedMs,
           delta,
           fps,
-          renderCalls: normalizeNumber(renderInfo.calls),
-          triangles: normalizeNumber(renderInfo.triangles),
-          chunkCount: normalizeNumber(chunkStats.chunkCount),
-          totalBlocks: normalizeNumber(chunkStats.totalBlocks),
-          solidBlocks: normalizeNumber(chunkStats.solidBlocks),
-          softBlocks: normalizeNumber(chunkStats.softBlocks),
-          waterColumns: normalizeNumber(chunkStats.waterColumns),
+          ...resourceMetrics,
         }
         frames.push(frameRecord)
 
@@ -332,6 +428,12 @@ export async function runPerfFlight({
           triangles: frameRecord.triangles,
           chunkCount: frameRecord.chunkCount,
           totalBlocks: frameRecord.totalBlocks,
+          loadedChunkCount: frameRecord.loadedChunkCount,
+          memoryGeometries: frameRecord.memoryGeometries,
+          memoryTextures: frameRecord.memoryTextures,
+          memoryPrograms: frameRecord.memoryPrograms,
+          memoryTriangles: frameRecord.memoryTriangles,
+          jsHeapUsed: frameRecord.jsHeapUsed,
         })
 
         moveState.forward = true

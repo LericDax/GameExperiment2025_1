@@ -1,5 +1,6 @@
 import { renderAsciiViewport } from '../devtools/ascii-viewport.js';
 import { createHeadlessScanner } from '../devtools/headless-scanner.js';
+import { collectPerfFlightMetrics } from '../devtools/perf-flight-harness.js';
 import {
   sampleBiomeAt,
   terrainHeight,
@@ -27,6 +28,7 @@ export function registerDeveloperCommands({
   commandConsole,
   playerControls,
   chunkManager,
+  renderer,
   scene,
   camera = null,
   THREE,
@@ -43,6 +45,9 @@ export function registerDeveloperCommands({
   }
   if (!chunkManager) {
     throw new Error('registerDeveloperCommands requires a chunkManager instance.');
+  }
+  if (!renderer) {
+    throw new Error('registerDeveloperCommands requires a renderer instance.');
   }
   if (!scene) {
     throw new Error('registerDeveloperCommands requires the active scene.');
@@ -2977,6 +2982,44 @@ export function registerDeveloperCommands({
       await chunkManager.flush({ includeDisposals: false });
     }
   };
+
+  registerCommand({
+    name: 'memdump',
+    description:
+      'Log renderer, chunk, and JS heap memory counters without starting a perf flight.',
+    usage: '/memdump',
+    handler: ({ info, success }) => {
+      const snapshot = collectPerfFlightMetrics({ renderer, chunkManager });
+      const formatCount = (value) =>
+        typeof value === 'number' && Number.isFinite(value) ? value : 'n/a';
+      const formatHeap = (value) =>
+        typeof value === 'number' && Number.isFinite(value) ? formatBytes(value) : 'n/a';
+
+      info(
+        `[render] calls=${formatCount(snapshot.renderCalls)}, triangles=${formatCount(
+          snapshot.triangles,
+        )}.`,
+      );
+      info(
+        `[gl] geometries=${formatCount(snapshot.memoryGeometries)}, textures=${formatCount(
+          snapshot.memoryTextures,
+        )}, programs=${formatCount(snapshot.memoryPrograms)}, triangles=${formatCount(
+          snapshot.memoryTriangles,
+        )}.`,
+      );
+      info(
+        `[chunks] chunkCount=${formatCount(snapshot.chunkCount)}, loaded=${formatCount(
+          snapshot.loadedChunkCount,
+        )}, totalBlocks=${formatCount(snapshot.totalBlocks)}, solid=${formatCount(
+          snapshot.solidBlocks,
+        )}, soft=${formatCount(snapshot.softBlocks)}, water=${formatCount(
+          snapshot.waterColumns,
+        )}.`,
+      );
+      info(`[heap] used=${formatHeap(snapshot.jsHeapUsed)}.`);
+      success('Memory counters captured.');
+    },
+  });
 
   registerCommand({
     name: 'chunkmem',
