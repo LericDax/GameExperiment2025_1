@@ -142,6 +142,57 @@ export const initializeMeshingDebug = ({
 export const makeBlockKey = (x, y, z) =>
   `${Math.round(x)}|${Math.round(y)}|${Math.round(z)}`;
 
+export const sanitizePrototypeInstanceRecordForLowDetail = (record) => {
+  if (!record) {
+    return null;
+  }
+  const sourceEntries = Array.isArray(record.blockEntries)
+    ? record.blockEntries
+    : [];
+  const sanitizedEntries = [];
+  sourceEntries.forEach((entryRecord) => {
+    if (!entryRecord) {
+      return;
+    }
+    const entry = entryRecord.entry ?? null;
+    const coordinateKey = (() => {
+      if (entryRecord.coordinateKey) {
+        return entryRecord.coordinateKey;
+      }
+      if (entry?.coordinateKey) {
+        return entry.coordinateKey;
+      }
+      if (entry?.position) {
+        const { x = 0, y = 0, z = 0 } = entry.position;
+        return makeBlockKey(x, y, z);
+      }
+      return null;
+    })();
+    const sanitized = {
+      type: entryRecord.type ?? entry?.type ?? null,
+      entryKey:
+        entryRecord.entryKey ?? entry?.key ?? coordinateKey ?? null,
+    };
+    if (coordinateKey) {
+      sanitized.coordinateKey = coordinateKey;
+    }
+    if (entryRecord.entryPayload) {
+      sanitized.entryPayload = entryRecord.entryPayload;
+    }
+    sanitizedEntries.push(sanitized);
+  });
+  const sanitizedDecorationKeys = Array.isArray(record.decorationKeys)
+    ? record.decorationKeys
+        .map((value) =>
+          value === null || value === undefined ? null : String(value),
+        )
+        .filter(Boolean)
+    : [];
+  record.blockEntries = sanitizedEntries;
+  record.decorationKeys = sanitizedDecorationKeys;
+  return record;
+};
+
 let sharedBlockGeometry = null;
 
 export const ensureBlockGeometry = (THREE) => {
@@ -1909,53 +1960,12 @@ export function createChunkBuildTask({
       return;
     }
     prototypeInstances.forEach((record, key) => {
-      if (!record) {
+      const sanitized = sanitizePrototypeInstanceRecordForLowDetail(record);
+      if (!sanitized) {
         prototypeInstances.delete(key);
         return;
       }
-      const sourceEntries = Array.isArray(record.blockEntries)
-        ? record.blockEntries
-        : [];
-      const sanitizedEntries = [];
-      sourceEntries.forEach((entryRecord) => {
-        if (!entryRecord) {
-          return;
-        }
-        const entry = entryRecord.entry ?? null;
-        const coordinateKey = (() => {
-          if (entryRecord.coordinateKey) {
-            return entryRecord.coordinateKey;
-          }
-          if (entry?.coordinateKey) {
-            return entry.coordinateKey;
-          }
-          if (entry?.position) {
-            const { x = 0, y = 0, z = 0 } = entry.position;
-            return makeBlockKey(x, y, z);
-          }
-          return null;
-        })();
-        const sanitized = {
-          type: entryRecord.type ?? entry?.type ?? null,
-          entryKey:
-            entryRecord.entryKey ?? entry?.key ?? coordinateKey ?? null,
-        };
-        if (coordinateKey) {
-          sanitized.coordinateKey = coordinateKey;
-        }
-        if (entryRecord.entryPayload) {
-          sanitized.entryPayload = entryRecord.entryPayload;
-        }
-        sanitizedEntries.push(sanitized);
-      });
-      record.blockEntries = sanitizedEntries;
-      record.decorationKeys = Array.isArray(record.decorationKeys)
-        ? record.decorationKeys
-            .map((value) =>
-              value === null || value === undefined ? null : String(value),
-            )
-            .filter(Boolean)
-        : [];
+      prototypeInstances.set(key, sanitized);
     });
   };
 
