@@ -532,14 +532,22 @@ test('chunk manager executes worker build when persistence only provides fallbac
     const workerPayload = task.exportPayloadSnapshot();
     task.releaseCachedPayload?.();
 
-    assert.ok(
-      Array.isArray(workerPayload?.blockPlacements),
-      'worker payload should include block placements when fallback requires rebuild',
-    );
-    assert.ok(
-      workerPayload.blockPlacements.length > 0,
-      'block placements should be generated when createChunkBuildTask executes',
-    );
+    if (startMessage.payload.detailLevel === 'core') {
+      assert.ok(
+        Array.isArray(workerPayload?.blockPlacements),
+        'core-detail worker payload should include block placements when fallback requires rebuild',
+      );
+      assert.ok(
+        workerPayload.blockPlacements.length > 0,
+        'block placements should be generated when createChunkBuildTask executes',
+      );
+    } else {
+      assert.strictEqual(
+        workerPayload.blockPlacements,
+        null,
+        'non-core worker payloads should omit block placements during fallback rebuilds',
+      );
+    }
 
     worker.emit('message', {
       key: startMessage.key,
