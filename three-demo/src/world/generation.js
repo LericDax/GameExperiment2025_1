@@ -3724,11 +3724,20 @@ export function createChunkBuildTask({
       group = meshResult.chunkGroup;
       chunkBiomes = meshResult.biomes;
     } else {
-      ensureOccupancyArrays();
-      populateOccupancyFromPlacements();
-      populateFluidOccupancy();
+      if (!isLowDetail) {
+        ensureOccupancyArrays();
+        populateOccupancyFromPlacements();
+        populateFluidOccupancy();
+      } else {
+        occupancyTypes = null;
+        occupancyPlacements = null;
+        fluidOccupancy = null;
+        fluidSurfaces.length = 0;
+      }
       applyOccupancyVisibility();
-      buildFluidSurfaces();
+      if (!isLowDetail) {
+        buildFluidSurfaces();
+      }
 
       group = new THREE.Group();
       group.name = `chunk_${chunkX}_${chunkZ}`;
