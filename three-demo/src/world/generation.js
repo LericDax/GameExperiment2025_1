@@ -2563,6 +2563,7 @@ export function createChunkBuildTask({
       engine: createEnginePayload(),
       worldOptions,
       includeBlockPlacements: includeBlockPlacementsInPayload,
+      includeOccupancy: !isLowDetail,
     });
   };
 
@@ -3062,13 +3063,24 @@ export function createChunkBuildTask({
     instancedData.clear();
     blockLookup.clear();
 
+    occupancyTypes = null;
+    occupancyPlacements = null;
+    fluidOccupancy = null;
+    occupancyWidth = chunkSize;
+    occupancyDepth = chunkSize;
+    occupancyHeight = 0;
+    occupancyArea = 0;
+    fluidSurfaces.length = 0;
+
+    if (isLowDetail) {
+      return;
+    }
+
     ensureOccupancyArrays();
     populateOccupancyFromPlacements();
     populateFluidOccupancy();
     applyOccupancyVisibility();
-    if (!isLowDetail) {
-      buildFluidSurfaces();
-    }
+    buildFluidSurfaces();
   };
 
   const step = (maxColumns = Number.POSITIVE_INFINITY) => {
@@ -3120,6 +3132,7 @@ export function createChunkBuildTask({
               engine: createEnginePayload(),
               worldOptions,
               includeBlockPlacements: includeBlockPlacementsInPayload,
+              includeOccupancy: !isLowDetail,
             });
           }
           stepState.stage = 'readyForFinalize';

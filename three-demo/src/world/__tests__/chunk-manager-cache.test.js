@@ -139,3 +139,33 @@ test('chunk payload cache enforces capacity and strips voxel buffers', async () 
     createdMaterials.forEach((material) => material.dispose?.());
   }
 });
+
+test('retention detail chunk payload omits occupancy data', () => {
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const task = generationModule.createChunkBuildTask({
+    chunkX: 0,
+    chunkZ: 0,
+    blockMaterials,
+    detailLevel: 'retention',
+    requireWorkerPayload: true,
+  });
+
+  try {
+    let done = false;
+    while (!done) {
+      const result = task.step(64);
+      if (!result) {
+        break;
+      }
+      done = result.done === true;
+    }
+
+    const payload = task.exportPayloadSnapshot();
+    assert.ok(payload, 'retention payload should be produced');
+    assert.ok(!('occupancy' in payload) || payload.occupancy == null);
+  } finally {
+    task.releaseCachedPayload({ cancel: true });
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
