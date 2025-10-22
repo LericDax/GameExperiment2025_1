@@ -131,6 +131,11 @@ test('worker retention finalize drops heavy payload structures', async () => {
       assert.ok(Array.isArray(record.blockEntries));
       record.blockEntries.forEach((blockEntry) => {
         assert.equal('entry' in blockEntry, false, 'prototype metadata should omit live entry references');
+        assert.equal(
+          'entryPayload' in blockEntry,
+          false,
+          'prototype metadata should omit serialized entry payloads',
+        );
         assert.ok(blockEntry.entryKey, 'prototype metadata should retain entry keys');
       });
     });
@@ -180,6 +185,21 @@ test('worker retention finalize drops heavy payload structures', async () => {
       isChunkBlockIndex(coreChunk.softBlockKeys),
       'core chunks should retain a soft block index',
     );
+    coreChunk.prototypeInstances.forEach((record) => {
+      assert.ok(Array.isArray(record.blockEntries));
+      record.blockEntries.forEach((blockEntry) => {
+        assert.equal(
+          'entryPayload' in blockEntry,
+          false,
+          'core prototype entries should not use sanitized payload placeholders',
+        );
+        assert.ok(blockEntry.entry, 'core prototype entries should retain live entry references');
+        assert.ok(
+          blockEntry.entry?.payload,
+          'core prototype entries should provide access to payload buffers',
+        );
+      });
+    });
   } finally {
     await manager.dispose?.();
     dispose();

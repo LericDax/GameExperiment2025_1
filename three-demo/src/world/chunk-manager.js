@@ -4265,7 +4265,37 @@ export function createChunkManager({
           if (!sanitized) {
             return;
           }
-          sanitizedPrototypes.set(key, sanitized);
+          const sanitizedEntries = Array.isArray(sanitized.blockEntries)
+            ? sanitized.blockEntries
+                .map((entry) => {
+                  if (!entry || typeof entry !== 'object') {
+                    return null;
+                  }
+                  const sanitizedEntry = {
+                    type: entry.type ?? null,
+                    entryKey: entry.entryKey ?? null,
+                  };
+                  if (entry.coordinateKey) {
+                    sanitizedEntry.coordinateKey = entry.coordinateKey;
+                  }
+                  return sanitizedEntry;
+                })
+                .filter(Boolean)
+            : [];
+          const sanitizedDecorationKeys = Array.isArray(sanitized.decorationKeys)
+            ? sanitized.decorationKeys
+                .map((value) =>
+                  value === null || value === undefined ? null : String(value),
+                )
+                .filter(Boolean)
+            : [];
+          const sanitizedRecord = {
+            key: sanitized.key ?? key ?? null,
+            prototypeId: sanitized.prototypeId ?? null,
+            blockEntries: sanitizedEntries,
+            decorationKeys: sanitizedDecorationKeys,
+          };
+          sanitizedPrototypes.set(key, sanitizedRecord);
         });
         chunk.prototypeInstances = sanitizedPrototypes;
       } else {
