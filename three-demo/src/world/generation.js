@@ -168,6 +168,9 @@ export const sanitizePrototypeInstanceRecordForLowDetail = (record) => {
       }
       return null;
     })();
+    if ('entryPayload' in entryRecord) {
+      entryRecord.entryPayload = null;
+    }
     const sanitized = {
       type: entryRecord.type ?? entry?.type ?? null,
       entryKey:
@@ -175,9 +178,6 @@ export const sanitizePrototypeInstanceRecordForLowDetail = (record) => {
     };
     if (coordinateKey) {
       sanitized.coordinateKey = coordinateKey;
-    }
-    if (entryRecord.entryPayload) {
-      sanitized.entryPayload = entryRecord.entryPayload;
     }
     sanitizedEntries.push(sanitized);
   });
