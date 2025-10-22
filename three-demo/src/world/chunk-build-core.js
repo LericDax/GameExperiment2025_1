@@ -778,12 +778,18 @@ export const buildChunkPayload = ({
     throw new Error('buildChunkPayload requires an engine payload.');
   }
 
+  const includeBlockPlacementsFlag = Boolean(includeBlockPlacements);
+  const includeOccupancyFlag = Boolean(includeOccupancy);
+
   const chunkSize = resolveChunkSize(worldOptions);
   const waterLevel = resolveWaterLevel(worldOptions);
   const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ, worldOptions);
 
-  const placements = Array.isArray(engine.blockPlacements)
-    ? engine.blockPlacements
+  const processPlacements = includeBlockPlacementsFlag || includeOccupancyFlag;
+  const placements = processPlacements
+    ? Array.isArray(engine.blockPlacements)
+      ? engine.blockPlacements
+      : []
     : [];
 
   let occupancyMinY = Number.POSITIVE_INFINITY;
@@ -836,12 +842,12 @@ export const buildChunkPayload = ({
   const occupancyArea = occupancyWidth * occupancyDepth;
   const volume = occupancyArea * occupancyHeight;
 
-  const occupancyTypes = includeOccupancy ? new Uint16Array(volume) : null;
-  const occupancyPlacements = includeOccupancy ? new Int32Array(volume) : null;
+  const occupancyTypes = includeOccupancyFlag ? new Uint16Array(volume) : null;
+  const occupancyPlacements = includeOccupancyFlag ? new Int32Array(volume) : null;
   if (occupancyPlacements) {
     occupancyPlacements.fill(-1);
   }
-  const fluidOccupancy = includeOccupancy ? new Uint8Array(volume) : null;
+  const fluidOccupancy = includeOccupancyFlag ? new Uint8Array(volume) : null;
 
   const typeIdMap = new Map();
   let nextTypeId = 1;
@@ -863,7 +869,7 @@ export const buildChunkPayload = ({
   let softCoordinateCount = 0;
 
   const setCoordinateIndex = (key, value) => {
-    if (!includeOccupancy) {
+    if (!includeOccupancyFlag) {
       return;
     }
     if (!key) {
@@ -881,7 +887,7 @@ export const buildChunkPayload = ({
   };
 
   const pushSolidCoordinate = (key) => {
-    if (!includeOccupancy) {
+    if (!includeOccupancyFlag) {
       return;
     }
     if (!key || solidCoordinateCount >= MAX_COORDINATE_INDEX_ENTRIES) {
@@ -892,7 +898,7 @@ export const buildChunkPayload = ({
   };
 
   const pushSoftCoordinate = (key) => {
-    if (!includeOccupancy) {
+    if (!includeOccupancyFlag) {
       return;
     }
     if (!key || softCoordinateCount >= MAX_COORDINATE_INDEX_ENTRIES) {
@@ -901,12 +907,12 @@ export const buildChunkPayload = ({
     softCoordinates.push(key);
     softCoordinateCount += 1;
   };
-  const blockPlacements = includeBlockPlacements ? [] : null;
+  const blockPlacements = includeBlockPlacementsFlag ? [] : null;
 
   const normalizedFluidKeys = normalizeArraySource(engine.fluidBlockKeys);
 
   normalizedFluidKeys.forEach((entry) => {
-    if (!includeOccupancy || !fluidOccupancy) {
+    if (!includeOccupancyFlag || !fluidOccupancy) {
       return;
     }
     let key = null;
@@ -941,81 +947,83 @@ export const buildChunkPayload = ({
     fluidOccupancy[index] = 1;
   });
 
-  placements.forEach((placement, index) => {
-    if (!placement || placement.removed) {
-      return;
-    }
+  if (processPlacements) {
+    placements.forEach((placement, index) => {
+      if (!placement || placement.removed) {
+        return;
+      }
 
-    const position = resolvePlacementPosition(placement);
-    const coordinateKey = normalizeCoordinateKey(placement, position);
-    if (coordinateKey) {
-      setCoordinateIndex(coordinateKey, index);
-    }
+      const position = resolvePlacementPosition(placement);
+      const coordinateKey = normalizeCoordinateKey(placement, position);
+      if (coordinateKey) {
+        setCoordinateIndex(coordinateKey, index);
+      }
 
-    const isSolid =
-      placement.isSolid === true || placement.collisionMode === 'solid';
-    const isSoft =
-      placement.isSoft === true || placement.collisionMode === 'soft';
+      const isSolid =
+        placement.isSolid === true || placement.collisionMode === 'solid';
+      const isSoft =
+        placement.isSoft === true || placement.collisionMode === 'soft';
 
-    if (isSolid && coordinateKey) {
-      pushSolidCoordinate(coordinateKey);
-    }
-    if (isSoft && coordinateKey) {
-      pushSoftCoordinate(coordinateKey);
-    }
+      if (isSolid && coordinateKey) {
+        pushSolidCoordinate(coordinateKey);
+      }
+      if (isSoft && coordinateKey) {
+        pushSoftCoordinate(coordinateKey);
+      }
 
-    getTypeId(placement.type);
+      getTypeId(placement.type);
 
-    if (includeBlockPlacements && blockPlacements) {
-      const payload = placement.payload ?? serializeInstancedEntry(placement);
-      const gridPosition = serializeGridPosition(placement.gridPosition);
-      const gridIndex = Number.isInteger(placement.gridIndex)
-        ? placement.gridIndex
-        : -1;
+      if (includeBlockPlacementsFlag && blockPlacements) {
+        const payload = placement.payload ?? serializeInstancedEntry(placement);
+        const gridPosition = serializeGridPosition(placement.gridPosition);
+        const gridIndex = Number.isInteger(placement.gridIndex)
+          ? placement.gridIndex
+          : -1;
 
-      blockPlacements.push({
-        index,
-        key: placement.key ?? null,
-        coordinateKey: coordinateKey ?? null,
-        type: placement.type ?? null,
-        collisionMode: placement.collisionMode ?? null,
-        isSolid,
-        isSoft,
-        isVisible: placement.isVisible === true,
-        gridIndex,
-        gridPosition,
-        payload,
-      });
-    }
+        blockPlacements.push({
+          index,
+          key: placement.key ?? null,
+          coordinateKey: coordinateKey ?? null,
+          type: placement.type ?? null,
+          collisionMode: placement.collisionMode ?? null,
+          isSolid,
+          isSoft,
+          isVisible: placement.isVisible === true,
+          gridIndex,
+          gridPosition,
+          payload,
+        });
+      }
 
-    if (!position) {
-      return;
-    }
+      if (!position) {
+        return;
+      }
 
-    if (!includeOccupancy || !occupancyTypes || !occupancyPlacements) {
-      return;
-    }
+      if (!includeOccupancyFlag || !occupancyTypes || !occupancyPlacements) {
+        return;
+      }
 
-    const localX = Math.round(position.x - minX);
-    const localZ = Math.round(position.z - minZ);
-    const localY = Math.round(position.y) - occupancyMinY;
+      const localX = Math.round(position.x - minX);
+      const localZ = Math.round(position.z - minZ);
+      const localY = Math.round(position.y) - occupancyMinY;
 
-    if (
-      localX < 0 ||
-      localX >= occupancyWidth ||
-      localZ < 0 ||
-      localZ >= occupancyDepth ||
-      localY < 0 ||
-      localY >= occupancyHeight
-    ) {
-      return;
-    }
+      if (
+        localX < 0 ||
+        localX >= occupancyWidth ||
+        localZ < 0 ||
+        localZ >= occupancyDepth ||
+        localY < 0 ||
+        localY >= occupancyHeight
+      ) {
+        return;
+      }
 
-    const occupancyIndex =
-      localY * occupancyArea + localZ * occupancyWidth + localX;
-    occupancyTypes[occupancyIndex] = getTypeId(placement.type);
-    occupancyPlacements[occupancyIndex] = index;
-  });
+      const occupancyIndex =
+        localY * occupancyArea + localZ * occupancyWidth + localX;
+      occupancyTypes[occupancyIndex] = getTypeId(placement.type);
+      occupancyPlacements[occupancyIndex] = index;
+    });
+  }
 
   const typeEntries = Array.from(typeIdMap.entries());
   const typeIndex = {
@@ -1046,7 +1054,7 @@ export const buildChunkPayload = ({
   const payload = {
     chunkX,
     chunkZ,
-    blockPlacements: includeBlockPlacements ? blockPlacements : null,
+    blockPlacements: includeBlockPlacementsFlag ? blockPlacements : null,
     typeIndex,
     biomes: extractBiomePayload(engine),
     typeMetadata: extractTypeMetadata(engine),
@@ -1055,7 +1063,7 @@ export const buildChunkPayload = ({
     decorations,
   };
 
-  if (includeOccupancy) {
+  if (includeOccupancyFlag) {
     payload.occupancy = {
       minY: occupancyMinY,
       maxY: occupancyMaxY,

@@ -726,6 +726,8 @@ export function createChunkBuildTask({
   const isLowDetail = detailMode !== DETAIL_LEVEL_CORE;
   const isScoutDetail = detailMode === DETAIL_LEVEL_SCOUT;
   const shouldRetainPrototypeEntries = detailMode === DETAIL_LEVEL_CORE;
+  const includeBlockPlacementsForPayload =
+    !isLowDetail && Boolean(includeBlockPlacementsInPayload);
   const instancedData = new Map();
   const decorationInstancedData = new Map();
   const decorationData = new Map();
@@ -2667,7 +2669,7 @@ export function createChunkBuildTask({
       chunkZ,
       engine: createEnginePayload(),
       worldOptions,
-      includeBlockPlacements: includeBlockPlacementsInPayload,
+      includeBlockPlacements: includeBlockPlacementsForPayload,
       includeOccupancy: !isLowDetail,
     });
   };
@@ -3288,7 +3290,7 @@ export function createChunkBuildTask({
               chunkZ,
               engine: createEnginePayload(),
               worldOptions,
-              includeBlockPlacements: includeBlockPlacementsInPayload,
+              includeBlockPlacements: includeBlockPlacementsForPayload,
               includeOccupancy: !isLowDetail,
             });
           }
