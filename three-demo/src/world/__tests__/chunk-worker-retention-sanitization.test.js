@@ -30,6 +30,7 @@ fluidRegistryModule.initializeFluidRegistry({ THREE });
 
 const { createChunkManager } = await import('../chunk-manager.js');
 const { finalizeChunkMeshes } = await import('../finalize-chunk-meshes.js');
+const { isChunkBlockIndex } = await import('../chunk-block-index.js');
 
 function createBlockMaterials() {
   const createdMaterials = new Set();
@@ -100,6 +101,16 @@ test('worker retention finalize drops heavy payload structures', async () => {
 
     assert.equal(chunk.detailLevel, 'retention');
     assert.equal(chunk.blockLookup, null, 'low-detail chunks should drop block lookup tables');
+    assert.equal(
+      chunk.solidBlockKeys,
+      null,
+      'retention chunks should omit solid block indexes',
+    );
+    assert.equal(
+      chunk.softBlockKeys,
+      null,
+      'retention chunks should omit soft block indexes',
+    );
 
     assert.ok(chunk.typeData instanceof Map);
     chunk.typeData.forEach((record) => {
@@ -128,6 +139,46 @@ test('worker retention finalize drops heavy payload structures', async () => {
       chunk.group?.children?.length ?? 0,
       rawMeshCount,
       'sanitization should preserve the number of chunk meshes',
+    );
+
+    const coreTask = generationModule.createChunkBuildTask({
+      chunkX: payload.chunkX,
+      chunkZ: payload.chunkZ,
+      blockMaterials,
+      detailLevel: 'core',
+      requireWorkerPayload: true,
+    });
+    let coreDone = false;
+    while (!coreDone) {
+      coreDone = Boolean(coreTask.step(32)?.done);
+    }
+    const corePayload = coreTask.exportPayloadSnapshot();
+    coreTask.releaseCachedPayload?.();
+    corePayload.detailLevel = 'core';
+
+    const coreEntry = {
+      chunkX: corePayload.chunkX,
+      chunkZ: corePayload.chunkZ,
+      detailLevel: corePayload.detailLevel,
+      desiredDetailLevel: corePayload.detailLevel,
+      metadata: { payload: corePayload },
+    };
+    const coreChunk = manager.__finalizeWorkerChunkForTest(coreEntry, {
+      payload: corePayload,
+    });
+
+    assert.equal(coreChunk.detailLevel, 'core');
+    assert.ok(
+      isChunkBlockIndex(coreChunk.solidBlockKeys),
+      'core chunks should retain a solid block index',
+    );
+    assert.ok(
+      (coreChunk.solidBlockKeys?.size ?? 0) > 0,
+      'core solid block index should contain entries',
+    );
+    assert.ok(
+      isChunkBlockIndex(coreChunk.softBlockKeys),
+      'core chunks should retain a soft block index',
     );
   } finally {
     await manager.dispose?.();
