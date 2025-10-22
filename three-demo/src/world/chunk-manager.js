@@ -9529,6 +9529,15 @@ export function createChunkManager({
     if (!chunk || !chunk.prototypeInstances || !prototypeKey) {
       return;
     }
+    if (!isCoreDetailChunk(chunk)) {
+      if (
+        Number.isFinite(chunk?.chunkX) &&
+        Number.isFinite(chunk?.chunkZ)
+      ) {
+        ensureChunk(chunk.chunkX, chunk.chunkZ);
+      }
+      return;
+    }
     if (prototypeRemovalGuards.has(prototypeKey)) {
       return;
     }
@@ -9543,6 +9552,13 @@ export function createChunkManager({
       const blockEntries = Array.isArray(record.blockEntries)
         ? record.blockEntries
         : [];
+
+      const hasLiveEntries = blockEntries.some(
+        (blockEntry) => blockEntry?.entry,
+      );
+      if (!hasLiveEntries) {
+        return;
+      }
 
       blockEntries.forEach((blockEntry) => {
         if (!blockEntry) {
