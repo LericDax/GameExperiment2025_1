@@ -254,3 +254,61 @@ test('retention detail finalize avoids occupancy buffers', () => {
     createdMaterials.forEach((material) => material.dispose?.());
   }
 });
+
+test('retention tasks skip placement payload serialization unless requested', () => {
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  try {
+    const surfaceHeight = generationModule.terrainHeight(0, 0);
+    assert.ok(Number.isFinite(surfaceHeight), 'terrain height should be finite');
+    const surfaceKey = generationModule.makeBlockKey(0, surfaceHeight, 0);
+
+    const retentionTask = generationModule.createChunkBuildTask({
+      chunkX: 0,
+      chunkZ: 0,
+      blockMaterials,
+      detailLevel: 'retention',
+    });
+
+    let done = false;
+    while (!done) {
+      const result = retentionTask.step(Number.POSITIVE_INFINITY);
+      done = result?.done === true;
+    }
+
+    retentionTask.setRequiresWorkerPayload(true);
+    retentionTask.setRequiresWorkerPayload(false);
+
+    const retentionChunk = retentionTask.finalize();
+    const retentionEntry = retentionChunk.blockLookup.get(surfaceKey);
+    assert.ok(
+      retentionEntry,
+      'retention chunk should expose a surface placement entry for inspection',
+    );
+    assert.equal(
+      retentionEntry.payload,
+      null,
+      'retention chunk placements should not retain serialized payloads when disabled',
+    );
+
+    const coreTask = generationModule.createChunkBuildTask({
+      chunkX: 0,
+      chunkZ: 0,
+      blockMaterials,
+      detailLevel: 'core',
+      requireWorkerPayload: true,
+    });
+
+    done = false;
+    while (!done) {
+      const result = coreTask.step(Number.POSITIVE_INFINITY);
+      done = result?.done === true;
+    }
+
+    const coreChunk = coreTask.finalize();
+    const coreEntry = coreChunk.blockLookup.get(surfaceKey);
+    assert.ok(coreEntry, 'core chunk should expose the surface placement entry');
+    assert.ok(coreEntry.payload, 'core chunk should serialize placement payloads');
+  } finally {
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
