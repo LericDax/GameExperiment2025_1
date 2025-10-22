@@ -753,7 +753,13 @@ test('worker payload finalization completes during flush', async () => {
 
       const typeRecord = finalizedChunk.typeData?.get('test:block');
       assert.ok(typeRecord, 'expected finalizeChunkMeshes to rebuild type data');
-      assert.equal(typeRecord.entries.length, 1, 'type payload should deserialize one entry');
+      assert.equal(
+        'entries' in typeRecord,
+        false,
+        'retention detail should not expose instanced entry arrays',
+      );
+      assert.equal(typeRecord.capacity, 1, 'retention metadata should keep reported capacity');
+      assert.ok(typeRecord.mesh, 'instanced mesh should be preserved for rendering');
 
       assert.ok(Array.isArray(finalizedChunk.fluidSurfaces));
       assert.ok(

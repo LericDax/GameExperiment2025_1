@@ -7,6 +7,7 @@ import {
   buildInstancedBlockMesh,
   makeBlockKey,
   isBlockOccluding,
+  sanitizePrototypeInstanceRecordForLowDetail,
 } from './generation.js';
 import { createChunkBlockIndex, isChunkBlockIndex } from './chunk-block-index.js';
 import { finalizeChunkMeshes } from './finalize-chunk-meshes.js';
@@ -4208,6 +4209,59 @@ export function createChunkManager({
       prototypeInstances: meshResult.prototypeInstances,
       bounds: computeChunkBoundsFromPayload(entry, payload),
     };
+    if (payloadDetailLevel !== DETAIL_LEVEL_CORE) {
+      chunk.blockLookup = null;
+      if (chunk.typeData instanceof Map) {
+        const trimmedTypeData = new Map();
+        chunk.typeData.forEach((record, type) => {
+          if (!record) {
+            return;
+          }
+          const normalizedCapacity = Number.isFinite(record.capacity)
+            ? record.capacity
+            : Math.max(
+                Array.isArray(record.entries) ? record.entries.length : 0,
+                0,
+              );
+          trimmedTypeData.set(type, {
+            mesh: record.mesh ?? null,
+            tintAttribute: record.tintAttribute ?? null,
+            capacity: normalizedCapacity,
+          });
+        });
+        chunk.typeData = trimmedTypeData;
+      } else {
+        chunk.typeData = new Map();
+      }
+      if (chunk.decorationData instanceof Map) {
+        const trimmedDecorationData = new Map();
+        chunk.decorationData.forEach((record, type) => {
+          if (!record) {
+            return;
+          }
+          trimmedDecorationData.set(type, {
+            ...record,
+            entries: [],
+          });
+        });
+        chunk.decorationData = trimmedDecorationData;
+      } else {
+        chunk.decorationData = new Map();
+      }
+      if (chunk.prototypeInstances instanceof Map) {
+        const sanitizedPrototypes = new Map();
+        chunk.prototypeInstances.forEach((record, key) => {
+          const sanitized = sanitizePrototypeInstanceRecordForLowDetail(record);
+          if (!sanitized) {
+            return;
+          }
+          sanitizedPrototypes.set(key, sanitized);
+        });
+        chunk.prototypeInstances = sanitizedPrototypes;
+      } else {
+        chunk.prototypeInstances = new Map();
+      }
+    }
     chunk.scoutPreviewMemory = null;
     chunk.detailLevel = payloadDetailLevel;
     if (entry?.metadata) {
@@ -9715,6 +9769,12 @@ export function createChunkManager({
         pendingBudget: entry?.pendingBudget ?? null,
         unlimited: entry?.unlimited === true,
       })),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__finalizeWorkerChunkForTest', {
+    value: (entry, workerPayload = null) =>
+      finalizeWorkerChunk(entry, workerPayload),
     enumerable: false,
   });
 
