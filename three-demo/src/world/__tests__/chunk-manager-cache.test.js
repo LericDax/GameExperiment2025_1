@@ -169,3 +169,162 @@ test('retention detail chunk payload omits occupancy data', () => {
   }
 });
 
+test('retention worker payload finalization skips caching while core detail caches', async () => {
+  const scene = new THREE.Scene();
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  const manager = createChunkManager({
+    scene,
+    blockMaterials,
+    viewDistance: 0,
+    retainDistance: 1,
+    maxPreloadPerUpdate: 1,
+    maxActivationsPerUpdate: 1,
+    payloadCacheSize: 4,
+  });
+
+  try {
+    const origin = new THREE.Vector3(0, 0, 0);
+    manager.update(origin, {
+      viewDistance: 0,
+      retainDistance: 1,
+      maxPreload: 0,
+      force: true,
+    });
+
+    const buildRetentionPayload = () => {
+      const task = generationModule.createChunkBuildTask({
+        chunkX: 1,
+        chunkZ: 0,
+        blockMaterials,
+        detailLevel: 'retention',
+        requireWorkerPayload: true,
+      });
+      let done = false;
+      while (!done) {
+        const result = task.step(Number.POSITIVE_INFINITY);
+        done = result?.done === true;
+      }
+      const payload = task.exportPayloadSnapshot();
+      task.releaseCachedPayload?.();
+      payload.detailLevel = 'retention';
+      return payload;
+    };
+
+    const retentionPayload = buildRetentionPayload();
+    const retentionEntry = {
+      key: '1|0',
+      chunkX: 1,
+      chunkZ: 0,
+      detailLevel: 'retention',
+      desiredDetailLevel: 'retention',
+      workerPayload: { payload: retentionPayload },
+      metadata: { mode: 'worker', inflight: false, payload: retentionPayload },
+      waitingForCapacity: false,
+      pendingBudget: 0,
+      unlimited: false,
+      active: false,
+      awaitingPersistenceScheduling: false,
+      pendingChunk: null,
+      persistenceResult: null,
+      resolve: null,
+      reject: null,
+      promise: null,
+    };
+
+    let resolvedRetentionChunk = null;
+    retentionEntry.resolve = (chunk) => {
+      resolvedRetentionChunk = chunk;
+    };
+
+    manager.__finalizePendingEntryForTest(retentionEntry);
+
+    assert.ok(
+      resolvedRetentionChunk,
+      'retention chunk should resolve during finalization',
+    );
+    assert.equal(
+      resolvedRetentionChunk?.__cachePayload ?? null,
+      null,
+      'retention detail chunks should not retain cache payload snapshots',
+    );
+
+    let cacheSnapshot = manager.__getPayloadCacheSnapshotForTest();
+    assert.equal(
+      cacheSnapshot.length,
+      0,
+      'payload cache should remain empty after retention finalization',
+    );
+
+    manager.__processPendingActivationsForTest(Number.POSITIVE_INFINITY);
+    cacheSnapshot = manager.__getPayloadCacheSnapshotForTest();
+    assert.equal(
+      cacheSnapshot.length,
+      0,
+      'payload cache should ignore retention chunks when activated',
+    );
+
+    const buildCorePayload = () => {
+      const task = generationModule.createChunkBuildTask({
+        chunkX: 0,
+        chunkZ: 0,
+        blockMaterials,
+        detailLevel: 'core',
+        requireWorkerPayload: true,
+      });
+      let done = false;
+      while (!done) {
+        const result = task.step(Number.POSITIVE_INFINITY);
+        done = result?.done === true;
+      }
+      const payload = task.exportPayloadSnapshot();
+      task.releaseCachedPayload?.();
+      payload.detailLevel = 'core';
+      return payload;
+    };
+
+    const corePayload = buildCorePayload();
+    const coreEntry = {
+      key: '0|0',
+      chunkX: 0,
+      chunkZ: 0,
+      detailLevel: 'core',
+      desiredDetailLevel: 'core',
+      workerPayload: { payload: corePayload },
+      metadata: { mode: 'worker', inflight: false, payload: corePayload },
+      waitingForCapacity: false,
+      pendingBudget: 0,
+      unlimited: false,
+      active: false,
+      awaitingPersistenceScheduling: false,
+      pendingChunk: null,
+      persistenceResult: null,
+      resolve: null,
+      reject: null,
+      promise: null,
+    };
+
+    let resolvedCoreChunk = null;
+    coreEntry.resolve = (chunk) => {
+      resolvedCoreChunk = chunk;
+    };
+
+    manager.__finalizePendingEntryForTest(coreEntry);
+
+    assert.ok(resolvedCoreChunk, 'core chunk should resolve during finalization');
+
+    cacheSnapshot = manager.__getPayloadCacheSnapshotForTest();
+    assert.ok(
+      cacheSnapshot.some((entry) => entry?.key === coreEntry.key),
+      'core chunks should populate the payload cache',
+    );
+    assert.equal(
+      cacheSnapshot.every((entry) => entry?.detailLevel === 'core'),
+      true,
+      'cached payload entries should report core detail level',
+    );
+  } finally {
+    await manager.dispose();
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
