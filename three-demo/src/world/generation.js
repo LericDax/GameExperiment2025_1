@@ -669,6 +669,8 @@ export function createChunkBuildTask({
   const THREE = ensureThree();
   const engine = ensureTerrainEngine();
   let needsWorkerPayload = Boolean(requireWorkerPayload);
+  const shouldSerializePlacementPayloads = () =>
+    includeBlockPlacementsInPayload || needsWorkerPayload;
   const detailMode = normalizeDetailMode(detailLevel);
   const isLowDetail = detailMode !== DETAIL_LEVEL_CORE;
   const isScoutDetail = detailMode === DETAIL_LEVEL_SCOUT;
@@ -1193,6 +1195,10 @@ export function createChunkBuildTask({
   const refreshInstancedEntryPayload = (entry) => {
     if (!entry) {
       return null;
+    }
+    if (!shouldSerializePlacementPayloads()) {
+      entry.payload = null;
+      return entry;
     }
     if (
       entry.matrix &&
@@ -2567,14 +2573,66 @@ export function createChunkBuildTask({
     });
   };
 
+  const refreshAllPlacementPayloads = () => {
+    const processed = new Set();
+    const updateEntry = (entry) => {
+      if (!entry || processed.has(entry)) {
+        return;
+      }
+      processed.add(entry);
+      refreshInstancedEntryPayload(entry);
+    };
+
+    blockPlacements.forEach((placement) => {
+      if (placement) {
+        updateEntry(placement);
+      }
+    });
+    instancedData.forEach((entries) => {
+      if (!Array.isArray(entries)) {
+        return;
+      }
+      entries.forEach((entry) => {
+        if (entry) {
+          updateEntry(entry);
+        }
+      });
+    });
+    decorationInstancedData.forEach((entries) => {
+      if (!Array.isArray(entries)) {
+        return;
+      }
+      entries.forEach((entry) => {
+        if (entry) {
+          updateEntry(entry);
+        }
+      });
+    });
+    prototypeInstances.forEach((record) => {
+      if (!record || !Array.isArray(record.blockEntries)) {
+        return;
+      }
+      record.blockEntries.forEach((blockEntry) => {
+        if (blockEntry?.entry) {
+          updateEntry(blockEntry.entry);
+        }
+      });
+    });
+  };
+
   const setRequiresWorkerPayload = (value) => {
     const next = Boolean(value);
     if (needsWorkerPayload === next) {
       return;
     }
+    const serializationBefore = shouldSerializePlacementPayloads();
     needsWorkerPayload = next;
     if (!needsWorkerPayload) {
       releaseCachedPayload();
+    }
+    const serializationAfter = shouldSerializePlacementPayloads();
+    if (serializationBefore !== serializationAfter) {
+      refreshAllPlacementPayloads();
     }
   };
 
