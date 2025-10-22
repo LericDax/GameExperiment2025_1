@@ -3803,91 +3803,151 @@ export function createChunkBuildTask({
       blockLookup.clear();
       typeData.clear();
 
-      const entriesByType = new Map();
-      blockPlacements.forEach((placement) => {
-        if (!placement || placement.removed) {
-          return;
-        }
-        const entry = materializePlacement(placement);
-        if (!entry) {
-          return;
-        }
-        entry.isSolid = placement.isSolid === true;
-        entry.isSoft = placement.isSoft === true;
-        entry.collisionMode = placement.collisionMode ?? entry.collisionMode;
-        entry.metadata = placement.metadata ?? entry.metadata ?? null;
-        entry.gridIndex = placement.gridIndex ?? entry.gridIndex ?? -1;
-        entry.gridPosition = placement.gridPosition ?? entry.gridPosition ?? null;
-        const placementVisibility =
-          placement.isVisible === true
-            ? true
-            : placement.isVisible === false
-            ? false
-            : undefined;
-        entry.isVisible = placementVisibility;
-        if (typeof placementVisibility === 'boolean' && entry.payload) {
-          if (typeof entry.payload === 'object') {
-            entry.payload.isVisible = placementVisibility;
+      if (isLowDetail) {
+        const entriesByType = new Map();
+        blockPlacements.forEach((placement) => {
+          if (!placement || placement.removed) {
+            return;
           }
-        }
-        entry.removed = false;
-        if (entry.key) {
-          blockLookup.set(entry.key, entry);
-        }
-        if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
-          blockLookup.set(entry.coordinateKey, entry);
-        }
-        let entries = entriesByType.get(entry.type);
-        if (!entries) {
-          entries = [];
-          entriesByType.set(entry.type, entries);
-        }
-        entry.index = entries.length;
-        entries.push(entry);
-      });
-
-      entriesByType.forEach((entries, type) => {
-        const capacity = Math.max(
-          1,
-          entries.length,
-          typeCapacities.get(type) ?? 0,
-        );
-        const visibleEntries = [];
-        entries.forEach((entry) => {
+          const { type, biome, position, instancingOptions } = placement;
+          if (!type || !position) {
+            return;
+          }
+          const entry = createInstancedEntry(
+            type,
+            position.x,
+            position.y,
+            position.z,
+            biome,
+            instancingOptions ?? {},
+          );
           if (!entry) {
             return;
           }
-          const normalizedVisibility = entry.isVisible === false ? false : true;
-          entry.isVisible = normalizedVisibility;
-          if (entry.payload && typeof entry.payload === 'object') {
-            entry.payload.isVisible = normalizedVisibility;
+          let entries = entriesByType.get(type);
+          if (!entries) {
+            entries = [];
+            entriesByType.set(type, entries);
           }
-          if (!normalizedVisibility) {
-            entry.index = -1;
-            entry.mesh = null;
-            entry.tintAttribute = null;
+          entries.push(entry);
+        });
+
+        entriesByType.forEach((entries, type) => {
+          const capacity = Math.max(
+            1,
+            entries.length,
+            typeCapacities.get(type) ?? 0,
+          );
+          const { mesh, tintAttribute } = buildInstancedMesh(entries, type, {
+            capacity,
+          });
+          mesh.count = entries.length;
+          mesh.instanceMatrix.needsUpdate = entries.length > 0;
+          if (tintAttribute) {
+            tintAttribute.needsUpdate = entries.length > 0;
+          }
+          typeCapacities.set(type, capacity);
+          typeData.set(type, {
+            mesh,
+            tintAttribute,
+            capacity,
+          });
+          group.add(mesh);
+        });
+
+        blockPlacements.length = 0;
+        placementIndexByCoordinate.clear();
+      } else {
+        const entriesByType = new Map();
+        blockPlacements.forEach((placement) => {
+          if (!placement || placement.removed) {
             return;
           }
-          visibleEntries.push(entry);
+          const entry = materializePlacement(placement);
+          if (!entry) {
+            return;
+          }
+          entry.isSolid = placement.isSolid === true;
+          entry.isSoft = placement.isSoft === true;
+          entry.collisionMode = placement.collisionMode ?? entry.collisionMode;
+          entry.metadata = placement.metadata ?? entry.metadata ?? null;
+          entry.gridIndex = placement.gridIndex ?? entry.gridIndex ?? -1;
+          entry.gridPosition = placement.gridPosition ?? entry.gridPosition ?? null;
+          const placementVisibility =
+            placement.isVisible === true
+              ? true
+              : placement.isVisible === false
+              ? false
+              : undefined;
+          entry.isVisible = placementVisibility;
+          if (typeof placementVisibility === 'boolean' && entry.payload) {
+            if (typeof entry.payload === 'object') {
+              entry.payload.isVisible = placementVisibility;
+            }
+          }
+          entry.removed = false;
+          if (entry.key) {
+            blockLookup.set(entry.key, entry);
+          }
+          if (entry.coordinateKey && entry.coordinateKey !== entry.key) {
+            blockLookup.set(entry.coordinateKey, entry);
+          }
+          let entries = entriesByType.get(entry.type);
+          if (!entries) {
+            entries = [];
+            entriesByType.set(entry.type, entries);
+          }
+          entry.index = entries.length;
+          entries.push(entry);
         });
-        const { mesh, tintAttribute } = buildInstancedMesh(visibleEntries, type, {
-          capacity,
+
+        entriesByType.forEach((entries, type) => {
+          const capacity = Math.max(
+            1,
+            entries.length,
+            typeCapacities.get(type) ?? 0,
+          );
+          const visibleEntries = [];
+          entries.forEach((entry) => {
+            if (!entry) {
+              return;
+            }
+            const normalizedVisibility = entry.isVisible === false ? false : true;
+            entry.isVisible = normalizedVisibility;
+            if (entry.payload && typeof entry.payload === 'object') {
+              entry.payload.isVisible = normalizedVisibility;
+            }
+            if (!normalizedVisibility) {
+              entry.index = -1;
+              entry.mesh = null;
+              entry.tintAttribute = null;
+              return;
+            }
+            visibleEntries.push(entry);
+          });
+          const { mesh, tintAttribute } = buildInstancedMesh(
+            visibleEntries,
+            type,
+            {
+              capacity,
+            },
+          );
+          mesh.count = visibleEntries.length;
+          mesh.instanceMatrix.needsUpdate = visibleEntries.length > 0;
+          if (tintAttribute) {
+            tintAttribute.needsUpdate = visibleEntries.length > 0;
+          }
+          typeCapacities.set(type, capacity);
+          typeData.set(type, {
+            entries: visibleEntries,
+            allEntries: entries,
+            mesh,
+            tintAttribute,
+            capacity,
+          });
+          group.add(mesh);
         });
-        mesh.count = visibleEntries.length;
-        mesh.instanceMatrix.needsUpdate = visibleEntries.length > 0;
-        if (tintAttribute) {
-          tintAttribute.needsUpdate = visibleEntries.length > 0;
-        }
-        typeCapacities.set(type, capacity);
-        typeData.set(type, {
-          entries: visibleEntries,
-          allEntries: entries,
-          mesh,
-          tintAttribute,
-          capacity,
-        });
-        group.add(mesh);
-      });
+      }
 
       decorationData.forEach((record) => {
         if (record?.mesh?.parent) {
@@ -3970,15 +4030,6 @@ export function createChunkBuildTask({
         derivedCollisionKeys.softBlockKeys.forEach((key) =>
           softBlockKeys.add(key),
         );
-      } else {
-        blockLookup.forEach((entry) => {
-          if (entry) {
-            entry.isVisible = true;
-            if (entry.payload && typeof entry.payload === 'object') {
-              entry.payload.isVisible = true;
-            }
-          }
-        });
       }
 
       chunkBiomes = buildBiomeSummary();
@@ -4001,7 +4052,7 @@ export function createChunkBuildTask({
       waterColumns: waterColumnMetadata,
       fluidColumnsByType,
       fluidSurfaces,
-      blockLookup,
+      blockLookup: isLowDetail ? null : blockLookup,
       fluidBlockKeys,
       typeData,
       decorationData,
