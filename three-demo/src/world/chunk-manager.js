@@ -2014,6 +2014,9 @@ export function createChunkManager({
     }
     return DETAIL_LEVEL_CORE;
   };
+  const isCoreDetailChunk = (chunk) =>
+    normalizeDetailLevel(chunk?.detailLevel ?? chunk?.desiredDetailLevel) ===
+    DETAIL_LEVEL_CORE;
   const detailLevelRank = (value) =>
     DETAIL_LEVELS.indexOf(normalizeDetailLevel(value));
   const preloadQueue = createPreloadBucketQueue({
@@ -4133,23 +4136,26 @@ export function createChunkManager({
       blockMaterials,
     });
     const occludedKeys = new Set(derivedCollisionKeys.occludedCoordinates ?? []);
-    if (derivedCollisionKeys.occludedEntries?.size || occludedKeys.size > 0) {
-      const occludedEntries = derivedCollisionKeys.occludedEntries ?? new Set();
-      meshResult.blockLookup.forEach((entry, key) => {
-        if (!entry || (!occludedKeys.has(key) && !occludedEntries.has(entry))) {
+    const hasLookup = typeof meshResult.blockLookup?.forEach === 'function';
+    if (hasLookup) {
+      if (derivedCollisionKeys.occludedEntries?.size || occludedKeys.size > 0) {
+        const occludedEntries = derivedCollisionKeys.occludedEntries ?? new Set();
+        meshResult.blockLookup.forEach((entry, key) => {
+          if (!entry || (!occludedKeys.has(key) && !occludedEntries.has(entry))) {
+            if (entry) {
+              entry.isVisible = true;
+            }
+            return;
+          }
+          entry.isVisible = false;
+        });
+      } else {
+        meshResult.blockLookup.forEach((entry) => {
           if (entry) {
             entry.isVisible = true;
           }
-          return;
-        }
-        entry.isVisible = false;
-      });
-    } else if (meshResult.blockLookup?.forEach) {
-      meshResult.blockLookup.forEach((entry) => {
-        if (entry) {
-          entry.isVisible = true;
-        }
-      });
+        });
+      }
     }
     pruneOccludedInstancedEntries({
       typeData: meshResult.typeData,
@@ -4775,10 +4781,16 @@ export function createChunkManager({
       upgradedChunk.typeCapacities instanceof Map
         ? upgradedChunk.typeCapacities
         : new Map(upgradedChunk.typeCapacities ?? []);
-    chunk.blockLookup =
-      upgradedChunk.blockLookup instanceof Map
-        ? upgradedChunk.blockLookup
-        : new Map(upgradedChunk.blockLookup ?? []);
+    if (upgradedChunk.blockLookup instanceof Map) {
+      chunk.blockLookup = upgradedChunk.blockLookup;
+    } else if (
+      upgradedChunk.blockLookup &&
+      typeof upgradedChunk.blockLookup[Symbol.iterator] === 'function'
+    ) {
+      chunk.blockLookup = new Map(upgradedChunk.blockLookup);
+    } else {
+      chunk.blockLookup = null;
+    }
     chunk.typeData =
       upgradedChunk.typeData instanceof Map
         ? upgradedChunk.typeData
@@ -6005,6 +6017,9 @@ export function createChunkManager({
     if (!chunk || !type) {
       return null;
     }
+    if (!isCoreDetailChunk(chunk)) {
+      return null;
+    }
     if (!(chunk.typeData instanceof Map)) {
       chunk.typeData = new Map();
     }
@@ -6289,6 +6304,9 @@ export function createChunkManager({
     if (!chunk || !entry) {
       return;
     }
+    if (!isCoreDetailChunk(chunk)) {
+      return;
+    }
     if (entry.isDecoration) {
       const record = getDecorationRecord(chunk, entry.type);
       if (!record) {
@@ -6397,7 +6415,16 @@ export function createChunkManager({
   }
 
   function removeEntryFromChunkMesh(chunk, entry, { preserveMetadata = false } = {}) {
-    const coordinateKey = entry?.coordinateKey ?? entry?.key;
+    if (!chunk || !entry) {
+      return;
+    }
+    if (!isCoreDetailChunk(chunk)) {
+      entry.index = -1;
+      entry.mesh = null;
+      entry.tintAttribute = null;
+      return;
+    }
+    const coordinateKey = entry.coordinateKey ?? entry.key;
     const removeCollisionKeys = () => {
       if (!chunk || !entry || !coordinateKey) {
         return;
@@ -6421,12 +6448,10 @@ export function createChunkManager({
         softBlocks.delete(coords, overrides);
       }
     };
-    if (!chunk || !entry || !chunk.typeData) {
-      if (entry) {
-        entry.index = -1;
-        entry.mesh = null;
-        entry.tintAttribute = null;
-      }
+    if (!chunk.typeData) {
+      entry.index = -1;
+      entry.mesh = null;
+      entry.tintAttribute = null;
       removeCollisionKeys();
       return;
     }
@@ -6570,6 +6595,9 @@ export function createChunkManager({
     if (!chunk || !entry || !entry.position) {
       return false;
     }
+    if (!isCoreDetailChunk(chunk) || !(chunk.blockLookup instanceof Map)) {
+      return false;
+    }
     const baseX = Math.round(entry.position.x);
     const baseY = Math.round(entry.position.y);
     const baseZ = Math.round(entry.position.z);
@@ -6607,7 +6635,11 @@ export function createChunkManager({
   }
 
   function refreshBlockVisibility(chunk, positions) {
-    if (!chunk || !(chunk.blockLookup instanceof Map)) {
+    if (
+      !chunk ||
+      !isCoreDetailChunk(chunk) ||
+      !(chunk.blockLookup instanceof Map)
+    ) {
       return;
     }
     const targets = new Map();
@@ -8925,7 +8957,7 @@ export function createChunkManager({
       return null;
     }
     const chunk = getChunkForMesh(mesh);
-    if (!chunk) {
+    if (!chunk || !isCoreDetailChunk(chunk)) {
       return null;
     }
     const { type } = mesh.userData || {};
@@ -8965,6 +8997,9 @@ export function createChunkManager({
 
   function removeBlockInstancesBulk({ chunk, type, entries: removalEntries }) {
     if (!chunk) {
+      return [];
+    }
+    if (!isCoreDetailChunk(chunk)) {
       return [];
     }
     const candidates = Array.isArray(removalEntries) ? removalEntries : [];
@@ -9184,6 +9219,9 @@ export function createChunkManager({
 
   function removeBlockInstance({ chunk, type, instanceId }) {
     if (!chunk || typeof instanceId !== 'number' || !(chunk.typeData instanceof Map)) {
+      return null;
+    }
+    if (!isCoreDetailChunk(chunk)) {
       return null;
     }
     const typeData = chunk.typeData.get(type);

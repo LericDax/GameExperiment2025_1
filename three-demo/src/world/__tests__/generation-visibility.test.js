@@ -255,7 +255,7 @@ test('retention detail finalize avoids occupancy buffers', () => {
   }
 });
 
-test('retention tasks skip placement payload serialization unless requested', () => {
+test('retention finalize clears placement references while meshes persist', () => {
   const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
   try {
     const surfaceHeight = generationModule.terrainHeight(0, 0);
@@ -279,16 +279,28 @@ test('retention tasks skip placement payload serialization unless requested', ()
     retentionTask.setRequiresWorkerPayload(false);
 
     const retentionChunk = retentionTask.finalize();
-    const retentionEntry = retentionChunk.blockLookup.get(surfaceKey);
-    assert.ok(
-      retentionEntry,
-      'retention chunk should expose a surface placement entry for inspection',
-    );
-    assert.equal(
-      retentionEntry.payload,
+    assert.strictEqual(
+      retentionChunk.blockLookup,
       null,
-      'retention chunk placements should not retain serialized payloads when disabled',
+      'retention chunk should not retain block lookup references when payloads are disabled',
     );
+    assert.ok(retentionChunk.typeData instanceof Map, 'retention chunk should expose type data');
+    let instanceTotal = 0;
+    retentionChunk.typeData.forEach((record, type) => {
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(record, 'entries'),
+        false,
+        `retention type data for ${type} should omit per-entry arrays`,
+      );
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(record, 'allEntries'),
+        false,
+        `retention type data for ${type} should omit cloned placement arrays`,
+      );
+      assert.ok(record.mesh?.isInstancedMesh, 'retention meshes should still render');
+      instanceTotal += Number.isFinite(record.mesh?.count) ? record.mesh.count : 0;
+    });
+    assert.ok(instanceTotal > 0, 'retention chunk should still emit instanced geometry');
 
     const coreTask = generationModule.createChunkBuildTask({
       chunkX: 0,
