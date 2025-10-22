@@ -508,6 +508,51 @@ test('buildChunkPayload omits block placements unless requested', () => {
   assert.strictEqual(typeof payload.occupancy?.coordinateIndex, 'object');
 });
 
+test('buildChunkPayload skips occupancy buffers when disabled', () => {
+  const chunkX = 0;
+  const chunkZ = 0;
+  const worldOptions = { chunkSize: 16, waterLevel: 0 };
+  const { minX, minZ } = chunkWorldBounds(chunkX, chunkZ, worldOptions);
+
+  const engine = {
+    blockPlacements: [
+      {
+        type: 'vox:test',
+        position: { x: minX + 1, y: 2, z: minZ + 1 },
+        collisionMode: 'solid',
+        payload: { foo: 'bar' },
+      },
+    ],
+    fluidBlockKeys: [],
+    waterColumnMetadata: new Map(),
+    fluidColumnsByType: new Map(),
+    fluidSurfaces: [],
+    decorationInstancedData: new Map(),
+    decorationGroups: new Map(),
+    decorationOwnerIndex: new Map(),
+    decorationTypeIndex: new Map(),
+    decorationData: new Map(),
+    typeCapacities: new Map(),
+    typeData: new Map(),
+    biomePresence: new Map(),
+    prototypeInstances: new Map(),
+  };
+
+  const payload = buildChunkPayload({
+    chunkX,
+    chunkZ,
+    engine,
+    worldOptions,
+    includeBlockPlacements: true,
+    includeOccupancy: false,
+  });
+
+  assert.ok(Array.isArray(payload.blockPlacements));
+  assert.strictEqual(payload.blockPlacements.length, 1);
+  assert.ok(!Object.prototype.hasOwnProperty.call(payload, 'occupancy'));
+  assert.ok(payload.typeIndex.byType['vox:test'] > 0);
+});
+
 test('buildChunkPayload caps occupancy snapshot height', () => {
   const chunkX = 0;
   const chunkZ = 0;

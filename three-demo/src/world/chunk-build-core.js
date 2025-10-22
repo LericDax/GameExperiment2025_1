@@ -772,6 +772,7 @@ export const buildChunkPayload = ({
   engine,
   worldOptions,
   includeBlockPlacements = false,
+  includeOccupancy = true,
 }) => {
   if (!engine || typeof engine !== 'object') {
     throw new Error('buildChunkPayload requires an engine payload.');
@@ -835,10 +836,12 @@ export const buildChunkPayload = ({
   const occupancyArea = occupancyWidth * occupancyDepth;
   const volume = occupancyArea * occupancyHeight;
 
-  const occupancyTypes = new Uint16Array(volume);
-  const occupancyPlacements = new Int32Array(volume);
-  occupancyPlacements.fill(-1);
-  const fluidOccupancy = new Uint8Array(volume);
+  const occupancyTypes = includeOccupancy ? new Uint16Array(volume) : null;
+  const occupancyPlacements = includeOccupancy ? new Int32Array(volume) : null;
+  if (occupancyPlacements) {
+    occupancyPlacements.fill(-1);
+  }
+  const fluidOccupancy = includeOccupancy ? new Uint8Array(volume) : null;
 
   const typeIdMap = new Map();
   let nextTypeId = 1;
@@ -860,6 +863,9 @@ export const buildChunkPayload = ({
   let softCoordinateCount = 0;
 
   const setCoordinateIndex = (key, value) => {
+    if (!includeOccupancy) {
+      return;
+    }
     if (!key) {
       return;
     }
@@ -875,6 +881,9 @@ export const buildChunkPayload = ({
   };
 
   const pushSolidCoordinate = (key) => {
+    if (!includeOccupancy) {
+      return;
+    }
     if (!key || solidCoordinateCount >= MAX_COORDINATE_INDEX_ENTRIES) {
       return;
     }
@@ -883,6 +892,9 @@ export const buildChunkPayload = ({
   };
 
   const pushSoftCoordinate = (key) => {
+    if (!includeOccupancy) {
+      return;
+    }
     if (!key || softCoordinateCount >= MAX_COORDINATE_INDEX_ENTRIES) {
       return;
     }
@@ -894,6 +906,9 @@ export const buildChunkPayload = ({
   const normalizedFluidKeys = normalizeArraySource(engine.fluidBlockKeys);
 
   normalizedFluidKeys.forEach((entry) => {
+    if (!includeOccupancy || !fluidOccupancy) {
+      return;
+    }
     let key = null;
     if (Array.isArray(entry)) {
       [key] = entry;
@@ -949,6 +964,8 @@ export const buildChunkPayload = ({
       pushSoftCoordinate(coordinateKey);
     }
 
+    getTypeId(placement.type);
+
     if (includeBlockPlacements && blockPlacements) {
       const payload = placement.payload ?? serializeInstancedEntry(placement);
       const gridPosition = serializeGridPosition(placement.gridPosition);
@@ -972,6 +989,10 @@ export const buildChunkPayload = ({
     }
 
     if (!position) {
+      return;
+    }
+
+    if (!includeOccupancy || !occupancyTypes || !occupancyPlacements) {
       return;
     }
 
@@ -1022,11 +1043,20 @@ export const buildChunkPayload = ({
     typeIndex: serializeDecorationTypeIndex(engine.decorationTypeIndex),
   };
 
-  return {
+  const payload = {
     chunkX,
     chunkZ,
     blockPlacements: includeBlockPlacements ? blockPlacements : null,
-    occupancy: {
+    typeIndex,
+    biomes: extractBiomePayload(engine),
+    typeMetadata: extractTypeMetadata(engine),
+    prototypeInstances: extractPrototypeInstances(engine),
+    fluids,
+    decorations,
+  };
+
+  if (includeOccupancy) {
+    payload.occupancy = {
       minY: occupancyMinY,
       maxY: occupancyMaxY,
       width: occupancyWidth,
@@ -1038,13 +1068,9 @@ export const buildChunkPayload = ({
       solidCoordinates,
       softCoordinates,
       coordinateIndex: placementIndexByCoordinate,
-    },
-    typeIndex,
-    biomes: extractBiomePayload(engine),
-    typeMetadata: extractTypeMetadata(engine),
-    prototypeInstances: extractPrototypeInstances(engine),
-    fluids,
-    decorations,
-  };
+    };
+  }
+
+  return payload;
 };
 
