@@ -5400,6 +5400,13 @@ export function createChunkManager({
       } else if (entry.task?.exportPayloadSnapshot) {
         payloadForCache = entry.task.exportPayloadSnapshot();
       }
+      const normalizedDetail = normalizeDetailLevel(
+        entry.detailLevel ?? entry.desiredDetailLevel ?? DETAIL_LEVEL_CORE,
+      );
+      const normalizedDesiredDetail = normalizeDetailLevel(
+        entry.desiredDetailLevel ?? normalizedDetail,
+      );
+      const shouldRetainCachePayload = normalizedDetail === DETAIL_LEVEL_CORE;
       let chunk;
       if (entry.workerPayload) {
         chunk = finalizeWorkerChunk(entry, entry.workerPayload);
@@ -5408,14 +5415,22 @@ export function createChunkManager({
       } else {
         chunk = entry.task.finalize();
       }
-      if (chunk && payloadForCache) {
-        payloadForCache.detailLevel = entry.detailLevel;
-        chunk.__cachePayload = payloadForCache;
-      }
       if (chunk) {
-        chunk.detailLevel = entry.detailLevel;
-        chunk.desiredDetailLevel = entry.desiredDetailLevel;
+        const appliedDetail = entry.detailLevel ?? normalizedDetail;
+        const appliedDesiredDetail =
+          entry.desiredDetailLevel ?? normalizedDesiredDetail;
+        if (shouldRetainCachePayload && payloadForCache) {
+          payloadForCache.detailLevel = normalizedDetail;
+          chunk.__cachePayload = payloadForCache;
+        } else {
+          chunk.__cachePayload = null;
+        }
+        chunk.detailLevel = appliedDetail;
+        chunk.desiredDetailLevel = appliedDesiredDetail;
         chunk.__persistenceResult = entry.persistenceResult ?? null;
+      }
+      if (!shouldRetainCachePayload && entry.workerPayload?.payload) {
+        entry.workerPayload.payload = null;
       }
       const pendingRecord = {
         key: entry.key,
@@ -7049,7 +7064,7 @@ export function createChunkManager({
     }
 
     if (chunk.__cachePayload) {
-      if (payloadCacheCapacity > 0) {
+      if (isCoreDetail && payloadCacheCapacity > 0) {
         const cachePayload = buildCachePayloadFromChunk(chunk, key);
         if (cachePayload) {
           setCachedPayload(key, {
@@ -9771,6 +9786,11 @@ export function createChunkManager({
       }
       return getPendingEntryByKey(String(key));
     },
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__finalizePendingEntryForTest', {
+    value: (entry) => finalizePendingEntry(entry),
     enumerable: false,
   });
 
