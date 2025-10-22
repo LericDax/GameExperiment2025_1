@@ -674,6 +674,7 @@ export function createChunkBuildTask({
   const detailMode = normalizeDetailMode(detailLevel);
   const isLowDetail = detailMode !== DETAIL_LEVEL_CORE;
   const isScoutDetail = detailMode === DETAIL_LEVEL_SCOUT;
+  const shouldRetainPrototypeEntries = detailMode === DETAIL_LEVEL_CORE;
   const instancedData = new Map();
   const decorationInstancedData = new Map();
   const decorationData = new Map();
@@ -1794,6 +1795,11 @@ export function createChunkBuildTask({
         .multiply(instanceScale)
         .applyQuaternion(rotation);
       const worldPosition = relativePosition.add(basePosition.clone());
+      const blockCoordinateKey = makeBlockKey(
+        worldPosition.x,
+        worldPosition.y,
+        worldPosition.z,
+      );
 
       const blockScale = toVector3(block.scale, 1).multiply(instanceScale);
       const visualScale = toVector3(block.visualScale, 1).multiply(instanceScale);
@@ -1820,7 +1826,29 @@ export function createChunkBuildTask({
         entry.prototypeKey = instanceKey;
         entry.prototypeLocalKey = block.key ?? `voxel-${index}`;
         refreshInstancedEntryPayload(entry);
-        record.blockEntries.push({ type: block.type, entry });
+        if (shouldRetainPrototypeEntries) {
+          record.blockEntries.push({
+            type: block.type,
+            entry,
+            entryKey: entry.key ?? null,
+            coordinateKey: entry.coordinateKey ?? blockCoordinateKey,
+          });
+        } else {
+          record.blockEntries.push({
+            type: block.type ?? entry.type ?? null,
+            entryKey: entry.key ?? entry.coordinateKey ?? blockCoordinateKey,
+            coordinateKey: entry.coordinateKey ?? blockCoordinateKey,
+          });
+        }
+        return;
+      }
+
+      if (!shouldRetainPrototypeEntries) {
+        record.blockEntries.push({
+          type: block.type ?? null,
+          entryKey: blockCoordinateKey,
+          coordinateKey: blockCoordinateKey,
+        });
       }
     });
 
@@ -1862,12 +1890,73 @@ export function createChunkBuildTask({
 
       if (entry) {
         entry.prototypeKey = instanceKey;
-        record.decorationKeys.push(entry.key);
         refreshInstancedEntryPayload(entry);
+        if (shouldRetainPrototypeEntries) {
+          record.decorationKeys.push(entry.key);
+        } else {
+          record.decorationKeys.push(entry.key ?? optionsClone.key ?? fallbackKey);
+        }
+      } else if (!shouldRetainPrototypeEntries) {
+        record.decorationKeys.push(optionsClone.key ?? fallbackKey);
       }
     });
 
     return instanceKey;
+  };
+
+  const sanitizePrototypeInstancesForLowDetail = () => {
+    if (shouldRetainPrototypeEntries) {
+      return;
+    }
+    prototypeInstances.forEach((record, key) => {
+      if (!record) {
+        prototypeInstances.delete(key);
+        return;
+      }
+      const sourceEntries = Array.isArray(record.blockEntries)
+        ? record.blockEntries
+        : [];
+      const sanitizedEntries = [];
+      sourceEntries.forEach((entryRecord) => {
+        if (!entryRecord) {
+          return;
+        }
+        const entry = entryRecord.entry ?? null;
+        const coordinateKey = (() => {
+          if (entryRecord.coordinateKey) {
+            return entryRecord.coordinateKey;
+          }
+          if (entry?.coordinateKey) {
+            return entry.coordinateKey;
+          }
+          if (entry?.position) {
+            const { x = 0, y = 0, z = 0 } = entry.position;
+            return makeBlockKey(x, y, z);
+          }
+          return null;
+        })();
+        const sanitized = {
+          type: entryRecord.type ?? entry?.type ?? null,
+          entryKey:
+            entryRecord.entryKey ?? entry?.key ?? coordinateKey ?? null,
+        };
+        if (coordinateKey) {
+          sanitized.coordinateKey = coordinateKey;
+        }
+        if (entryRecord.entryPayload) {
+          sanitized.entryPayload = entryRecord.entryPayload;
+        }
+        sanitizedEntries.push(sanitized);
+      });
+      record.blockEntries = sanitizedEntries;
+      record.decorationKeys = Array.isArray(record.decorationKeys)
+        ? record.decorationKeys
+            .map((value) =>
+              value === null || value === undefined ? null : String(value),
+            )
+            .filter(Boolean)
+        : [];
+    });
   };
 
   const buildInstancedMesh = (entries, type, { capacity } = {}) => {
@@ -3612,6 +3701,8 @@ export function createChunkBuildTask({
         ? heightSummary.maxHeight + 1
         : fallbackMaxHeight;
 
+      sanitizePrototypeInstancesForLowDetail();
+
       const result = {
         chunkX,
         chunkZ,
@@ -4041,6 +4132,8 @@ export function createChunkBuildTask({
 
     stepState.stage = 'finalized';
     recordFinalSamplingProfile();
+
+    sanitizePrototypeInstancesForLowDetail();
 
     const result = {
       chunkX,
