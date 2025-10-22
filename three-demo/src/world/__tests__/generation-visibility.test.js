@@ -45,6 +45,34 @@ function createBlockMaterials() {
   return { registry, createdMaterials };
 }
 
+function overrideTypedArrayConstructors(allocationLog) {
+  const entries = [
+    ['Uint16Array', globalThis.Uint16Array],
+    ['Int32Array', globalThis.Int32Array],
+    ['Uint8Array', globalThis.Uint8Array],
+  ];
+  entries.forEach(([name, Original]) => {
+    const Override = class extends Original {
+      constructor(...args) {
+        super(...args);
+        allocationLog.push({
+          name,
+          length: this.length,
+          stack: new Error().stack ?? '',
+        });
+      }
+    };
+    Object.defineProperty(Override, 'name', { value: name, configurable: true });
+    Object.setPrototypeOf(Override, Original);
+    globalThis[name] = Override;
+  });
+  return () => {
+    entries.forEach(([name, Original]) => {
+      globalThis[name] = Original;
+    });
+  };
+}
+
 test('solid interior voxels remain hidden but tracked in block lookup', () => {
   const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
   try {
@@ -162,6 +190,65 @@ test('chunk hydration restores hidden block records in block lookup', () => {
       hydratedHiddenRecord,
       interiorEntry,
       'hydrated block lookup should share the hidden record reference',
+    );
+  } finally {
+    createdMaterials.forEach((material) => material.dispose?.());
+  }
+});
+
+test('retention detail finalize avoids occupancy buffers', () => {
+  const { registry: blockMaterials, createdMaterials } = createBlockMaterials();
+  try {
+    const task = generationModule.createChunkBuildTask({
+      chunkX: 0,
+      chunkZ: 0,
+      blockMaterials,
+      detailLevel: 'retention',
+      requireWorkerPayload: false,
+    });
+
+    let done = false;
+    while (!done) {
+      const result = task.step(Number.POSITIVE_INFINITY);
+      done = result?.done === true;
+    }
+
+    const allocations = [];
+    const restoreTypedArrays = overrideTypedArrayConstructors(allocations);
+    let chunk;
+    try {
+      chunk = task.finalize();
+    } finally {
+      restoreTypedArrays();
+    }
+
+    assert.ok(chunk, 'finalize should return a chunk instance');
+    assert.equal(
+      chunk.detailLevel,
+      'retention',
+      'chunk detail level should reflect retention mode',
+    );
+    assert.equal(
+      chunk.fluidSurfaces.length,
+      0,
+      'low-detail chunk should not construct fluid surfaces',
+    );
+    const fluidChild = chunk.group.children.find((child) =>
+      child?.userData?.type?.startsWith?.('fluid:'),
+    );
+    assert.equal(
+      fluidChild,
+      undefined,
+      'chunk group should not contain fluid surface meshes in retention mode',
+    );
+
+    const occupancyAllocations = allocations.filter((allocation) =>
+      allocation.stack?.includes('ensureOccupancyArrays'),
+    );
+    assert.equal(
+      occupancyAllocations.length,
+      0,
+      'retention finalize should not allocate occupancy buffers',
     );
   } finally {
     createdMaterials.forEach((material) => material.dispose?.());
