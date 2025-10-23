@@ -1,5 +1,25 @@
 import { serializeInstancedEntry } from './chunk-payload-serializers.js';
 
+const mergeInstancedPayload = (entry, fallback = null) => {
+  const serialized = serializeInstancedEntry(entry);
+  const baseSource =
+    entry?.payload && typeof entry.payload === 'object'
+      ? entry.payload
+      : fallback && typeof fallback === 'object'
+      ? fallback
+      : null;
+  if (!serialized) {
+    return baseSource ? { ...baseSource } : serialized ?? fallback ?? null;
+  }
+  const merged = baseSource ? { ...baseSource } : {};
+  Object.entries(serialized).forEach(([key, value]) => {
+    if (value !== undefined) {
+      merged[key] = value;
+    }
+  });
+  return merged;
+};
+
 const DEFAULT_CHUNK_SIZE = 16;
 export const MAX_OCCUPANCY_COORDINATE_SNAPSHOT = 4096;
 export const MAX_COORDINATE_INDEX_ENTRIES = 8192;
@@ -220,12 +240,13 @@ const serializeFluidColumnsByType = (source) => {
           ? column.shoreline
           : 0;
         exposed[index] = column.isExposed ? 1 : 0;
-        metadata[index] = normalizeSerializable({
-          biome: column.biome ?? null,
-          lifecycleCues:
-            column.lifecycleCues instanceof Set
-              ? Array.from(column.lifecycleCues)
-              : column.lifecycleCues ?? null,
+        metadata[index] = normalizeSerializable(
+          {
+            biome: column.biome ?? null,
+            lifecycleCues:
+              column.lifecycleCues instanceof Set
+                ? Array.from(column.lifecycleCues)
+                : column.lifecycleCues ?? null,
           auroraIntensitySum: column.auroraIntensitySum ?? null,
           auroraIntensitySamples: column.auroraIntensitySamples ?? null,
           glowBiasSum: column.glowBiasSum ?? null,
@@ -248,9 +269,11 @@ const serializeFluidColumnsByType = (source) => {
           ribbonOrientation: column.ribbonOrientation ?? null,
           ribbonVector: column.ribbonVector ?? null,
           ribbonSegments: column.ribbonSegments ?? null,
-          ribbonSpan: column.ribbonSpan ?? null,
-          ribbonHeight: column.ribbonHeight ?? null,
-        });
+            ribbonSpan: column.ribbonSpan ?? null,
+            ribbonHeight: column.ribbonHeight ?? null,
+          },
+          { preserveTyped: true },
+        );
       });
       return {
         type,
@@ -331,7 +354,9 @@ const serializeDecorationBatches = (instancedSource, decorationData) => {
       ? Array.from(value.values())
       : [];
     const serializedEntries = entryArray.map((entry) =>
-      normalizeSerializable(entry?.payload ?? serializeInstancedEntry(entry)),
+      normalizeSerializable(mergeInstancedPayload(entry), {
+        preserveTyped: true,
+      }),
     );
     const capacityCandidate = dataMap?.get(type)?.capacity ?? entryArray.length;
     const entryKeys = entryArray
@@ -437,7 +462,8 @@ const serializeDecorationTypeIndex = (source) => {
   return result;
 };
 
-const normalizeSerializable = (value) => {
+const normalizeSerializable = (value, options = {}) => {
+  const { preserveTyped = false } = options;
   if (value === null || value === undefined) {
     return null;
   }
@@ -449,15 +475,15 @@ const normalizeSerializable = (value) => {
     return value;
   }
   if (isTypedArray(value)) {
-    return Array.from(value);
+    return preserveTyped ? value : Array.from(value);
   }
   if (Array.isArray(value)) {
-    return value.map((entry) => normalizeSerializable(entry));
+    return value.map((entry) => normalizeSerializable(entry, options));
   }
   if (typeof value === 'object') {
     const result = {};
     Object.entries(value).forEach(([key, entry]) => {
-      const normalized = normalizeSerializable(entry);
+      const normalized = normalizeSerializable(entry, options);
       if (normalized !== undefined) {
         result[key] = normalized;
       }
@@ -466,6 +492,9 @@ const normalizeSerializable = (value) => {
   }
   return undefined;
 };
+
+export const normalizeSerializableToPlain = (value) =>
+  normalizeSerializable(value, { preserveTyped: false });
 
 const extractBiomePayload = (engine) => {
   if (!engine) {
@@ -571,7 +600,9 @@ const extractTypeMetadata = (engine) => {
       .map((entry) => (entry?.key ? String(entry.key) : null))
       .filter(Boolean);
     const entryPayloads = entries.map((entry) =>
-      normalizeSerializable(entry?.payload ?? serializeInstancedEntry(entry)),
+      normalizeSerializable(mergeInstancedPayload(entry), {
+        preserveTyped: true,
+      }),
     );
     const capacityCandidate = Number.isFinite(record?.capacity)
       ? record.capacity
@@ -622,12 +653,11 @@ const extractPrototypeInstances = (engine) => {
             return null;
           }
           const entry = entryRecord.entry ?? null;
-          const payload = entryRecord.entryPayload ??
-            (entry ? serializeInstancedEntry(entry) : null);
+          const payload = mergeInstancedPayload(entry, entryRecord.entryPayload);
           return {
             type: entryRecord.type ?? entry?.type ?? null,
             entryKey: entry?.key ?? entryRecord.entryKey ?? null,
-            entryPayload: normalizeSerializable(payload),
+            entryPayload: normalizeSerializable(payload, { preserveTyped: true }),
           };
         })
         .filter(Boolean),
