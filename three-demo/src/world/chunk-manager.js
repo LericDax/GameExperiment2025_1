@@ -25,6 +25,7 @@ import {
   pruneTerrainSampleCacheOutsideRadius,
   clearTerrainSampleCache,
 } from './terrain-sample-cache.js';
+import { normalizeSerializableToPlain } from './chunk-build-core.js';
 import { createChunkBuildWorker } from './workers/chunk-build.worker.js';
 import {
   createChunkStoreQueue,
@@ -3717,6 +3718,93 @@ export function createChunkManager({
       } else {
         delete leanPayload.occupancy;
       }
+    }
+
+    if (Array.isArray(basePayload.typeMetadata)) {
+      leanPayload.typeMetadata = basePayload.typeMetadata.map((record) => {
+        if (!record || typeof record !== 'object') {
+          return record;
+        }
+        const entryPayloads = Array.isArray(record.entryPayloads)
+          ? record.entryPayloads.map((entry) => normalizeSerializableToPlain(entry))
+          : record.entryPayloads;
+        return {
+          ...record,
+          entryPayloads,
+        };
+      });
+    }
+
+    if (basePayload.decorations && typeof basePayload.decorations === 'object') {
+      const decorations = {
+        ...basePayload.decorations,
+      };
+      if (Array.isArray(basePayload.decorations.batches)) {
+        decorations.batches = basePayload.decorations.batches.map((batch) => {
+          if (!batch || typeof batch !== 'object') {
+            return batch;
+          }
+          const entries = Array.isArray(batch.entries)
+            ? batch.entries.map((entry) => normalizeSerializableToPlain(entry))
+            : batch.entries;
+          return {
+            ...batch,
+            entries,
+          };
+        });
+      }
+      leanPayload.decorations = decorations;
+    }
+
+    if (Array.isArray(basePayload.prototypeInstances)) {
+      leanPayload.prototypeInstances = basePayload.prototypeInstances.map((record) => {
+        if (!record || typeof record !== 'object') {
+          return record;
+        }
+        const blockEntries = Array.isArray(record.blockEntries)
+          ? record.blockEntries.map((blockEntry) => {
+              if (!blockEntry || typeof blockEntry !== 'object') {
+                return blockEntry;
+              }
+              if (!Object.prototype.hasOwnProperty.call(blockEntry, 'entryPayload')) {
+                return { ...blockEntry };
+              }
+              const normalizedPayload =
+                blockEntry.entryPayload === undefined
+                  ? undefined
+                  : normalizeSerializableToPlain(blockEntry.entryPayload);
+              return {
+                ...blockEntry,
+                entryPayload: normalizedPayload,
+              };
+            })
+          : record.blockEntries;
+        return {
+          ...record,
+          blockEntries,
+        };
+      });
+    }
+
+    if (basePayload.fluids && typeof basePayload.fluids === 'object') {
+      const fluids = {
+        ...basePayload.fluids,
+      };
+      if (Array.isArray(basePayload.fluids.columnsByType)) {
+        fluids.columnsByType = basePayload.fluids.columnsByType.map((record) => {
+          if (!record || typeof record !== 'object') {
+            return record;
+          }
+          const metadata = Array.isArray(record.metadata)
+            ? record.metadata.map((entry) => normalizeSerializableToPlain(entry))
+            : record.metadata;
+          return {
+            ...record,
+            metadata,
+          };
+        });
+      }
+      leanPayload.fluids = fluids;
     }
 
     return leanPayload;
@@ -9858,6 +9946,11 @@ export function createChunkManager({
         detailLevel: entry?.detailLevel ?? null,
         payload: entry?.payload ?? null,
       })),
+    enumerable: false,
+  });
+
+  Object.defineProperty(managerApi, '__createLeanCachePayloadForTest', {
+    value: (payload) => createLeanCachePayload(payload),
     enumerable: false,
   });
 

@@ -433,19 +433,44 @@ test('buildChunkPayload normalizes occupancy, fluid, and decoration payloads', (
     },
   ]);
 
-  assert.deepStrictEqual(payload.decorations.batches, [
-    {
-      type: 'flora',
-      capacity: 10,
-      entryKeys: ['fern-a'],
-      entries: [
-        {
-          transform: [1, 0, 0, 0],
-          tags: ['flora'],
-        },
-      ],
-    },
-  ]);
+  const [floraBatch] = payload.decorations.batches;
+  assert.ok(floraBatch, 'expected flora decoration batch');
+  assert.strictEqual(floraBatch.type, 'flora');
+  assert.strictEqual(floraBatch.capacity, 10);
+  assert.deepStrictEqual(floraBatch.entryKeys, ['fern-a']);
+  const [floraEntry] = floraBatch.entries;
+  assert.ok(floraEntry, 'expected flora decoration entry');
+  assert.deepStrictEqual(floraEntry.tags, ['flora']);
+  assert.ok(ArrayBuffer.isView(floraEntry.transform));
+  assertFloatArrayClose(floraEntry.transform, [1, 0, 0, 0]);
+  assert.strictEqual(floraEntry.key, 'fern-a');
+  assert.strictEqual(floraEntry.coordinateKey, null);
+  assert.strictEqual(floraEntry.type, null);
+  assert.strictEqual(floraEntry.biomeId, null);
+  assert.ok(ArrayBuffer.isView(floraEntry.matrix));
+  assertFloatArrayClose(floraEntry.matrix, new Array(16).fill(0));
+  assert.ok(ArrayBuffer.isView(floraEntry.position));
+  assertFloatArrayClose(floraEntry.position, [0, 0, 0]);
+  assert.ok(ArrayBuffer.isView(floraEntry.scale));
+  assertFloatArrayClose(floraEntry.scale, [0, 0, 0]);
+  assert.ok(ArrayBuffer.isView(floraEntry.visualScale));
+  assertFloatArrayClose(floraEntry.visualScale, [0, 0, 0]);
+  assert.ok(ArrayBuffer.isView(floraEntry.visualOffset));
+  assertFloatArrayClose(floraEntry.visualOffset, [0, 0, 0]);
+  assert.strictEqual(floraEntry.paletteColor, null);
+  assert.strictEqual(floraEntry.tintColor, null);
+  assert.strictEqual(floraEntry.tintOverride, null);
+  assert.strictEqual(floraEntry.destructible, null);
+  assert.strictEqual(floraEntry.collisionMode, null);
+  assert.strictEqual(floraEntry.isSolid, null);
+  assert.strictEqual(floraEntry.isSoft, null);
+  assert.strictEqual(floraEntry.isDecoration, false);
+  assert.strictEqual(floraEntry.isVisible, null);
+  assert.strictEqual(floraEntry.sourceObjectId, null);
+  assert.strictEqual(floraEntry.voxelIndex, null);
+  assert.strictEqual(floraEntry.prototypeKey, null);
+  assert.strictEqual(floraEntry.prototypeLocalKey, null);
+  assert.strictEqual(floraEntry.metadata, null);
 
   assert.deepStrictEqual(payload.decorations.groups, [
     {
